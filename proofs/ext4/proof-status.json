@@ -9,13 +9,13 @@
   "writable_mount_enabled": false,
   "verification": {
     "status": "core_and_models_checked",
-    "verus_verified_units": 535,
+    "verus_verified_units": 556,
     "verification_errors": 0,
     "checked_named_proof_functions": 224,
-    "checked_named_executable_functions": 159,
+    "checked_named_executable_functions": 168,
     "runner_validated": true,
     "negative_gate_checks_passed": 6,
-    "host_compatibility_tests_passed": 30,
+    "host_compatibility_tests_passed": 31,
     "evidence": "verification-evidence.json",
     "request_boundary_rejections_passed": 6
   },
@@ -57,7 +57,7 @@
     "initialized_allocation_bitmaps": "checked_Linux_checksum_ranges_padding_exact_free_counts_and_bounds",
     "owned_block_claim_census": "checked_disjoint_ranges_preservation_on_failure_and_of_prior_occupied_slots_bitmap_agreement_and_free_count_refinement",
     "inode_extent_allocation_binding": "checked_exact_source_bytes_physical_slots_owner_generation_logical_offset_initialization_and_sector_accounting",
-    "whole_volume_enumeration_and_namespace": "physical_allocation_enumeration_checked_namespace_not_implemented",
+    "whole_volume_enumeration_and_namespace": "physical_allocation_and_complete_directory_entry_enumeration_checked_link_counts_and_topology_open",
     "same_source_group_index": "checked_complete_ordered_group_enumeration_exact_descriptor_bitmap_provenance_and_global_free_counter_sums",
     "group_reserved_regions": "checked_sparse_super_power_rule_and_disjoint_metadata_claims_within_32_group_profile",
     "whole_image_physical_allocation": "checked_complete_same_source_claim_composition_allocated_inode_traversal_reserved_regions_marker_root_high_water_directory_counts_all_bitmaps_and_global_free_count",
@@ -65,7 +65,9 @@
     "structural_inode_reads": "checked_source_bound_live_inode_lookup_unique_initialized_mapping_exact_ownership_clipped_source_slices_and_hole_unwritten_zeros_no_VFS_authority",
     "complete_directory_blocks": "checked_contiguous_complete_unique_record_coverage_tail_checksum_and_bounds_namespace_targets_topology_open",
     "directory_source": "checked_actual_initialized_mapping_and_UUID_inode_generation_seed_bound_to_unique_canonical_source_records",
-    "bounded_name_uniqueness": "checked_exact_full_key_membership_owned_names_duplicate_rejection_and_unchanged_failure_64_keys_per_bucket_65536_total_no_hash_identity_assumption"
+    "bounded_name_uniqueness": "checked_exact_full_key_membership_owned_names_duplicate_rejection_and_unchanged_failure_64_keys_per_bucket_65536_total_no_hash_identity_assumption",
+    "directory_index": "checked_complete_canonical_directory_block_and_live_entry_enumeration_source_target_typing_generations_unique_names_and_exact_lookup_parent_topology_and_link_counts_open",
+    "name_index_positions": "checked_ordinal_identifies_the_exact_source_key_insertion_position"
   },
   "production_activation_gate": "All applicable obligations in PROOF_OBLIGATIONS.md must be discharged for the admitted profile.",
   "evidence_policy": "Only successful pinned entire-crate checking plus compilation produces a valid build report; it certifies only the declared source/model scope."

@@ -222,3 +222,13 @@ bucket, then compares complete directory/name keys. It owns copied name bytes
 and preserves its original state on rejection. Collision/total caps are explicit
 resource limits; the helper does not certify that its inode numbers are live or
 that a namespace is complete, authorized, rooted or link-count consistent.
+
+`directory_index.rs` composes the canonical source functions into complete
+enumeration of every allocated directory and every block up to its block-aligned
+i_size, including empty preallocation. All live records contribute exact owned
+entries, whose source directory and target type/generation are checked. Name-set
+ordinals are proved to identify their insertion position; lookup returns exactly
+the corresponding source entry and absence excludes every canonical name match.
+The index is bounded to 4096 directory blocks and 65536 names. It does not yet
+certify dot/parent relations, link counts, rooted topology, operations or mount
+admission. These host structures remain outside VFS/credential/device authority.

@@ -121,3 +121,7 @@ pub mod directory_file;
 pub mod name_set;
 
 pub mod directory_source;
+
+pub mod namespace_model;
+
+pub mod directory_index;

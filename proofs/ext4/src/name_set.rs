@@ -15,7 +15,7 @@ pub const MAX_BUCKET: usize = 64;
 pub const MAX_KEYS: u32 = 65536;
 
 pub type KeyView = (u32, Seq<u8>);
-struct Key { directory: u32, name: Vec<u8> }
+struct Key { directory: u32, name: Vec<u8>, ordinal: u32 }
 
 impl Key {
     closed spec fn view(&self) -> KeyView { (self.directory, self.name@) }
@@ -24,6 +24,12 @@ impl Key {
 spec fn keys_view(keys: Seq<Key>) -> Seq<KeyView> { Seq::new(keys.len(), |i: int| keys[i].view()) }
 spec fn buckets_view(buckets: Seq<Vec<Key>>) -> Seq<Seq<KeyView>> {
     Seq::new(buckets.len(), |i: int| keys_view(buckets[i]@))
+}
+
+#[verifier::opaque]
+spec fn indexed_buckets(buckets: Seq<Vec<Key>>, keys: Seq<KeyView>) -> bool {
+    forall|b: int, i: int| 0 <= b < buckets.len() && 0 <= i < buckets[b]@.len() ==>
+        (#[trigger] buckets[b]@[i]).ordinal < keys.len() && keys[buckets[b]@[i].ordinal as int] == buckets[b]@[i].view()
 }
 
 #[verifier::opaque]
@@ -106,9 +112,9 @@ fn check_key(directory: u32, name: &[u8]) -> (r: bool) ensures r == valid_key((d
     true
 }
 
-fn capture(directory: u32, name: &[u8]) -> (r: Key)
+fn capture(directory: u32, name: &[u8], ordinal: u32) -> (r: Key)
     requires valid_key((directory, name@)),
-    ensures r.view() == (directory, name@),
+    ensures r.view() == (directory, name@), r.ordinal == ordinal,
 {
     reveal(valid_key);
     let mut copy = Vec::new();
@@ -122,7 +128,7 @@ fn capture(directory: u32, name: &[u8]) -> (r: Key)
         i += 1;
     }
     assert(copy@ =~= name@);
-    Key { directory, name: copy }
+    Key { directory, name: copy, ordinal }
 }
 
 proof fn inserting_a_new_bucket_key(v: SetView, key: KeyView)
@@ -167,7 +173,8 @@ pub struct NameSet { buckets: Vec<Vec<Key>>, keys: Ghost<Seq<KeyView>>, total: u
 
 impl NameSet {
     pub closed spec fn view(&self) -> SetView { SetView { buckets: buckets_view(self.buckets@), keys: self.keys@, total: self.total } }
-    pub open spec fn wf(&self) -> bool { valid(self.view()) }
+    pub closed spec fn indexed(&self) -> bool { indexed_buckets(self.buckets@, self.keys@) }
+    pub open spec fn wf(&self) -> bool { valid(self.view()) && self.indexed() }
 
     #[verifier::type_invariant]
     spec fn invariant(self) -> bool { self.wf() }
@@ -196,6 +203,14 @@ impl NameSet {
             reveal(valid); reveal(bucket_ok);
             assert forall|k: KeyView| #[trigger] assembled.keys.contains(k) <==> assembled.buckets[bucket(k) as int].contains(k) by { bucket_is_in_range(k); }
         }
+        assert(indexed_buckets(buckets@, Seq::empty())) by {
+            reveal(indexed_buckets);
+            assert forall|b: int, i: int| 0 <= b < buckets.len() && 0 <= i < buckets@[b]@.len() implies
+                (#[trigger] buckets@[b]@[i]).ordinal < 0 && Seq::<KeyView>::empty()[buckets@[b]@[i].ordinal as int] == buckets@[b]@[i].view() by {
+                assert(buckets_view(buckets@)[b].len() == 0);
+                assert(buckets@[b]@.len() == 0);
+            }
+        }
         NameSet { buckets, keys: Ghost(Seq::empty()), total: 0 }
     }
 
@@ -204,14 +219,18 @@ impl NameSet {
         self.total
     }
 
-    pub fn contains(&self, directory: u32, name: &[u8]) -> (r: bool)
-        ensures self.wf(), r == self.view().keys.contains((directory, name@)),
+    pub fn find(&self, directory: u32, name: &[u8]) -> (r: Option<u32>)
+        ensures self.wf(), match r {
+            Some(index) => index < self.view().keys.len() && self.view().keys[index as int] == (directory, name@)
+                && self.view().keys.contains((directory, name@)),
+            None => !self.view().keys.contains((directory, name@)),
+        },
     {
         hide(crc::fold);
         proof { use_type_invariant(self); reveal(valid); }
         if directory == 0 || name.len() == 0 || name.len() > 255 {
             proof { if self.view().keys.contains((directory, name@)) { recorded_keys_are_valid(self.view(), (directory, name@)); reveal(valid_key); } }
-            return false;
+            return None;
         }
         let index = (crc::crc32c(directory, name) % 4096) as usize;
         assert(index as nat == bucket((directory, name@))) by { reveal(bucket); }
@@ -237,8 +256,8 @@ impl NameSet {
             assert(equal == (entry.name@ == name@));
             if entry.directory == directory && equal {
                 assert(keys.contains((directory, name@))) by { assert(keys[i as int] == (directory, name@)); }
-                proof { reveal(valid); }
-                return true;
+                proof { reveal(valid); reveal(indexed_buckets); }
+                return Some(entry.ordinal);
             }
             assert(keys[i as int] != (directory, name@));
             assert forall|j: int| 0 <= j < i + 1 implies #[trigger] keys[j] != (directory, name@) by {
@@ -248,7 +267,13 @@ impl NameSet {
         }
         assert(!keys.contains((directory, name@)));
         proof { reveal(valid); }
-        false
+        None
+    }
+
+    pub fn contains(&self, directory: u32, name: &[u8]) -> (r: bool)
+        ensures self.wf(), r == self.view().keys.contains((directory, name@)),
+    {
+        self.find(directory, name).is_some()
     }
 
     pub fn insert(self, directory: u32, name: &[u8]) -> (r: Result<Self, Self>)
@@ -266,8 +291,10 @@ impl NameSet {
         assert(bucket_ok(self.view().buckets[index as int], index as int));
         assert(self.view().total <= MAX_KEYS && self.view().buckets[index as int].len() <= MAX_BUCKET) by { reveal(valid); reveal(bucket_ok); }
         if self.total == MAX_KEYS || self.buckets[index].len() == MAX_BUCKET { return Err(self); }
-        let key = capture(directory, name);
+        let key = capture(directory, name, self.total);
         let ghost before = self.view();
+        let ghost previous_buckets = self.buckets@;
+        assert(indexed_buckets(previous_buckets, before.keys));
         proof { inserting_a_new_bucket_key(before, key.view()); }
         let NameSet { mut buckets, keys, total } = self;
         let mut entries = buckets.remove(index);
@@ -279,6 +306,20 @@ impl NameSet {
         let ghost next_keys = keys@.push((directory, name@));
         let ghost assembled = SetView { buckets: buckets_view(buckets@), keys: next_keys, total: (total + 1) as u32 };
         assert(valid(assembled));
+        assert(indexed_buckets(buckets@, next_keys)) by {
+            reveal(indexed_buckets);
+            assert forall|b: int, i: int| 0 <= b < buckets.len() && 0 <= i < buckets@[b]@.len() implies
+                (#[trigger] buckets@[b]@[i]).ordinal < next_keys.len()
+                    && next_keys[buckets@[b]@[i].ordinal as int] == buckets@[b]@[i].view() by {
+                if b == index as int && i == old_entries.len() {
+                    assert(buckets@[b]@[i].ordinal == total && buckets@[b]@[i].view() == (directory, name@));
+                } else {
+                    assert(buckets@[b]@[i] == previous_buckets[b]@[i]);
+                    assert(previous_buckets[b]@[i].ordinal < before.keys.len());
+                    assert(before.keys[previous_buckets[b]@[i].ordinal as int] == previous_buckets[b]@[i].view());
+                }
+            }
+        }
         Ok(NameSet { buckets, keys: Ghost(next_keys), total: total + 1 })
     }
 }

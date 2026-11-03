@@ -7,9 +7,9 @@ implementation of a **Linux-compatible ext4 subset**.
 It is not a complete filesystem and is not registered with the kernel VFS.
 No mount or filesystem write path is enabled.
 
-The pinned Verus run checks **535 obligations with zero errors**, including
-224 named proof functions and 159 named executable functions.
-Thirty host interoperability/regression tests pass on Linux-created metadata.
+The pinned Verus run checks **556 obligations with zero errors**, including
+224 named proof functions and 168 named executable functions.
+Thirty-one host interoperability/regression tests pass on Linux-created metadata.
 [Proof status](proof-status.json) and [recorded evidence](verification-evidence.json)
 state the exact scope; tests do not discharge formal obligations.
 
@@ -30,8 +30,9 @@ state the exact scope; tests do not discharge formal obligations.
 | `inode_table.rs`, `inode_group.rs`, `allocation_counts.rs`, `allocation.rs` | Complete source-bound allocated-inode traversal, mandatory reserved inode markers, root type, empty unused reserved inodes, inode-table high-water bounds and directory counts; exact composition of metadata/journal/inode claims, all block bitmaps and global free-block accounting. This allocation certificate omits namespace, operation, recovery/mount and device authority. |
 | `allocated_inode.rs`, `file_read.rs` | Ordinary inode lookup inherits the whole-image source/ownership certificate; initialized logical mapping is unique and has exact owner/generation/slot identity; block/file-size clipped chunks return source bytes or zeros for holes/unwritten extents. Structural host helpers, not VFS/credential authority. |
 | `directory_block.rs` | Complete canonical linear-record coverage including deleted records, unique complete stream, checksum tail and bounded read-only record/name access. Namespace target/link/topology checks remain open. |
-| `directory_file.rs`, `directory_source.rs` | Directory bytes and checksum seed come from the actual allocated inode and initialized mapping; executable records equal the unique canonical source stream. Gaps and malformed blocks fail closed. Whole-directory/namespace enumeration remains open. |
+| `directory_file.rs`, `directory_source.rs` | Directory bytes and checksum seed come from the actual allocated inode and initialized mapping; executable records equal the unique canonical source stream. Gaps and malformed blocks fail closed. Whole-directory enumeration is composed by directory_index.rs. |
 | `name_set.rs` | Owned directory/name keys; exact membership, duplicate rejection and unchanged failed insertion; full byte comparison across CRC bucket collisions. At most 65536 keys, 64/bucket and 255 bytes/name. This is a bounded namespace-admission helper, not a complete namespace certificate. |
+| `namespace_model.rs`, `directory_index.rs` | Complete canonical enumeration of every allocated directory/block and live record, including empty preallocation; source/target inode types and target generations, global unique names, exact source entries and complete lookup via proved name-index positions. Bounded to 4096 directory blocks. Parent topology and link counts remain open. |
 | `layout.rs` | Checked mapping of a single initialized journal extent; journal blocks excluded from replay targets. |
 | `replay.rs`, `replay_refinement.rs` | Linux same/later revoke suppression and reallocation, latest-image selection, exact chronological redo equivalence, arbitrary partial replay restart. |
 | `scan.rs`, `scan_trace.rs`, `scan_stop.rs`, `scan_budget.rs` | Bounded ring scan, contiguous exact record coverage, complete descriptor payloads, committed cut, actual source/commit provenance, checked stopping witnesses, unique canonical maximal prefix and recovered input. Clean snapshots and active snapshots satisfying the declared resource profile are admitted. Every writer crash snapshot satisfies that scan profile. |
@@ -149,7 +150,9 @@ requests, holes and unwritten extents backed by nonzero storage. Complete direct
 parsing rejects checksummed malformed suffixes and invalid names. Directory reads
 bind the inode generation and reject holes; name-index tests accept 64 distinct
 colliding keys, reject the next without changing state, and retain owned names
-after caller mutation.
+after caller mutation. Whole-directory indexing additionally rejects dangling/journal
+targets, type mismatches, duplicate names, malformed empty directory blocks and
+directory-credit exhaustion.
 Do not link it into the kernel: its target and toolchain differ from the kernel's.
 A kernel source build and its OSTD adapter refinement remain necessary.
 
@@ -161,7 +164,7 @@ from the missing implementation/refinement work.
 The full design is **not implemented or proved**.
 In particular, these are still missing:
 
-- Namespace validation and filesystem operation implementations,
+- Parent topology and link-count validation, plus filesystem operation implementations,
   including allocation, create/unlink/rename, orphan handling, permissions integration and fsync.
 - Unmount ordering and actual device atomicity, quiescence and reuse refinement.
   The checked physical history is serialized; a runtime gate must enforce it.

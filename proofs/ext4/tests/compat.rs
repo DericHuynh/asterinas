@@ -787,6 +787,8 @@ fn directory_name_sets_compare_full_keys_own_bytes_and_bound_hash_collisions() {
     names = names.insert(2, b"alpha").ok().unwrap();
     names = names.insert(11, b"alpha").ok().unwrap();
     assert_eq!(names.len(), 2);
+    assert_eq!(names.find(2, b"alpha"), Some(0));
+    assert_eq!(names.find(11, b"alpha"), Some(1));
     assert!(names.contains(2, b"alpha") && names.contains(11, b"alpha"));
     names = names
         .insert(2, b"alpha")
@@ -839,6 +841,94 @@ fn directory_name_sets_compare_full_keys_own_bytes_and_bound_hash_collisions() {
     assert!(!names.contains(2, &colliding[64]));
     for key in &colliding[..64] {
         assert!(names.contains(2, key));
+    }
+    for (position, key) in colliding[..64].iter().enumerate() {
+        assert_eq!(names.find(2, key), Some(position as u32));
+    }
+}
+
+#[test]
+fn directory_index_enumerates_empty_blocks_and_rejects_bad_targets_and_duplicate_names() {
+    use core::{
+        allocated_inode, allocation, directory_file, directory_index, file_read, snapshot::Snapshot,
+    };
+    let img = image();
+    let (_, group, seed) = metadata(&img);
+    let volume = allocation::parse(Snapshot::from_bytes(&img)).unwrap();
+    let index = directory_index::build(&volume).unwrap();
+    assert_eq!(index.len(), 6);
+    let root_blocks = le32(inode_bytes(&img, group.inode_table, 2), 4) / 4096;
+    let lost_blocks = le32(inode_bytes(&img, group.inode_table, 11), 4) / 4096;
+    assert!(
+        lost_blocks > 1,
+        "fixture includes empty preallocated directory blocks"
+    );
+    assert_eq!(index.block_count(), root_blocks + lost_blocks);
+    for (directory, name, target, kind) in [
+        (2u32, &b"."[..], 2u32, 2u8),
+        (2, &b".."[..], 2, 2),
+        (2, &b"lost+found"[..], 11, 2),
+        (2, &b"payload"[..], 12, 1),
+        (11, &b"."[..], 11, 2),
+        (11, &b".."[..], 2, 2),
+    ] {
+        let entry = index.lookup(directory, name).unwrap();
+        let identity = entry.identity();
+        assert_eq!(
+            (identity.0, identity.1, identity.3),
+            (directory, target, kind)
+        );
+        assert_eq!(entry.name(), name);
+    }
+    assert!(index.get(index.len()).is_none());
+    assert!(index.lookup(0, b"payload").is_none());
+    assert!(index.lookup(2, b"Payload").is_none());
+    assert!(index.lookup(11, b"missing").is_none());
+    let root = allocated_inode::get(&volume, 2).unwrap();
+    let raw = directory_file::read(&root, 0).unwrap();
+    let payload_record = (0..raw.len())
+        .find(|&i| raw.name(i) == Some(&b"payload"[..]))
+        .unwrap();
+    let record = raw.get(payload_record).unwrap().name_offset - 8;
+    let root_block = first_data_block(root.raw(), volume.census().block_count()) as usize * 4096;
+    let root_seed = core::inode::inode_seed(seed, 2, root.info().generation);
+    for variant in 0..6u8 {
+        let mut bad = img.clone();
+        let block = &mut bad[root_block..root_block + 4096];
+        match variant {
+            0 => block[record..record + 4].copy_from_slice(&13u32.to_le_bytes()),
+            1 => block[record..record + 4].copy_from_slice(&8u32.to_le_bytes()),
+            2 => block[record + 7] = 2,
+            3 => {
+                block[record + 6] = 10;
+                block[record + 8..record + 18].copy_from_slice(b"lost+found");
+            }
+            _ => {}
+        }
+        let checksum = core::crc::crc32c(root_seed, &block[..4084]);
+        block[4092..4096].copy_from_slice(&checksum.to_le_bytes());
+        if variant == 4 {
+            let lost = allocated_inode::get(&volume, 11).unwrap();
+            let logical = lost.info().size / 4096 - 1;
+            let physical = match file_read::resolve(&lost, logical) {
+                file_read::Resolution::Data(b) => b,
+                _ => panic!("lost+found mapping"),
+            };
+            bad[physical as usize * 4096 + 4092] ^= 0x80;
+        }
+        if variant == 5 {
+            let start = group.inode_table as usize * 4096 + 10 * 256;
+            let raw = &mut bad[start..start + 256];
+            raw[4..8].copy_from_slice(&(4097u32 * 4096).to_le_bytes());
+            let checksum = core::inode::calculated_checksum(raw, 11, seed).unwrap();
+            raw[124..126].copy_from_slice(&(checksum as u16).to_le_bytes());
+            raw[130..132].copy_from_slice(&((checksum >> 16) as u16).to_le_bytes());
+        }
+        let volume = allocation::parse(Snapshot::from_bytes(&bad)).unwrap();
+        assert!(
+            directory_index::build(&volume).is_none(),
+            "variant {variant}"
+        );
     }
 }
 

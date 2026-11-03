@@ -32,6 +32,7 @@ The accepted byte structures do not certify the whole volume.
 | Complete directory blocks | Exact contiguous record chain from offset 0 through 4084, including deleted records; unique complete stream, checksum tail, bounded name access, at most 510 records/block. No namespace target/topology certificate yet. |
 | Source-bound directory reads | Directory blocks must be initialized, fit a positive block-aligned i_size, pass the UUID/inode/generation-derived checksum and have complete canonical records. The actual mapped source bytes and canonical record stream are proved equal. Whole-directory/namespace enumeration is separate. |
 | Name index | Full (directory inode, byte-name) equality; 1..255 byte names, no NUL or slash, owned snapshots, 4096 CRC buckets, at most 64 keys/bucket and 65536 total. Limit exhaustion rejects admission; CRC equality is never name equality. These are helper resource bounds, not an enabled mount profile. |
+| Directory index | Complete canonical live-entry enumeration for all allocated directories, positive block-aligned sizes, initialized blocks, source and target inode types/generations, globally unique (directory,name) keys and exact complete lookup. At most 4096 directory blocks and the name-index limits above. Dot/parent rules, link counts and rooted topology are not yet admitted. |
 | Recovery bounds | One initialized journal extent of 1024..32768 blocks; at most 4096 staged payload/revoke entries, with whole-record preflight; no transaction-ID wrap; a fully occupied ring without a proved stopping boundary is rejected. |
 
 Superblock reserved-GDT blocks and high block-count fields must be zero.
@@ -96,7 +97,7 @@ This local policy is not global inode/bitmap/ownership validation.
 
 ## Unfinished mount and write obligations
 
-- Namespace validation after the checked whole-image physical allocation census.
+- Dot/parent rules, link counts and rooted topology after the checked whole-image allocation and directory-entry indexes.
 - Prove allocation/free counter and no-alias preservation for every mutating operation.
 - Inode topology, links, directory lookup/rename and orphan/reclamation rules.
 - Verified read/write/allocation operation preservation and transaction closure.

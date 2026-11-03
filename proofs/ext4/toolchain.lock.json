@@ -83,7 +83,9 @@
     "src/directory_block.rs",
     "src/directory_file.rs",
     "src/name_set.rs",
-    "src/directory_source.rs"
+    "src/directory_source.rs",
+    "src/namespace_model.rs",
+    "src/directory_index.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -476,6 +478,15 @@
     "name_set::new",
     "name_set::len",
     "name_set::contains",
-    "name_set::insert"
+    "name_set::insert",
+    "name_set::find",
+    "directory_index::identity",
+    "directory_index::name",
+    "directory_index::volume",
+    "directory_index::len",
+    "directory_index::block_count",
+    "directory_index::get",
+    "directory_index::lookup",
+    "directory_index::build"
   ]
 }
