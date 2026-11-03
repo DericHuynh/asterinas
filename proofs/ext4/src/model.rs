@@ -93,3 +93,11 @@ pub mod bitmap;
 pub mod block_claims;
 
 pub mod inode_claims;
+
+pub mod group_claims;
+
+pub mod snapshot;
+
+pub mod group_metadata;
+
+pub mod group_index;

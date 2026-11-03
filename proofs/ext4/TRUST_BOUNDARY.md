@@ -182,3 +182,12 @@ components do not enumerate an entire volume or authenticate caller ownership.
 The census is bounded to 1,048,576 blocks; successful allocation still uses the
 stated host allocator foundation. Kernel memory must use fallible CortenMM/OSTD
 reservation before accepting a volume or transaction.
+
+The borrowed `snapshot.rs` source prevents host Rust mutation while its bytes are
+borrowed. `group_metadata.rs` reads each descriptor and bitmap at its declared
+address, and `group_index.rs` retains that same source while checking every group
+and summing free counters. Ghost byte provenance does not use CRC injectivity.
+Sparse-super/GDT reservations match the Linux power rule within the 32-group
+resource profile. These checks still omit complete allocated-inode enumeration
+and namespace validation. The borrowed host image is not an OSTD frame/DMA loan,
+a device snapshot, or permission to validate unrecovered partial checkpoints.

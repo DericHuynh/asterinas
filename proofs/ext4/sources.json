@@ -147,7 +147,7 @@
       "path": "fs/ext4/balloc.c",
       "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/balloc.c",
       "blob_sha": "8040c731b3e45d1c54fda8bb5493604e03c969bd",
-      "review_scope": "block bitmap reserved regions and padding validation"
+      "review_scope": "block bitmap reserved regions and padding; sparse-super power rule and non-META_BG base superblock/GDT reservations"
     },
     {
       "path": "fs/ext4/ialloc.c",

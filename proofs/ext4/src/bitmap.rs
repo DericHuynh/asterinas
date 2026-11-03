@@ -67,7 +67,7 @@ impl Bitmap {
     }
 
     pub fn free_count(&self) -> (r: u32)
-        ensures r == self.view().free && r as nat == free_bits(self.view().raw, self.view().valid as nat),
+        ensures r == self.view().free && r <= 32768 && r as nat == free_bits(self.view().raw, self.view().valid as nat),
     {
         proof { use_type_invariant(self); }
         self.free

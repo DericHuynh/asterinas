@@ -69,7 +69,11 @@
     "src/recovery_closure.rs",
     "src/bitmap.rs",
     "src/block_claims.rs",
-    "src/inode_claims.rs"
+    "src/inode_claims.rs",
+    "src/group_claims.rs",
+    "src/snapshot.rs",
+    "src/group_metadata.rs",
+    "src/group_index.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -283,7 +287,8 @@
     "block_claims::a_matching_bitmap_has_the_exact_census_free_count",
     "block_claims::every_recorded_claim_is_allocated_in_a_matching_bitmap",
     "block_claims::a_recorded_claim_determines_its_exact_physical_slot",
-    "block_claims::every_appended_claim_has_its_exact_physical_slots"
+    "block_claims::every_appended_claim_has_its_exact_physical_slots",
+    "group_claims::bounded_sparse_super_set_matches_the_power_rule"
   ],
   "required_flags": [
     "--no-cheating",
@@ -410,6 +415,23 @@
     "block_claims::matches_bitmap",
     "block_claims::claim",
     "inode_claims::collect",
-    "inode_claims::reserve_journal"
+    "inode_claims::reserve_journal",
+    "group_claims::backup_group",
+    "group_claims::reserve",
+    "snapshot::as_slice",
+    "snapshot::range",
+    "snapshot::from_bytes",
+    "snapshot::partition_bytes",
+    "snapshot::block",
+    "group_metadata::parameters",
+    "group_metadata::descriptor",
+    "group_metadata::info",
+    "group_metadata::bitmaps",
+    "group_metadata::parse",
+    "group_index::source",
+    "group_index::parameters",
+    "group_index::group_count",
+    "group_index::get",
+    "group_index::parse"
   ]
 }

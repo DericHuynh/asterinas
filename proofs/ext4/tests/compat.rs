@@ -201,29 +201,18 @@ fn block_claims_reject_aliases_without_partial_changes_and_match_allocation_bits
 
 #[test]
 fn checked_inode_extents_bind_census_ownership_and_reject_checksummed_aliases() {
-    use core::block_claims::{Census, Claim};
+    use core::block_claims::Census;
     fn base(img: &[u8], directories: bool) -> Census {
         let (sb, group, seed) = metadata(img);
-        let mut census = Census::new(sb.blocks()).unwrap();
-        for (start, length, kind) in [
-            (0, 2, 1),
-            (group.block_bitmap, 1, 3),
-            (group.inode_bitmap, 1, 3),
-            (group.inode_table, group.inode_table_blocks, 3),
-        ] {
-            census = census
-                .claim(Claim {
-                    start,
-                    length,
-                    kind,
-                    inode: 0,
-                    generation: 0,
-                    logical: 0,
-                    initialized: false,
-                })
-                .ok()
-                .unwrap();
-        }
+        let census = core::group_claims::reserve(
+            Census::new(sb.blocks()).unwrap(),
+            &img[4096..4128],
+            0,
+            sb.blocks(),
+            le32(&img[1024..2048], 40),
+            seed,
+        )
+        .unwrap();
         let (mut census, _) = core::inode_claims::reserve_journal(
             census,
             inode_bytes(img, group.inode_table, 8),
@@ -338,6 +327,159 @@ fn checked_inode_extents_bind_census_ownership_and_reject_checksummed_aliases() 
         .is_none(),
         "the journal is not regular file data"
     );
+}
+
+#[test]
+fn sparse_super_and_group_metadata_claims_cover_the_bounded_profile() {
+    use core::block_claims::{Census, Claim};
+    fn descriptor_for(img: &[u8], number: u32, seed: u32) -> Vec<u8> {
+        let mut descriptor = img[4096..4128].to_vec();
+        for offset in [0usize, 4, 8] {
+            let relative = le32(&descriptor, offset);
+            descriptor[offset..offset + 4]
+                .copy_from_slice(&(number * 32768 + relative).to_le_bytes());
+        }
+        checksum(&mut descriptor, number, seed);
+        descriptor
+    }
+    fn checksum(descriptor: &mut [u8], number: u32, seed: u32) {
+        let seed = core::crc::crc32c(seed, &number.to_le_bytes());
+        let prefix = core::crc::crc32c(seed, &descriptor[..30]);
+        let value = (core::crc::crc32c(prefix, &[0u8, 0u8]) & 0xffff) as u16;
+        descriptor[30..32].copy_from_slice(&value.to_le_bytes());
+    }
+    fn power(mut number: u32, base: u32) -> bool {
+        while number > 1 && number % base == 0 {
+            number /= base;
+        }
+        number == 1
+    }
+    let img = image();
+    let (sb, _, seed) = metadata(&img);
+    let ipg = le32(&img[1024..2048], 40);
+    let mut census = Census::new(core::block_claims::MAX_BLOCKS).unwrap();
+    for number in 0..32u32 {
+        let expected = number <= 1 || power(number, 3) || power(number, 5) || power(number, 7);
+        assert_eq!(core::group_claims::backup_group(number), Some(expected));
+        let descriptor = descriptor_for(&img, number, seed);
+        census = core::group_claims::reserve(
+            census,
+            &descriptor,
+            number,
+            core::block_claims::MAX_BLOCKS,
+            ipg,
+            seed,
+        )
+        .unwrap();
+    }
+    for number in 0..32u32 {
+        let backup = core::group_claims::backup_group(number).unwrap();
+        assert_eq!(
+            census.role_of(number * 32768).unwrap().kind,
+            if backup { 1 } else { 0 }
+        );
+        assert_eq!(
+            census.role_of(number * 32768 + 1).unwrap().kind,
+            if backup { 1 } else { 0 }
+        );
+        let descriptor = descriptor_for(&img, number, seed);
+        assert_eq!(census.role_of(le32(&descriptor, 0)).unwrap().kind, 3);
+        assert_eq!(census.role_of(le32(&descriptor, 4)).unwrap().kind, 3);
+        assert_eq!(census.role_of(le32(&descriptor, 8)).unwrap().kind, 3);
+    }
+    assert!(core::group_claims::backup_group(32).is_none());
+    assert!(core::group_claims::backup_group(81).is_none());
+    let file = Claim {
+        start: 3 * 32768,
+        length: 1,
+        kind: 4,
+        inode: 12,
+        generation: 1,
+        logical: 0,
+        initialized: true,
+    };
+    census = census
+        .claim(file)
+        .err()
+        .expect("a backup superblock is not file data");
+    assert_eq!(census.role_of(3 * 32768).unwrap().kind, 1);
+    let mut alias = img[4096..4128].to_vec();
+    alias[..4].copy_from_slice(&0u32.to_le_bytes());
+    checksum(&mut alias, 0, seed);
+    assert!(core::group::parse(&alias, 0, sb.blocks(), ipg, seed).is_some());
+    assert!(
+        core::group_claims::reserve(
+            Census::new(sb.blocks()).unwrap(),
+            &alias,
+            0,
+            sb.blocks(),
+            ipg,
+            seed
+        )
+        .is_none(),
+        "checksummed metadata cannot alias the superblock"
+    );
+}
+
+#[test]
+fn group_index_binds_declared_metadata_and_aggregates_linux_counters() {
+    use core::snapshot::Snapshot;
+    let img = image();
+    let (sb, group, seed) = metadata(&img);
+    let ipg = le32(&img, 1064);
+    let snapshot = Snapshot::from_bytes(&img);
+    assert_eq!(snapshot.partition_bytes(), img.len() as u64);
+    let primary = snapshot.block(0).unwrap();
+    assert_eq!(primary.range(1024, 1024).unwrap(), &img[1024..2048]);
+    assert!(primary.range(usize::MAX, 1).is_none());
+    assert!(primary.range(1, usize::MAX).is_none());
+    assert_eq!(primary.range(4096, 0), Some(&img[4096..4096]));
+    assert!(snapshot.block(u32::MAX).is_none());
+    let meta = core::group_metadata::parse(&snapshot, 0).unwrap();
+    assert_eq!(meta.parameters(), (sb.blocks(), ipg, seed));
+    assert_eq!(meta.descriptor(), &img[4096..4128]);
+    assert_eq!(meta.info().inode_table, group.inode_table);
+    let (allocation, inodes) = meta.bitmaps();
+    for (bitmap, address) in [
+        (allocation, group.block_bitmap),
+        (inodes, group.inode_bitmap),
+    ] {
+        let start = address as usize * 4096;
+        assert_eq!(bitmap.raw_image(), &img[start..start + 4096]);
+    }
+    assert!(core::group_metadata::parse(&snapshot, 1).is_none());
+    assert!(core::group_metadata::parse(&snapshot, 32).is_none());
+    let index = core::group_index::parse(snapshot).unwrap();
+    assert_eq!(index.parameters(), (sb.blocks(), sb.inodes(), ipg, seed));
+    assert_eq!(index.group_count(), 1);
+    assert_eq!(index.get(0).unwrap().descriptor(), meta.descriptor());
+    assert!(index.get(1).is_none());
+    assert_eq!(index.source().partition_bytes(), img.len() as u64);
+    for offset in [1036usize, 1040] {
+        let mut bad = img.clone();
+        let count = le32(&bad, offset);
+        bad[offset..offset + 4].copy_from_slice(&(count + 1).to_le_bytes());
+        let checksum = core::crc::crc32c(0xffffffff, &bad[1024..2044]);
+        bad[2044..2048].copy_from_slice(&checksum.to_le_bytes());
+        let source = Snapshot::from_bytes(&bad);
+        assert!(core::group_metadata::parse(&source, 0).is_some());
+        assert!(
+            core::group_index::parse(source).is_none(),
+            "valid checksums do not justify inconsistent global counters"
+        );
+    }
+    let mut bad = img.clone();
+    let start = group.inode_bitmap as usize * 4096;
+    let spare = (sb.blocks() as usize - 1) * 4096;
+    bad.copy_within(start..start + 4096, spare);
+    bad[start..start + 4096].fill(0);
+    assert!(
+        core::group_metadata::parse(&Snapshot::from_bytes(&bad), 0).is_none(),
+        "only the descriptor's declared address supplies the bitmap"
+    );
+    for length in [0usize, 4095, 4096] {
+        assert!(core::group_index::parse(Snapshot::from_bytes(&img[..length])).is_none());
+    }
 }
 
 #[test]

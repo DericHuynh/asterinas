@@ -9,13 +9,13 @@
   "writable_mount_enabled": false,
   "verification": {
     "status": "core_and_models_checked",
-    "verus_verified_units": 439,
+    "verus_verified_units": 468,
     "verification_errors": 0,
-    "checked_named_proof_functions": 212,
-    "checked_named_executable_functions": 119,
+    "checked_named_proof_functions": 213,
+    "checked_named_executable_functions": 136,
     "runner_validated": true,
     "negative_gate_checks_passed": 6,
-    "host_compatibility_tests_passed": 23,
+    "host_compatibility_tests_passed": 25,
     "evidence": "verification-evidence.json",
     "request_boundary_rejections_passed": 6
   },
@@ -57,7 +57,9 @@
     "initialized_allocation_bitmaps": "checked_Linux_checksum_ranges_padding_exact_free_counts_and_bounds",
     "owned_block_claim_census": "checked_disjoint_ranges_preservation_on_failure_and_of_prior_occupied_slots_bitmap_agreement_and_free_count_refinement",
     "inode_extent_allocation_binding": "checked_exact_source_bytes_physical_slots_owner_generation_logical_offset_initialization_and_sector_accounting",
-    "whole_volume_enumeration_and_namespace": "not_implemented"
+    "whole_volume_enumeration_and_namespace": "not_implemented",
+    "same_source_group_index": "checked_complete_ordered_group_enumeration_exact_descriptor_bitmap_provenance_and_global_free_counter_sums",
+    "group_reserved_regions": "checked_sparse_super_power_rule_and_disjoint_metadata_claims_within_32_group_profile"
   },
   "production_activation_gate": "All applicable obligations in PROOF_OBLIGATIONS.md must be discharged for the admitted profile.",
   "evidence_policy": "Only successful pinned entire-crate checking plus compilation produces a valid build report; it certifies only the declared source/model scope."

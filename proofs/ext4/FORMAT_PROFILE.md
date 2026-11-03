@@ -26,6 +26,7 @@ The accepted byte structures do not certify the whole volume.
 | Allocation bitmap | Initialized 4 KiB block/inode bitmaps, LSB bit numbering, allocated padding, exact free counts; block checksum covers 4096 bytes, inode checksum covers `inodes_per_group / 8`, with the low 16 bits in 32-byte descriptors. |
 | Ownership census | Candidate census for 3..1,048,576 filesystem blocks (up to 4 GiB of 4 KiB blocks), disjoint physical claims, exact bitmap agreement and free counts. This resource bound applies to the new census component; no mount profile is enabled. |
 | Inode allocation binding | Root inode 2 and ordinary inodes >=11 use checked inline extents, inode generation, exact 512-byte `i_blocks` accounting with zero high half, and initialized directory extents. Journal inode 8 is reserved separately from file data. |
+| Group source index | One immutable borrowed source; all groups in order, exact descriptor and bitmap byte provenance, aggregate free counters equal the superblock. Bounded to 32 groups; sparse-super backups reserve one superblock and one GDT block. Not a whole-volume certificate. |
 | Recovery bounds | One initialized journal extent of 1024..32768 blocks; at most 4096 staged payload/revoke entries, with whole-record preflight; no transaction-ID wrap; a fully occupied ring without a proved stopping boundary is rejected. |
 
 Superblock reserved-GDT blocks and high block-count fields must be zero.
@@ -90,7 +91,7 @@ This local policy is not global inode/bitmap/ownership validation.
 
 ## Unfinished mount and write obligations
 
-- Complete group/backup-super/GDT/journal reserved-region construction.
+- Compose checked group/backup-super/GDT/journal reserved-region components into complete volume enumeration.
 - Bitmap/free-counter consistency and global no-alias extent ownership.
 - Inode topology, links, directory lookup/rename and orphan/reclamation rules.
 - Verified read/write/allocation operation preservation and transaction closure.

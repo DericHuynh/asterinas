@@ -7,9 +7,9 @@ implementation of a **Linux-compatible ext4 subset**.
 It is not a complete filesystem and is not registered with the kernel VFS.
 No mount or filesystem write path is enabled.
 
-The pinned Verus run checks **439 obligations with zero errors**, including
-212 named proof functions and 119 named executable functions.
-Twenty-three host interoperability/regression tests pass on Linux-created metadata.
+The pinned Verus run checks **468 obligations with zero errors**, including
+213 named proof functions and 136 named executable functions.
+Twenty-five host interoperability/regression tests pass on Linux-created metadata.
 [Proof status](proof-status.json) and [recorded evidence](verification-evidence.json)
 state the exact scope; tests do not discharge formal obligations.
 
@@ -25,6 +25,8 @@ state the exact scope; tests do not discharge formal obligations.
 | `descriptor.rs`, `revoke.rs` | Complete canonical v3 descriptor/revoke parsing and encoding, UUIDs, tag terminators, target bounds, checksum tails and capacity limits. |
 | `bitmap.rs` | Owned initialized block/inode bitmaps, exact free counts, allocated padding, bounded lookup, and Linux checksum ranges. |
 | `block_claims.rs`, `inode_claims.rs` | Bounded disjoint ownership census; failed claims preserve the original; bitmap/role and free-counter equivalence; inode/journal byte binding, exact physical slots, initialized directory extents and `i_blocks` accounting. These are validation components, not a whole-volume certificate or file-access authority. |
+| `group_claims.rs` | Sparse-super backup locations match the Linux power rule over the bounded profile; reserve superblock/GDT, bitmaps and inode tables with exact disjoint claims. |
+| `snapshot.rs`, `group_metadata.rs`, `group_index.rs` | Exact immutable source ranges bind each group descriptor and bitmap to its declared address; complete ordered group enumeration and equality of aggregate free counters with the primary superblock. No whole-volume inode/namespace authority is produced. |
 | `layout.rs` | Checked mapping of a single initialized journal extent; journal blocks excluded from replay targets. |
 | `replay.rs`, `replay_refinement.rs` | Linux same/later revoke suppression and reallocation, latest-image selection, exact chronological redo equivalence, arbitrary partial replay restart. |
 | `scan.rs`, `scan_trace.rs`, `scan_stop.rs`, `scan_budget.rs` | Bounded ring scan, contiguous exact record coverage, complete descriptor payloads, committed cut, actual source/commit provenance, checked stopping witnesses, unique canonical maximal prefix and recovered input. Clean snapshots and active snapshots satisfying the declared resource profile are admitted. Every writer crash snapshot satisfies that scan profile. |
@@ -130,7 +132,8 @@ generations are followed by all thirteen command cuts of a final writer. Four
 repeated recovery crashes include a journaled primary-superblock update. Allocation
 checks use Linux bitmaps and census all allocated blocks in the controlled fixture;
 checksummed inode aliases, inconsistent sector counts and unwritten directory
-extents are rejected.
+extents are rejected. Sparse-super reservations are exercised across all 32 groups;
+checksummed global counter mismatches and bitmap source substitution are rejected.
 Do not link it into the kernel: its target and toolchain differ from the kernel's.
 A kernel source build and its OSTD adapter refinement remain necessary.
 
