@@ -5,6 +5,8 @@
 
 extern crate verified_ext4 as core;
 
+use core::recovery_request::Completion;
+
 fn fixture() -> (Vec<u8>, core::layout::JournalLayout, u32, u32) {
     let img = std::fs::read(std::env::var("EXT4_TEST_IMAGE").unwrap()).unwrap();
     let (layout, seed, target) = geometry(&img);
@@ -346,13 +348,15 @@ fn linux_recovery_accepts_emitted_records_wrap_revoke_and_incomplete_tail() {
         let mut protocol_image = image.clone();
         let mut cache: Vec<(u32, Vec<u8>)> = Vec::new();
         let mut operations = 0;
-        while let Some(id) = engine.begin() {
-            assert!(engine.begin().is_none(), "only one outstanding request");
-            assert!(
-                !engine.complete(id + 1, true),
-                "future callback cannot complete request"
-            );
-            match engine.command().unwrap() {
+        loop {
+            let pending = match core::recovery_request::dispatch(engine) {
+                Ok(pending) => pending,
+                Err(done) => {
+                    engine = done;
+                    break;
+                }
+            };
+            match pending.pending_command() {
                 core::recovery_io::Command::Write { block, image } => {
                     cache.push((block, image.to_vec()))
                 }
@@ -379,11 +383,7 @@ fn linux_recovery_accepts_emitted_records_wrap_revoke_and_incomplete_tail() {
                 );
                 assert_eq!(&recovered[1144..1160], b"verus-replay-sb0");
             }
-            assert!(engine.complete(id, true));
-            assert!(
-                !engine.complete(id, true),
-                "duplicate callback cannot advance protocol"
-            );
+            engine = pending.finish_pending(Completion::Succeeded);
             operations += 1;
         }
         assert_eq!(operations, plan.len() + 3);
@@ -430,7 +430,7 @@ fn linux_recovery_accepts_emitted_records_wrap_revoke_and_incomplete_tail() {
 }
 
 #[test]
-fn recovery_protocol_aborts_without_cancelling_and_rejects_stale_completions() {
+fn recovery_requests_retain_ownership_through_abort_and_late_completion() {
     let (mut image, layout, seed, target) = fixture();
     let uuid = image[1128..1144].to_vec();
     let base = layout.offset(0, image.len() as u64).unwrap() as usize;
@@ -463,27 +463,20 @@ fn recovery_protocol_aborts_without_cancelling_and_rejects_stale_completions() {
         )
         .unwrap();
         for _ in 0..fail_at {
-            let id = engine.begin().unwrap();
-            assert!(engine.complete(id, true));
+            let pending = core::recovery_request::dispatch(engine).ok().unwrap();
+            engine = pending.finish_pending(Completion::Succeeded);
         }
-        let id = engine.begin().unwrap();
-        assert!(!engine.complete(id - 1, true));
-        engine.abort();
+        let pending = core::recovery_request::dispatch(engine)
+            .ok()
+            .unwrap()
+            .abort_pending();
+        let _command = pending.pending_command(); // Abort retains the exact owned request.
+        let engine = pending.finish_pending(Completion::Succeeded); // Drain a late real callback.
         assert!(engine.failed());
-        assert!(
-            engine.command().is_some(),
-            "abort retains in-flight image/command"
-        );
-        assert!(engine.begin().is_none());
-        assert!(
-            engine.complete(id, true),
-            "late real completion can be drained"
-        );
-        assert!(engine.command().is_none());
         assert!(!engine.finished());
-        assert!(engine.begin().is_none());
+        assert!(core::recovery_request::dispatch(engine).is_err());
     }
-    let mut engine = core::recovery_io::prepare(
+    let engine = core::recovery_io::prepare(
         snapshot,
         &uuid,
         geometry(&image).0,
@@ -491,11 +484,11 @@ fn recovery_protocol_aborts_without_cancelling_and_rejects_stale_completions() {
         image.len() as u64,
     )
     .unwrap();
-    let id = engine.begin().unwrap();
-    assert!(engine.complete(id, false));
+    let pending = core::recovery_request::dispatch(engine).ok().unwrap();
+    let engine = pending.finish_pending(Completion::Failed);
     assert!(engine.failed());
     assert!(!engine.finished());
-    assert!(engine.begin().is_none());
+    assert!(core::recovery_request::dispatch(engine).is_err());
 }
 
 #[test]

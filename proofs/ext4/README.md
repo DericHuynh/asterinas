@@ -7,8 +7,8 @@ implementation of a **Linux-compatible ext4 subset**.
 It is not a complete filesystem and is not registered with the kernel VFS.
 No mount or filesystem write path is enabled.
 
-The pinned Verus run checks **245 obligations with zero errors**, including
-102 named proof functions and 90 named executable functions.
+The pinned Verus run checks **263 obligations with zero errors**, including
+114 named proof functions and 91 named executable functions.
 Fourteen host interoperability/regression tests pass on Linux-created metadata.
 [Proof status](proof-status.json) and [recorded evidence](verification-evidence.json)
 state the exact scope; tests do not discharge formal obligations.
@@ -25,9 +25,10 @@ state the exact scope; tests do not discharge formal obligations.
 | `descriptor.rs`, `revoke.rs` | Complete canonical v3 descriptor/revoke parsing and encoding, UUIDs, tag terminators, target bounds, checksum tails and capacity limits. |
 | `layout.rs` | Checked mapping of a single initialized journal extent; journal blocks excluded from replay targets. |
 | `replay.rs`, `replay_refinement.rs` | Linux same/later revoke suppression and reallocation, latest-image selection, exact chronological redo equivalence, arbitrary partial replay restart. |
-| `scan.rs` | Bounded ring scanner; incomplete tail removal; recovered images/revokes linked to actual source records preceding recognized commits. Full-prefix completeness remains open. |
+| `scan.rs`, `scan_trace.rs`, `scan_stop.rs` | Bounded ring scan, contiguous exact record coverage, complete descriptor payloads, committed cut, actual source/commit provenance, checked stopping witnesses, unique canonical maximal prefix and recovered input. Valid clean snapshots are admitted; general active-journal admission/progress remains open. |
 | `epoch.rs`, `journal_state.rs`, `super_state.rs` | Conservative fresh IDs independent of checksums; exact superblock state images; immutable geometry/UUID/boot framing; recovery flag retained during replay. |
 | `recovery_io.rs`, `recovery_device.rs` | Owned immutable recovery command protocol, stale/duplicate report rejection, sticky abort, two flushes, finite failure-free completion; byte-valued persistence refinement under an explicit 4 KiB atomicity contract. |
+| `recovery_request.rs` | An outstanding request owns its exact recovery machine; completion consumes that object. External callers cannot forge/reuse requests or redirect a completion using a recycled numeric ID. |
 | `frozen.rs` | Owned immutable snapshots, JBD2 escape/restore, snapshot contents independent of the source buffer. |
 | `ring.rs` | Bounded credits and injective circular-log position mapping. |
 | `gate.rs` | Affine writer capability backed by vstd's exclusive resource algebra; no local trusted token generator. |
@@ -46,7 +47,7 @@ that the stable image equals chronological redo plus the retired journal tail.
 Its machine permits persistence before completion and after abort, and proves
 that a persisted clear tail implies durable home data. It is conditional on a
 correct, complete replay plan, a quiescent device and the stated atomicity/flush
-contract. Scanner completeness, transaction creation, whole-volume validation
+contract. Active-journal admission/progress, transaction creation, whole-volume validation
 and the actual driver refinement remain open.
 
 All public executable entry points validate their inputs without `requires`
@@ -79,6 +80,8 @@ It rejects local proof escapes, extra flags, omitted modules and source-inventor
 requires named proof and executable coverage; invalidates stale artifacts on failure;
 and records source, runner, manifest, verifier and emitted-library hashes.
 The negative checks include an actual failing Verus assertion in a disposable copy.
+Three additional negative Rust compilation checks reject request reuse,
+request forgery and external access to the internal completion method.
 [CI](../../.github/workflows/verify_ext4.yml) runs the same checks.
 
 The emitted host library exercises proof erasure and Linux byte compatibility.
@@ -99,7 +102,7 @@ In particular, these are still missing:
 
 - Global ext4 ownership/namespace validation and filesystem operation implementations,
   including allocation, create/unlink/rename, orphan handling, permissions integration and fsync.
-- Scanner completeness and transaction-writer refinement, full physical
+- Active-journal total admission/progress and transaction-writer refinement, full physical
   history recognition, boot/unmount ordering and byte-level tearing/reuse proofs.
 - CortenMM/OSTD frame, sleeping-lock, BIO, DMA and device-persistence adapters,
   with verified callback generations, snapshot loans, quiescence and ingress contracts.

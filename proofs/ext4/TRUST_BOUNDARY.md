@@ -113,8 +113,21 @@ It allows a cached write to persist before its completion and after abort,
 requires home flush before retirement, and proves each allowed event preserves
 the recovery invariant. Its success image equals the byte-valued Linux redo
 result plus the retired tail. This theorem does not establish device atomicity,
-the absence of old-generation requests, scanner completeness or global replay
+the absence of old-generation requests, active-journal admission/progress or global replay
 authorization. A device with only 512-byte addressing has not met this contract.
+
+Every returned scan includes a source-bound contiguous record certificate,
+all descriptor payloads, the last committed cut and a stopping witness.
+The maximal canonical record prefix and committed input are proved unique.
+The clean-journal path has a checked acceptance/rejection equivalence;
+general admission/progress for every supported active image remains open.
+
+The public I/O boundary transfers the entire recovery machine into a private,
+non-Clone `Pending` request. Completion consumes this request and returns its
+own machine, including after abort. Rust privacy and ownership reject forged
+requests, duplicate completion and retargeting through the internal numeric-ID
+method. This does not supply the kernel gate, actual callback binding, request
+drain, DMA lifetime, or a trustworthy device completion report.
 
 `FrozenBlock` owns initialized Rust bytes and exposes no mutable borrow or Clone.
 This proves the host snapshot relationship; it does not prove an OSTD frame loan.

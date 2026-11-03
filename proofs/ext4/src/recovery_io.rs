@@ -87,9 +87,10 @@ impl Recovery {
         } else { CommandView::Flush }
     }
 
-    pub fn begin(&mut self) -> (r: Option<u64>)
+    pub(crate) fn begin(&mut self) -> (r: Option<u64>)
         ensures final(self).plan() == old(self).plan(), final(self).tail() == old(self).tail(),
             final(self).journal_block() == old(self).journal_block(),
+            final(self).primary() == old(self).primary(), final(self).partition_bytes() == old(self).partition_bytes(),
             match r {
                 Some(id) => !old(self).state().pending && !old(self).state().faulted && old(self).state().phase < 4
                     && final(self).state() == started(old(self).state()) && id == final(self).state().request,
@@ -105,7 +106,7 @@ impl Recovery {
         Some(id)
     }
 
-    pub fn command(&self) -> (r: Option<Command<'_>>)
+    pub(crate) fn command(&self) -> (r: Option<Command<'_>>)
         ensures match r {
             Some(c) => self.state().pending && c.view() == self.expected(),
             None => !self.state().pending,
@@ -123,9 +124,10 @@ impl Recovery {
         } else { Some(Command::Flush) }
     }
 
-    pub fn complete(&mut self, id: u64, success: bool) -> (r: bool)
+    pub(crate) fn complete(&mut self, id: u64, success: bool) -> (r: bool)
         ensures final(self).plan() == old(self).plan(), final(self).tail() == old(self).tail(),
             final(self).journal_block() == old(self).journal_block(),
+            final(self).primary() == old(self).primary(), final(self).partition_bytes() == old(self).partition_bytes(),
             r == (old(self).state().pending && id == old(self).state().request),
             final(self).state() == if r { completed(old(self).state(), old(self).plan().selection().len(), success) }
                 else { old(self).state() },
@@ -148,6 +150,7 @@ impl Recovery {
     pub fn abort(&mut self)
         ensures final(self).plan() == old(self).plan(), final(self).tail() == old(self).tail(),
             final(self).journal_block() == old(self).journal_block(),
+            final(self).primary() == old(self).primary(), final(self).partition_bytes() == old(self).partition_bytes(),
             final(self).state() == (State { faulted: true, ..old(self).state() }),
     {
         proof { use_type_invariant(&*self); }

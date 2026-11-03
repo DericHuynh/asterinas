@@ -60,9 +60,33 @@ def main():
         if process.returncode != 0:
             print(process.stderr, file=sys.stderr)
             process.check_returncode()
+    rejected = []
+    misuse = {
+        "reuse_request": ("use verified_ext4::recovery_request::{Pending, Completion};\n"
+                          "pub fn misuse(p: Pending) { let _ = p.finish_pending(Completion::Succeeded); "
+                          "let _ = p.finish_pending(Completion::Succeeded); }\n", "E0382"),
+        "redirect_completion": ("pub fn misuse(e: &mut verified_ext4::recovery_io::Recovery) "
+                                "{ let _ = e.complete(1, true); }\n", "E0624"),
+        "forge_request": ("pub fn misuse(engine: verified_ext4::recovery_io::Recovery) "
+                          "{ let _ = verified_ext4::recovery_request::Pending { engine, id: 1 }; }\n", "E0451"),
+    }
+    for name, (source, code) in misuse.items():
+        path = BUILD / (name + ".rs")
+        path.write_text(source)
+        artifact = BUILD / (name + ".rlib")
+        artifact.unlink(missing_ok=True)
+        process = subprocess.run([rustc, "--edition=2024", "--crate-type=lib", str(path), "--extern",
+                                  "verified_ext4=build/libverified_ext4.rlib", "-L", "dependency=" + libraries,
+                                  "-o", str(artifact)], cwd=ROOT, capture_output=True, text=True)
+        if process.returncode == 0 or code not in process.stderr or artifact.exists():
+            raise RuntimeError("Public request boundary accepted misuse: " + name + "\n" + process.stderr)
+        rejected.append(name)
+        print(name + ": rejected by Rust ownership/privacy checks")
     result = {"schema": 1, "status": "passed", "scope": "host interoperability tests, not formal proof",
               "rustc": version.strip(), "proof_artifact_sha256": report["artifact_sha256"],
               "image_sha256": hashlib.sha256(image.read_bytes()).hexdigest(),
+              "request_boundary_rejections": rejected,
+              "compatibility_runner_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
               "test_source_sha256": {s: hashlib.sha256((ROOT / ("tests/" + s + ".rs")).read_bytes()).hexdigest()
                                      for s in ["compat", "journal"]}}
     (BUILD / "compat-report.json").write_text(json.dumps(result, indent=2) + "\n")

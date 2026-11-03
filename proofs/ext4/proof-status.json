@@ -9,14 +9,15 @@
   "writable_mount_enabled": false,
   "verification": {
     "status": "core_and_models_checked",
-    "verus_verified_units": 245,
+    "verus_verified_units": 263,
     "verification_errors": 0,
-    "checked_named_proof_functions": 102,
-    "checked_named_executable_functions": 90,
+    "checked_named_proof_functions": 114,
+    "checked_named_executable_functions": 91,
     "runner_validated": true,
     "negative_gate_checks_passed": 6,
     "host_compatibility_tests_passed": 14,
-    "evidence": "verification-evidence.json"
+    "evidence": "verification-evidence.json",
+    "request_boundary_rejections_passed": 3
   },
   "claims": {
     "abstract_redo": "checked",
@@ -35,9 +36,12 @@
     "end_to_end_liveness": "not_proved",
     "canonical_jbd2_descriptor_revoke_commit_codecs": "checked",
     "linux_revoke_and_latest_image_selection": "checked_with_exact_chronological_redo_equivalence",
-    "bounded_scanner_source_and_commit_order": "checked_soundness_full_prefix_completeness_open",
+    "bounded_scanner_source_and_commit_order": "checked_with_contiguous_certificate_stopping_witness_and_unique_maximal_canonical_prefix_and_input",
     "recovery_command_protocol_and_crash_cuts": "checked_under_explicit_atomicity_flush_and_quiescent_initial_device_contract",
-    "fresh_epoch_and_superblock_images": "checked_local_byte_relations"
+    "fresh_epoch_and_superblock_images": "checked_local_byte_relations",
+    "clean_journal_admission": "checked",
+    "active_journal_total_admission_and_progress": "not_proved",
+    "owned_pending_request_boundary": "checked_and_negative_Rust_compilation_validated"
   },
   "production_activation_gate": "All applicable obligations in PROOF_OBLIGATIONS.md must be discharged for the admitted profile.",
   "evidence_policy": "Only successful pinned entire-crate checking plus compilation produces a valid build report; it certifies only the declared source/model scope."

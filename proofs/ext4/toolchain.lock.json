@@ -48,7 +48,10 @@
     "src/journal_state.rs",
     "src/super_state.rs",
     "src/recovery_io.rs",
-    "src/recovery_device.rs"
+    "src/recovery_device.rs",
+    "src/scan_trace.rs",
+    "src/recovery_request.rs",
+    "src/scan_stop.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -152,7 +155,19 @@
     "recovery_io::every_failure_free_recovery_has_a_finite_completion",
     "recovery_device::success_image_equals_linux_redo",
     "recovery_device::uncleared_tail_leaves_a_restartable_partial_replay",
-    "recovery_device::all_non_superblock_journal_records_are_preserved"
+    "recovery_device::all_non_superblock_journal_records_are_preserved",
+    "scan_trace::append_record",
+    "scan_trace::prefix_preserves_well_formedness",
+    "scan_trace::empty_records",
+    "scan_trace::every_prefix_block_is_covered",
+    "scan_trace::distinct_record_ranges_do_not_overlap",
+    "scan_trace::every_descriptor_tag_is_represented",
+    "recovery_request::a_pending_request_is_bound_to_its_owned_machine",
+    "scan_stop::a_stopped_prefix_has_no_further_valid_record",
+    "scan_trace::decoding_one_record_is_deterministic",
+    "scan_trace::well_formed_prefixes_agree_at_every_common_position",
+    "scan_stop::maximal_canonical_prefix_is_unique",
+    "scan::recovered_input_is_unique_for_the_frozen_journal"
   ],
   "required_flags": [
     "--no-cheating",
@@ -243,13 +258,14 @@
     "journal_state::encode",
     "super_state::recovery_image",
     "bytes::write_le32",
-    "recovery_io::begin",
-    "recovery_io::command",
-    "recovery_io::complete",
     "recovery_io::abort",
     "recovery_io::finished",
     "recovery_io::failed",
     "recovery_io::prepare",
-    "super_state::valid_replay"
+    "super_state::valid_replay",
+    "recovery_request::pending_command",
+    "recovery_request::abort_pending",
+    "recovery_request::finish_pending",
+    "recovery_request::dispatch"
   ]
 }

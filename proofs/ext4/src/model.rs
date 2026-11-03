@@ -51,3 +51,9 @@ pub mod super_state;
 pub mod recovery_io;
 
 mod recovery_device;
+
+pub mod scan_trace;
+
+pub mod recovery_request;
+
+pub mod scan_stop;

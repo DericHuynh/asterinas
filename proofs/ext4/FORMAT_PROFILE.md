@@ -70,7 +70,9 @@ The executable fresh-epoch selector exceeds the supplied minimum and every
 header-shaped old transaction ID, irrespective of checksums, and refuses the
 terminal range. The checked replay window is shorter than 32768 transactions,
 so its numeric ordering agrees with Linux's signed modular ordering.
-The full transaction-writer, remount and physical-slot reuse refinement is open.
+Returned scans have checked contiguous record coverage, stopping witnesses and
+a unique maximal canonical prefix. General active-journal admission/progress,
+the transaction writer, remount and physical-slot reuse refinement remain open.
 
 Recovery allows filesystem block zero as a target, but excludes the journal.
 Its block-zero after-image must retain RECOVER, pass the ext4 checksum/profile
@@ -84,7 +86,7 @@ This local policy is not global inode/bitmap/ownership validation.
 - Bitmap/free-counter consistency and global no-alias extent ownership.
 - Inode topology, links, directory lookup/rename and orphan/reclamation rules.
 - Verified read/write/allocation operation preservation and transaction closure.
-- Full-prefix scanner completeness, writer/boot ordering and physical log reuse.
+- Active-journal admission/progress, writer/boot ordering and physical log reuse.
 - Recovery validation in a shadow view, replay-target policy, repeatable physical recovery.
 - OSTD frame/DMA/device and VFS/credential refinements.
 

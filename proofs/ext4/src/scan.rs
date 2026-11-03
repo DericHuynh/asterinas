@@ -5,7 +5,7 @@
 //! Byte recognition is not authentication or a device-persistence guarantee.
 
 use vstd::prelude::*;
-use crate::{bytes, crc, descriptor, jbd2, journal_superblock, layout::{JournalLayout, LayoutView}, replay, revoke, ring};
+use crate::{bytes, crc, descriptor, jbd2, journal_superblock, layout::{JournalLayout, LayoutView}, replay, revoke, ring, scan_stop, scan_trace};
 
 verus! {
 
@@ -65,6 +65,9 @@ pub struct Scan {
     commit_positions: Ghost<Map<u32, u32>>,
     origins: Ghost<Seq<Origin>>,
     revoke_origins: Ghost<Seq<RevokeOrigin>>,
+    records: Ghost<Seq<scan_trace::Record>>,
+    scanned: Ghost<Seq<scan_trace::Record>>,
+    termination: Ghost<scan_stop::Stop>,
 }
 
 impl Scan {
@@ -76,6 +79,26 @@ impl Scan {
     pub closed spec fn plan(&self) -> &replay::ReplayPlan { &self.plan }
     pub closed spec fn origins(&self) -> Seq<Origin> { self.origins@ }
     pub closed spec fn revoke_origins(&self) -> Seq<RevokeOrigin> { self.revoke_origins@ }
+    pub closed spec fn records(&self) -> Seq<scan_trace::Record> { self.records@ }
+    pub closed spec fn scanned(&self) -> Seq<scan_trace::Record> { self.scanned@ }
+    pub closed spec fn termination(&self) -> scan_stop::Stop { self.termination@ }
+
+    pub open spec fn maximal(&self, source: scan_trace::Source) -> bool {
+        &&& scan_trace::well_formed(self.scanned(), source)
+        &&& self.records().len() <= self.scanned().len()
+        &&& self.scanned().take(self.records().len() as int) == self.records()
+        &&& (forall|i: int| self.records().len() <= i < self.scanned().len() ==>
+            (#[trigger] self.scanned()[i]).kind != 2 && self.scanned()[i].sequence == self.next())
+        &&& scan_trace::end(self.scanned()) <= self.consumed()
+        &&& scan_trace::next_sequence(self.scanned(), source.first) == self.next() as nat
+        &&& scan_stop::at_boundary(self.termination(), self.scanned(), source, self.next())
+    }
+
+    pub open spec fn certificate(&self, source: scan_trace::Source) -> bool {
+        &&& scan_trace::committed_prefix(self.records(), source, self.plan().log(), self.plan().revocations())
+        &&& scan_trace::end(self.records()) <= self.consumed()
+        &&& scan_trace::next_sequence(self.records(), source.first) == self.next() as nat
+    }
 
     pub open spec fn provenance(&self, journal: Seq<u8>, blocks: u32, start: u32, uuid: Seq<u8>, seed: u32) -> bool {
         &&& self.origins().len() == self.plan().log().len()
@@ -107,7 +130,7 @@ impl Scan {
     pub fn committed_transactions(&self) -> (r: u32) ensures r == self.committed() { self.committed }
 }
 
-#[verifier::rlimit(50)]
+#[verifier::rlimit(100)]
 pub fn recover(journal: &[u8], uuid: &[u8], layout: JournalLayout) -> (r: Option<Scan>)
     ensures match r {
         Some(s) => s.plan().refines() && s.plan().layout().view() == layout.view()
@@ -118,8 +141,16 @@ pub fn recover(journal: &[u8], uuid: &[u8], layout: JournalLayout) -> (r: Option
             && s.recognized(journal@, layout.view().journal_blocks, bytes::be32(journal@, 28) as u32,
                 crc::fold(0xffffffff, uuid@))
             && s.provenance(journal@, layout.view().journal_blocks, bytes::be32(journal@, 28) as u32,
-                uuid@, crc::fold(0xffffffff, uuid@)),
-        None => true,
+                uuid@, crc::fold(0xffffffff, uuid@))
+            && s.certificate(scan_trace::Source { journal: journal@, blocks: layout.view().journal_blocks,
+                start: bytes::be32(journal@, 28) as u32, first: s.first(), uuid: uuid@,
+                seed: crc::fold(0xffffffff, uuid@), layout: layout.view() })
+            && s.maximal(scan_trace::Source { journal: journal@, blocks: layout.view().journal_blocks,
+                start: bytes::be32(journal@, 28) as u32, first: s.first(), uuid: uuid@,
+                seed: crc::fold(0xffffffff, uuid@), layout: layout.view() }),
+        None => !layout.wf() || journal.len() as nat != layout.view().journal_blocks as nat * 4096
+            || !journal_superblock::accepted(journal@.subrange(0, 1024), uuid@, layout.view().journal_blocks)
+            || bytes::be32(journal@, 28) != 0,
     },
 {
     if !layout.valid() { return None; }
@@ -131,11 +162,28 @@ pub fn recover(journal: &[u8], uuid: &[u8], layout: JournalLayout) -> (r: Option
     let first = info.sequence;
     let seed = info.uuid_seed;
     if info.start == 0 {
+        let ghost initial = scan_trace::Source { journal: journal@, blocks,
+            start: 0, first, uuid: uuid@, seed, layout: layout.view() };
+        proof {
+            scan_trace::empty_records(initial);
+            assert(scan_stop::at_boundary(scan_stop::Stop::Clean, Seq::empty(), initial, first)) by { reveal(scan_stop::at_boundary); }
+        }
         let writes = Vec::new();
         let revocations = Vec::new();
         let plan = replay::build(layout, writes, revocations, 1, 1).unwrap();
-        return Some(Scan { plan, first, next: first, committed: 0, consumed: 0,
-            commit_positions: Ghost(Map::empty()), origins: Ghost(Seq::empty()), revoke_origins: Ghost(Seq::empty()) });
+        assert(plan.log() =~= Seq::<replay::WriteView>::empty());
+        assert(plan.revocations() =~= Seq::<replay::Revocation>::empty());
+        let result = Scan { plan, first, next: first, committed: 0, consumed: 0,
+            commit_positions: Ghost(Map::empty()), origins: Ghost(Seq::empty()), revoke_origins: Ghost(Seq::empty()),
+            records: Ghost(Seq::empty()), scanned: Ghost(Seq::empty()), termination: Ghost(scan_stop::Stop::Clean) };
+        assert(scan_trace::well_formed(result.scanned(), initial));
+        assert(result.records().len() <= result.scanned().len());
+        assert(result.scanned().take(result.records().len() as int) =~= result.records());
+        assert(scan_trace::end(result.scanned()) <= result.consumed());
+        assert(scan_trace::next_sequence(result.scanned(), initial.first) == result.next() as nat);
+        assert(scan_stop::at_boundary(result.termination(), result.scanned(), initial, result.next()));
+        assert(result.maximal(initial));
+        return Some(result);
     }
     if !info.csum_v3 || first == 4294967295 { return None; }
     let start = info.start;
@@ -150,13 +198,35 @@ pub fn recover(journal: &[u8], uuid: &[u8], layout: JournalLayout) -> (r: Option
     let ghost mut positions: Map<u32, u32> = Map::empty();
     let ghost mut origins: Seq<Origin> = Seq::empty();
     let ghost mut revoke_origins: Seq<RevokeOrigin> = Seq::empty();
+    let ghost source = scan_trace::Source { journal: journal@, blocks, start, first, uuid: uuid@, seed, layout: layout.view() };
+    let ghost mut records: Seq<scan_trace::Record> = Seq::empty();
+    let ghost mut committed_records: Seq<scan_trace::Record> = Seq::empty();
+    let ghost mut termination = scan_stop::Stop::Clean;
+    proof { scan_trace::empty_records(source); }
     while !stop && visited < blocks - 1
         invariant layout.wf(), layout.view().journal_blocks == blocks, 1024 <= blocks <= 32768,
+            source == (scan_trace::Source { journal: journal@, blocks, start, first, uuid: uuid@, seed, layout: layout.view() }),
             journal.len() as nat == blocks as nat * 4096, 1 <= start < blocks,
+            bytes::be32(journal@, 28) == start as nat,
             0 < first <= sequence, sequence as nat == first as nat + committed as nat,
             committed <= visited <= blocks - 1, writes.len() + revocations.len() <= 4096,
             committed_writes <= writes.len(), committed_revocations <= revocations.len(),
             origins.len() == writes.len(), revoke_origins.len() == revocations.len(),
+            scan_trace::well_formed(records, source), scan_trace::well_formed(committed_records, source),
+            committed_records.len() <= records.len(), records.take(committed_records.len() as int) == committed_records,
+            forall|i: int| committed_records.len() <= i < records.len() ==>
+                (#[trigger] records[i]).kind != 2 && records[i].sequence == sequence,
+            scan_trace::end(records) <= visited,
+            stop ==> scan_stop::at_boundary(termination, records, source, sequence),
+            committed_records.len() == 0 || committed_records.last().kind == 2,
+            scan_trace::end(committed_records) <= visited,
+            scan_trace::next_sequence(committed_records, first) == sequence as nat,
+            scan_trace::writes(committed_records) == replay::images(writes@).take(committed_writes as int),
+            scan_trace::revocations(committed_records) == revocations@.take(committed_revocations as int),
+            !stop ==> scan_trace::end(records) == visited,
+            scan_trace::next_sequence(records, first) == sequence as nat,
+            !stop ==> scan_trace::writes(records) == replay::images(writes@),
+            !stop ==> scan_trace::revocations(records) == revocations@,
             forall|i: int| 0 <= i < origins.len() ==>
                 origin_ok(journal@, blocks, start, uuid@, seed, layout.view(), writes@[i].view(), #[trigger] origins[i]) && origins[i].payload < visited,
             forall|i: int| 0 <= i < revoke_origins.len() ==>
@@ -181,22 +251,45 @@ pub fn recover(journal: &[u8], uuid: &[u8], layout: JournalLayout) -> (r: Option
         decreases blocks - 1 - visited,
     {
         let ordinal = visited;
+        let ghost before_writes = writes@;
+        let ghost before_revocations = revocations@;
         let raw = read_block(journal, blocks, start, visited);
         visited += 1;
         let header = match jbd2::parse_header(raw, sequence) {
-            Some(header) => header, None => { stop = true; continue; }
+            Some(header) => header, None => {
+                proof {
+                    termination = scan_stop::Stop::Header { ordinal };
+                    assert(scan_stop::at_boundary(termination, records, source, sequence)) by { reveal(scan_stop::at_boundary); }
+                }
+                stop = true; continue;
+            }
         };
         if header.kind == 1 {
             let desc = match descriptor::parse(raw, uuid, sequence, layout.filesystem_blocks(), seed) {
-                Some(desc) => desc, None => { stop = true; continue; }
+                Some(desc) => desc, None => {
+                    proof {
+                        termination = scan_stop::Stop::Descriptor { ordinal };
+                        assert(scan_stop::at_boundary(termination, records, source, sequence)) by { reveal(scan_stop::at_boundary); }
+                    }
+                    stop = true; continue;
+                }
             };
             let tags = desc.tags();
             if tags.len() as u32 > blocks - 1 - visited { return None; }
             let mut i = 0usize;
             while i < tags.len() && !stop
                 invariant i <= tags.len() <= 250,
+                    scan_trace::end(records) == ordinal,
+                    source == (scan_trace::Source { journal: journal@, blocks, start, first, uuid: uuid@, seed, layout: layout.view() }),
+                    stop ==> scan_stop::at_boundary(termination, records, source, sequence),
+                    before_writes.len() <= writes.len(), writes@.take(before_writes.len() as int) == before_writes,
+                    !stop ==> writes.len() == before_writes.len() + i,
+                    forall|j: int| before_writes.len() <= j < writes.len() ==>
+                        (#[trigger] origins[j]).descriptor == ordinal && origins[j].index == j - before_writes.len()
+                        && origins[j].count == tags.len() && writes@[j].view().sequence == sequence,
                     layout.wf(), blocks == layout.view().journal_blocks, 1024 <= blocks <= 32768,
                     journal.len() as nat == blocks as nat * 4096, 1 <= start < blocks,
+                    bytes::be32(journal@, 28) == start as nat,
                     visited <= blocks - 1, tags.len() - i <= blocks - 1 - visited,
                     visited as nat == ordinal as nat + 1 + i as nat, committed < visited,
                     0 < first <= sequence < 4294967295,
@@ -244,19 +337,49 @@ pub fn recover(journal: &[u8], uuid: &[u8], layout: JournalLayout) -> (r: Option
                             }
                         }
                     },
-                    None => { stop = true; },
+                    None => {
+                        proof {
+                            termination = scan_stop::Stop::Payload { ordinal, count: tags.len() as nat, index: i as nat, tag: tags@[i as int] };
+                            assert(scan_stop::at_boundary(termination, records, source, sequence)) by { reveal(scan_stop::at_boundary); }
+                        }
+                        stop = true;
+                    },
                 }
                 i += 1;
             }
+            if !stop {
+                proof {
+                    let record = scan_trace::Record { start: ordinal, end: visited, sequence, kind: 1,
+                        writes: replay::images(writes@).subrange(before_writes.len() as int, writes.len() as int),
+                        origins: origins.subrange(before_writes.len() as int, writes.len() as int),
+                        revocations: Seq::empty(), revoke_origins: Seq::empty() };
+                    assert(scan_trace::record_ok(record, source)) by { reveal(scan_trace::record_ok); }
+                    scan_trace::append_record(records, record, source);
+                    records = records.push(record);
+                }
+            }
         } else if header.kind == 5 {
             if !info.revoke { return None; }
-            let records = match revoke::parse(raw, sequence, layout.filesystem_blocks(), seed) {
-                Some(records) => records, None => { stop = true; continue; }
+            let revoked = match revoke::parse(raw, sequence, layout.filesystem_blocks(), seed) {
+                Some(records) => records, None => {
+                    proof {
+                        termination = scan_stop::Stop::Revoke { ordinal };
+                        assert(scan_stop::at_boundary(termination, records, source, sequence)) by { reveal(scan_stop::at_boundary); }
+                    }
+                    stop = true; continue;
+                }
             };
-            let targets = records.blocks();
+            let targets = revoked.blocks();
             let mut i = 0usize;
             while i < targets.len()
                 invariant i <= targets.len() <= 1019, writes.len() + revocations.len() <= 4096,
+                    0 < start, bytes::be32(journal@, 28) == start as nat,
+                    before_revocations.len() <= revocations.len(),
+                    revocations@.take(before_revocations.len() as int) == before_revocations,
+                    revocations.len() == before_revocations.len() + i,
+                    forall|j: int| before_revocations.len() <= j < revocations.len() ==>
+                        (#[trigger] revoke_origins[j]).record == ordinal
+                        && revoke_origins[j].index == j - before_revocations.len() && revocations@[j].sequence == sequence,
                     committed_revocations <= revocations.len(),
                     revoke_origins.len() == revocations.len(),
                     forall|j: int| 0 <= j < revoke_origins.len() ==>
@@ -266,6 +389,7 @@ pub fn recover(journal: &[u8], uuid: &[u8], layout: JournalLayout) -> (r: Option
                     forall|j: int| committed_revocations <= j < revocations.len() ==> (#[trigger] revocations@[j]).sequence == sequence,
                     raw@ == block_at(journal@, blocks, start, ordinal), ordinal < blocks - 1, ordinal < visited,
                     revoke::header(raw@, sequence, seed), revoke::count(raw@) == targets.len(),
+                    revoke::targets_bounded(raw@, revoke::count(raw@), layout.view().fs_blocks),
                     forall|j: int| 0 <= j < targets.len() ==> (#[trigger] targets@[j]) as nat == bytes::be32(raw@, 16 + 4 * j),
                     forall|j: int| 0 <= j < committed_revocations ==> (#[trigger] revocations@[j]).sequence < sequence,
                     layout.wf(), 0 < first <= sequence,
@@ -295,9 +419,30 @@ pub fn recover(journal: &[u8], uuid: &[u8], layout: JournalLayout) -> (r: Option
                 }
                 i += 1;
             }
-        } else if header.kind == 2 {
-            if !jbd2::valid_commit(raw, sequence, seed) { stop = true; continue; }
             proof {
+                let record = scan_trace::Record { start: ordinal, end: visited, sequence, kind: 5,
+                    writes: Seq::empty(), origins: Seq::empty(),
+                    revocations: revocations@.subrange(before_revocations.len() as int, revocations.len() as int),
+                    revoke_origins: revoke_origins.subrange(before_revocations.len() as int, revocations.len() as int) };
+                assert(scan_trace::record_ok(record, source)) by { reveal(scan_trace::record_ok); }
+                scan_trace::append_record(records, record, source);
+                records = records.push(record);
+            }
+        } else if header.kind == 2 {
+            if !jbd2::valid_commit(raw, sequence, seed) {
+                proof {
+                    termination = scan_stop::Stop::Commit { ordinal };
+                    assert(scan_stop::at_boundary(termination, records, source, sequence)) by { reveal(scan_stop::at_boundary); }
+                }
+                stop = true; continue;
+            }
+            proof {
+                let record = scan_trace::Record { start: ordinal, end: visited, sequence, kind: 2,
+                    writes: Seq::empty(), origins: Seq::empty(), revocations: Seq::empty(), revoke_origins: Seq::empty() };
+                assert(scan_trace::record_ok(record, source)) by { reveal(scan_trace::record_ok); }
+                scan_trace::append_record(records, record, source);
+                records = records.push(record);
+                committed_records = records;
                 let previous_positions = positions;
                 positions = positions.insert(sequence, ordinal);
                 assert forall|id: u32| #[trigger] positions.dom().contains(id) <==> first <= id <= sequence by { }
@@ -332,12 +477,19 @@ pub fn recover(journal: &[u8], uuid: &[u8], layout: JournalLayout) -> (r: Option
             committed_revocations = revocations.len();
             committed += 1;
             sequence += 1;
-            if sequence == 4294967295 { stop = true; }
-        } else { stop = true; }
+            if sequence == 4294967295 {
+                proof {
+                    termination = scan_stop::Stop::Exhausted;
+                    assert(scan_stop::at_boundary(termination, records, source, sequence)) by { reveal(scan_stop::at_boundary); }
+                }
+                stop = true;
+            }
+        } else { assert(false); return None; }
     }
     if !stop { return None; } // A fully occupied ring has no proved stopping boundary.
     while writes.len() > committed_writes
         invariant committed_writes <= writes.len(),
+            scan_trace::writes(committed_records) == replay::images(writes@).take(committed_writes as int),
             origins.len() == writes.len(),
             forall|i: int| 0 <= i < origins.len() ==>
                 origin_ok(journal@, blocks, start, uuid@, seed, layout.view(), writes@[i].view(), #[trigger] origins[i]),
@@ -365,6 +517,7 @@ pub fn recover(journal: &[u8], uuid: &[u8], layout: JournalLayout) -> (r: Option
     }
     while revocations.len() > committed_revocations
         invariant committed_revocations <= revocations.len(),
+            scan_trace::revocations(committed_records) == revocations@.take(committed_revocations as int),
             revoke_origins.len() == revocations.len(),
             forall|i: int| 0 <= i < revoke_origins.len() ==>
                 revoke_origin_ok(journal@, blocks, start, seed, revocations@[i], #[trigger] revoke_origins[i]),
@@ -390,12 +543,19 @@ pub fn recover(journal: &[u8], uuid: &[u8], layout: JournalLayout) -> (r: Option
         }
     }
     let last = if committed == 0 { first } else { sequence - 1 };
+    proof {
+        assert(replay::images(writes@).take(committed_writes as int) =~= replay::images(writes@));
+        assert(revocations@.take(committed_revocations as int) =~= revocations@);
+        assert(scan_trace::writes(committed_records) == replay::images(writes@));
+        assert(scan_trace::revocations(committed_records) == revocations@);
+    }
     let ghost old_layout = layout;
     let plan = match replay::build(layout, writes, revocations, first, last) {
         Some(plan) => plan, None => { return None; }
     };
     proof {
         assert(plan.layout().view() == old_layout.view());
+        assert(scan_trace::committed_prefix(committed_records, source, plan.log(), plan.revocations()));
         assert(origins.len() == plan.log().len());
         assert(revoke_origins.len() == plan.revocations().len());
         assert forall|i: int| 0 <= i < origins.len() implies #[trigger]
@@ -407,8 +567,32 @@ pub fn recover(journal: &[u8], uuid: &[u8], layout: JournalLayout) -> (r: Option
             assert(revoke_origin_ok(journal@, blocks, start, seed, plan.revocations()[i], revoke_origins[i]));
         }
     }
-    Some(Scan { plan, first, next: sequence, committed, consumed: visited, commit_positions: Ghost(positions),
-        origins: Ghost(origins), revoke_origins: Ghost(revoke_origins) })
+    let result = Scan { plan, first, next: sequence, committed, consumed: visited, commit_positions: Ghost(positions),
+        origins: Ghost(origins), revoke_origins: Ghost(revoke_origins), records: Ghost(committed_records),
+        scanned: Ghost(records), termination: Ghost(termination) };
+    assert(result.certificate(source));
+    assert(result.maximal(source));
+    Some(result)
+}
+
+pub proof fn recovered_input_is_unique_for_the_frozen_journal(a: &Scan, b: &Scan, source: scan_trace::Source)
+    requires source.start != 0, a.certificate(source), a.maximal(source), b.certificate(source), b.maximal(source),
+    ensures a.plan().log() == b.plan().log(), a.plan().revocations() == b.plan().revocations(), a.next() == b.next(),
+{
+    scan_stop::maximal_canonical_prefix_is_unique(a.scanned(), b.scanned(), a.termination(), b.termination(),
+        source, a.next(), b.next());
+    if a.records().len() < b.records().len() {
+        let i = b.records().len() as int - 1;
+        assert(b.records()[i].kind == 2);
+        assert(b.scanned()[i] == b.records()[i]);
+        assert(a.scanned()[i].kind != 2);
+    } else if b.records().len() < a.records().len() {
+        let i = a.records().len() as int - 1;
+        assert(a.records()[i].kind == 2);
+        assert(a.scanned()[i] == a.records()[i]);
+        assert(b.scanned()[i].kind != 2);
+    }
+    assert(a.records() == b.records());
 }
 
 }
