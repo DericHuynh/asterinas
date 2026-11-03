@@ -128,19 +128,22 @@ impl IdBitmap {
             curr_range
         };
 
+        self.mark_allocated(&allocated_range);
+        Some(allocated_range)
+    }
+
+    fn mark_allocated(&mut self, range: &Range<u16>) {
         // Set every bit to 1 within the allocated range.
         let bit_slice_mut = self.bit_slice_mut();
-        for id in allocated_range.clone() {
+        for id in range.clone() {
             bit_slice_mut.set(id as usize, true);
         }
 
         // In case we need to update `first_available_id`.
         let bit_slice = self.bit_slice();
         if bit_slice[self.first_available_id as usize] {
-            self.update_first_available_id(allocated_range.end);
+            self.update_first_available_id(range.end);
         }
-
-        Some(allocated_range)
     }
 
     /// Releases the allocated `id`.
