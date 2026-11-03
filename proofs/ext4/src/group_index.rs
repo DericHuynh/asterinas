@@ -49,9 +49,11 @@ proof fn append_checked_group(groups: Seq<GroupView>, source: Seq<u8>, blocks: u
 
 #[verifier::opaque]
 pub open spec fn valid(v: IndexView) -> bool {
-    &&& v.source.len() <= 18446744073709551615
+    &&& 4096 <= v.source.len() <= 18446744073709551615
     &&& superblock::accepted(v.source.subrange(1024, 2048), v.source.len() as u64)
     &&& 2 < v.blocks <= block_claims::MAX_BLOCKS && 0 < v.groups.len() <= 32
+    &&& v.blocks as nat * 4096 <= v.source.len()
+    &&& 0 < v.ipg <= 32768 && v.ipg % 16 == 0 && v.inodes >= 11
     &&& v.groups.len() == (v.blocks as nat + 32767) / 32768
     &&& v.blocks as nat == bytes::le32(v.source, 1028) && v.inodes as nat == bytes::le32(v.source, 1024)
     &&& v.ipg as nat == bytes::le32(v.source, 1064) && v.inodes as nat == v.groups.len() * v.ipg as nat
@@ -117,6 +119,8 @@ pub fn parse<'a>(source: Snapshot<'a>) -> (r: Option<GroupIndex<'a>>)
     if blocks > block_claims::MAX_BLOCKS { return None; }
     let ipg = bytes::read_le32(boot, 40).unwrap();
     let seed = crc::crc32c(0xffffffff, primary.range(1128, 16).unwrap());
+    assert(blocks as nat * 4096 <= source.view().len() && 0 < ipg <= 32768 && ipg % 16 == 0 && inodes >= 11)
+        by { reveal(superblock::accepted); }
     let mut groups: Vec<GroupMetadata> = Vec::new();
     let mut number = 0u32;
     let mut block_free = 0u64;
@@ -127,6 +131,7 @@ pub fn parse<'a>(source: Snapshot<'a>) -> (r: Option<GroupIndex<'a>>)
     while number < count
         invariant groups.len() == number, number <= count <= 32,
             source.view().len() >= 4096,
+            blocks as nat * 4096 <= source.view().len(), 0 < ipg <= 32768, ipg % 16 == 0, inodes >= 11,
             blocks as nat == bytes::le32(source.view(), 1028), ipg as nat == bytes::le32(source.view(), 1064),
             seed == crc::fold(0xffffffff, source.view().subrange(1128, 1144)),
             block_free as nat == free_blocks(views(groups@)), inode_free as nat == free_inodes(views(groups@)),

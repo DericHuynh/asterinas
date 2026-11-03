@@ -7,9 +7,9 @@ implementation of a **Linux-compatible ext4 subset**.
 It is not a complete filesystem and is not registered with the kernel VFS.
 No mount or filesystem write path is enabled.
 
-The pinned Verus run checks **468 obligations with zero errors**, including
-213 named proof functions and 136 named executable functions.
-Twenty-five host interoperability/regression tests pass on Linux-created metadata.
+The pinned Verus run checks **493 obligations with zero errors**, including
+217 named proof functions and 143 named executable functions.
+Twenty-six host interoperability/regression tests pass on Linux-created metadata.
 [Proof status](proof-status.json) and [recorded evidence](verification-evidence.json)
 state the exact scope; tests do not discharge formal obligations.
 
@@ -27,6 +27,7 @@ state the exact scope; tests do not discharge formal obligations.
 | `block_claims.rs`, `inode_claims.rs` | Bounded disjoint ownership census; failed claims preserve the original; bitmap/role and free-counter equivalence; inode/journal byte binding, exact physical slots, initialized directory extents and `i_blocks` accounting. These are validation components, not a whole-volume certificate or file-access authority. |
 | `group_claims.rs` | Sparse-super backup locations match the Linux power rule over the bounded profile; reserve superblock/GDT, bitmaps and inode tables with exact disjoint claims. |
 | `snapshot.rs`, `group_metadata.rs`, `group_index.rs` | Exact immutable source ranges bind each group descriptor and bitmap to its declared address; complete ordered group enumeration and equality of aggregate free counters with the primary superblock. No whole-volume inode/namespace authority is produced. |
+| `inode_table.rs`, `inode_group.rs`, `allocation_counts.rs`, `allocation.rs` | Complete source-bound allocated-inode traversal, mandatory reserved inode markers, root type, empty unused reserved inodes, inode-table high-water bounds and directory counts; exact composition of metadata/journal/inode claims, all block bitmaps and global free-block accounting. This allocation certificate omits namespace, operation, recovery/mount and device authority. |
 | `layout.rs` | Checked mapping of a single initialized journal extent; journal blocks excluded from replay targets. |
 | `replay.rs`, `replay_refinement.rs` | Linux same/later revoke suppression and reallocation, latest-image selection, exact chronological redo equivalence, arbitrary partial replay restart. |
 | `scan.rs`, `scan_trace.rs`, `scan_stop.rs`, `scan_budget.rs` | Bounded ring scan, contiguous exact record coverage, complete descriptor payloads, committed cut, actual source/commit provenance, checked stopping witnesses, unique canonical maximal prefix and recovered input. Clean snapshots and active snapshots satisfying the declared resource profile are admitted. Every writer crash snapshot satisfies that scan profile. |
@@ -79,14 +80,16 @@ overwrites and a final unacknowledged transaction if its commit persisted.
 Every modeled recovery crash snapshot remains admitted for another attempt;
 uncleared journals retain the same committed input. Admission survives arbitrary
 finite sequences of recovery crashes. These results require the stated atomicity,
-flush and quiescent-start contracts. Whole-volume validation, filesystem
-operations, unmount and actual gate/device refinement remain open.
+flush and quiescent-start contracts. Whole-image allocation validation is checked for the bounded initialized-group
+profile. Namespace validation, filesystem operations, unmount and actual
+gate/device refinement remain open.
 
 All public executable entry points validate their inputs without `requires`
 clauses that an unverified caller could bypass.
-A successful structural parse or partial ownership census is not an authorization
-or mount certificate. Whole-volume enumeration must bind every reserved region,
-allocated inode and bitmap to the same frozen image before namespace validation.
+A successful structural parse or allocation certificate is not an authorization
+or mount certificate. The allocation builder binds every reserved region,
+allocated inode and bitmap to the same borrowed frozen image; namespace and
+recovery admission must still be checked before mounting.
 CRC checks do not authenticate a disk or prove freshness.
 
 ## Reproduce
@@ -134,6 +137,9 @@ checks use Linux bitmaps and census all allocated blocks in the controlled fixtu
 checksummed inode aliases, inconsistent sector counts and unwritten directory
 extents are rejected. Sparse-super reservations are exercised across all 32 groups;
 checksummed global counter mismatches and bitmap source substitution are rejected.
+Whole-image checks additionally reject missing root/journal bitmap markers, hidden
+reserved-inode storage, inconsistent directory/high-water counts, allocated blocks
+without a source claim, claimed blocks marked free, and journal/file aliases.
 Do not link it into the kernel: its target and toolchain differ from the kernel's.
 A kernel source build and its OSTD adapter refinement remain necessary.
 
@@ -145,7 +151,7 @@ from the missing implementation/refinement work.
 The full design is **not implemented or proved**.
 In particular, these are still missing:
 
-- Global ext4 ownership/namespace validation and filesystem operation implementations,
+- Namespace validation and filesystem operation implementations,
   including allocation, create/unlink/rename, orphan handling, permissions integration and fsync.
 - Unmount ordering and actual device atomicity, quiescence and reuse refinement.
   The checked physical history is serialized; a runtime gate must enforce it.

@@ -455,6 +455,15 @@ fn group_index_binds_declared_metadata_and_aggregates_linux_counters() {
     assert_eq!(index.get(0).unwrap().descriptor(), meta.descriptor());
     assert!(index.get(1).is_none());
     assert_eq!(index.source().partition_bytes(), img.len() as u64);
+    for number in [1u32, 2, 8, 11, 12, sb.inodes()] {
+        assert_eq!(
+            core::inode_table::read(&index, number).unwrap(),
+            inode_bytes(&img, group.inode_table, number)
+        );
+    }
+    assert!(core::inode_table::read(&index, 0).is_none());
+    assert!(core::inode_table::read(&index, sb.inodes() + 1).is_none());
+    assert!(core::inode_table::read(&index, u32::MAX).is_none());
     for offset in [1036usize, 1040] {
         let mut bad = img.clone();
         let count = le32(&bad, offset);
@@ -480,6 +489,126 @@ fn group_index_binds_declared_metadata_and_aggregates_linux_counters() {
     for length in [0usize, 4095, 4096] {
         assert!(core::group_index::parse(Snapshot::from_bytes(&img[..length])).is_none());
     }
+}
+
+#[test]
+fn whole_allocation_rejects_checksummed_omissions_aliases_and_reserved_inode_storage() {
+    use core::{allocation, snapshot::Snapshot};
+    fn repair_counts_and_checksums(img: &mut [u8]) {
+        let blocks = le32(img, 1028);
+        let ipg = le32(img, 1064);
+        let seed = core::crc::crc32c(0xffffffff, &img[1128..1144]);
+        for (address_offset, valid, meaningful, free_offset, checksum_offset, total_offset) in [
+            (
+                4096usize, blocks, 4096usize, 4108usize, 4120usize, 1036usize,
+            ),
+            (4100, ipg, ipg as usize / 8, 4110, 4122, 1040),
+        ] {
+            let address = le32(img, address_offset) as usize * 4096;
+            let raw = &img[address..address + 4096];
+            let free = (0..valid)
+                .filter(|&n| raw[n as usize / 8] & (1 << (n % 8)) == 0)
+                .count() as u32;
+            let checksum = (core::crc::crc32c(seed, &raw[..meaningful]) & 0xffff) as u16;
+            img[free_offset..free_offset + 2].copy_from_slice(&(free as u16).to_le_bytes());
+            img[checksum_offset..checksum_offset + 2].copy_from_slice(&checksum.to_le_bytes());
+            img[total_offset..total_offset + 4].copy_from_slice(&free.to_le_bytes());
+        }
+        let group_seed = core::crc::crc32c(seed, &0u32.to_le_bytes());
+        let prefix = core::crc::crc32c(group_seed, &img[4096..4126]);
+        let checksum = (core::crc::crc32c(prefix, &[0, 0]) & 0xffff) as u16;
+        img[4126..4128].copy_from_slice(&checksum.to_le_bytes());
+        let checksum = core::crc::crc32c(0xffffffff, &img[1024..2044]);
+        img[2044..2048].copy_from_slice(&checksum.to_le_bytes());
+    }
+    fn checksum_inode(img: &mut [u8], table: u32, number: u32, seed: u32) {
+        let start = table as usize * 4096 + (number as usize - 1) * 256;
+        let raw = &mut img[start..start + 256];
+        let checksum = core::inode::calculated_checksum(raw, number, seed).unwrap();
+        raw[124..126].copy_from_slice(&(checksum as u16).to_le_bytes());
+        raw[130..132].copy_from_slice(&((checksum >> 16) as u16).to_le_bytes());
+    }
+    fn rejected(img: &[u8], reason: &str) {
+        assert!(core::group_index::parse(Snapshot::from_bytes(img)).is_some());
+        assert!(
+            allocation::parse(Snapshot::from_bytes(img)).is_none(),
+            "{reason}"
+        );
+    }
+    let img = image();
+    let (sb, group, seed) = metadata(&img);
+    let volume =
+        allocation::parse(Snapshot::from_bytes(&img)).expect("complete fixture allocation");
+    let census = volume.census();
+    assert_eq!(census.block_count(), sb.blocks());
+    assert_eq!(census.role_of(0).unwrap().kind, 1);
+    assert_eq!(census.role_of(1).unwrap().kind, 1);
+    assert_eq!(census.role_of(group.inode_table).unwrap().kind, 3);
+    let root = first_data_block(inode_bytes(&img, group.inode_table, 2), sb.blocks());
+    let payload = first_data_block(inode_bytes(&img, group.inode_table, 12), sb.blocks());
+    assert_eq!(census.role_of(root).unwrap().kind, 5);
+    assert_eq!(census.role_of(payload).unwrap().inode, 12);
+    assert_eq!(census.role_of(payload).unwrap().kind, 4);
+    let journal = first_data_block(inode_bytes(&img, group.inode_table, 8), sb.blocks());
+    assert_eq!(census.role_of(journal).unwrap().kind, 2);
+    assert!(!volume.journal().allows_target(journal));
+    for number in [2u32, 8] {
+        let mut bad = img.clone();
+        let bit = number - 1;
+        let address = group.inode_bitmap as usize * 4096 + bit as usize / 8;
+        bad[address] &= !(1 << (bit % 8));
+        repair_counts_and_checksums(&mut bad);
+        rejected(&bad, "root and journal inode bitmap markers are mandatory");
+    }
+    for (offset, value) in [(0usize, 0x8000u16), (26, 1), (28, 8), (40, 1), (104, 1)] {
+        let mut bad = img.clone();
+        let start = group.inode_table as usize * 4096;
+        bad[start + offset..start + offset + 2].copy_from_slice(&value.to_le_bytes());
+        rejected(
+            &bad,
+            "unused reserved inodes cannot hide storage or a live object",
+        );
+    }
+    for (offset, value) in [
+        (4112usize, core::bytes::read_le16(&img, 4112).unwrap() + 1),
+        (4124, le32(&img, 1064) as u16 - 11),
+    ] {
+        let mut bad = img.clone();
+        bad[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+        repair_counts_and_checksums(&mut bad);
+        rejected(
+            &bad,
+            "directory counts and inode-table unused suffix must agree",
+        );
+    }
+    let mut bad = img.clone();
+    let start = group.inode_table as usize * 4096 + 256;
+    bad[start..start + 2].copy_from_slice(&0x81edu16.to_le_bytes());
+    checksum_inode(&mut bad, group.inode_table, 2, seed);
+    rejected(&bad, "inode 2 must be a directory");
+    let bitmap = group.block_bitmap as usize * 4096;
+    let free = (0..sb.blocks())
+        .find(|&b| img[bitmap + b as usize / 8] & (1 << (b % 8)) == 0)
+        .unwrap();
+    for (block, allocated) in [(free, true), (payload, false)] {
+        let mut bad = img.clone();
+        let byte = &mut bad[bitmap + block as usize / 8];
+        if allocated {
+            *byte |= 1 << (block % 8);
+        } else {
+            *byte &= !(1 << (block % 8));
+        }
+        repair_counts_and_checksums(&mut bad);
+        rejected(
+            &bad,
+            "every allocated block has exactly its source-bound claim",
+        );
+    }
+    let mut bad = img.clone();
+    let start = group.inode_table as usize * 4096 + 11 * 256;
+    bad[start + 60..start + 64].copy_from_slice(&journal.to_le_bytes());
+    checksum_inode(&mut bad, group.inode_table, 12, seed);
+    rejected(&bad, "a checksummed file cannot own journal blocks");
 }
 
 #[test]

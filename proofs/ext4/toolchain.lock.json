@@ -73,7 +73,11 @@
     "src/group_claims.rs",
     "src/snapshot.rs",
     "src/group_metadata.rs",
-    "src/group_index.rs"
+    "src/group_index.rs",
+    "src/inode_table.rs",
+    "src/inode_group.rs",
+    "src/allocation_counts.rs",
+    "src/allocation.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -288,7 +292,11 @@
     "block_claims::every_recorded_claim_is_allocated_in_a_matching_bitmap",
     "block_claims::a_recorded_claim_determines_its_exact_physical_slot",
     "block_claims::every_appended_claim_has_its_exact_physical_slots",
-    "group_claims::bounded_sparse_super_set_matches_the_power_rule"
+    "group_claims::bounded_sparse_super_set_matches_the_power_rule",
+    "block_claims::occupied_preservation_keeps_mapped_claims",
+    "inode_group::number_has_the_expected_group_and_slot",
+    "inode_group::occupied_preservation_keeps_checked_nodes",
+    "allocation_counts::all_matching_groups_have_the_exact_superblock_free_count"
   ],
   "required_flags": [
     "--no-cheating",
@@ -432,6 +440,13 @@
     "group_index::parameters",
     "group_index::group_count",
     "group_index::get",
-    "group_index::parse"
+    "group_index::parse",
+    "inode_table::read",
+    "inode_group::reserved_is_empty",
+    "inode_group::collect",
+    "allocation::index",
+    "allocation::census",
+    "allocation::journal",
+    "allocation::parse"
   ]
 }

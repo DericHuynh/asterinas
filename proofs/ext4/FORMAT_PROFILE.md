@@ -27,6 +27,7 @@ The accepted byte structures do not certify the whole volume.
 | Ownership census | Candidate census for 3..1,048,576 filesystem blocks (up to 4 GiB of 4 KiB blocks), disjoint physical claims, exact bitmap agreement and free counts. This resource bound applies to the new census component; no mount profile is enabled. |
 | Inode allocation binding | Root inode 2 and ordinary inodes >=11 use checked inline extents, inode generation, exact 512-byte `i_blocks` accounting with zero high half, and initialized directory extents. Journal inode 8 is reserved separately from file data. |
 | Group source index | One immutable borrowed source; all groups in order, exact descriptor and bitmap byte provenance, aggregate free counters equal the superblock. Bounded to 32 groups; sparse-super backups reserve one superblock and one GDT block. Not a whole-volume certificate. |
+| Whole-image allocation | Complete same-source initialized-group/inode traversal; reserved inode bitmap markers 1..10 required, root inode 2 a directory, unused reserved inodes have no live mode/links/storage, no allocated inode in the declared unused table suffix, exact directory counts; metadata/journal/inode claims exactly match every valid block bitmap bit and global free counts. Namespace and recovery/mount admission remain separate. |
 | Recovery bounds | One initialized journal extent of 1024..32768 blocks; at most 4096 staged payload/revoke entries, with whole-record preflight; no transaction-ID wrap; a fully occupied ring without a proved stopping boundary is rejected. |
 
 Superblock reserved-GDT blocks and high block-count fields must be zero.
@@ -91,12 +92,12 @@ This local policy is not global inode/bitmap/ownership validation.
 
 ## Unfinished mount and write obligations
 
-- Compose checked group/backup-super/GDT/journal reserved-region components into complete volume enumeration.
-- Bitmap/free-counter consistency and global no-alias extent ownership.
+- Namespace validation after the checked whole-image physical allocation census.
+- Prove allocation/free counter and no-alias preservation for every mutating operation.
 - Inode topology, links, directory lookup/rename and orphan/reclamation rules.
 - Verified read/write/allocation operation preservation and transaction closure.
 - Unmount ordering and actual runtime/device enforcement of serialized log reuse.
-- Recovery validation in a shadow view, replay-target policy, repeatable physical recovery.
+- Bootstrap journal discovery, preservation of group addresses and journal inode 8, and recovery validation in a shadow view before publication.
 - OSTD frame/DMA/device and VFS/credential refinements.
 
 A replay target must not escape the partition or overwrite the journal.

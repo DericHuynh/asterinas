@@ -93,6 +93,8 @@ pub fn reserve_journal(census: Census, raw: &[u8], inodes: u32, blocks: u32, see
         Some((next, journal)) => layout::admitted(raw@, inodes, blocks, seed) && journal.wf()
             && block_claims::preserves_occupied(census.view().roles, next.view().roles)
             && journal.view().fs_blocks == blocks && next.wf() && next.view().roles.len() == census.view().roles.len()
+            && journal.view().start as nat == bytes::le32(raw@, 60)
+            && journal.view().journal_blocks as nat == bytes::le32(raw@, 4) / 4096
             && next.view().claims == census.view().claims.push(Claim { start: journal.view().start,
                 length: journal.view().journal_blocks, kind: 2, inode: 0, generation: 0, logical: 0, initialized: false })
             && bytes::le16(raw@, 116) == 0 && bytes::le32(raw@, 28) == journal.view().journal_blocks as nat * 8,

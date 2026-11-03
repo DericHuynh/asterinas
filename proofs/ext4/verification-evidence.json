@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "license": "MPL-2.0",
-  "recorded_at": "2026-11-03T22:47:33.709039+00:00",
+  "recorded_at": "2026-11-03T23:00:40.178819+00:00",
   "scope": "Checked host core and specified abstract machines; not a complete or kernel-integrated ext4 filesystem",
   "verifier_version": {
     "verus": {
@@ -19,7 +19,7 @@
     "encountered-error": false,
     "encountered-vir-error": false,
     "success": true,
-    "verified": 468,
+    "verified": 493,
     "errors": 0,
     "is-verifying-entire-crate": true
   },
@@ -31,7 +31,7 @@
     "--crate-type=rlib"
   ],
   "source_sha256": {
-    "src/model.rs": "3e8e8273e4a7c584740a4108fb1be2147b32a2a99954f12bff1df1517e396c0f",
+    "src/model.rs": "134863f8a0b7743e6546dfd10b125f501587c497ce111033914c350e3e3ae2b8",
     "src/redo.rs": "e964baa83ca170c3cc60dbc8df4bfc470a81549ac23a5cfe4526a9cb0edb7e7f",
     "src/journal.rs": "eef5dcc269f81cbc1c7e8c6a4daf0a58cf7015423657a9cfe1f0fff186b91834",
     "src/lease.rs": "37358276a3719454ddeaf16177a2ce058b5e382c57b0609cea97031da084b1aa",
@@ -82,23 +82,29 @@
     "src/write_history.rs": "53516454a479bf0d6b0f118a6898b810eae5eebd33a8a85c18ae00767a79ba5e",
     "src/recovery_closure.rs": "4fa4d8bb006825fc5fe39246cf8555884bf20e22a61f8ab5ae724bd65f9e13df",
     "src/bitmap.rs": "bdb12c3bbe3a488ef11e63a58eacc68e92a9f4a63e96e3be9561b3b44e7e55ca",
-    "src/block_claims.rs": "479883a4d7ede9e5d1a1daaf7976e251bac48e2ecf061595d78f777083d9be70",
-    "src/inode_claims.rs": "8345ed65240c303246f69ca82b2b5c54e6361912fac7b827bf8ed2186cb789e7",
+    "src/block_claims.rs": "1862b1c3cc9c3512c86ca20c20ce39cf1d7be34d298cb8698f9cf4aeedf7dd43",
+    "src/inode_claims.rs": "bc3d8fd72ad758ae719b5d1a019493382b773a8dce0e01e71d8a98cd404c0439",
     "src/group_claims.rs": "db95c81b48e9d8c56e4682d30208fb5908dc48224f46e0512c85ef66c8731ad3",
     "src/snapshot.rs": "81546ff738e7cb1aa9db37e21995ebd575fb369380d9dc6c3900183145c914d4",
     "src/group_metadata.rs": "7dfb35dc3b021b9749ad22d4322d2e7aabb26a9ad4593e08d1e298a6f5e9f18d",
-    "src/group_index.rs": "21aabae994bc38a8c48b74d08dd4fcb83181e357591bd298df624509d9597a3a"
+    "src/group_index.rs": "6735f537dd656a047a5c1c743e808b1a876d2a0d5d27c2533221f610ac5902b1",
+    "src/inode_table.rs": "a6bcaa884a0160fbbb9cdbc37ac4663d2e2741701e64d6b2adaffa66ffccf24b",
+    "src/inode_group.rs": "61bbe2a3db001cfb905f8f7c6915b88c0e7fe64644775bbaf8ea077391c7e996",
+    "src/allocation_counts.rs": "dd7e5748966dec324fd174a96a3a35d6bb70929be3817e455e27fb162c0b896d",
+    "src/allocation.rs": "7b040243b2628346ccf429005fc8ca20360da88ce72b40b5d9ac7fc167bd3f60"
   },
-  "lock_sha256": "403c6a4b54122441ed649a41e466ffaed5dcaa17b7b8035896ad92f0d2cddeea",
+  "lock_sha256": "7c2a10d8226041908a9fc58784f1e0a22fb8c6b0470dab4f789f78ee45c8160d",
   "runner_sha256": "de6b473ab50632068de9e7fc619591c7b4d5afbc0058a1fcd7f946c0198beb91",
   "named_proof_coverage": [
     "access::override_cannot_execute_a_nonexecutable_regular_file",
     "access::owner_permissions_take_precedence_over_group_permissions",
     "access::unprivileged_requests_need_every_requested_bit",
+    "allocation_counts::all_matching_groups_have_the_exact_superblock_free_count",
     "block_claims::a_matching_bitmap_has_the_exact_census_free_count",
     "block_claims::a_recorded_claim_determines_its_exact_physical_slot",
     "block_claims::every_appended_claim_has_its_exact_physical_slots",
     "block_claims::every_recorded_claim_is_allocated_in_a_matching_bitmap",
+    "block_claims::occupied_preservation_keeps_mapped_claims",
     "block_claims::occupied_slot_preservation_is_transitive",
     "block_claims::two_recorded_claims_cannot_own_the_same_physical_block",
     "bytes::splice_frame",
@@ -128,6 +134,8 @@
     "history::recovery_contains_every_acknowledgement",
     "history::retirement_composes",
     "history::step_preserves",
+    "inode_group::number_has_the_expected_group_and_slot",
+    "inode_group::occupied_preservation_keeps_checked_nodes",
     "journal::a_nonempty_transaction_can_commit_and_retire",
     "journal::abort_preserves",
     "journal::acknowledged_transaction_survives",
@@ -308,6 +316,10 @@
   ],
   "named_executable_coverage": [
     "access::allowed",
+    "allocation::census",
+    "allocation::index",
+    "allocation::journal",
+    "allocation::parse",
     "bitmap::entry_count",
     "bitmap::free_count",
     "bitmap::is_set",
@@ -370,6 +382,9 @@
     "inode::parse",
     "inode_claims::collect",
     "inode_claims::reserve_journal",
+    "inode_group::collect",
+    "inode_group::reserved_is_empty",
+    "inode_table::read",
     "jbd2::encode_commit",
     "jbd2::encode_header",
     "jbd2::encode_tag",
@@ -444,14 +459,14 @@
     "write_io::pending_command",
     "write_io::prepare"
   ],
-  "host_library_sha256": "e742200b4a607542dec746e8969b34a01dbf8bb42ea693bf7e8800bc91eb9f27",
+  "host_library_sha256": "dcdc30697018f8e2c8e8ffebfe2760e0dea1da60be14a5be3377893d08e5c417",
   "compatibility": {
     "schema": 1,
     "status": "passed",
     "scope": "host interoperability tests, not formal proof",
     "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
-    "proof_artifact_sha256": "e742200b4a607542dec746e8969b34a01dbf8bb42ea693bf7e8800bc91eb9f27",
-    "image_sha256": "f732afb343c5e5c6b47f8e9ef0b1976579f2bddc7cbf126964b93a25428a30ce",
+    "proof_artifact_sha256": "dcdc30697018f8e2c8e8ffebfe2760e0dea1da60be14a5be3377893d08e5c417",
+    "image_sha256": "b21f7b2271abcdb6d148e31e3a5ea725616aac29f923f807d131d2fe1751e0ba",
     "request_boundary_rejections": [
       "reuse_request",
       "redirect_completion",
@@ -462,11 +477,11 @@
     ],
     "compatibility_runner_sha256": "9164eb940e75a089f0b051c4ad7fee16592ca6c0423c640ae70bce36f33159f6",
     "test_source_sha256": {
-      "compat": "19f4d8b6752f0630bb97da9761f7f817cae720d65a037ff2a948b61be7f656ca",
+      "compat": "03e7ac8586716082583a70a27ea53d552b22e87a1367b2f62349c97a93b9e674",
       "journal": "d5299e37f6dc76f39c0c2c88722638f5947c2f18b753aff0bdd181eba28aca8f"
     }
   },
-  "compatibility_test_count": 25,
+  "compatibility_test_count": 26,
   "e2fsprogs_version": "1.47.0",
   "negative_gate_checks": {
     "status": "passed",
@@ -484,7 +499,7 @@
     "actual runtime gate and device refinement for serialized physical history/reuse",
     "boot/unmount sequencing and full filesystem durability",
     "actual device atomicity, flush, DMA and quiescence contracts",
-    "global ownership, filesystem/namespace operations and authorization",
+    "namespace, filesystem operation preservation and runtime authorization",
     "kernel/CortenMM/OSTD/VFS integration and end-to-end filesystem correctness"
   ],
   "writable_mount_enabled": false,
@@ -503,7 +518,7 @@
   "linux_repeated_recovery_crash_attempts": 4,
   "physical_serialized_histories": "checked_acknowledged_prefix_in_nonjournal_home_bytes_outside_block_zero_under_declared_contract",
   "repeated_recovery": "checked_admission_for_arbitrary_finite_attempts_and_same_committed_input_before_tail_retirement",
-  "allocation_validation_components": "checked_initialized_bitmaps_disjoint_census_exact_inode_physical_slot_binding_and_sector_accounting_not_whole_volume_admission",
+  "allocation_validation_components": "checked_whole_image_source_derived_claim_composition_complete_allocated_inode_enumeration_reserved_regions_exact_bitmap_agreement_and_global_free_count_for_bounded_initialized_profile_namespace_and_runtime_authority_open",
   "same_source_group_index": "checked_exact_declared_byte_ranges_complete_ordered_groups_and_superblock_free_counter_sums",
   "group_reserved_regions": "checked_sparse_super_power_rule_and_superblock_GDT_bitmaps_inode_table_claims_for_32_group_profile"
 }

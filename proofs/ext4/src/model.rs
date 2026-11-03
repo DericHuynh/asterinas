@@ -101,3 +101,11 @@ pub mod snapshot;
 pub mod group_metadata;
 
 pub mod group_index;
+
+pub mod inode_table;
+
+pub mod inode_group;
+
+mod allocation_counts;
+
+pub mod allocation;

@@ -369,8 +369,22 @@ pub proof fn a_recorded_claim_determines_its_exact_physical_slot(census: &Census
 
 #[verifier::opaque]
 pub open spec fn mapped_claims(roles: Seq<Slot>, claims: Seq<Claim>) -> bool {
-    forall|i: int, b: int| 0 <= i < claims.len() && #[trigger] covers(claims[i], b) ==>
+    &&& forall|i: int| 0 <= i < claims.len() ==> #[trigger] valid_claim(claims[i], roles.len())
+    &&& forall|i: int, b: int| 0 <= i < claims.len() && #[trigger] covers(claims[i], b) ==>
         0 <= b < roles.len() && roles[b] == at(claims[i], b)
+}
+
+pub proof fn occupied_preservation_keeps_mapped_claims(before: Seq<Slot>, after: Seq<Slot>, claims: Seq<Claim>)
+    requires mapped_claims(before, claims), preserves_occupied(before, after),
+    ensures mapped_claims(after, claims),
+{
+    reveal(mapped_claims);
+    reveal(preserves_occupied);
+    assert forall|i: int, b: int| 0 <= i < claims.len() && #[trigger] covers(claims[i], b) implies
+        0 <= b < after.len() && after[b] == at(claims[i], b) by {
+        assert(valid_claim(claims[i], before.len()));
+        assert(before[b] == at(claims[i], b) && before[b].kind != 0);
+    }
 }
 
 pub proof fn every_appended_claim_has_its_exact_physical_slots(census: &Census, prefix: Seq<Claim>, added: Seq<Claim>)
@@ -378,6 +392,10 @@ pub proof fn every_appended_claim_has_its_exact_physical_slots(census: &Census, 
     ensures mapped_claims(census.view().roles, added),
 {
     reveal(mapped_claims);
+    assert forall|i: int| 0 <= i < added.len() implies #[trigger] valid_claim(added[i], census.view().roles.len()) by {
+        reveal(ledger);
+        assert(census.view().claims[prefix.len() as int + i] == added[i]);
+    }
     assert forall|i: int, b: int| 0 <= i < added.len() && #[trigger] covers(added[i], b) implies
         0 <= b < census.view().roles.len() && census.view().roles[b] == at(added[i], b) by {
         let index = prefix.len() as int + i;
