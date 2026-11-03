@@ -124,6 +124,18 @@
       "url": "https://github.com/verus-lang/verus/blob/8bf68ee741df833ea5d0fe6a2255126fdea87e47/source/vstd/resource/combinators/option.rs",
       "blob_sha": "ae7a4eeabfbfa5753185c740166b7f6d618dea46",
       "review_scope": "selected relevant definitions; reference only, not imported as proved code"
+    },
+    {
+      "path": "fs/jbd2/revoke.c",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/jbd2/revoke.c",
+      "blob_sha": "9016ddb824474d4e85ba6712c18f122734efd9af",
+      "review_scope": "revoke suppression, cancellation and sequence ordering; independently implemented"
+    },
+    {
+      "path": "source/docs/guide/src/container_bst_type_invariant.md",
+      "url": "https://github.com/verus-lang/verus/blob/8bf68ee741df833ea5d0fe6a2255126fdea87e47/source/docs/guide/src/container_bst_type_invariant.md",
+      "blob_sha": "f20217a5c7da26bfcd8edffc576b9ada8024a39e",
+      "review_scope": "checked type invariant encapsulation and public APIs without preconditions"
     }
   ]
 }

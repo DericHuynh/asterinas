@@ -9,13 +9,13 @@
   "writable_mount_enabled": false,
   "verification": {
     "status": "core_and_models_checked",
-    "verus_verified_units": 128,
+    "verus_verified_units": 245,
     "verification_errors": 0,
-    "checked_named_proof_functions": 66,
-    "checked_named_executable_functions": 45,
+    "checked_named_proof_functions": 102,
+    "checked_named_executable_functions": 90,
     "runner_validated": true,
     "negative_gate_checks_passed": 6,
-    "host_compatibility_tests_passed": 8,
+    "host_compatibility_tests_passed": 14,
     "evidence": "verification-evidence.json"
   },
   "claims": {
@@ -32,7 +32,12 @@
     "filesystem_operations_and_namespace": "not_implemented",
     "kernel_concurrency_and_authorization": "not_proved",
     "filesystem_durability": "not_proved",
-    "end_to_end_liveness": "not_proved"
+    "end_to_end_liveness": "not_proved",
+    "canonical_jbd2_descriptor_revoke_commit_codecs": "checked",
+    "linux_revoke_and_latest_image_selection": "checked_with_exact_chronological_redo_equivalence",
+    "bounded_scanner_source_and_commit_order": "checked_soundness_full_prefix_completeness_open",
+    "recovery_command_protocol_and_crash_cuts": "checked_under_explicit_atomicity_flush_and_quiescent_initial_device_contract",
+    "fresh_epoch_and_superblock_images": "checked_local_byte_relations"
   },
   "production_activation_gate": "All applicable obligations in PROOF_OBLIGATIONS.md must be discharged for the admitted profile.",
   "evidence_policy": "Only successful pinned entire-crate checking plus compilation produces a valid build report; it certifies only the declared source/model scope."

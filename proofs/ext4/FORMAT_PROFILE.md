@@ -14,15 +14,16 @@ The accepted byte structures do not certify the whole volume.
 | ext4 superblock | 1024 bytes, Linux creator OS, revision 1, 4 KiB blocks/clusters, 256-byte inodes, first data block 0, first ordinary inode 11, internal journal inode 8. |
 | Geometry | 32-bit block count, 32768 blocks/group, positive inodes/group <=32768 and divisible by 16, checked group/count/partition relationships. |
 | Feature COMPAT | Exactly HAS_JOURNAL (`0x0004`). |
-| Feature INCOMPAT | FILETYPE + EXTENTS (`0x0042`), optionally RECOVER (`0x0046`). RECOVER is surfaced to the caller; it is not recovered or ignored. |
+| Feature INCOMPAT | FILETYPE + EXTENTS (`0x0042`), optionally RECOVER (`0x0046`). Raw parsing surfaces RECOVER; recovery preparation requires it when the journal has a nonzero start. |
 | Feature RO_COMPAT | Exactly SPARSE_SUPER + LARGE_FILE + EXTRA_ISIZE + METADATA_CSUM (`0x0443`). |
 | Group descriptor | 32 bytes, bitmaps and inode table inside the group and locally disjoint, initialized bitmaps/table (`bg_flags=4`), bounded counters and metadata CRC32C truncation. |
 | Inode | 256 bytes, extra_isize 32, live regular file/directory, EXTENTS flag only, no ACL/xattr block, 32-bit i_size, Linux UID/GID high halves and inode CRC32C. |
 | Extent root | Inline depth-zero leaf root, max four entries, sorted nonoverlapping logical intervals, 32-bit physical addresses. Written length up to 32768; unwritten length up to 32767; zero length rejected. |
 | Directory | Linear 4 KiB records with FILETYPE and metadata checksum tail; live entries limited to regular files/directories; no NUL or slash in a name. |
 | JBD2 superblock | Version 2, 4 KiB journal blocks, first log position 1, >=1024 journal blocks, one user, matching filesystem UUID, no stored error/dynamic copy/fast-commit blocks. |
-| Journal features | No feature bits for a clean mke2fs journal, or CSUM_V3 with optional REVOKE. Unknown bits, 64-bit tags and async commit rejected. The REVOKE flag is decoded, not implemented as replay support. |
-| JBD2 records | Bounded header/tag codecs, 16-byte v3 tags, UUID/sequence/payload CRC primitives, commit checksum check, owned escaping/restoration. Complete descriptor/revoke/transaction scanning is not implemented. |
+| Journal features | No feature bits for a clean mke2fs journal, or CSUM_V3 with optional REVOKE. A dirty journal without v3 is rejected. Unknown bits, 64-bit tags and async commit rejected. |
+| JBD2 records | Canonical v3 descriptors with 1..250 16-byte tags, first-tag UUID and later SAME_UUID, one terminator and checksum tail; 32-bit revoke blocks with 0..1019 records; checked full commit images and escaped payload CRCs. |
+| Recovery bounds | One initialized journal extent of 1024..32768 blocks; at most 4096 staged payload/revoke entries; no transaction-ID wrap; a fully occupied ring without a proved stopping boundary is rejected. |
 
 Superblock reserved-GDT blocks and high block-count fields must be zero.
 The descriptor size is zero or 32; minimum/desired inode extra sizes are 32.
@@ -65,8 +66,17 @@ an integration obligation.
 The composed model uses bounded u32 transaction IDs, stops before wrap,
 and reserves MAX for a representable terminal next-tail value.
 The counter helper is not authority to start a transaction.
-On-disk sequence/window validation across remount and old journal contents is
-still unproved; a nat generation theorem alone is insufficient.
+The executable fresh-epoch selector exceeds the supplied minimum and every
+header-shaped old transaction ID, irrespective of checksums, and refuses the
+terminal range. The checked replay window is shorter than 32768 transactions,
+so its numeric ordering agrees with Linux's signed modular ordering.
+The full transaction-writer, remount and physical-slot reuse refinement is open.
+
+Recovery allows filesystem block zero as a target, but excludes the journal.
+Its block-zero after-image must retain RECOVER, pass the ext4 checksum/profile
+checks, and preserve UUID, geometry, journal identity and boot/reserved bytes.
+Mutable counters, timestamps, mount bookkeeping and the label may change.
+This local policy is not global inode/bitmap/ownership validation.
 
 ## Unfinished mount and write obligations
 
@@ -74,7 +84,7 @@ still unproved; a nat generation theorem alone is insufficient.
 - Bitmap/free-counter consistency and global no-alias extent ownership.
 - Inode topology, links, directory lookup/rename and orphan/reclamation rules.
 - Verified read/write/allocation operation preservation and transaction closure.
-- Complete JBD2 scan/revoke/replay, escaped-tag UUID rules, freshness and tail updates.
+- Full-prefix scanner completeness, writer/boot ordering and physical log reuse.
 - Recovery validation in a shadow view, replay-target policy, repeatable physical recovery.
 - OSTD frame/DMA/device and VFS/credential refinements.
 

@@ -79,6 +79,14 @@ pub open spec fn zero4(s: Seq<u8>, offset: int) -> Seq<u8> {
         + s.subrange(offset + 4, s.len() as int)
 }
 
+pub proof fn zero4_restores_written_checksum(s: Seq<u8>, offset: int, value: u32)
+    requires 0 <= offset, offset + 4 <= s.len(),
+        s.subrange(offset, offset + 4) == seq![0u8, 0u8, 0u8, 0u8],
+    ensures zero4(crate::bytes::splice(s, offset, crate::bytes::encoded_be(value)), offset) == s,
+{
+    assert(zero4(crate::bytes::splice(s, offset, crate::bytes::encoded_be(value)), offset) =~= s);
+}
+
 pub fn crc32c_zero4(seed: u32, s: &[u8], offset: usize) -> (r: Option<u32>)
     ensures match r {
         Some(c) => offset as int + 4 <= s.len() && c == fold(seed, zero4(s@, offset as int)),

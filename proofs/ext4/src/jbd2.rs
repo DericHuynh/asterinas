@@ -6,6 +6,7 @@
 use vstd::prelude::*;
 use crate::bytes::{be32, read_be32, encode_be32};
 use crate::crc;
+use crate::frozen::FrozenBlock;
 
 verus! {
 
@@ -13,6 +14,11 @@ pub const MAGIC: u32 = 0xc03b3998;
 
 pub struct Header { pub kind: u32, pub sequence: u32 }
 pub struct Tag { pub block: u32, pub flags: u32, pub checksum: u32 }
+
+pub open spec fn tag_bytes(t: Tag) -> Seq<u8> {
+    crate::bytes::encoded_be(t.block) + crate::bytes::encoded_be(t.flags)
+        + seq![0u8, 0u8, 0u8, 0u8] + crate::bytes::encoded_be(t.checksum)
+}
 
 pub open spec fn header_ok(s: Seq<u8>, sequence: u32) -> bool {
     &&& s.len() >= 12
@@ -56,7 +62,9 @@ pub open spec fn flags_ok(f: nat) -> bool {
 
 pub open spec fn tag_ok(s: Seq<u8>, offset: int, blocks: u32) -> bool {
     &&& 0 <= offset && offset + 16 <= s.len()
-    &&& 0 < be32(s, offset) < blocks
+    // Block zero contains the ext4 superblock in the 4 KiB profile. Whether a
+    // decoded target may be written is decided by the validated replay plan.
+    &&& be32(s, offset) < blocks
     &&& flags_ok(be32(s, offset + 4))
     &&& be32(s, offset + 8) == 0
 }
@@ -75,7 +83,7 @@ pub fn parse_tag(s: &[u8], offset: usize, blocks: u32) -> (r: Option<Tag>)
     let flags = read_be32(s, offset + 4).unwrap();
     let high = read_be32(s, offset + 8).unwrap();
     let checksum = read_be32(s, offset + 12).unwrap();
-    if block == 0 || block >= blocks || high != 0
+    if block >= blocks || high != 0
         || (flags != 0 && flags != 1 && flags != 2 && flags != 3
             && flags != 8 && flags != 9 && flags != 10 && flags != 11) { None }
     else { Some(Tag { block, flags, checksum }) }
@@ -84,11 +92,11 @@ pub fn parse_tag(s: &[u8], offset: usize, blocks: u32) -> (r: Option<Tag>)
 pub fn encode_tag(t: &Tag, blocks: u32) -> (r: Option<[u8; 16]>)
     ensures match r {
         Some(s) => tag_ok(s@, 0, blocks) && be32(s@, 0) == t.block
-            && be32(s@, 4) == t.flags && be32(s@, 12) == t.checksum,
-        None => t.block == 0 || t.block >= blocks || !flags_ok(t.flags as nat),
+            && be32(s@, 4) == t.flags && be32(s@, 12) == t.checksum && s@ == tag_bytes(*t),
+        None => t.block >= blocks || !flags_ok(t.flags as nat),
     },
 {
-    if t.block == 0 || t.block >= blocks
+    if t.block >= blocks
         || (t.flags != 0 && t.flags != 1 && t.flags != 2 && t.flags != 3
             && t.flags != 8 && t.flags != 9 && t.flags != 10 && t.flags != 11) { return None; }
     let b = encode_be32(t.block);
@@ -117,14 +125,48 @@ pub fn payload_checksum(uuid_seed: u32, sequence: u32, escaped: &[u8]) -> (r: Op
     Some(crc::crc32c(seed, escaped))
 }
 
+pub open spec fn commit_ok(s: Seq<u8>, sequence: u32, uuid_seed: u32) -> bool {
+    s.len() == 4096 && header_ok(s, sequence) && be32(s, 4) == 2
+        && be32(s, 16) == crc::fold(uuid_seed, crc::zero4(s, 16)) as nat
+}
+
 pub fn valid_commit(s: &[u8], sequence: u32, uuid_seed: u32) -> (r: bool)
-    ensures r == (s.len() == 4096 && header_ok(s@, sequence) && be32(s@, 4) == 2
-        && be32(s@, 16) == crc::fold(uuid_seed, crc::zero4(s@, 16)) as nat),
+    ensures r == commit_ok(s@, sequence, uuid_seed),
 {
     if s.len() != 4096 { return false; }
     let h = match parse_header(s, sequence) { Some(h) => h, None => { return false; } };
     if h.kind != 2 { return false; }
     read_be32(s, 16).unwrap() == crc::crc32c_zero4(uuid_seed, s, 16).unwrap()
+}
+
+pub fn encode_commit(sequence: u32, uuid_seed: u32) -> (r: Option<FrozenBlock>)
+    ensures match r {
+        Some(block) => sequence > 0 && commit_ok(block.view(), sequence, uuid_seed),
+        None => sequence == 0,
+    },
+{
+    if sequence == 0 { return None; }
+    let mut block = crate::bytes::zero_block();
+    let header = encode_header(2, sequence).unwrap();
+    crate::bytes::write_bytes(block.as_mut_slice(), 0, &header);
+    proof {
+        assert(be32(block@, 0) == be32(header@, 0));
+        assert(be32(block@, 4) == be32(header@, 4));
+        assert(be32(block@, 8) == be32(header@, 8));
+        assert(header_ok(block@, sequence));
+        assert(block@.subrange(16, 20) =~= seq![0u8, 0u8, 0u8, 0u8]);
+    }
+    let ghost before = block@;
+    let checksum = crc::crc32c(uuid_seed, block.as_slice());
+    crate::bytes::write_be32(block.as_mut_slice(), 16, checksum);
+    proof {
+        crc::zero4_restores_written_checksum(before, 16, checksum);
+        crate::bytes::splice_word_frame(before, 16, crate::bytes::encoded_be(checksum), 0);
+        crate::bytes::splice_word_frame(before, 16, crate::bytes::encoded_be(checksum), 4);
+        crate::bytes::splice_word_frame(before, 16, crate::bytes::encoded_be(checksum), 8);
+        assert(header_ok(block@, sequence));
+    }
+    FrozenBlock::from_vec(block)
 }
 
 /// Checked counter arithmetic, including the terminal next-tail value MAX.

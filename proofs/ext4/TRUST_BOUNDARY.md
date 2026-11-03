@@ -102,6 +102,19 @@ by a separate unverified interoperability harness.
 There are no local assumptions, admitted lemmas, trusted function bodies,
 trusted generated token APIs, or calls to a handwritten unverified core helper.
 All public executable functions perform their own checks and have no `requires` clauses.
+Private fields and Verus checked type invariants preserve replay-plan and
+recovery-state validity across public method calls; no trusted invariant wrapper
+is used. Completion reports are untrusted adapter inputs at this host boundary:
+the protocol checks ordering and request IDs but cannot establish that a caller
+really dispatched a BIO or that a reported flush was physically effective.
+
+`recovery_device.rs` states a 4096-byte failure-atomic persistence model explicitly.
+It allows a cached write to persist before its completion and after abort,
+requires home flush before retirement, and proves each allowed event preserves
+the recovery invariant. Its success image equals the byte-valued Linux redo
+result plus the retired tail. This theorem does not establish device atomicity,
+the absence of old-generation requests, scanner completeness or global replay
+authorization. A device with only 512-byte addressing has not met this contract.
 
 `FrozenBlock` owns initialized Rust bytes and exposes no mutable borrow or Clone.
 This proves the host snapshot relationship; it does not prove an OSTD frame loan.

@@ -13,6 +13,15 @@ pub struct FrozenBlock { bytes: Vec<u8> }
 impl FrozenBlock {
     pub closed spec fn view(&self) -> Seq<u8> { self.bytes@ }
 
+    pub fn from_vec(bytes: Vec<u8>) -> (r: Option<Self>)
+        ensures match r {
+            Some(b) => bytes.len() == 4096 && b.view() == bytes@,
+            None => bytes.len() != 4096,
+        },
+    {
+        if bytes.len() != 4096 { None } else { Some(FrozenBlock { bytes }) }
+    }
+
     pub fn capture(s: &[u8]) -> (r: Option<Self>)
         ensures match r {
             Some(b) => s.len() == 4096 && b.view() == s@,

@@ -7,9 +7,9 @@ implementation of a **Linux-compatible ext4 subset**.
 It is not a complete filesystem and is not registered with the kernel VFS.
 No mount or filesystem write path is enabled.
 
-The pinned Verus run checks **128 obligations with zero errors**, including
-66 named proof functions and 45 named executable functions.
-Eight host interoperability/regression tests pass on Linux-created metadata.
+The pinned Verus run checks **245 obligations with zero errors**, including
+102 named proof functions and 90 named executable functions.
+Fourteen host interoperability/regression tests pass on Linux-created metadata.
 [Proof status](proof-status.json) and [recorded evidence](verification-evidence.json)
 state the exact scope; tests do not discharge formal obligations.
 
@@ -22,6 +22,12 @@ state the exact scope; tests do not discharge formal obligations.
 | `extent.rs` | Leaf extent codec, initialized/unwritten lengths, logical ordering and disjointness, bounded block resolution. |
 | `directory.rs` | Bounded linear dirent parsing, filename validation, directory checksum tails. |
 | `jbd2.rs`, `journal_superblock.rs` | Header/tag codecs, UUID binding, checksum primitives, counter bounds and superblock parsing. |
+| `descriptor.rs`, `revoke.rs` | Complete canonical v3 descriptor/revoke parsing and encoding, UUIDs, tag terminators, target bounds, checksum tails and capacity limits. |
+| `layout.rs` | Checked mapping of a single initialized journal extent; journal blocks excluded from replay targets. |
+| `replay.rs`, `replay_refinement.rs` | Linux same/later revoke suppression and reallocation, latest-image selection, exact chronological redo equivalence, arbitrary partial replay restart. |
+| `scan.rs` | Bounded ring scanner; incomplete tail removal; recovered images/revokes linked to actual source records preceding recognized commits. Full-prefix completeness remains open. |
+| `epoch.rs`, `journal_state.rs`, `super_state.rs` | Conservative fresh IDs independent of checksums; exact superblock state images; immutable geometry/UUID/boot framing; recovery flag retained during replay. |
+| `recovery_io.rs`, `recovery_device.rs` | Owned immutable recovery command protocol, stale/duplicate report rejection, sticky abort, two flushes, finite failure-free completion; byte-valued persistence refinement under an explicit 4 KiB atomicity contract. |
 | `frozen.rs` | Owned immutable snapshots, JBD2 escape/restore, snapshot contents independent of the source buffer. |
 | `ring.rs` | Bounded credits and injective circular-log position mapping. |
 | `gate.rs` | Affine writer capability backed by vstd's exclusive resource algebra; no local trusted token generator. |
@@ -34,6 +40,14 @@ Its premise is an execution of the specified device/transaction machine.
 Commit and retirement are semantic durable facts in that machine;
 **their refinement from actual JBD2 bytes and driver events is still unproved**.
 The proof does not establish durability of a mounted Asterinas filesystem.
+
+The recovery theorem `recovery_device::success_image_equals_linux_redo` proves
+that the stable image equals chronological redo plus the retired journal tail.
+Its machine permits persistence before completion and after abort, and proves
+that a persisted clear tail implies durable home data. It is conditional on a
+correct, complete replay plan, a quiescent device and the stated atomicity/flush
+contract. Scanner completeness, transaction creation, whole-volume validation
+and the actual driver refinement remain open.
 
 All public executable entry points validate their inputs without `requires`
 clauses that an unverified caller could bypass.
@@ -55,9 +69,9 @@ python3 proofs/ext4/tools/check_gate.py
 python3 proofs/ext4/tools/check_compat.py
 ~~~
 
-The compatibility check requires `mke2fs` and `debugfs` from e2fsprogs,
+The compatibility check requires `mke2fs`, `debugfs` and `e2fsck` from e2fsprogs,
 and `rustc` from the pinned toolchain.
-`RUSTC_BIN`, `MKE2FS_BIN` and `DEBUGFS_BIN` may select executable paths.
+`RUSTC_BIN`, `MKE2FS_BIN`, `DEBUGFS_BIN` and `E2FSCK_BIN` may select executable paths.
 The installer accepts `--archive` for an offline, digest-checked installation.
 
 The runner checks the entire crate with `--no-cheating --no-external-by-default --output-json --compile`.
@@ -68,6 +82,10 @@ The negative checks include an actual failing Verus assertion in a disposable co
 [CI](../../.github/workflows/verify_ext4.yml) runs the same checks.
 
 The emitted host library exercises proof erasure and Linux byte compatibility.
+The journal tests compare checked replay with Linux recovery for seven histories,
+including revokes, reallocation, same-transaction revokes, an incomplete tail,
+ring wrap and block-zero metadata. They also exercise retired images and five
+recovery interruption cuts with `e2fsck`; these examples are not formal proofs.
 Do not link it into the kernel: its target and toolchain differ from the kernel's.
 A kernel source build and its OSTD adapter refinement remain necessary.
 
@@ -81,8 +99,8 @@ In particular, these are still missing:
 
 - Global ext4 ownership/namespace validation and filesystem operation implementations,
   including allocation, create/unlink/rename, orphan handling, permissions integration and fsync.
-- Complete JBD2 transaction/descriptor/revoke scanning, recovery, crash-safe superblock/tail updates,
-  and byte-level freshness/tearing/reuse proofs.
+- Scanner completeness and transaction-writer refinement, full physical
+  history recognition, boot/unmount ordering and byte-level tearing/reuse proofs.
 - CortenMM/OSTD frame, sleeping-lock, BIO, DMA and device-persistence adapters,
   with verified callback generations, snapshot loans, quiescence and ingress contracts.
 - Read-only/writable mount integration and end-to-end progress proofs.

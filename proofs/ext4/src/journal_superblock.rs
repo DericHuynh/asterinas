@@ -58,7 +58,8 @@ pub open spec fn accepted(s: Seq<u8>, uuid: Seq<u8>, journal_blocks: u32) -> boo
     &&& be32(s, 12) == 4096
     &&& be32(s, 16) == journal_blocks && journal_blocks >= 1024
     &&& be32(s, 20) == 1
-    &&& 0 < be32(s, 24) < 4294967295
+    // MAX is a readable clean terminal sequence, not a writable generation.
+    &&& 0 < be32(s, 24)
     &&& (be32(s, 28) == 0 || 1 <= be32(s, 28) < journal_blocks)
     &&& be32(s, 32) == 0
     &&& be32(s, 36) == 0
@@ -87,7 +88,7 @@ pub fn parse(s: &[u8], uuid: &[u8], journal_blocks: u32) -> (r: Option<JournalIn
     let features = read_be32(s, 40).unwrap();
     if read_be32(s, 0).unwrap() != 0xc03b3998 || read_be32(s, 4).unwrap() != 4
         || read_be32(s, 12).unwrap() != 4096 || blocks != journal_blocks || blocks < 1024
-        || read_be32(s, 20).unwrap() != 1 || sequence == 0 || sequence == 4294967295
+        || read_be32(s, 20).unwrap() != 1 || sequence == 0
         || (start != 0 && (start < 1 || start >= blocks))
         || read_be32(s, 32).unwrap() != 0 || read_be32(s, 36).unwrap() != 0
         || read_be32(s, 44).unwrap() != 0 || read_be32(s, 64).unwrap() != 1

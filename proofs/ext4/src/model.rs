@@ -27,7 +27,27 @@ pub mod group;
 pub mod access;
 pub mod inode;
 mod system;
+pub mod descriptor;
 
 verus! {
 fn main() {}
 }
+
+pub mod revoke;
+
+pub mod layout;
+
+pub mod replay;
+
+mod replay_refinement;
+
+pub mod scan;
+pub mod epoch;
+
+pub mod journal_state;
+
+pub mod super_state;
+
+pub mod recovery_io;
+
+mod recovery_device;

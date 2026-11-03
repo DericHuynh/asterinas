@@ -45,22 +45,26 @@ def main():
     (BUILD / "fixture-file.bin").write_bytes(bytes(i % 251 for i in range(8192)))
     run([os.environ.get("DEBUGFS_BIN", "debugfs"), "-w", "-R",
          "write build/fixture-file.bin /payload", "build/linux.img"])
-    run([rustc, "--edition=2024", "--test", "tests/compat.rs", "--extern",
-         "verified_ext4=build/libverified_ext4.rlib", "-L", "dependency=" + libraries,
-         "-o", "build/compat-tests"])
     environment = os.environ.copy()
     environment["EXT4_TEST_IMAGE"] = str(image)
-    process = subprocess.run(["build/compat-tests", "--nocapture"], cwd=ROOT, env=environment,
-                             capture_output=True, text=True)
-    print(process.stdout, end="")
-    (BUILD / "compat.stdout").write_text(process.stdout)
-    if process.returncode != 0:
-        print(process.stderr, file=sys.stderr)
-        process.check_returncode()
+    output = []
+    for suite in ["compat", "journal"]:
+        run([rustc, "--edition=2024", "--test", "tests/" + suite + ".rs", "--extern",
+             "verified_ext4=build/libverified_ext4.rlib", "-L", "dependency=" + libraries,
+             "-o", "build/" + suite + "-tests"])
+        process = subprocess.run(["build/" + suite + "-tests", "--nocapture"], cwd=ROOT, env=environment,
+                                 capture_output=True, text=True)
+        print(process.stdout, end="")
+        output.append(process.stdout)
+        (BUILD / "compat.stdout").write_text("\n".join(output))
+        if process.returncode != 0:
+            print(process.stderr, file=sys.stderr)
+            process.check_returncode()
     result = {"schema": 1, "status": "passed", "scope": "host interoperability tests, not formal proof",
               "rustc": version.strip(), "proof_artifact_sha256": report["artifact_sha256"],
               "image_sha256": hashlib.sha256(image.read_bytes()).hexdigest(),
-              "test_source_sha256": hashlib.sha256((ROOT / "tests/compat.rs").read_bytes()).hexdigest()}
+              "test_source_sha256": {s: hashlib.sha256((ROOT / ("tests/" + s + ".rs")).read_bytes()).hexdigest()
+                                     for s in ["compat", "journal"]}}
     (BUILD / "compat-report.json").write_text(json.dumps(result, indent=2) + "\n")
 
 

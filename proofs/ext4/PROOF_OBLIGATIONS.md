@@ -46,9 +46,9 @@ original value of every acknowledged write to remain visible forever.
 | J-CUT | Recovery returns before or after, never a partial transaction. | Checked abstractly: before/after recovery and composed acknowledged-prefix theorem in system.rs. |
 | J-TRACE | Induct over arbitrary finite histories and transaction composition. | Checked for arbitrary finite model histories and per-unit I/O interleavings, composed in system.rs. Raw device/disk refinement remains open. |
 | J-REUSE | Safe ring reuse, bounded credits, tail fencing, no stale records/I/O, and finite TID/wrap behavior. | Partial: injective ring positions, bounded credits, finite counters, and no late model events after quiescent retirement. Physical window/slot/tail refinement missing. |
-| J-REVOKE | No replay of old metadata into a later freed/reused data block; correct revoke cancellation and sequence rules. | Missing. |
-| J-BOOT | Crash-safe ext4 needs-recovery and JBD2 superblock/head/tail/sequence transitions. | Missing. |
-| J-RESTART | Physical recovery can crash at any sector/write/fence boundary and resume safely. | Partial: checked redo idempotence and arbitrary partial checkpoint recovery. Physical replay/tail/crash refinement missing. |
+| J-REVOKE | No replay of old metadata into a later freed/reused data block; correct revoke cancellation and sequence rules. | Partial: executable same/later revoke filtering, latest image selection, reallocation ordering and exact chronological-redo equivalence checked. Allocation/writer/revoke production and complete scan refinement remain open. |
+| J-BOOT | Crash-safe ext4 needs-recovery and JBD2 superblock/head/tail/sequence transitions. | Partial: exact state-image codecs and geometry/UUID/boot-byte framing, conservative fresh epochs, block-zero replay retains RECOVER; recovery tail protocol checked under an explicit device contract. Activation/unmount and writer composition remain open. |
+| J-RESTART | Physical recovery can crash at any sector/write/fence boundary and resume safely. | Partial: exact replay restart after arbitrary partial home changes; byte-valued recovery persistence/completion/abort interleavings and safe clear-tail cuts checked under an explicit 4 KiB atomicity/flush/quiescent-start contract. Scanner completeness, device refinement and end-to-end closure remain open. |
 | J-ERROR | Abort/error/timeout is not cancellation or proof of rollback; no false success after abort. | Partial: abort preserves pending effects and forbids new acknowledgements in the checked model. Runtime error/quiescence refinement missing. |
 | D-ORDER | Completion/flush/FUA/dependency contracts for each admitted driver and partition wrapper. | Missing. |
 | D-ATOMIC | Addressing, failure-atomic unit, tearing, volatile cache, and crash projection match the hardware model. | Missing. |
@@ -63,8 +63,8 @@ A checksum-equality assumption cannot substitute for that proof.
 | ID | Obligation | Present artifact / missing work |
 | --- | --- | --- |
 | F-ADMIT | Sound and complete admission for the exact supported feature/profile rules; fail closed elsewhere. | Partial: checked exact structural feature/profile predicates with success/rejection equivalence. Whole-volume and mount admission missing. |
-| F-PARSE | Total bounded parsers with checked arithmetic and range/resource safety for arbitrary media. | Partial: total bounded superblock/group/inode/leaf-extent/dirent/JBD2-primitive parsers, checked machine arithmetic. Complete traversal/recovery validation missing. |
-| F-CODEC | Encode/decode relation, endian conversions, checksums, seeds, escaping, UUIDs, tag/record lengths, and canonical Linux-compatible bytes. | Partial: checked endian/extent/header/tag codecs, CRC recurrence/streaming, metadata checksum inputs and owned escaping. Complete record writer/decoder refinement missing. |
+| F-PARSE | Total bounded parsers with checked arithmetic and range/resource safety for arbitrary media. | Partial: total bounded metadata and canonical descriptor/revoke parsers; ring scanning, committed source provenance and record-before-commit ordering checked. Full-prefix scanner completeness and whole-volume validation missing. |
+| F-CODEC | Encode/decode relation, endian conversions, checksums, seeds, escaping, UUIDs, tag/record lengths, and canonical Linux-compatible bytes. | Partial: checked endian/extent/header/tag and complete canonical v3 descriptor/revoke/commit codecs, CRC streaming, metadata checksum inputs, UUIDs and owned escaping. Transaction writer and complete disk-history refinement missing. |
 | F-MAP | Extent-tree bounds/order/depth, initialization/unwritten semantics, and logical-to-physical refinement. | Partial: checked inline leaf roots, logical disjointness and initialized/unwritten mapping. Nonzero tree depth rejected; global ownership/refinement missing. |
 | F-OWN | Global no-alias ownership, reserved/journal/metadata/data separation, and allocation/free-counter consistency. | Partial: abstract role map, allocation/release/write preservation and owner uniqueness checked in ownership.rs. Actual disk ownership/bitmap validator missing. |
 | F-READ | Authorized reads return exactly initialized bytes/zeros within i_size and never stale reused contents. | Partial: abstract zero initialization, stale-generation rejection and no disclosure after block reuse checked. Executable authorized file-read refinement missing. |
@@ -95,7 +95,7 @@ Neither is silently treated as a single bounded atomic operation.
 | S-LOCK | Consistent hierarchy and no blocking under spinlocks, callback dependency cycles, or gate reentry. | Missing. |
 | S-RECOVERY | No callers are admitted until the recovered image and mount state are validated. | Missing. |
 | S-RESOURCE | Malformed lengths, deep/cyclic metadata, sparse ranges, queue saturation, and reservation exhaustion are bounded or rejected. | Partial: checked bounded parser/name/extent/snapshot loops and credit arithmetic. Whole-volume traversal, reservation failure and queue-progress refinement missing. |
-| L-PROGRESS | Deadlock freedom, eventual I/O/credit/gate progress, and recovery termination under stated fairness. | Missing. |
+| L-PROGRESS | Deadlock freedom, eventual I/O/credit/gate progress, and recovery termination under stated fairness. | Partial: recovery command rank and finite failure-free successful completion checked. Scheduler/device fairness, scanning completeness, resource availability and kernel lock/progress proofs remain open. |
 
 ## Milestone acceptance
 
