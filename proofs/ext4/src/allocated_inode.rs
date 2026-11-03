@@ -41,6 +41,14 @@ pub struct NodeView {
     pub size: u32, pub generation: u32, pub links: u16,
 }
 
+pub open spec fn source_view(volume: AllocationView, n: u32) -> NodeView {
+    let raw = inode_table::raw(volume.index, n);
+    NodeView { volume, number: n, mode: bytes::le16(raw, 0) as u16, size: bytes::le32(raw, 4) as u32,
+        generation: bytes::le32(raw, 100) as u32, links: bytes::le16(raw, 26) as u16,
+        uid: (bytes::le16(raw, 2) + 65536 * bytes::le16(raw, 120)) as u32,
+        gid: (bytes::le16(raw, 24) + 65536 * bytes::le16(raw, 122)) as u32 }
+}
+
 #[verifier::opaque]
 pub open spec fn valid(v: NodeView) -> bool {
     let raw = inode_table::raw(v.volume.index, v.number);
@@ -51,6 +59,13 @@ pub open spec fn valid(v: NodeView) -> bool {
     &&& v.generation as nat == bytes::le32(raw, 100) && v.links as nat == bytes::le16(raw, 26)
     &&& v.uid as nat == bytes::le16(raw, 2) + 65536 * bytes::le16(raw, 120)
     &&& v.gid as nat == bytes::le16(raw, 24) + 65536 * bytes::le16(raw, 122)
+}
+
+pub proof fn checked_view_is_the_source_projection(v: NodeView)
+    requires valid(v),
+    ensures v == source_view(v.volume, v.number),
+{
+    reveal(valid);
 }
 
 pub struct AllocatedInode<'v, 'a> { volume: &'v Allocation<'a>, number: u32, info: Inode }

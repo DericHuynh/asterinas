@@ -80,7 +80,10 @@
     "src/allocation.rs",
     "src/allocated_inode.rs",
     "src/file_read.rs",
-    "src/directory_block.rs"
+    "src/directory_block.rs",
+    "src/directory_file.rs",
+    "src/name_set.rs",
+    "src/directory_source.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -303,7 +306,10 @@
     "allocated_inode::every_live_inode_has_source_bound_claims",
     "file_read::an_initialized_mapping_has_exact_ownership",
     "file_read::initialized_mapping_is_unique",
-    "directory_block::complete_record_coverage_is_unique"
+    "directory_block::complete_record_coverage_is_unique",
+    "allocated_inode::checked_view_is_the_source_projection",
+    "directory_block::checked_block_has_canonical_records",
+    "directory_source::checked_mapping_and_records_are_the_canonical_source"
   ],
   "required_flags": [
     "--no-cheating",
@@ -465,6 +471,11 @@
     "directory_block::len",
     "directory_block::get",
     "directory_block::name",
-    "directory_block::parse"
+    "directory_block::parse",
+    "directory_file::read",
+    "name_set::new",
+    "name_set::len",
+    "name_set::contains",
+    "name_set::insert"
   ]
 }

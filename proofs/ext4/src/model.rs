@@ -115,3 +115,9 @@ pub mod allocated_inode;
 pub mod file_read;
 
 pub mod directory_block;
+
+pub mod directory_file;
+
+pub mod name_set;
+
+pub mod directory_source;

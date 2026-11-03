@@ -746,6 +746,103 @@ fn complete_directory_blocks_cover_every_record_and_reject_malformed_suffixes() 
 }
 
 #[test]
+fn directory_reads_bind_the_inode_generation_and_reject_holes() {
+    use core::{allocated_inode, allocation, directory_file, snapshot::Snapshot};
+    let img = image();
+    let (sb, group, seed) = metadata(&img);
+    let volume = allocation::parse(Snapshot::from_bytes(&img)).unwrap();
+    let root = allocated_inode::get(&volume, 2).unwrap();
+    let block = directory_file::read(&root, 0).unwrap();
+    assert_eq!(block.name(0), Some(&b"."[..]));
+    assert!(directory_file::read(&root, 1).is_none());
+    let file = allocated_inode::get(&volume, 12).unwrap();
+    assert!(directory_file::read(&file, 0).is_none());
+    let lost = allocated_inode::get(&volume, 11).unwrap();
+    for logical in 0..lost.info().size / 4096 {
+        assert!(directory_file::read(&lost, logical).is_some());
+    }
+    for generation in [false, true] {
+        let mut changed = img.clone();
+        let start = group.inode_table as usize * 4096 + 256;
+        let raw = &mut changed[start..start + 256];
+        if generation {
+            raw[100..104].copy_from_slice(&123u32.to_le_bytes());
+        } else {
+            raw[52..56].copy_from_slice(&1u32.to_le_bytes());
+        }
+        let checksum = core::inode::calculated_checksum(raw, 2, seed).unwrap();
+        raw[124..126].copy_from_slice(&(checksum as u16).to_le_bytes());
+        raw[130..132].copy_from_slice(&((checksum >> 16) as u16).to_le_bytes());
+        let volume = allocation::parse(Snapshot::from_bytes(&changed)).unwrap();
+        let root = allocated_inode::get(&volume, 2).unwrap();
+        assert!(directory_file::read(&root, 0).is_none());
+    }
+    assert!(allocated_inode::get(&volume, sb.inodes() + 1).is_none());
+}
+
+#[test]
+fn directory_name_sets_compare_full_keys_own_bytes_and_bound_hash_collisions() {
+    use core::name_set::NameSet;
+    let mut names = NameSet::new();
+    names = names.insert(2, b"alpha").ok().unwrap();
+    names = names.insert(11, b"alpha").ok().unwrap();
+    assert_eq!(names.len(), 2);
+    assert!(names.contains(2, b"alpha") && names.contains(11, b"alpha"));
+    names = names
+        .insert(2, b"alpha")
+        .err()
+        .expect("duplicate directory/name");
+    assert_eq!(names.len(), 2);
+    let mut input = b"immutable".to_vec();
+    names = names.insert(2, &input).ok().unwrap();
+    input[0] = b'X';
+    assert!(names.contains(2, b"immutable"));
+    assert!(!names.contains(2, &input));
+    names = names.insert(2, &[0xff, 0x80]).ok().unwrap();
+    names = names.insert(2, &[b'x'; 255]).ok().unwrap();
+    for (directory, name) in [
+        (0u32, &b"alpha"[..]),
+        (2, &b""[..]),
+        (2, &b"a/b"[..]),
+        (2, &b"a\0b"[..]),
+        (2, &[b'x'; 256][..]),
+    ] {
+        let before = names.len();
+        names = names.insert(directory, name).err().expect("invalid key");
+        assert_eq!(names.len(), before);
+        assert!(!names.contains(directory, name));
+    }
+    let mut colliding = Vec::new();
+    for index in 0..1_000_000u32 {
+        let name = format!("collision-{index:08x}").into_bytes();
+        if core::crc::crc32c(2, &name) % 4096 == 0 {
+            colliding.push(name);
+        }
+        if colliding.len() == 65 {
+            break;
+        }
+    }
+    assert_eq!(colliding.len(), 65);
+    let mut names = NameSet::new();
+    for key in &colliding[..64] {
+        names = names
+            .insert(2, key)
+            .ok()
+            .expect("distinct keys with equal hashes");
+    }
+    assert_eq!(names.len(), 64);
+    names = names
+        .insert(2, &colliding[64])
+        .err()
+        .expect("bounded collision work");
+    assert_eq!(names.len(), 64);
+    assert!(!names.contains(2, &colliding[64]));
+    for key in &colliding[..64] {
+        assert!(names.contains(2, key));
+    }
+}
+
+#[test]
 fn linux_metadata_checksums_and_directory_records_interoperate() {
     let img = image();
     let (sb, g, seed) = metadata(&img);

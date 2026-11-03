@@ -85,12 +85,27 @@ pub proof fn complete_record_coverage_is_unique(raw: Seq<u8>, inodes: u32, a: Se
     assert(a =~= b);
 }
 
+pub open spec fn canonical_records(raw: Seq<u8>, inodes: u32) -> Seq<Entry> {
+    if exists|records: Seq<Entry>| #[trigger] chain(raw, inodes, records, 4084) {
+        choose|records: Seq<Entry>| #[trigger] chain(raw, inodes, records, 4084)
+    } else { Seq::empty() }
+}
+
 pub struct BlockView { pub raw: Seq<u8>, pub records: Seq<Entry>, pub inodes: u32, pub seed: u32 }
 
 #[verifier::opaque]
 pub open spec fn valid(v: BlockView) -> bool {
     &&& tail(v.raw, v.seed) && chain(v.raw, v.inodes, v.records, 4084)
     &&& 0 < v.records.len() <= 510
+}
+
+pub proof fn checked_block_has_canonical_records(v: BlockView)
+    requires valid(v),
+    ensures v.records == canonical_records(v.raw, v.inodes),
+{
+    reveal(valid);
+    assert(exists|records: Seq<Entry>| #[trigger] chain(v.raw, v.inodes, records, 4084));
+    complete_record_coverage_is_unique(v.raw, v.inodes, v.records, canonical_records(v.raw, v.inodes));
 }
 
 pub struct DirectoryBlock<'a> { raw: &'a [u8], records: Vec<Entry>, inodes: u32, seed: u32 }

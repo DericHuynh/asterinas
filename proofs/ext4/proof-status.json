@@ -9,13 +9,13 @@
   "writable_mount_enabled": false,
   "verification": {
     "status": "core_and_models_checked",
-    "verus_verified_units": 513,
+    "verus_verified_units": 535,
     "verification_errors": 0,
-    "checked_named_proof_functions": 221,
-    "checked_named_executable_functions": 154,
+    "checked_named_proof_functions": 224,
+    "checked_named_executable_functions": 159,
     "runner_validated": true,
     "negative_gate_checks_passed": 6,
-    "host_compatibility_tests_passed": 28,
+    "host_compatibility_tests_passed": 30,
     "evidence": "verification-evidence.json",
     "request_boundary_rejections_passed": 6
   },
@@ -63,7 +63,9 @@
     "whole_image_physical_allocation": "checked_complete_same_source_claim_composition_allocated_inode_traversal_reserved_regions_marker_root_high_water_directory_counts_all_bitmaps_and_global_free_count",
     "bootstrap_journal_mapping_preservation_and_shadow_admission": "not_implemented",
     "structural_inode_reads": "checked_source_bound_live_inode_lookup_unique_initialized_mapping_exact_ownership_clipped_source_slices_and_hole_unwritten_zeros_no_VFS_authority",
-    "complete_directory_blocks": "checked_contiguous_complete_unique_record_coverage_tail_checksum_and_bounds_namespace_targets_topology_open"
+    "complete_directory_blocks": "checked_contiguous_complete_unique_record_coverage_tail_checksum_and_bounds_namespace_targets_topology_open",
+    "directory_source": "checked_actual_initialized_mapping_and_UUID_inode_generation_seed_bound_to_unique_canonical_source_records",
+    "bounded_name_uniqueness": "checked_exact_full_key_membership_owned_names_duplicate_rejection_and_unchanged_failure_64_keys_per_bucket_65536_total_no_hash_identity_assumption"
   },
   "production_activation_gate": "All applicable obligations in PROOF_OBLIGATIONS.md must be discharged for the admitted profile.",
   "evidence_policy": "Only successful pinned entire-crate checking plus compilation produces a valid build report; it certifies only the declared source/model scope."

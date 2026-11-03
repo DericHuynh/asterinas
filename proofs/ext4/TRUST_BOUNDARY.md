@@ -210,5 +210,15 @@ exact file-size/block-clipped host slices or zero spans for holes/unwritten
 extents. These helpers do not accept or create credentials, open rights or VFS
 capabilities; kernel ingress must add those proofs. `directory_block.rs` checks
 complete canonical record coverage, including deleted records, and proves the
-complete stream unique. Its checksum seed/source must still be bound to the
-actual allocated directory, and namespace targets/topology checked above it.
+complete stream unique. The directory-file layer now binds its checksum seed/source to the actual
+allocated directory; whole-namespace targets/topology remain to be checked.
+
+`directory_source.rs` defines canonical directory source bytes and records with
+guarded logical choices. Executable initialized mappings and complete record
+chains witness existence; their checked uniqueness proves the returned records
+equal that source function. No unproved selection or checksum-identity premise
+is introduced. `name_set.rs` uses the checked CRC only to select a bounded
+bucket, then compares complete directory/name keys. It owns copied name bytes
+and preserves its original state on rejection. Collision/total caps are explicit
+resource limits; the helper does not certify that its inode numbers are live or
+that a namespace is complete, authorized, rooted or link-count consistent.
