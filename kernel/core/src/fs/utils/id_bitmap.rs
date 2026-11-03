@@ -98,8 +98,10 @@ impl IdBitmap {
     ///
     /// If allocation is not possible, it returns `None`.
     pub(crate) fn alloc_consecutive(&mut self, count: u16) -> Option<Range<u16>> {
-        if count == 0 {
-            return None;
+        match count {
+            0 => return None,
+            1 => return self.alloc().map(|id| id..id + 1),
+            _ => (),
         }
 
         let end = self.first_available_id.checked_add(count)?;
@@ -225,5 +227,39 @@ mod test {
         // Allocating one more ID should fail since the
         // bitmap's `first_available_id` + `count` is out of bounds.
         assert!(bitmap.alloc_consecutive(1).is_none());
+    }
+
+    #[ktest]
+    fn single_id_ranges_follow_first_free_order() {
+        for start in [0u16, 5, 57] {
+            for mask in 0..=u8::MAX {
+                let mut expected = vec![0xff; BLOCK_SIZE];
+                for offset in 0..8 {
+                    let id = start + offset;
+                    if mask & (1 << offset) == 0 {
+                        expected[id as usize / 8] &= !(1 << (id % 8));
+                    }
+                }
+                let mut bitmap = IdBitmap::from_buf(expected.clone().into_boxed_slice(), start + 9);
+                assert!(bitmap.alloc_consecutive(0).is_none());
+                assert_eq!(bitmap.as_bytes(), expected);
+
+                for offset in 0..8 {
+                    if mask & (1 << offset) != 0 {
+                        continue;
+                    }
+                    let id = start + offset;
+                    assert_eq!(bitmap.alloc_consecutive(1), Some(id..id + 1));
+                    expected[id as usize / 8] |= 1 << (id % 8);
+                    assert_eq!(bitmap.as_bytes(), expected);
+                }
+                assert!(bitmap.alloc_consecutive(1).is_none());
+                assert!(bitmap.alloc().is_none());
+                assert_eq!(bitmap.as_bytes(), expected);
+            }
+        }
+
+        let mut empty = IdBitmap::from_buf(vec![0; BLOCK_SIZE].into_boxed_slice(), 0);
+        assert!(empty.alloc_consecutive(1).is_none());
     }
 }
