@@ -132,6 +132,51 @@ impl IdBitmap {
         Some(allocated_range)
     }
 
+    /// Allocates consecutive IDs, falling back to successively halved counts.
+    ///
+    /// Returns the first range for the largest fitting count from
+    /// `count`, `count / 2`, and so on, or `None` if none fits.
+    pub(crate) fn alloc_consecutive_with_fallback(&mut self, count: u16) -> Option<Range<u16>> {
+        self.alloc_consecutive(count)
+            .or_else(|| self.alloc_fallback(count / 2))
+    }
+
+    fn alloc_fallback(&mut self, count: u16) -> Option<Range<u16>> {
+        if count == 0 || self.first_available_id >= self.len {
+            return None;
+        }
+        let bits = self.bit_slice();
+        let mut current = self.first_available_id..self.first_available_id + 1;
+        let mut best = self.first_available_id..self.first_available_id;
+        // Keep the first candidate for the largest feasible fallback count.
+        let consider_fn = |current: &Range<u16>, best: &mut Range<u16>| {
+            if current.len() <= best.len() {
+                return;
+            }
+            let mut candidate_count = count;
+            while candidate_count as usize > current.len() {
+                candidate_count /= 2;
+            }
+            if candidate_count as usize > best.len() {
+                *best = current.start..current.start + candidate_count;
+            }
+        };
+        while current.len() < count as usize && current.end < self.len {
+            if !bits[current.end as usize] {
+                current.end += 1;
+            } else {
+                consider_fn(&current, &mut best);
+                current = current.end + 1..current.end + 1;
+            }
+        }
+        consider_fn(&current, &mut best);
+        if best.is_empty() {
+            return None;
+        }
+        self.mark_allocated(&best);
+        Some(best)
+    }
+
     fn mark_allocated(&mut self, range: &Range<u16>) {
         // Set every bit to 1 within the allocated range.
         let bit_slice_mut = self.bit_slice_mut();
@@ -228,5 +273,43 @@ mod test {
         // Allocating one more ID should fail since the
         // bitmap's `first_available_id` + `count` is out of bounds.
         assert!(bitmap.alloc_consecutive(1).is_none());
+    }
+
+    #[ktest]
+    fn fallback_allocations_match_repeated_searches() {
+        for start in [0u16, 5, 57, IdBitmap::capacity() - 16] {
+            for mask in 0..=u8::MAX {
+                for free_tail in [false, true] {
+                    let mut original = vec![0xff; BLOCK_SIZE];
+                    for offset in 0..16 {
+                        if (offset < 8 && mask & (1 << offset) == 0) || (offset >= 8 && free_tail) {
+                            let id = start + offset;
+                            original[id as usize / 8] &= !(1 << (id % 8));
+                        }
+                    }
+                    for count in (0..=34).chain([IdBitmap::capacity(), u16::MAX]) {
+                        let mut expected =
+                            IdBitmap::from_buf(original.clone().into_boxed_slice(), start + 16);
+                        let mut actual = expected.clone();
+                        let mut requested_count = count;
+                        let mut expected_range = None;
+                        while requested_count > 0 {
+                            expected_range = expected.alloc_consecutive(requested_count);
+                            if expected_range.is_some() {
+                                break;
+                            }
+                            requested_count /= 2;
+                        }
+                        assert_eq!(
+                            actual.alloc_consecutive_with_fallback(count),
+                            expected_range
+                        );
+                        assert_eq!(actual.as_bytes(), expected.as_bytes());
+                        assert_eq!(actual.alloc(), expected.alloc());
+                        assert_eq!(actual.as_bytes(), expected.as_bytes());
+                    }
+                }
+            }
+        }
     }
 }
