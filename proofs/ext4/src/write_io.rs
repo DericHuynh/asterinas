@@ -185,14 +185,28 @@ proof fn command_context(v: Images)
     reveal(valid_images);
 }
 
+pub open spec fn can_prepare(journal: Seq<u8>, uuid: Seq<u8>, layout: &JournalLayout, primary: Seq<u8>,
+    partition_bytes: u64, input: Seq<transaction::ImageView>) -> bool {
+    &&& layout.wf() && primary.len() == 4096
+    &&& journal.len() == layout.view().journal_blocks as nat * 4096
+    &&& superblock::accepted(primary.subrange(1024, 2048), partition_bytes)
+    &&& layout.view().fs_blocks as nat == bytes::le32(primary, 1028)
+    &&& primary.subrange(1128, 1144) == uuid
+    &&& journal_superblock::accepted(journal.subrange(0, 1024), uuid, layout.view().journal_blocks)
+    &&& bytes::be32(journal, 28) == 0
+    &&& epoch::admissible(journal, bytes::be32(journal, 24) as u32)
+    &&& transaction::input_ok(input, uuid, 1, layout, super_state::recovery_bytes(primary, true), partition_bytes)
+}
+
 #[verifier::rlimit(40)]
 pub fn prepare(journal: &[u8], uuid: &[u8], layout: JournalLayout, primary: &[u8], partition_bytes: u64,
     input: Vec<AfterImage>) -> (r: Option<Writer>)
     ensures match r {
         Some(w) => valid_images(w.images()) && w.state() == write_protocol::initial()
             && w.images().initial_journal == journal@ && w.images().initial_primary == primary@
-            && w.images().tx.original == transaction::images(input@),
-        None => true,
+            && w.images().tx.original == transaction::images(input@)
+            && can_prepare(journal@, uuid@, &layout, primary@, partition_bytes, transaction::images(input@)),
+        None => !can_prepare(journal@, uuid@, &layout, primary@, partition_bytes, transaction::images(input@)),
     },
 {
     hide(crate::crc::fold);

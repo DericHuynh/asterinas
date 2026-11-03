@@ -24,11 +24,16 @@ pub open spec fn newer(journal: Seq<u8>, minimum: u32, sequence: u32) -> bool {
     &&& (forall|slot: int, id: u32| #[trigger] header_id(journal, slot, id) ==> id < sequence)
 }
 
+pub open spec fn admissible(journal: Seq<u8>, minimum: u32) -> bool {
+    &&& 1024 * 4096 <= journal.len() <= 32768 * 4096 && journal.len() % 4096 == 0
+    &&& minimum < 4294967294
+    &&& !(exists|slot: int, id: u32| #[trigger] header_id(journal, slot, id) && id >= 4294967294)
+}
+
 pub fn fresh_sequence(journal: &[u8], minimum: u32) -> (r: Option<u32>)
     ensures match r {
-        Some(sequence) => 1024 * 4096 <= journal.len() <= 32768 * 4096
-            && journal.len() % 4096 == 0 && newer(journal@, minimum, sequence),
-        None => true,
+        Some(sequence) => admissible(journal@, minimum) && newer(journal@, minimum, sequence),
+        None => !admissible(journal@, minimum),
     },
 {
     if journal.len() < 1024 * 4096 || journal.len() > 32768 * 4096
@@ -48,7 +53,13 @@ pub fn fresh_sequence(journal: &[u8], minimum: u32) -> (r: Option<u32>)
         let kind = bytes::read_be32(journal, offset + 4).unwrap();
         if magic == 0xc03b3998 && (kind == 1 || kind == 2 || kind == 5) {
             let id = bytes::read_be32(journal, offset + 8).unwrap();
-            if id >= 4294967294 { return None; }
+            if id >= 4294967294 {
+                proof {
+                    assert(header_id(journal@, slot as int, id));
+                    assert(exists|j: int, value: u32| #[trigger] header_id(journal@, j, value) && value >= 4294967294);
+                }
+                return None;
+            }
             if id > largest { largest = id; }
         }
         proof {

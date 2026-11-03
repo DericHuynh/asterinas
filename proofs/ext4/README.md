@@ -7,8 +7,8 @@ implementation of a **Linux-compatible ext4 subset**.
 It is not a complete filesystem and is not registered with the kernel VFS.
 No mount or filesystem write path is enabled.
 
-The pinned Verus run checks **301 obligations with zero errors**, including
-127 named proof functions and 106 named executable functions.
+The pinned Verus run checks **357 obligations with zero errors**, including
+174 named proof functions and 106 named executable functions.
 Sixteen host interoperability/regression tests pass on Linux-created metadata.
 [Proof status](proof-status.json) and [recorded evidence](verification-evidence.json)
 state the exact scope; tests do not discharge formal obligations.
@@ -31,7 +31,8 @@ state the exact scope; tests do not discharge formal obligations.
 | `recovery_request.rs` | An outstanding request owns its exact recovery machine; completion consumes that object. External callers cannot forge/reuse requests or redirect a completion using a recycled numeric ID. |
 | `transaction.rs`, `transaction_refinement.rs` | Owned unique after-images; exact canonical transaction encoding; concrete journal-map witness; returned scans recover every encoded original image. A candidate patch is not filesystem authority. |
 | `journal_view.rs` | Physical block-map projection equals scanner bytes; a journal write splices exactly one image; nonjournal writes preserve the snapshot. |
-| `write_protocol.rs`, `write_io.rs` | Conservative serial dirty/activation/log/commit/checkpoint/retirement commands, six fences, owned requests, sticky abort, partition confinement and finite failure-free completion. Physical writer persistence refinement remains open. |
+| `write_protocol.rs`, `write_io.rs` | Conservative serial dirty/activation/log/commit/checkpoint/retirement commands, six fences, owned requests, sticky abort, partition confinement and exact local preparation admission. |
+| `freshness.rs`, `write_device.rs`, `write_media.rs`, `write_recognition.rs` | All finite ledger interleavings; exact per-event atomic-block byte refinement; finite flush refinement; fresh commit recognition without a checksum identity premise; before/after home-byte guarantees, safe tail clearing and finite failure-free success under the declared device contract. |
 | `frozen.rs` | Owned immutable snapshots, JBD2 escape/restore, snapshot contents independent of the source buffer. |
 | `ring.rs` | Bounded credits and injective circular-log position mapping. |
 | `gate.rs` | Affine writer capability backed by vstd's exclusive resource algebra; no local trusted token generator. |
@@ -42,7 +43,7 @@ The top-level model theorem is
 `system::crash_at_every_interleaving_preserves_the_acknowledged_prefix`.
 Its premise is an execution of the specified device/transaction machine.
 Commit and retirement are semantic durable facts in that machine;
-**their full refinement from the writer's JBD2 bytes and driver events is still unproved**.
+**multi-transaction physical-history composition and the actual driver refinement remain open**.
 The proof does not establish durability of a mounted Asterinas filesystem.
 
 The recovery theorem `recovery_device::success_image_equals_linux_redo` proves
@@ -50,7 +51,16 @@ that the stable image equals chronological redo plus the retired journal tail.
 Its machine permits persistence before completion and after abort, and proves
 that a persisted clear tail implies durable home data. It is conditional on a
 correct, complete replay plan, a quiescent device and the stated atomicity/flush
-contract. Active-journal admission/progress, physical writer refinement, whole-volume validation
+contract. The single-transaction writer now has a checked byte/persistence link:
+old headers cannot acquire a fresh ID, escaped payloads cannot impersonate
+metadata, and a recognized fresh commit implies the complete encoded log is
+stable. Before commit the home image is unchanged except recovery marking;
+retirement requires durable exact home after-images. A successful flush has a
+finite refinement into issued atomic writes, and a failure-free ledger has a
+finite successful execution. These results use explicit device assumptions,
+not a claim about any actual Asterinas driver.
+
+Active-journal admission/progress, multi-transaction physical history, whole-volume validation
 and the actual driver refinement remain open.
 
 All public executable entry points validate their inputs without `requires`
@@ -108,7 +118,7 @@ In particular, these are still missing:
 
 - Global ext4 ownership/namespace validation and filesystem operation implementations,
   including allocation, create/unlink/rename, orphan handling, permissions integration and fsync.
-- Active-journal total admission/progress and transaction-writer refinement, full physical
+- Active-journal total admission/progress and multi-transaction physical
   history recognition, boot/unmount ordering and byte-level tearing/reuse proofs.
 - CortenMM/OSTD frame, sleeping-lock, BIO, DMA and device-persistence adapters,
   with verified callback generations, snapshot loans, quiescence and ingress contracts.

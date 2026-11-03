@@ -132,7 +132,12 @@ drain, DMA lifetime, or a trustworthy device completion report.
 The writer uses the same ownership boundary and validates every emitted write's
 4 KiB image and partition range. Its six fences order dirty marking, journal
 activation, prepared log, commit, checkpoint and retirement. The command state
-machine is checked; its physical persistence/history simulation remains open.
+machine and its single-transaction byte/persistence simulation are checked under
+the stated device contract. Each persistence event inserts exactly its issued
+image at its physical address; successful flush has a finite issued-write
+refinement. Fresh commit recognition derives from epoch/provenance and prepared
+log durability, without CRC injectivity. Multi-transaction physical history and
+the actual device adapter remain open.
 The device contract applies to each submitted partition-relative 4 KiB span,
 including physical alignment. The partition wrapper must establish that relation.
 

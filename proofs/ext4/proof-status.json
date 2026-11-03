@@ -9,9 +9,9 @@
   "writable_mount_enabled": false,
   "verification": {
     "status": "core_and_models_checked",
-    "verus_verified_units": 301,
+    "verus_verified_units": 357,
     "verification_errors": 0,
-    "checked_named_proof_functions": 127,
+    "checked_named_proof_functions": 174,
     "checked_named_executable_functions": 106,
     "runner_validated": true,
     "negative_gate_checks_passed": 6,
@@ -45,7 +45,11 @@
     "owned_transaction_encoder": "checked_and_related_to_exact_canonical_scan_input",
     "physical_block_map_to_journal_bytes": "checked",
     "serial_writer_command_pipeline": "checked_order_ownership_partition_bounds_and_finite_completion",
-    "physical_writer_persistence_and_history": "not_proved"
+    "physical_writer_persistence_and_history": "single_transaction_checked_multi_transaction_composition_open",
+    "writer_factory_admission": "checked_exact_can_prepare_profile",
+    "single_transaction_writer_byte_persistence_and_fresh_commit_recognition": "checked_under_explicit_atomicity_flush_quiescent_start_contract_without_crc_identity_assumption",
+    "flush_to_finite_issued_atomic_writes": "checked",
+    "failure_free_writer_execution": "checked_finite_constructive_witness"
   },
   "production_activation_gate": "All applicable obligations in PROOF_OBLIGATIONS.md must be discharged for the admitted profile.",
   "evidence_policy": "Only successful pinned entire-crate checking plus compilation produces a valid build report; it certifies only the declared source/model scope."

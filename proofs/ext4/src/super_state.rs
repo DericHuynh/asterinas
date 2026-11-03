@@ -17,10 +17,17 @@ pub open spec fn preserves(before: Seq<u8>, after: Seq<u8>) -> bool {
     &&& (forall|i: int| 0 <= i < 4096 && !edited(i) ==> #[trigger] after[i] == before[i])
 }
 
+pub open spec fn recovery_bytes(before: Seq<u8>, dirty: bool) -> Seq<u8> {
+    let fields = bytes::splice(before, 1120, bytes::encoded_le(if dirty { 0x46u32 } else { 0x42u32 }));
+    let checksum = crc::fold(0xffffffff, fields.subrange(1024, 2044));
+    bytes::splice(fields, 2044, bytes::encoded_le(checksum))
+}
+
 pub fn recovery_image(s: &[u8], partition_bytes: u64, dirty: bool) -> (r: Option<FrozenBlock>)
     ensures match r {
         Some(b) => superblock::accepted(s@.subrange(1024, 2048), partition_bytes)
             && preserves(s@, b.view()) && superblock::accepted(b.view().subrange(1024, 2048), partition_bytes)
+            && b.view() == recovery_bytes(s@, dirty)
             && bytes::le32(b.view(), 1120) == if dirty { 0x46nat } else { 0x42nat },
         None => s.len() != 4096 || !superblock::accepted(s@.subrange(1024, 2048), partition_bytes),
     },
