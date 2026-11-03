@@ -136,6 +136,24 @@
       "url": "https://github.com/verus-lang/verus/blob/8bf68ee741df833ea5d0fe6a2255126fdea87e47/source/docs/guide/src/container_bst_type_invariant.md",
       "blob_sha": "f20217a5c7da26bfcd8edffc576b9ada8024a39e",
       "review_scope": "checked type invariant encapsulation and public APIs without preconditions"
+    },
+    {
+      "path": "fs/ext4/bitmap.c",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/bitmap.c",
+      "blob_sha": "87760fabdd2eba8a59673de6258fdb7ef6c340ed",
+      "review_scope": "bitmap checksum inputs and truncated checksum fields"
+    },
+    {
+      "path": "fs/ext4/balloc.c",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/balloc.c",
+      "blob_sha": "8040c731b3e45d1c54fda8bb5493604e03c969bd",
+      "review_scope": "block bitmap reserved regions and padding validation"
+    },
+    {
+      "path": "fs/ext4/ialloc.c",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/ialloc.c",
+      "blob_sha": "b1bc1950c9f03b9dca9729cfac532ff95d504948",
+      "review_scope": "LSB bitmap padding and initialized inode bitmap semantics"
     }
   ]
 }

@@ -87,3 +87,9 @@ mod write_recovery;
 mod write_history;
 
 mod recovery_closure;
+
+pub mod bitmap;
+
+pub mod block_claims;
+
+pub mod inode_claims;

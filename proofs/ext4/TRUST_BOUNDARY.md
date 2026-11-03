@@ -172,3 +172,13 @@ this does not prove successful allocation under arbitrary memory pressure.
 The kernel adapter must provide fallible reservation and OSTD memory semantics.
 The DAC core takes the filesystem UID and already mapped owner/group/capability
 facts; it does not implement credential authentication, idmapped mounts or LSMs.
+
+The initialized bitmap and block-claim census components validate allocation
+bits, free counters, padding and checksum inputs. Accepted inode claims bind
+physical slots to their actual extent bytes, inode generation and sector count;
+journal inode 8 is reserved separately. Claim rejection preserves the original
+census, and successful additions preserve previously occupied slots. These
+components do not enumerate an entire volume or authenticate caller ownership.
+The census is bounded to 1,048,576 blocks; successful allocation still uses the
+stated host allocator foundation. Kernel memory must use fallible CortenMM/OSTD
+reservation before accepting a volume or transaction.

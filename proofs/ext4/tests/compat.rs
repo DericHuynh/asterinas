@@ -68,6 +68,279 @@ fn codecs_handle_extremes_and_crc_streaming() {
 }
 
 #[test]
+fn allocation_bitmaps_match_linux_counts_padding_and_checksum_ranges() {
+    let img = image();
+    let (sb, group, seed) = metadata(&img);
+    let ipg = le32(&img[1024..2048], 40);
+    let descriptor = &img[4096..4128];
+    for (block, valid, meaningful, free_offset, checksum_offset) in [
+        (group.block_bitmap, sb.blocks(), 32768, 12usize, 24usize),
+        (group.inode_bitmap, ipg, ipg, 14usize, 26usize),
+    ] {
+        let raw = &img[block as usize * 4096..(block as usize + 1) * 4096];
+        let free = core::bytes::read_le16(descriptor, free_offset).unwrap() as u32;
+        let checksum = core::bytes::read_le16(descriptor, checksum_offset).unwrap();
+        let bitmap = core::bitmap::parse(raw, valid, meaningful, free, checksum, seed)
+            .expect("Linux initialized bitmap");
+        assert_eq!(bitmap.entry_count(), valid);
+        assert_eq!(bitmap.free_count(), free);
+        let counted = (0..valid)
+            .filter(|bit| !bitmap.is_set(*bit).unwrap())
+            .count();
+        assert_eq!(counted, free as usize);
+        assert_eq!(bitmap.raw_image(), raw);
+        assert!(bitmap.is_set(valid).is_none());
+        assert!(bitmap.is_set(u32::MAX).is_none());
+        assert!(core::bitmap::parse(raw, valid, meaningful, free + 1, checksum, seed).is_none());
+        assert!(core::bitmap::parse(raw, valid, meaningful, free, checksum ^ 1, seed).is_none());
+        let mut bad = raw.to_vec();
+        bad[valid as usize / 8] &= !(1u8 << (valid % 8));
+        let checksum = (core::crc::crc32c(seed, &bad[..meaningful as usize / 8]) & 0xffff) as u16;
+        assert!(
+            core::bitmap::parse(&bad, valid, meaningful, free, checksum, seed).is_none(),
+            "a valid checksum does not permit an unallocated padding bit"
+        );
+    }
+    assert_eq!(core::bitmap::read_bit(&[0x81], 0), Some(true));
+    assert_eq!(core::bitmap::read_bit(&[0x81], 1), Some(false));
+    assert_eq!(core::bitmap::read_bit(&[0x81], 7), Some(true));
+    assert_eq!(core::bitmap::read_bit(&[0x81], 8), None);
+    assert_eq!(core::bitmap::read_bit(&[], u32::MAX), None);
+    assert!(core::bitmap::parse(&[0xff; 4096], 0, 0, 0, 0, seed).is_none());
+    assert!(core::bitmap::parse(&[0xff; 4096], 1, 32769, 0, 0, seed).is_none());
+}
+
+#[test]
+fn block_claims_reject_aliases_without_partial_changes_and_match_allocation_bits() {
+    use core::block_claims::{Census, Claim};
+    let metadata = |start, length, kind| Claim {
+        start,
+        length,
+        kind,
+        inode: 0,
+        generation: 0,
+        logical: 0,
+        initialized: false,
+    };
+    let data = |start, length, inode, logical, kind, initialized| Claim {
+        start,
+        length,
+        kind,
+        inode,
+        generation: 17,
+        logical,
+        initialized,
+    };
+    assert!(Census::new(0).is_none());
+    assert!(Census::new(2).is_none());
+    assert!(Census::new(core::block_claims::MAX_BLOCKS + 1).is_none());
+    let mut census = Census::new(64).unwrap();
+    for claim in [
+        metadata(0, 2, 1),
+        metadata(2, 2, 3),
+        metadata(8, 8, 2),
+        data(4, 4, 12, 0, 4, true),
+        data(16, 2, 2, 0, 5, true),
+        data(63, 1, 13, u32::MAX, 4, true),
+    ] {
+        census = census.claim(claim).ok().expect("disjoint candidate ranges");
+    }
+    assert_eq!(census.role_of(0).unwrap().kind, 1);
+    assert_eq!(census.role_of(3).unwrap().kind, 3);
+    assert_eq!(census.role_of(8).unwrap().kind, 2);
+    assert_eq!(census.role_of(7).unwrap().logical, 3);
+    assert_eq!(census.role_of(63).unwrap().logical, u32::MAX);
+    assert!(census.role_of(64).is_none());
+    for bad in [
+        data(6, 2, 12, 10, 4, true),
+        data(5, 2, 13, 0, 4, true),
+        data(20, 44, 13, 0, 4, true),
+        data(20, 2, 13, u32::MAX, 4, true),
+        data(20, 1, 2, 2, 5, false),
+        metadata(63, 2, 3),
+        metadata(u32::MAX, u32::MAX, 1),
+    ] {
+        census = census
+            .claim(bad)
+            .err()
+            .expect("invalid or overlapping range");
+        assert_eq!(census.role_of(20).unwrap().kind, 0);
+        assert_eq!(census.role_of(6).unwrap().logical, 2);
+        assert_eq!(census.role_of(63).unwrap().inode, 13);
+    }
+    let mut raw = vec![0xffu8; 4096];
+    raw[..8].fill(0);
+    for bit in 0..18 {
+        raw[bit / 8] |= 1u8 << (bit % 8);
+    }
+    raw[7] |= 0x80;
+    let checksum = (core::crc::crc32c(17, &raw) & 0xffff) as u16;
+    let bitmap = core::bitmap::parse(&raw, 64, 32768, 45, checksum, 17).unwrap();
+    assert!(census.matches_bitmap(0, &bitmap));
+    assert!(!census.matches_bitmap(1, &bitmap));
+    for (bit, allocate, free) in [(20usize, true, 44), (5, false, 46)] {
+        let mut corrupt = raw.clone();
+        if allocate {
+            corrupt[bit / 8] |= 1u8 << (bit % 8);
+        } else {
+            corrupt[bit / 8] &= !(1u8 << (bit % 8));
+        }
+        let checksum = (core::crc::crc32c(17, &corrupt) & 0xffff) as u16;
+        let bitmap = core::bitmap::parse(&corrupt, 64, 32768, free, checksum, 17).unwrap();
+        assert!(
+            !census.matches_bitmap(0, &bitmap),
+            "checksummed allocation/ownership disagreement"
+        );
+    }
+    let raw = [0xffu8; 4096];
+    let checksum = (core::crc::crc32c(17, &raw) & 0xffff) as u16;
+    let allocated = core::bitmap::parse(&raw, 16, 32768, 0, checksum, 17).unwrap();
+    assert!(census.matches_bitmap(0, &allocated));
+    assert!(!census.matches_bitmap(16, &allocated));
+}
+
+#[test]
+fn checked_inode_extents_bind_census_ownership_and_reject_checksummed_aliases() {
+    use core::block_claims::{Census, Claim};
+    fn base(img: &[u8], directories: bool) -> Census {
+        let (sb, group, seed) = metadata(img);
+        let mut census = Census::new(sb.blocks()).unwrap();
+        for (start, length, kind) in [
+            (0, 2, 1),
+            (group.block_bitmap, 1, 3),
+            (group.inode_bitmap, 1, 3),
+            (group.inode_table, group.inode_table_blocks, 3),
+        ] {
+            census = census
+                .claim(Claim {
+                    start,
+                    length,
+                    kind,
+                    inode: 0,
+                    generation: 0,
+                    logical: 0,
+                    initialized: false,
+                })
+                .ok()
+                .unwrap();
+        }
+        let (mut census, _) = core::inode_claims::reserve_journal(
+            census,
+            inode_bytes(img, group.inode_table, 8),
+            sb.inodes(),
+            sb.blocks(),
+            seed,
+        )
+        .unwrap();
+        if directories {
+            for number in [2, 11] {
+                census = core::inode_claims::collect(
+                    census,
+                    inode_bytes(img, group.inode_table, number),
+                    number,
+                    sb.inodes(),
+                    sb.blocks(),
+                    seed,
+                )
+                .unwrap();
+            }
+        }
+        census
+    }
+    fn checksum_inode(raw: &mut [u8], number: u32, seed: u32) {
+        let checksum = core::inode::calculated_checksum(raw, number, seed).unwrap();
+        raw[124..126].copy_from_slice(&(checksum as u16).to_le_bytes());
+        raw[130..132].copy_from_slice(&((checksum >> 16) as u16).to_le_bytes());
+    }
+    let img = image();
+    let (sb, group, seed) = metadata(&img);
+    assert_eq!(
+        sb.groups(),
+        1,
+        "the controlled compatibility fixture has one group"
+    );
+    let raw = inode_bytes(&img, group.inode_table, 12);
+    let file = core::inode::parse(raw, 12, sb.inodes(), sb.blocks(), seed).unwrap();
+    let data = first_data_block(raw, sb.blocks());
+    let census =
+        core::inode_claims::collect(base(&img, true), raw, 12, sb.inodes(), sb.blocks(), seed)
+            .unwrap();
+    let role = census.role_of(data).unwrap();
+    assert_eq!(
+        (role.kind, role.inode, role.generation, role.logical),
+        (4, 12, file.generation, 0)
+    );
+    let bitmap_raw =
+        &img[group.block_bitmap as usize * 4096..(group.block_bitmap as usize + 1) * 4096];
+    let bitmap = core::bitmap::parse(
+        bitmap_raw,
+        sb.blocks(),
+        32768,
+        core::bytes::read_le16(&img[4096..4128], 12).unwrap() as u32,
+        core::bytes::read_le16(&img[4096..4128], 24).unwrap(),
+        seed,
+    )
+    .unwrap();
+    assert!(
+        census.matches_bitmap(0, &bitmap),
+        "every allocated fixture block has exactly one decoded claim"
+    );
+    let root_data = first_data_block(inode_bytes(&img, group.inode_table, 2), sb.blocks());
+    let mut alias = raw.to_vec();
+    alias[60..64].copy_from_slice(&root_data.to_le_bytes());
+    checksum_inode(&mut alias, 12, seed);
+    assert!(core::inode::parse(&alias, 12, sb.inodes(), sb.blocks(), seed).is_some());
+    assert!(
+        core::inode_claims::collect(base(&img, true), &alias, 12, sb.inodes(), sb.blocks(), seed)
+            .is_none()
+    );
+    let mut accounting = raw.to_vec();
+    let sectors = le32(&accounting, 28);
+    accounting[28..32].copy_from_slice(&(sectors + 8).to_le_bytes());
+    checksum_inode(&mut accounting, 12, seed);
+    assert!(core::inode::parse(&accounting, 12, sb.inodes(), sb.blocks(), seed).is_some());
+    assert!(
+        core::inode_claims::collect(
+            base(&img, true),
+            &accounting,
+            12,
+            sb.inodes(),
+            sb.blocks(),
+            seed
+        )
+        .is_none()
+    );
+    let mut unwritten_directory = inode_bytes(&img, group.inode_table, 2).to_vec();
+    let length = core::bytes::read_le16(&unwritten_directory, 56).unwrap();
+    unwritten_directory[56..58].copy_from_slice(&(length + 32768).to_le_bytes());
+    checksum_inode(&mut unwritten_directory, 2, seed);
+    assert!(core::inode::parse(&unwritten_directory, 2, sb.inodes(), sb.blocks(), seed).is_some());
+    assert!(
+        core::inode_claims::collect(
+            base(&img, false),
+            &unwritten_directory,
+            2,
+            sb.inodes(),
+            sb.blocks(),
+            seed
+        )
+        .is_none()
+    );
+    assert!(
+        core::inode_claims::collect(
+            base(&img, false),
+            inode_bytes(&img, group.inode_table, 8),
+            8,
+            sb.inodes(),
+            sb.blocks(),
+            seed
+        )
+        .is_none(),
+        "the journal is not regular file data"
+    );
+}
+
+#[test]
 fn linux_metadata_checksums_and_directory_records_interoperate() {
     let img = image();
     let (sb, g, seed) = metadata(&img);

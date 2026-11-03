@@ -9,13 +9,13 @@
   "writable_mount_enabled": false,
   "verification": {
     "status": "core_and_models_checked",
-    "verus_verified_units": 401,
+    "verus_verified_units": 439,
     "verification_errors": 0,
-    "checked_named_proof_functions": 206,
-    "checked_named_executable_functions": 106,
+    "checked_named_proof_functions": 212,
+    "checked_named_executable_functions": 119,
     "runner_validated": true,
     "negative_gate_checks_passed": 6,
-    "host_compatibility_tests_passed": 20,
+    "host_compatibility_tests_passed": 23,
     "evidence": "verification-evidence.json",
     "request_boundary_rejections_passed": 6
   },
@@ -53,7 +53,11 @@
     "terminal_transaction_recovery": "checked_retires_at_scan_next_sequence_without_allocating_an_epoch",
     "single_writer_actual_scan_and_recovery": "checked_complete_before_or_after_nonjournal_home_bytes_outside_block_zero_with_separate_volume_identity_replay_policy",
     "recovery_request_partition_bounds_and_scan_certificate_preservation": "checked",
-    "repeated_recovery_admission_and_input_closure": "checked_for_arbitrary_finite_attempts_under_declared_contract"
+    "repeated_recovery_admission_and_input_closure": "checked_for_arbitrary_finite_attempts_under_declared_contract",
+    "initialized_allocation_bitmaps": "checked_Linux_checksum_ranges_padding_exact_free_counts_and_bounds",
+    "owned_block_claim_census": "checked_disjoint_ranges_preservation_on_failure_and_of_prior_occupied_slots_bitmap_agreement_and_free_count_refinement",
+    "inode_extent_allocation_binding": "checked_exact_source_bytes_physical_slots_owner_generation_logical_offset_initialization_and_sector_accounting",
+    "whole_volume_enumeration_and_namespace": "not_implemented"
   },
   "production_activation_gate": "All applicable obligations in PROOF_OBLIGATIONS.md must be discharged for the admitted profile.",
   "evidence_policy": "Only successful pinned entire-crate checking plus compilation produces a valid build report; it certifies only the declared source/model scope."
