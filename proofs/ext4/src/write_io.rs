@@ -21,10 +21,14 @@ pub open spec fn valid_images(v: Images) -> bool {
     &&& transaction::wf(v.tx) && v.journal_block == v.tx.layout.start
     &&& v.tx.layout.fs_blocks as nat * 4096 <= v.partition_bytes
     &&& v.initial_journal.len() == v.tx.layout.journal_blocks as nat * 4096
+    &&& superblock::accepted(v.initial_primary.subrange(1024, 2048), v.partition_bytes)
+    &&& bytes::le32(v.initial_primary, 1028) == v.tx.layout.fs_blocks
+    &&& v.initial_primary.subrange(1128, 1144) == v.tx.uuid
     &&& journal_superblock::accepted(v.initial_journal.subrange(0, 1024), v.tx.uuid, v.tx.layout.journal_blocks)
     &&& bytes::be32(v.initial_journal, 28) == 0
     &&& epoch::newer(v.initial_journal, bytes::be32(v.initial_journal, 24) as u32, v.tx.sequence)
     &&& super_state::preserves(v.initial_primary, v.dirty)
+    &&& v.dirty == super_state::recovery_bytes(v.initial_primary, true)
     &&& superblock::accepted(v.dirty.subrange(1024, 2048), v.partition_bytes) && bytes::le32(v.dirty, 1120) == 0x46
     &&& v.tx.primary == v.dirty && v.tx.partition_bytes == v.partition_bytes
     &&& journal_state::preserves(v.initial_journal.subrange(0, 4096), v.activation)

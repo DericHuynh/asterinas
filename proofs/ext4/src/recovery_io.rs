@@ -5,7 +5,7 @@
 //! A kernel adapter must bind successful Flush reports to its device contract.
 
 use vstd::prelude::*;
-use crate::{bytes, frozen::FrozenBlock, journal_state, journal_superblock, layout::JournalLayout, replay, scan, scan_budget, super_state, superblock};
+use crate::{bytes, frozen::FrozenBlock, journal_state, journal_superblock, layout::JournalLayout, recovery_profile, replay, scan, scan_budget, super_state, superblock};
 
 verus! {
 
@@ -60,7 +60,7 @@ pub struct Recovery {
 
 impl Recovery {
     pub closed spec fn state(&self) -> State { self.state }
-    pub closed spec fn plan(&self) -> &replay::ReplayPlan { self.scan.plan() }
+    pub open spec fn plan(&self) -> &replay::ReplayPlan { self.scan_result().plan() }
     pub closed spec fn scan_result(&self) -> &scan::Scan { &self.scan }
     pub closed spec fn tail(&self) -> Seq<u8> { self.tail.view() }
     pub closed spec fn journal_block(&self) -> u32 { self.journal_block }
@@ -70,6 +70,7 @@ impl Recovery {
     #[verifier::type_invariant]
     spec fn valid(self) -> bool {
         &&& self.plan().refines() && wf(self.state(), self.plan().selection().len())
+        &&& self.plan().layout().view().fs_blocks as nat * 4096 <= self.partition_bytes()
         &&& self.tail().len() == 4096 && bytes::be32(self.tail(), 28) == 0
         &&& bytes::be32(self.tail(), 24) == self.scan_result().next() as nat
         &&& self.journal_block() == self.plan().layout().view().start
@@ -91,6 +92,7 @@ impl Recovery {
 
     pub(crate) fn begin(&mut self) -> (r: Option<u64>)
         ensures final(self).plan() == old(self).plan(), final(self).tail() == old(self).tail(),
+            final(self).scan_result() == old(self).scan_result(),
             final(self).journal_block() == old(self).journal_block(),
             final(self).primary() == old(self).primary(), final(self).partition_bytes() == old(self).partition_bytes(),
             match r {
@@ -110,7 +112,13 @@ impl Recovery {
 
     pub(crate) fn command(&self) -> (r: Option<Command<'_>>)
         ensures match r {
-            Some(c) => self.state().pending && c.view() == self.expected(),
+            Some(c) => self.state().pending && c.view() == self.expected()
+                && (match c.view() {
+                    CommandView::Write { block, image } => image.len() == 4096
+                        && block < self.plan().layout().view().fs_blocks
+                        && block as nat * 4096 + 4096 <= self.partition_bytes(),
+                    CommandView::Flush => true,
+                }),
             None => !self.state().pending,
         },
     {
@@ -128,6 +136,7 @@ impl Recovery {
 
     pub(crate) fn complete(&mut self, id: u64, success: bool) -> (r: bool)
         ensures final(self).plan() == old(self).plan(), final(self).tail() == old(self).tail(),
+            final(self).scan_result() == old(self).scan_result(),
             final(self).journal_block() == old(self).journal_block(),
             final(self).primary() == old(self).primary(), final(self).partition_bytes() == old(self).partition_bytes(),
             r == (old(self).state().pending && id == old(self).state().request),
@@ -151,6 +160,7 @@ impl Recovery {
 
     pub fn abort(&mut self)
         ensures final(self).plan() == old(self).plan(), final(self).tail() == old(self).tail(),
+            final(self).scan_result() == old(self).scan_result(),
             final(self).journal_block() == old(self).journal_block(),
             final(self).primary() == old(self).primary(), final(self).partition_bytes() == old(self).partition_bytes(),
             final(self).state() == (State { faulted: true, ..old(self).state() }),
@@ -167,15 +177,45 @@ impl Recovery {
     pub fn failed(&self) -> (r: bool) ensures r == self.state().faulted { self.state.faulted }
 }
 
+fn replay_zero_allowed(plan: &replay::ReplayPlan, primary: &[u8], partition_bytes: u64) -> (r: bool)
+    requires plan.refines(),
+    ensures r == (forall|p: int| 0 <= p < plan.selection().len()
+        && (#[trigger] plan.log()[plan.selection()[p] as int]).block == 0 ==>
+            super_state::replay_ok(primary@, plan.log()[plan.selection()[p] as int].image, partition_bytes)),
+{
+    let mut i = 0usize;
+    while i < plan.len()
+        invariant i <= plan.selection().len(), plan.refines(),
+            forall|p: int| 0 <= p < i && (#[trigger] plan.log()[plan.selection()[p] as int]).block == 0 ==>
+                super_state::replay_ok(primary@, plan.log()[plan.selection()[p] as int].image, partition_bytes),
+        decreases plan.selection().len() - i,
+    {
+        assert(replay::latest(plan.log(), plan.revocations(), plan.selection()[i as int] as int));
+        let write = plan.get(i).unwrap();
+        if write.block() == 0 && !super_state::valid_replay(primary, write.image(), partition_bytes) {
+            assert(!super_state::replay_ok(primary@, plan.log()[plan.selection()[i as int] as int].image, partition_bytes));
+            return false;
+        }
+        i += 1;
+    }
+    true
+}
+
+#[verifier::rlimit(40)]
 pub fn prepare(journal: &[u8], uuid: &[u8], layout: JournalLayout, primary: &[u8], partition_bytes: u64) -> (r: Option<Recovery>)
     ensures match r {
         Some(s) => s.plan().refines() && s.plan().layout().view() == layout.view()
+            && s.plan().layout().view().fs_blocks as nat * 4096 <= partition_bytes
             && s.state().cursor == 0 && s.state().request == 0 && !s.state().pending && !s.state().faulted
             && bytes::be32(s.tail(), 24) == s.scan_result().next() as nat
             && s.scan_result().first() as nat == bytes::be32(journal@, 24)
             && s.scan_result().next() as nat == s.scan_result().first() as nat + s.scan_result().committed() as nat
             && s.scan_result().certificate(scan_budget::source(journal@, uuid@, &layout))
             && s.scan_result().maximal(scan_budget::source(journal@, uuid@, &layout))
+            && s.scan_result().recognized(journal@, layout.view().journal_blocks, bytes::be32(journal@, 28) as u32,
+                crate::crc::fold(0xffffffff, uuid@))
+            && (bytes::be32(journal@, 28) == 0 ==> s.plan().log().len() == 0
+                && s.plan().revocations().len() == 0 && s.plan().selection().len() == 0)
             && journal_state::preserves(journal@.subrange(0, 4096), s.tail())
             && journal_superblock::accepted(s.tail().subrange(0, 1024), uuid@, layout.view().journal_blocks)
             && s.primary() == primary@ && s.partition_bytes() == partition_bytes
@@ -184,42 +224,50 @@ pub fn prepare(journal: &[u8], uuid: &[u8], layout: JournalLayout, primary: &[u8
             && (forall|p: int| 0 <= p < s.plan().selection().len() ==>
                 (#[trigger] s.plan().log()[s.plan().selection()[p] as int]).block == 0 ==>
                     super_state::replay_ok(primary@, s.plan().log()[s.plan().selection()[p] as int].image, partition_bytes)),
-        None => true,
+        None => !recovery_profile::input_ok(journal@, uuid@, &layout, primary@, partition_bytes),
     },
 {
-    if primary.len() != 4096 { return None; }
+    hide(crate::crc::fold);
+    hide(superblock::accepted);
+    let ghost original_layout = layout;
+    let ghost can_recover = recovery_profile::input_ok(journal@, uuid@, &layout, primary@, partition_bytes);
+    if primary.len() != 4096 { proof { reveal(recovery_profile::input_ok); } return None; }
     let boot = match superblock::parse(&primary[1024..2048], partition_bytes) {
-        Some(boot) => boot, None => { return None; }
+        Some(boot) => boot, None => { proof { reveal(recovery_profile::input_ok); } return None; }
     };
-    if boot.blocks() != layout.filesystem_blocks() || !bytes::equal(&primary[1128..1144], uuid) { return None; }
+    if boot.blocks() != layout.filesystem_blocks() || !bytes::equal(&primary[1128..1144], uuid) {
+        proof { reveal(recovery_profile::input_ok); } return None;
+    }
+    assert(layout.view().fs_blocks as nat * 4096 <= partition_bytes) by { reveal(superblock::accepted); }
     let block = match layout.offset(0, 18446744073709551615) {
-        Some(offset) => (offset / 4096) as u32, None => { return None; }
-    };
-    let scan = match scan::recover(journal, uuid, layout) { Some(s) => s, None => { return None; } };
-    if bytes::read_be32(journal, 28).unwrap() != 0 && !boot.needs_recovery() { return None; }
-    let plan = scan.replay_plan();
-    let mut i = 0usize;
-    while i < plan.len()
-        invariant i <= plan.selection().len(), plan.refines(),
-            forall|p: int| 0 <= p < i ==>
-                (#[trigger] plan.log()[plan.selection()[p] as int]).block == 0 ==>
-                    super_state::replay_ok(primary@, plan.log()[plan.selection()[p] as int].image, partition_bytes),
-        decreases plan.selection().len() - i,
-    {
-        assert(replay::latest(plan.log(), plan.revocations(), plan.selection()[i as int] as int));
-        let write = plan.get(i).unwrap();
-        if write.block() == 0 && !super_state::valid_replay(primary, write.image(), partition_bytes) { return None; }
-        proof {
-            assert forall|p: int| 0 <= p < i + 1 && (#[trigger] plan.log()[plan.selection()[p] as int]).block == 0 implies
-                    super_state::replay_ok(primary@, plan.log()[plan.selection()[p] as int].image, partition_bytes) by {
-                if p < i { assert(plan.log()[plan.selection()[p] as int].block == 0 ==>
-                    super_state::replay_ok(primary@, plan.log()[plan.selection()[p] as int].image, partition_bytes)); }
-            }
+        Some(offset) => (offset / 4096) as u32, None => {
+            proof { reveal(recovery_profile::input_ok); reveal(scan_budget::admitted); }
+            return None;
         }
-        i += 1;
+    };
+    let scan = match scan::recover(journal, uuid, layout) { Some(s) => s, None => {
+        proof { reveal(recovery_profile::input_ok); } return None;
+    } };
+    if bytes::read_be32(journal, 28).unwrap() != 0 && !boot.needs_recovery() {
+        proof { reveal(recovery_profile::input_ok); } return None;
+    }
+    let plan = scan.replay_plan();
+    if !replay_zero_allowed(plan, primary, partition_bytes) {
+        proof {
+            if can_recover {
+                recovery_profile::selected_superblock_targets_satisfy_the_replay_policy(journal@, uuid@,
+                    &original_layout, primary@, partition_bytes, &scan);
+            }
+            assert(!can_recover);
+        }
+        return None;
     }
     let sequence = scan.next_sequence();
     let blocks = (journal.len() / 4096) as u32;
+    assert(journal_state::input_ok(journal@.subrange(0, 4096), uuid@, blocks, sequence, 0)) by {
+        assert(journal@.subrange(0, 4096).subrange(0, 1024) =~= journal@.subrange(0, 1024));
+        assert(0 < sequence);
+    }
     let tail = match journal_state::encode(&journal[..4096], uuid, blocks, sequence, 0) {
         Some(s) => s, None => { return None; }
     };

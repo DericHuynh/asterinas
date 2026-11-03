@@ -9,9 +9,9 @@
   "writable_mount_enabled": false,
   "verification": {
     "status": "core_and_models_checked",
-    "verus_verified_units": 372,
+    "verus_verified_units": 387,
     "verification_errors": 0,
-    "checked_named_proof_functions": 183,
+    "checked_named_proof_functions": 193,
     "checked_named_executable_functions": 106,
     "runner_validated": true,
     "negative_gate_checks_passed": 6,
@@ -40,7 +40,7 @@
     "recovery_command_protocol_and_crash_cuts": "checked_under_explicit_atomicity_flush_and_quiescent_initial_device_contract",
     "fresh_epoch_and_superblock_images": "checked_local_byte_relations",
     "clean_journal_admission": "checked",
-    "active_journal_total_admission_and_progress": "checked_for_sufficient_scan_budget_profile_and_every_writer_snapshot_recovery_preparation_open",
+    "active_journal_total_admission_and_progress": "checked_for_sufficient_scan_and_recovery_preparation_profiles_and_every_legal_writer_crash_snapshot",
     "owned_pending_request_boundary": "checked_and_negative_Rust_compilation_validated",
     "owned_transaction_encoder": "checked_and_related_to_exact_canonical_scan_input",
     "physical_block_map_to_journal_bytes": "checked",
@@ -50,7 +50,9 @@
     "single_transaction_writer_byte_persistence_and_fresh_commit_recognition": "checked_under_explicit_atomicity_flush_quiescent_start_contract_without_crc_identity_assumption",
     "flush_to_finite_issued_atomic_writes": "checked",
     "failure_free_writer_execution": "checked_finite_constructive_witness",
-    "terminal_transaction_recovery": "checked_retires_at_scan_next_sequence_without_allocating_an_epoch"
+    "terminal_transaction_recovery": "checked_retires_at_scan_next_sequence_without_allocating_an_epoch",
+    "single_writer_actual_scan_and_recovery": "checked_complete_before_or_after_nonjournal_home_bytes_outside_block_zero_with_separate_volume_identity_replay_policy",
+    "recovery_request_partition_bounds_and_scan_certificate_preservation": "checked"
   },
   "production_activation_gate": "All applicable obligations in PROOF_OBLIGATIONS.md must be discharged for the admitted profile.",
   "evidence_policy": "Only successful pinned entire-crate checking plus compilation produces a valid build report; it certifies only the declared source/model scope."

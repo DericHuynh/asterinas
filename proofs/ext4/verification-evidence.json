@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "license": "MPL-2.0",
-  "recorded_at": "2026-11-03T20:58:58.347520+00:00",
+  "recorded_at": "2026-11-03T21:15:37.768672+00:00",
   "scope": "Checked host core and specified abstract machines; not a complete or kernel-integrated ext4 filesystem",
   "verifier_version": {
     "verus": {
@@ -19,7 +19,7 @@
     "encountered-error": false,
     "encountered-vir-error": false,
     "success": true,
-    "verified": 372,
+    "verified": 387,
     "errors": 0,
     "is-verifying-entire-crate": true
   },
@@ -31,7 +31,7 @@
     "--crate-type=rlib"
   ],
   "source_sha256": {
-    "src/model.rs": "3de85061dbd891934c2b2970ad1744cd7c9be8e62631acb3febae7c80780519e",
+    "src/model.rs": "c57a612abff33a3cc6215f5ff98f1ae4c63fef1d290818e84555915446db06a0",
     "src/redo.rs": "e964baa83ca170c3cc60dbc8df4bfc470a81549ac23a5cfe4526a9cb0edb7e7f",
     "src/journal.rs": "eef5dcc269f81cbc1c7e8c6a4daf0a58cf7015423657a9cfe1f0fff186b91834",
     "src/lease.rs": "37358276a3719454ddeaf16177a2ce058b5e382c57b0609cea97031da084b1aa",
@@ -57,28 +57,30 @@
     "src/layout.rs": "7376c293e942d7358120119ee521b2159f81ed5ca8e98b72753f282f697fa282",
     "src/replay.rs": "3b411f0fb26dde325cf629906c12547f12942550dd81d2d2d72960078f0a3e13",
     "src/replay_refinement.rs": "ce5d691099276600446de7dc6d0002281e6d85a1499a7c34513d51b568c1bc7d",
-    "src/scan.rs": "6dff731eb83c4ed0f8e2e585aa7246bcab10c0f4b5928d1a064822ef004b886c",
+    "src/scan.rs": "405ddc4893f7e7b3fed4d3f0902324183601b5a6219a010e560822c44ac04b87",
     "src/epoch.rs": "83f06fa2aa45477c8e7983778a652fd453fe8cd7008a5ab92719c08c15589a30",
     "src/journal_state.rs": "b030d166cd4cc76d3c0198268127ad1cbde45ea2ba2bbbf949d30ca8c8051382",
-    "src/super_state.rs": "2a133e3bc739952294f5914f5bef88122f2112d780b69b5417a1f97e3d1d3189",
-    "src/recovery_io.rs": "77fc15c938a2c2691388380b579d20e59c88c5f593b7c902f9b9730eac06506f",
+    "src/super_state.rs": "ba4e2db10492273cdc0b8ee946740b6077b7d5130dd080774f24762e19f8ade6",
+    "src/recovery_io.rs": "c13150c6a0efb185094353c4cb8120f41a590955b4c708a010f302b6235757aa",
     "src/recovery_device.rs": "23563b40691572cd4afd843360100a098e3d0359e21e9f1b1ade8225ea60b56e",
     "src/scan_trace.rs": "2090e06fdf14b27ce61baa7d502d2fe3a2135dfbf0ff43f19d87d95e6424d6c7",
-    "src/recovery_request.rs": "2b80755e5aeddd03d8ede1b65cda6137b2c5686b1c49c95740617cb8268c450b",
+    "src/recovery_request.rs": "43d7382d4d80862503be7295bc8fb7bdb80a3b1cae9c24cdde6e1dec6b65dea6",
     "src/scan_stop.rs": "0b5e30855ff8657b12cb28134f6cb4d94d95296891784428f566ef41a9055793",
     "src/transaction.rs": "c4c5076960b8be710c3eda3261241fc57188c8d2a10657c8c4dacbca37a8b57d",
     "src/journal_view.rs": "19a001310c1cacf7d930d3cdb58a498b54399008d536bed77c88b0c9ae9e5e55",
     "src/transaction_refinement.rs": "957d73f8a85bd2f0c74676819450b37ff261d806357694486941f4e490fc6054",
     "src/write_protocol.rs": "2d9f8aed38396354591ef2b19d91818ec30be082ee8404803d7d96a9d0aaa3c5",
-    "src/write_io.rs": "8f725ed02c8e23b41c0e2430af9f2713da3dea09b95e950e48fc43d31dd8e06c",
+    "src/write_io.rs": "3487db379e1dd450f37ef24dd62241f2b5230232de19d3c5ba90da3bc772c4b6",
     "src/freshness.rs": "cfe68375a0123c8ac7a48a4d272fbed7be64a565bd437138503a3cf7b1bafee0",
     "src/write_device.rs": "e0ad112b4798242b2c4cf70e3e5badbcaaa41bc8ca8fa54c40122243f2b4ad5f",
     "src/write_media.rs": "281ef1518735b175c96770b93262d6a9d6cc5c3457222c81bd3d48bb497db8f4",
-    "src/write_recognition.rs": "3451235c274487dad8a7f8c22de1bbe19645bc89a3f67659cdb24a2ea4739430",
+    "src/write_recognition.rs": "e572d895668650a643460714ae0efdec20acde10506be090d2b73b96f3aa0fdb",
     "src/scan_budget.rs": "5c58f0fdf483d8382fc49610da2752722f26016d785fa4a3a05c509de521dc4e",
-    "src/write_admission.rs": "f8932c28f45f5f56642231b4aeb1ee095ad3e041e351aa93556245bd35a35da3"
+    "src/write_admission.rs": "a7d8382495401ee1f92b0193ec5b0ca960158ae9017503bbf0d56722b1202f12",
+    "src/recovery_profile.rs": "5118c4f1831960e1db67ee18d59c93fe7d072cbdc52e064e0d0e92218ed3180f",
+    "src/write_recovery.rs": "7656d921c846254b562d1f25274d4bfd8c01ae258e62e3bbc9f2357579ddff6b"
   },
-  "lock_sha256": "a5828352f2ce0532d72e813029c995a110a5d8042f971996dd07528bfb43e094",
+  "lock_sha256": "ee4a15252f30ba084f5c2453c56025af7ddbe29f2fcd007cbf64f7cc97f061ea",
   "runner_sha256": "de6b473ab50632068de9e7fc619591c7b4d5afbc0058a1fcd7f946c0198beb91",
   "named_proof_coverage": [
     "access::override_cannot_execute_a_nonexecutable_regular_file",
@@ -167,6 +169,7 @@
     "recovery_io::every_failure_free_recovery_has_a_finite_completion",
     "recovery_io::success_requires_both_flush_completions",
     "recovery_io::tail_write_is_after_home_flush",
+    "recovery_profile::selected_superblock_targets_satisfy_the_replay_policy",
     "recovery_request::a_pending_request_is_bound_to_its_owned_machine",
     "redo::complete_redo_overrides_partial_checkpoint",
     "redo::overlay_is_idempotent",
@@ -200,6 +203,7 @@
     "scan_trace::prefix_preserves_well_formedness",
     "scan_trace::well_formed_prefixes_agree_at_every_common_position",
     "super_state::recovery_flag_image_preserves_uuid_and_boot_bytes",
+    "super_state::replay_policy_is_stable_under_another_valid_replay",
     "super_state::replay_preserves_geometry_and_keeps_recovery",
     "system::action_preserves",
     "system::crash_at_every_interleaving_preserves_the_acknowledged_prefix",
@@ -212,7 +216,9 @@
     "transaction_refinement::successful_scan_of_encoded_transaction_recovers_every_original",
     "write_admission::a_shaped_journal_has_only_small_recognized_prefixes",
     "write_admission::a_shaped_writer_journal_fits_scan_limits",
+    "write_admission::every_committed_writer_stream_satisfies_the_superblock_replay_policy",
     "write_admission::every_fresh_header_is_an_issued_metadata_image",
+    "write_admission::every_writer_crash_snapshot_can_prepare_recovery",
     "write_admission::every_writer_crash_snapshot_is_admitted",
     "write_admission::every_writer_media_has_a_shaped_active_stream",
     "write_device::a_successful_flush_has_a_finite_persistence_refinement",
@@ -260,10 +266,16 @@
     "write_recognition::before_a_durable_commit_the_home_image_is_unchanged_except_recovery_marking",
     "write_recognition::clearing_the_journal_tail_requires_durable_home_afterimages",
     "write_recognition::every_fresh_commit_header_is_the_persisted_commit_record",
+    "write_recognition::every_writer_primary_image_retains_the_validated_volume_identity",
     "write_recognition::journal_activation_always_has_a_valid_recovery_marked_superblock",
     "write_recognition::recognizing_a_fresh_commit_replays_every_encoded_original",
     "write_recognition::recovery_without_a_persisted_commit_cannot_publish_a_transaction",
-    "write_recognition::successful_writer_completion_has_exact_durable_home_bytes_and_retired_tail"
+    "write_recognition::successful_writer_completion_has_exact_durable_home_bytes_and_retired_tail",
+    "write_recovery::a_retired_writer_has_complete_home_after_bytes",
+    "write_recovery::complete_redo_overrides_any_partial_writer_homes",
+    "write_recovery::every_returned_writer_scan_is_empty_or_the_complete_transaction",
+    "write_recovery::replaying_every_writer_cut_gives_a_complete_before_or_after_home_image",
+    "write_recovery::successful_recovery_of_every_writer_cut_has_before_or_after_home_bytes"
   ],
   "named_executable_coverage": [
     "access::allowed",
@@ -373,14 +385,14 @@
     "write_io::pending_command",
     "write_io::prepare"
   ],
-  "host_library_sha256": "8ad0f669fb53c64c8dd00125c060c05029f1cf7e9eae0b310f473d964ef555cf",
+  "host_library_sha256": "0de167b713ddc6f3d639f55368b52d7c31c8a47e09bc3ccb551465f998463b76",
   "compatibility": {
     "schema": 1,
     "status": "passed",
     "scope": "host interoperability tests, not formal proof",
     "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
-    "proof_artifact_sha256": "8ad0f669fb53c64c8dd00125c060c05029f1cf7e9eae0b310f473d964ef555cf",
-    "image_sha256": "720ab5c02cbe24685f4c0467192d9b6e04336a1de25254cafe8145386d0c5931",
+    "proof_artifact_sha256": "0de167b713ddc6f3d639f55368b52d7c31c8a47e09bc3ccb551465f998463b76",
+    "image_sha256": "fd5eeaf3c4939abe17a19785011aba09ea8d40b46c213f58b33f4e048dccd250",
     "request_boundary_rejections": [
       "reuse_request",
       "redirect_completion",
@@ -410,7 +422,7 @@
     "runner_test_sha256": "e30d96e24e0ecd433f3273dcda5079c3849314427bfb1ffdfc197dc629fa813e"
   },
   "not_proved": [
-    "complete recovery preparation admission and progress",
+    "repeated recovery admission and closure",
     "multi-transaction physical-history composition and recovery total admission",
     "boot/unmount sequencing and physical log reuse",
     "actual device atomicity, flush, DMA and quiescence contracts",
@@ -427,5 +439,6 @@
   "replay_credit_boundary_tests": [
     4096,
     4097
-  ]
+  ],
+  "single_writer_scan_and_recovery": "checked_complete_before_or_after_home_bytes_outside_block_zero_and_journal_with_separate_volume_identity_replay_policy"
 }

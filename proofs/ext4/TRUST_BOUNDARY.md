@@ -113,20 +113,23 @@ It allows a cached write to persist before its completion and after abort,
 requires home flush before retirement, and proves each allowed event preserves
 the recovery invariant. Its success image equals the byte-valued Linux redo
 result plus the retired tail. This theorem does not establish device atomicity,
-the absence of old-generation requests, complete recovery preparation admission or
-global replay authorization. A device with only 512-byte addressing has not met this contract.
+the absence of old-generation requests, repeated recovery admission/closure or global replay authorization. A device with only 512-byte addressing has not met this contract.
 
 Every returned scan includes a source-bound contiguous record certificate,
 all descriptor payloads, the last committed cut and a stopping witness.
 The maximal canonical record prefix and committed input are proved unique.
 The scan has checked total acceptance for the sufficient resource profile in
 `scan_budget.rs`. Every writer crash snapshot meets that profile, even when
-only part of the log has persisted. This proves scan acceptance, not global
-replay authorization or total recovery preparation. Retirement stores the scan
+only part of the log has persisted. Recovery preparation also has a checked sufficient profile, and every legal
+writer crash snapshot satisfies it. Actual scan selection plus modeled successful
+recovery has complete before/after nonjournal home bytes outside block zero.
+Block zero has a separate preserved-identity and replay-policy proof. These
+results do not establish global replay authorization or repeated recovery admission. Retirement stores the scan
 next-sequence value without allocating a new epoch, so terminal-ID recovery
 remains possible; future writer admission still refuses wraparound.
 
-The public I/O boundary transfers the entire recovery machine into a private,
+Every emitted recovery image is checked to fit its partition, and the scan
+certificate is preserved across completion and abort. The public I/O boundary transfers the entire recovery machine into a private,
 non-Clone `Pending` request. Completion consumes this request and returns its
 own machine, including after abort. Rust privacy and ownership reject forged
 requests, duplicate completion and retargeting through the internal numeric-ID

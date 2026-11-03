@@ -149,15 +149,17 @@ impl Scan {
     pub fn committed_transactions(&self) -> (r: u32) ensures r == self.committed() { self.committed }
 }
 
-#[verifier::rlimit(100)]
+#[verifier::rlimit(200)]
 #[verifier::spinoff_prover]
 pub fn recover(journal: &[u8], uuid: &[u8], layout: JournalLayout) -> (r: Option<Scan>)
     ensures match r {
         Some(s) => s.plan().refines() && s.plan().layout().view() == layout.view()
             && layout.wf() && journal.len() as nat == layout.view().journal_blocks as nat * 4096
             && journal_superblock::accepted(journal@.subrange(0, 1024), uuid@, layout.view().journal_blocks)
+            && (bytes::be32(journal@, 28) != 0 ==> bytes::be32(journal@, 40) != 0)
             && s.first() as nat == bytes::be32(journal@, 24)
-            && (bytes::be32(journal@, 28) == 0 ==> s.committed() == 0 && s.plan().selection().len() == 0)
+            && (bytes::be32(journal@, 28) == 0 ==> s.committed() == 0 && s.plan().selection().len() == 0
+                && s.plan().log().len() == 0 && s.plan().revocations().len() == 0)
             && s.recognized(journal@, layout.view().journal_blocks, bytes::be32(journal@, 28) as u32,
                 crc::fold(0xffffffff, uuid@))
             && s.provenance(journal@, layout.view().journal_blocks, bytes::be32(journal@, 28) as u32,
@@ -231,6 +233,7 @@ pub fn recover(journal: &[u8], uuid: &[u8], layout: JournalLayout) -> (r: Option
             can_scan == scan_budget::admitted(journal@, uuid@, &layout),
             can_scan ==> scan_budget::within_limits(source),
             can_scan ==> info.revoke,
+            bytes::be32(journal@, 40) != 0,
             journal.len() as nat == blocks as nat * 4096, 1 <= start < blocks,
             bytes::be32(journal@, 28) == start as nat,
             0 < first <= sequence, sequence as nat == first as nat + committed as nat,

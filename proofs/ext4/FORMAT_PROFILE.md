@@ -72,8 +72,9 @@ terminal range. The checked replay window is shorter than 32768 transactions,
 so its numeric ordering agrees with Linux's signed modular ordering.
 Returned scans have checked contiguous record coverage, stopping witnesses and
 a unique maximal canonical prefix. The sufficient active-scan resource profile
-is checked, and all writer crash snapshots satisfy it. Recovery preparation
-admission, remount and multi-transaction physical-slot reuse remain open.
+is checked, and all writer crash snapshots satisfy it. Recovery preparation has a checked sufficient profile, satisfied by every legal
+writer crash snapshot. Repeated recovery admission, remount and multi-transaction
+physical-slot reuse remain open.
 Recovery retirement uses the scan next sequence, including MAX; it does not
 allocate a new epoch. Writer admission still refuses exhausted generations.
 
@@ -89,7 +90,7 @@ This local policy is not global inode/bitmap/ownership validation.
 - Bitmap/free-counter consistency and global no-alias extent ownership.
 - Inode topology, links, directory lookup/rename and orphan/reclamation rules.
 - Verified read/write/allocation operation preservation and transaction closure.
-- Recovery preparation admission/progress, unmount ordering and physical log reuse.
+- Repeated recovery admission/closure, unmount ordering and physical log reuse.
 - Recovery validation in a shadow view, replay-target policy, repeatable physical recovery.
 - OSTD frame/DMA/device and VFS/credential refinements.
 

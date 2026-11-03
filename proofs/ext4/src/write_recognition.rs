@@ -234,4 +234,38 @@ pub proof fn an_active_journal_snapshot_has_the_prepared_sequence_uuid_and_check
     reveal(write_io::valid_images);
 }
 
+pub proof fn every_writer_primary_image_retains_the_validated_volume_identity(m: Machine, before: Disk, v: write_io::Images)
+    requires context(before, v), write_device::inv(m, v.tx.payloads.len()),
+    ensures write_media::disk(m, before, v)[0].len() == 4096,
+        superblock::accepted(write_media::disk(m, before, v)[0].subrange(1024, 2048), v.partition_bytes),
+        bytes::le32(write_media::disk(m, before, v)[0], 1028) == v.tx.layout.fs_blocks,
+        write_media::disk(m, before, v)[0].subrange(1128, 1144) == v.tx.uuid,
+        m.stable.contains(2) ==> super_state::replay_ok(v.dirty, write_media::disk(m, before, v)[0], v.partition_bytes),
+{
+    hide(crate::crc::fold);
+    reveal(write_io::valid_images);
+    let count = v.tx.payloads.len();
+    let media = write_media::disk(m, before, v);
+    super_state::recovery_flag_image_preserves_uuid_and_boot_bytes(v.initial_primary, v.dirty);
+    assert(bytes::le32(v.dirty, 1028) == bytes::le32(v.initial_primary, 1028));
+    if exists|i: int| 0 <= i < count && v.tx.original[i].block == 0 && m.stable.contains(8 + count + i as nat) {
+        let i = choose|i: int| 0 <= i < count && v.tx.original[i].block == 0 && m.stable.contains(8 + count + i as nat);
+        write_media::a_stable_home_write_has_its_exact_afterimage(m, before, v, i as nat);
+        assert(v.tx.tags[i].block == 0);
+        assert(super_state::replay_ok(v.dirty, media[0], v.partition_bytes));
+        super_state::replay_preserves_geometry_and_keeps_recovery(v.dirty, media[0], v.partition_bytes);
+    } else {
+        assert forall|i: nat| i < count && v.tx.original[i as int].block == 0
+            implies !#[trigger] m.stable.contains(8 + count + i) by { }
+        write_media::without_a_stable_home_target_zero_only_dirty_marking_changes_block_zero(m, before, v);
+        if m.stable.contains(2) {
+            assert(m.issued.contains(2));
+            assert(2 <= crate::write_protocol::completed_count(m.io, count));
+            assert(m.stable.contains(0));
+            assert(media[0] == v.dirty);
+            assert(super_state::replay_ok(v.dirty, v.dirty, v.partition_bytes));
+        }
+    }
+}
+
 }

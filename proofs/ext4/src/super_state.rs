@@ -17,6 +17,7 @@ pub open spec fn preserves(before: Seq<u8>, after: Seq<u8>) -> bool {
     &&& (forall|i: int| 0 <= i < 4096 && !edited(i) ==> #[trigger] after[i] == before[i])
 }
 
+#[verifier::opaque]
 pub open spec fn recovery_bytes(before: Seq<u8>, dirty: bool) -> Seq<u8> {
     let fields = bytes::splice(before, 1120, bytes::encoded_le(if dirty { 0x46u32 } else { 0x42u32 }));
     let checksum = crc::fold(0xffffffff, fields.subrange(1024, 2044));
@@ -58,6 +59,7 @@ pub fn recovery_image(s: &[u8], partition_bytes: u64, dirty: bool) -> (r: Option
             implies #[trigger] bytes::le16(image@.subrange(1024, 2048), o)
                 == bytes::le16(s@.subrange(1024, 2048), o) by { }
         assert(superblock::accepted(image@.subrange(1024, 2048), partition_bytes));
+        assert(image@ =~= recovery_bytes(s@, dirty)) by { reveal(recovery_bytes); }
     }
     FrozenBlock::from_vec(image)
 }
@@ -126,6 +128,15 @@ pub proof fn replay_preserves_geometry_and_keeps_recovery(before: Seq<u8>, after
         before.subrange(1128, 1144) == after.subrange(1128, 1144),
 {
     assert(before.subrange(1128, 1144) =~= after.subrange(1128, 1144));
+}
+
+pub proof fn replay_policy_is_stable_under_another_valid_replay(root: Seq<u8>, current: Seq<u8>, next: Seq<u8>, partition_bytes: u64)
+    requires replay_ok(root, current, partition_bytes), replay_ok(root, next, partition_bytes),
+    ensures replay_ok(current, next, partition_bytes),
+{
+    assert forall|i: int| 0 <= i < 4096 && !replay_mutable(i) implies #[trigger] next[i] == current[i] by {
+        assert(next[i] == root[i] && current[i] == root[i]);
+    }
 }
 
 }

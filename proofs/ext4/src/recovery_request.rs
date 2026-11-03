@@ -14,6 +14,7 @@ pub struct Pending { engine: Recovery, id: u64 }
 
 pub open spec fn same_images(a: &Recovery, b: &Recovery) -> bool {
     &&& a.plan() == b.plan() && a.tail() == b.tail() && a.journal_block() == b.journal_block()
+    &&& a.scan_result() == b.scan_result()
     &&& a.primary() == b.primary() && a.partition_bytes() == b.partition_bytes()
 }
 
@@ -26,6 +27,12 @@ impl Pending {
 
     pub fn pending_command(&self) -> (r: Command<'_>)
         ensures r.view() == self.owner().expected(),
+            match r.view() {
+                recovery_io::CommandView::Write { block, image } => image.len() == 4096
+                    && block < self.owner().plan().layout().view().fs_blocks
+                    && block as nat * 4096 + 4096 <= self.owner().partition_bytes(),
+                recovery_io::CommandView::Flush => true,
+            },
     {
         proof { use_type_invariant(self); }
         self.engine.command().unwrap()

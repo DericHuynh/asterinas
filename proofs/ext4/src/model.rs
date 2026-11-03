@@ -79,3 +79,7 @@ mod write_recognition;
 pub mod scan_budget;
 
 mod write_admission;
+
+pub mod recovery_profile;
+
+mod write_recovery;
