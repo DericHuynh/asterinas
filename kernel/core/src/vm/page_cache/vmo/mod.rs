@@ -356,11 +356,12 @@ impl Vmo {
             )));
         }
 
+        let backed_vmo = self.as_backed_vmo();
         let (_, page) = {
             let guard = disable_preempt();
             let mut cursor = self.pages.cursor(&guard, page_idx as u64);
             // `VmoMapMode::try_ensure` checks if the page has been initialized.
-            self.try_commit_with_cursor(&mut cursor, CommitMode::Overwrite)?
+            self.try_commit_with_cursor(&mut cursor, CommitMode::Overwrite, backed_vmo.as_ref())?
         };
         let mode = map_mode.try_ensure(page_idx, &page)?;
         Ok((page, mode))
@@ -370,8 +371,9 @@ impl Vmo {
         &self,
         cursor: &mut Cursor<'_, CachePage>,
         commit_mode: CommitMode,
+        backed_vmo: Option<&BackedVmo<'_>>,
     ) -> Result<(usize, CachePage), VmoCommitError> {
-        if let Some(backed_vmo) = self.as_backed_vmo() {
+        if let Some(backed_vmo) = backed_vmo {
             return backed_vmo.try_commit_with_cursor(cursor, commit_mode);
         } else if let Some(page) = cursor.load() {
             let index = cursor.index() as usize;
@@ -441,10 +443,14 @@ impl Vmo {
         }
 
         let page_idx_range = get_page_idx_range(range);
+        // Retain the backend for the whole traversal instead of upgrading and
+        // dropping the same weak reference for every page in the batch.
+        let backed_vmo = self.as_backed_vmo();
         let guard = disable_preempt();
         let mut cursor = self.pages.cursor(&guard, page_idx_range.start as u64);
         for _ in page_idx_range {
-            let mut commit_fn = || self.try_commit_with_cursor(&mut cursor, commit_mode);
+            let mut commit_fn =
+                || self.try_commit_with_cursor(&mut cursor, commit_mode, backed_vmo.as_ref());
             operate(&mut commit_fn)?;
             cursor.next();
         }
