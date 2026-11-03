@@ -110,9 +110,21 @@ impl IdBitmap {
         // Scan the bitmap from the position `first_available_id`
         // for the first `count` number of consecutive 0's.
         let allocated_range = {
-            // Invariance: all bits within `curr_range` are 0's.
             let bit_slice = self.bit_slice();
             let mut curr_range = self.first_available_id..self.first_available_id + 1;
+            if count > u8::BITS as u16 {
+                // Check the initial candidate in bulk. On fragmentation, resume
+                // the scalar scan just after the first occupied bit.
+                curr_range =
+                    match bit_slice[self.first_available_id as usize..end as usize].first_one() {
+                        Some(occupied) => {
+                            let next = self.first_available_id + occupied as u16 + 1;
+                            next..next
+                        }
+                        None => self.first_available_id..end,
+                    };
+            }
+
             while curr_range.len() < count as usize && curr_range.end < self.len {
                 if !bit_slice[curr_range.end as usize] {
                     curr_range.end += 1;
@@ -225,5 +237,46 @@ mod test {
         // Allocating one more ID should fail since the
         // bitmap's `first_available_id` + `count` is out of bounds.
         assert!(bitmap.alloc_consecutive(1).is_none());
+    }
+
+    #[ktest]
+    fn consecutive_allocations_match_first_free_run() {
+        for offset in [0u16, 5, 57] {
+            let len = offset + 37;
+            for mask in 0..=u8::MAX {
+                for count in 0..=34 {
+                    let mut original = vec![0xff; BLOCK_SIZE];
+                    for id in offset..offset + 8 {
+                        if mask & (1 << (id - offset)) == 0 {
+                            original[id as usize / 8] &= !(1 << (id % 8));
+                        }
+                    }
+                    for id in offset + 8..offset + 32 {
+                        original[id as usize / 8] &= !(1 << (id % 8));
+                    }
+                    let is_free = |id: u16| original[id as usize / 8] & (1 << (id % 8)) == 0;
+                    let expected_range = (count > 0 && count <= len)
+                        .then(|| {
+                            (0..=len - count)
+                                .find(|start| (*start..*start + count).all(is_free))
+                                .map(|start| start..start + count)
+                        })
+                        .flatten();
+
+                    let mut bitmap = IdBitmap::from_buf(original.clone().into_boxed_slice(), len);
+                    assert_eq!(bitmap.alloc_consecutive(count), expected_range);
+                    let mut expected = original;
+                    if let Some(range) = expected_range {
+                        for id in range {
+                            expected[id as usize / 8] |= 1 << (id % 8);
+                        }
+                    }
+                    assert_eq!(bitmap.as_bytes(), expected);
+                    let next_free =
+                        (0..len).find(|id| expected[*id as usize / 8] & (1 << (id % 8)) == 0);
+                    assert_eq!(bitmap.alloc(), next_free);
+                }
+            }
+        }
     }
 }
