@@ -77,7 +77,10 @@
     "src/inode_table.rs",
     "src/inode_group.rs",
     "src/allocation_counts.rs",
-    "src/allocation.rs"
+    "src/allocation.rs",
+    "src/allocated_inode.rs",
+    "src/file_read.rs",
+    "src/directory_block.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -296,7 +299,11 @@
     "block_claims::occupied_preservation_keeps_mapped_claims",
     "inode_group::number_has_the_expected_group_and_slot",
     "inode_group::occupied_preservation_keeps_checked_nodes",
-    "allocation_counts::all_matching_groups_have_the_exact_superblock_free_count"
+    "allocation_counts::all_matching_groups_have_the_exact_superblock_free_count",
+    "allocated_inode::every_live_inode_has_source_bound_claims",
+    "file_read::an_initialized_mapping_has_exact_ownership",
+    "file_read::initialized_mapping_is_unique",
+    "directory_block::complete_record_coverage_is_unique"
   ],
   "required_flags": [
     "--no-cheating",
@@ -447,6 +454,17 @@
     "allocation::index",
     "allocation::census",
     "allocation::journal",
-    "allocation::parse"
+    "allocation::parse",
+    "allocated_inode::volume",
+    "allocated_inode::number",
+    "allocated_inode::info",
+    "allocated_inode::raw",
+    "allocated_inode::get",
+    "file_read::resolve",
+    "file_read::chunk",
+    "directory_block::len",
+    "directory_block::get",
+    "directory_block::name",
+    "directory_block::parse"
   ]
 }

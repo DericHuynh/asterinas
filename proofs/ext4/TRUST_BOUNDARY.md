@@ -203,3 +203,12 @@ allocation validation belongs after recovery or over a validated shadow image;
 bootstrap journal discovery and operation preservation of its static inode/table
 mapping remain separate obligations. No actual frame or device authority is
 created by the host certificate.
+
+`allocated_inode.rs` derives ordinary inode metadata/physical claims from the
+whole-image certificate. `file_read.rs` proves unique initialized mappings and
+exact file-size/block-clipped host slices or zero spans for holes/unwritten
+extents. These helpers do not accept or create credentials, open rights or VFS
+capabilities; kernel ingress must add those proofs. `directory_block.rs` checks
+complete canonical record coverage, including deleted records, and proves the
+complete stream unique. Its checksum seed/source must still be bound to the
+actual allocated directory, and namespace targets/topology checked above it.

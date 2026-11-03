@@ -109,3 +109,9 @@ pub mod inode_group;
 mod allocation_counts;
 
 pub mod allocation;
+
+pub mod allocated_inode;
+
+pub mod file_read;
+
+pub mod directory_block;

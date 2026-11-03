@@ -612,6 +612,140 @@ fn whole_allocation_rejects_checksummed_omissions_aliases_and_reserved_inode_sto
 }
 
 #[test]
+fn initialized_reads_match_linux_bytes_and_holes_never_expose_backing_storage() {
+    use core::{
+        allocated_inode, allocation,
+        file_read::{self, Chunk, Resolution},
+        snapshot::Snapshot,
+    };
+    let img = image();
+    let (sb, group, seed) = metadata(&img);
+    let volume = allocation::parse(Snapshot::from_bytes(&img)).unwrap();
+    for number in [0u32, 1, 8, 10, 13, sb.inodes(), u32::MAX] {
+        assert!(allocated_inode::get(&volume, number).is_none());
+    }
+    let root = allocated_inode::get(&volume, 2).unwrap();
+    assert_eq!(root.info().mode & 0xf000, 0x4000);
+    let file = allocated_inode::get(&volume, 12).unwrap();
+    assert_eq!(file.number(), 12);
+    assert_eq!(file.raw(), inode_bytes(&img, group.inode_table, 12));
+    assert_eq!(file.info().size, 8192);
+    let first = first_data_block(file.raw(), sb.blocks());
+    match file_read::resolve(&file, 0) {
+        Resolution::Data(block) => assert_eq!(block, first),
+        Resolution::Zero => panic!("initialized extent was lost"),
+    }
+    assert!(matches!(
+        file_read::resolve(&file, u32::MAX),
+        Resolution::Zero
+    ));
+    let mut actual = Vec::new();
+    for offset in [0u64, 4096] {
+        match file_read::chunk(&file, offset, usize::MAX) {
+            Chunk::Data(bytes) => actual.extend_from_slice(bytes),
+            _ => panic!("initialized source data was not returned"),
+        }
+    }
+    assert_eq!(
+        actual,
+        (0..8192).map(|i| (i % 251) as u8).collect::<Vec<_>>()
+    );
+    for offset in [4095u64, 8191] {
+        match file_read::chunk(&file, offset, usize::MAX) {
+            Chunk::Data(bytes) => assert_eq!(bytes, &[(offset % 251) as u8]),
+            _ => panic!("file or block boundary clipping failed"),
+        }
+    }
+    assert!(matches!(file_read::chunk(&file, 0, 0), Chunk::End));
+    for offset in [8192u64, u64::MAX] {
+        assert!(matches!(
+            file_read::chunk(&file, offset, usize::MAX),
+            Chunk::End
+        ));
+    }
+    for unwritten in [false, true] {
+        let mut changed = img.clone();
+        let start = group.inode_table as usize * 4096 + 11 * 256;
+        let raw = &mut changed[start..start + 256];
+        if unwritten {
+            raw[56..58].copy_from_slice(&32770u16.to_le_bytes());
+        } else {
+            raw[52..56].copy_from_slice(&1u32.to_le_bytes());
+        }
+        let checksum = core::inode::calculated_checksum(raw, 12, seed).unwrap();
+        raw[124..126].copy_from_slice(&(checksum as u16).to_le_bytes());
+        raw[130..132].copy_from_slice(&((checksum >> 16) as u16).to_le_bytes());
+        let backing = first as usize * 4096;
+        changed[backing..backing + 8192].fill(0xa5);
+        let volume = allocation::parse(Snapshot::from_bytes(&changed)).unwrap();
+        let file = allocated_inode::get(&volume, 12).unwrap();
+        assert!(matches!(
+            file_read::chunk(&file, 0, usize::MAX),
+            Chunk::Zero(4096)
+        ));
+        match file_read::chunk(&file, 4096, usize::MAX) {
+            Chunk::Zero(4096) if unwritten => {}
+            Chunk::Data(bytes) if !unwritten => assert_eq!(bytes, &[0xa5; 4096]),
+            _ => panic!("hole/unwritten mapping exposed incorrect storage"),
+        }
+        assert!(matches!(
+            file_read::chunk(&file, 8192, usize::MAX),
+            Chunk::End
+        ));
+    }
+}
+
+#[test]
+fn complete_directory_blocks_cover_every_record_and_reject_malformed_suffixes() {
+    let img = image();
+    let (sb, group, seed) = metadata(&img);
+    let inode = core::inode::parse(
+        inode_bytes(&img, group.inode_table, 2),
+        2,
+        sb.inodes(),
+        sb.blocks(),
+        seed,
+    )
+    .unwrap();
+    let physical = first_data_block(inode_bytes(&img, group.inode_table, 2), sb.blocks());
+    let start = physical as usize * 4096;
+    let raw = &img[start..start + 4096];
+    let seed = core::inode::inode_seed(seed, 2, inode.generation);
+    let block = core::directory_block::parse(raw, sb.inodes(), seed).unwrap();
+    let mut end = 0usize;
+    let mut names = Vec::new();
+    for i in 0..block.len() {
+        let entry = block.get(i).unwrap();
+        assert_eq!(entry.name_offset, end + 8);
+        end = entry.next;
+        if entry.inode != 0 {
+            names.push(block.name(i).unwrap().to_vec());
+        }
+    }
+    assert_eq!(end, 4084);
+    assert_eq!(
+        names,
+        [
+            b".".to_vec(),
+            b"..".to_vec(),
+            b"lost+found".to_vec(),
+            b"payload".to_vec()
+        ]
+    );
+    assert!(block.get(usize::MAX).is_none());
+    assert!(block.name(usize::MAX).is_none());
+    assert!(core::directory_block::parse(raw, sb.inodes(), seed ^ 1).is_none());
+    for offset in [4usize, block.get(0).unwrap().next + 4, 8] {
+        let mut bad = raw.to_vec();
+        bad[offset..offset + 2].fill(0);
+        let checksum = core::crc::crc32c(seed, &bad[..4084]);
+        bad[4092..4096].copy_from_slice(&checksum.to_le_bytes());
+        assert!(core::directory::valid_tail(&bad, seed));
+        assert!(core::directory_block::parse(&bad, sb.inodes(), seed).is_none());
+    }
+}
+
+#[test]
 fn linux_metadata_checksums_and_directory_records_interoperate() {
     let img = image();
     let (sb, g, seed) = metadata(&img);
