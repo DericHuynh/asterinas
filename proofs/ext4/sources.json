@@ -1,0 +1,87 @@
+{
+  "schema": 1,
+  "license": "MPL-2.0",
+  "linux_commit": "028ef9c96e96197026887c0f092424679298aae8",
+  "verus_commit": "8bf68ee741df833ea5d0fe6a2255126fdea87e47",
+  "asterinas_commit": "e57e69819c5df349e1743a2c06578fb500c39890",
+  "sources": [
+    {
+      "path": "Documentation/filesystems/ext4/journal.rst",
+      "url": "https://github.com/torvalds/linux/blob/v7.0/Documentation/filesystems/ext4/journal.rst",
+      "blob_sha": "6e8fb2d4b46fed52ef8986d782ed7fc35dc10b8c",
+      "review_scope": "file or selected definitions"
+    },
+    {
+      "path": "fs/jbd2/commit.c",
+      "url": "https://github.com/torvalds/linux/blob/v7.0/fs/jbd2/commit.c",
+      "blob_sha": "7203d2d2624d7afd0d7a3fe7f830845665dd4c14",
+      "review_scope": "selected relevant ranges"
+    },
+    {
+      "path": "fs/jbd2/checkpoint.c",
+      "url": "https://github.com/torvalds/linux/blob/v7.0/fs/jbd2/checkpoint.c",
+      "blob_sha": "1508e2f544621120f4ce212fa5b73360dc46c711",
+      "review_scope": "selected relevant ranges"
+    },
+    {
+      "path": "fs/jbd2/recovery.c",
+      "url": "https://github.com/torvalds/linux/blob/v7.0/fs/jbd2/recovery.c",
+      "blob_sha": "cac8c2cd4a92a749aa860eedf35b7f643ab345b4",
+      "review_scope": "selected relevant ranges"
+    },
+    {
+      "path": "fs/ext4/fsync.c",
+      "url": "https://github.com/torvalds/linux/blob/v7.0/fs/ext4/fsync.c",
+      "blob_sha": "bd8f230fa507e77c88096930d1fc634bd749133c",
+      "review_scope": "selected relevant ranges"
+    },
+    {
+      "path": "Documentation/filesystems/ext4/ifork.rst",
+      "url": "https://github.com/torvalds/linux/blob/v7.0/Documentation/filesystems/ext4/ifork.rst",
+      "blob_sha": "dc31f505e6c835bf590998a88676e9fa48d4c0f9",
+      "review_scope": "selected relevant ranges"
+    },
+    {
+      "path": "fs/ext4/ext4.h",
+      "url": "https://github.com/torvalds/linux/blob/v7.0/fs/ext4/ext4.h",
+      "blob_sha": "7617e2d454ea516fee9047366458c0bda568fddf",
+      "review_scope": "file or selected definitions"
+    },
+    {
+      "path": "kernel/core/comps/block/src/lib.rs",
+      "url": "https://github.com/asterinas/asterinas/blob/e57e69819c5df349e1743a2c06578fb500c39890/kernel/core/comps/block/src/lib.rs",
+      "blob_sha": "31d4485a19bb2a45617b511417572ea51fa0915a",
+      "review_scope": "file or selected definitions"
+    },
+    {
+      "path": "kernel/core/comps/block/src/bio.rs",
+      "url": "https://github.com/asterinas/asterinas/blob/e57e69819c5df349e1743a2c06578fb500c39890/kernel/core/comps/block/src/bio.rs",
+      "blob_sha": "3fe640041268ee780144abad593e41e6689c70bd",
+      "review_scope": "file or selected definitions"
+    },
+    {
+      "path": "source/rust_verify/src/config.rs",
+      "url": "https://github.com/verus-lang/verus/blob/release/0.2026.11.02.8bf68ee/source/rust_verify/src/config.rs",
+      "blob_sha": "820ef201cde4771b96b2b76f268ec0b5e35ea7e0",
+      "review_scope": "file or selected definitions"
+    },
+    {
+      "path": "source/rust_verify/src/main.rs",
+      "url": "https://github.com/verus-lang/verus/blob/release/0.2026.11.02.8bf68ee/source/rust_verify/src/main.rs",
+      "blob_sha": "2e16a751a569fabc09a7085da377a9507d80db86",
+      "review_scope": "file or selected definitions"
+    },
+    {
+      "path": "source/vstd/map.rs",
+      "url": "https://github.com/verus-lang/verus/blob/release/0.2026.11.02.8bf68ee/source/vstd/map.rs",
+      "blob_sha": "123c618c3d27ed48928a1bdbb0603a0b9b49e3a8",
+      "review_scope": "file or selected definitions"
+    },
+    {
+      "path": "source/docs/guide/src/tcb.md",
+      "url": "https://github.com/verus-lang/verus/blob/release/0.2026.11.02.8bf68ee/source/docs/guide/src/tcb.md",
+      "blob_sha": "6666cf14ad11c4f8c9c87017019d3e31f31d1a3e",
+      "review_scope": "file or selected definitions"
+    }
+  ]
+}

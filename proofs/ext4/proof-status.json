@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "license": "MPL-2.0",
+  "phase": "design_and_modelling",
+  "format_goal": "linux_compatible_ext4_subset",
+  "implementation_present": false,
+  "writable_mount_enabled": false,
+  "verification": {
+    "status": "not_run",
+    "reason": "No usable execution environment was available; executor rejected execution even after the cloud status reported connected.",
+    "candidate_proof_functions": 24,
+    "checked_proof_functions": 0,
+    "runner_validated": false
+  },
+  "claims": {
+    "abstract_redo": "candidate_unchecked",
+    "single_transaction_crash_safety": "candidate_unchecked",
+    "gate_predicates": "candidate_unchecked",
+    "arbitrary_transaction_histories": "not_proved",
+    "linux_ext4_jbd2_byte_refinement": "not_proved",
+    "device_persistence_contract": "not_proved",
+    "kernel_concurrency_and_authorization": "not_proved",
+    "filesystem_durability": "not_proved",
+    "liveness": "not_proved"
+  },
+  "production_activation_gate": "All applicable obligations in PROOF_OBLIGATIONS.md must be discharged for the admitted profile.",
+  "evidence_policy": "Only a successful pinned entire-crate Verus run may produce build/proof-report.json; that report still proves only its declared model scope."
+}
