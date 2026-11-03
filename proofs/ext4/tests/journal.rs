@@ -869,6 +869,243 @@ fn constructed_transactions_recover_exact_owned_afterimages() {
 }
 
 #[test]
+fn repeated_recovery_crashes_keep_admission_and_committed_superblock_updates() {
+    let (mut stable, layout, _, target) = fixture();
+    let uuid = stable[1128..1144].to_vec();
+    let base = layout.offset(0, stable.len() as u64).unwrap() as usize;
+    let mut primary = core::super_state::recovery_image(&stable[..4096], stable.len() as u64, true)
+        .unwrap()
+        .as_slice()
+        .to_vec();
+    primary[1144..1160].copy_from_slice(b"verus-repeat-sb0");
+    let checksum = core::crc::crc32c(0xffffffff, &primary[1024..2044]);
+    primary[2044..2048].copy_from_slice(&checksum.to_le_bytes());
+    let data = vec![0xabu8; 4096];
+    let input = vec![
+        core::transaction::AfterImage::capture(0, &primary).unwrap(),
+        core::transaction::AfterImage::capture(target, &data).unwrap(),
+    ];
+    let mut writer = core::write_io::prepare(
+        &stable[base..base + layout.blocks() as usize * 4096],
+        &uuid,
+        geometry(&stable).0,
+        &stable[..4096],
+        stable.len() as u64,
+        input,
+    )
+    .unwrap();
+    let mut cache: Vec<(u32, Vec<u8>)> = Vec::new();
+    let persist = |stable: &mut Vec<u8>, cache: &mut Vec<(u32, Vec<u8>)>| {
+        for (block, bytes) in cache.drain(..) {
+            stable[block as usize * 4096..(block as usize + 1) * 4096].copy_from_slice(&bytes);
+        }
+    };
+    let mut fences = 0;
+    while fences < 4 {
+        let pending = core::write_io::dispatch(writer).ok().unwrap();
+        match pending.pending_command() {
+            core::recovery_io::Command::Write { block, image } => {
+                cache.push((block, image.to_vec()))
+            }
+            core::recovery_io::Command::Flush => {
+                persist(&mut stable, &mut cache);
+                fences += 1;
+            }
+        }
+        writer = pending.finish_pending(Completion::Succeeded);
+    }
+    assert!(!writer.finished());
+    assert!(cache.is_empty());
+    let scan = core::scan::recover(
+        &stable[base..base + layout.blocks() as usize * 4096],
+        &uuid,
+        geometry(&stable).0,
+    )
+    .unwrap();
+    assert_eq!(scan.committed_transactions(), 1);
+    assert_eq!(scan.replay_plan().len(), 2);
+    for (attempt, commands) in [1usize, 2, 3, 4].into_iter().enumerate() {
+        let mut recovery = core::recovery_io::prepare(
+            &stable[base..base + layout.blocks() as usize * 4096],
+            &uuid,
+            geometry(&stable).0,
+            &stable[..4096],
+            stable.len() as u64,
+        )
+        .expect("an interrupted recovery must remain admissible");
+        for _ in 0..commands {
+            let pending = core::recovery_request::dispatch(recovery).ok().unwrap();
+            match pending.pending_command() {
+                core::recovery_io::Command::Write { block, image } => {
+                    cache.push((block, image.to_vec()))
+                }
+                core::recovery_io::Command::Flush => persist(&mut stable, &mut cache),
+            }
+            recovery = pending.finish_pending(Completion::Succeeded);
+        }
+        assert!(!recovery.finished());
+        persist(&mut stable, &mut cache); // A crash may persist all queued writes.
+        let linux = linux_recover(&format!("build/repeated-recovery-{attempt}.img"), &stable);
+        assert_eq!(
+            &linux[target as usize * 4096..(target as usize + 1) * 4096],
+            data
+        );
+        assert_eq!(&linux[1144..1160], b"verus-repeat-sb0");
+    }
+    let mut recovery = core::recovery_io::prepare(
+        &stable[base..base + layout.blocks() as usize * 4096],
+        &uuid,
+        geometry(&stable).0,
+        &stable[..4096],
+        stable.len() as u64,
+    )
+    .unwrap();
+    loop {
+        let pending = match core::recovery_request::dispatch(recovery) {
+            Ok(pending) => pending,
+            Err(done) => {
+                recovery = done;
+                break;
+            }
+        };
+        match pending.pending_command() {
+            core::recovery_io::Command::Write { block, image } => {
+                cache.push((block, image.to_vec()))
+            }
+            core::recovery_io::Command::Flush => persist(&mut stable, &mut cache),
+        }
+        recovery = pending.finish_pending(Completion::Succeeded);
+    }
+    assert!(recovery.finished());
+    assert!(cache.is_empty());
+    assert_eq!(
+        &stable[target as usize * 4096..(target as usize + 1) * 4096],
+        data
+    );
+    assert_eq!(&stable[1144..1160], b"verus-repeat-sb0");
+}
+
+#[test]
+fn journal_reuse_preserves_prior_generations_across_every_final_writer_cut() {
+    fn pattern(value: u8) -> Vec<u8> {
+        let mut image = vec![value; 4096];
+        image[..4].copy_from_slice(&core::jbd2::MAGIC.to_be_bytes());
+        image
+    }
+    fn start(image: &[u8], updates: &[(u32, u8)]) -> core::write_io::Writer {
+        let layout = geometry(image).0;
+        let base = layout.offset(0, image.len() as u64).unwrap() as usize;
+        let input = updates
+            .iter()
+            .map(|&(block, value)| {
+                core::transaction::AfterImage::capture(block, &pattern(value)).unwrap()
+            })
+            .collect();
+        core::write_io::prepare(
+            &image[base..base + layout.blocks() as usize * 4096],
+            &image[1128..1144],
+            layout,
+            &image[..4096],
+            image.len() as u64,
+            input,
+        )
+        .unwrap()
+    }
+    fn flush(image: &mut [u8], cache: &mut Vec<(u32, Vec<u8>)>) {
+        for (block, bytes) in cache.drain(..) {
+            image[block as usize * 4096..(block as usize + 1) * 4096].copy_from_slice(&bytes);
+        }
+    }
+    let (mut stable, layout, _, target) = fixture();
+    let base = layout.offset(0, stable.len() as u64).unwrap() as usize;
+    let mut last_sequence = 0;
+    for updates in [
+        vec![(target, 0x11), (target + 1, 0x22)],
+        vec![(target, 0x33)],
+        vec![(target + 1, 0x55)],
+    ] {
+        let mut writer = start(&stable, &updates);
+        let mut cache = Vec::new();
+        loop {
+            let pending = match core::write_io::dispatch(writer) {
+                Ok(pending) => pending,
+                Err(done) => {
+                    writer = done;
+                    break;
+                }
+            };
+            match pending.pending_command() {
+                core::recovery_io::Command::Write { block, image } => {
+                    cache.push((block, image.to_vec()))
+                }
+                core::recovery_io::Command::Flush => flush(&mut stable, &mut cache),
+            }
+            writer = pending.finish_pending(Completion::Succeeded);
+        }
+        assert!(writer.finished());
+        assert!(cache.is_empty());
+        let header = core::journal_superblock::parse(
+            &stable[base..base + 1024],
+            &stable[1128..1144],
+            layout.blocks(),
+        )
+        .unwrap();
+        assert_eq!(header.start, 0);
+        assert!(header.sequence > last_sequence);
+        last_sequence = header.sequence;
+    }
+    assert_eq!(
+        &stable[target as usize * 4096..(target as usize + 1) * 4096],
+        pattern(0x33)
+    );
+    assert_eq!(
+        &stable[(target as usize + 1) * 4096..(target as usize + 2) * 4096],
+        pattern(0x55)
+    );
+    let mut writer = start(&stable, &[(target, 0x77)]);
+    let mut cache = Vec::new();
+    let mut cut = 0;
+    loop {
+        let pending = match core::write_io::dispatch(writer) {
+            Ok(pending) => pending,
+            Err(done) => {
+                writer = done;
+                break;
+            }
+        };
+        match pending.pending_command() {
+            core::recovery_io::Command::Write { block, image } => {
+                cache.push((block, image.to_vec()))
+            }
+            core::recovery_io::Command::Flush => flush(&mut stable, &mut cache),
+        }
+        let mut crash = stable.clone();
+        let mut persisted = cache.clone();
+        flush(&mut crash, &mut persisted);
+        let recovered = linux_recover(&format!("build/multi-generation-cut-{cut}.img"), &crash);
+        let first = &recovered[target as usize * 4096..(target as usize + 1) * 4096];
+        assert!(
+            first == pattern(0x33) || first == pattern(0x77),
+            "cut {cut}"
+        );
+        assert_eq!(
+            &recovered[(target as usize + 1) * 4096..(target as usize + 2) * 4096],
+            pattern(0x55),
+            "cut {cut}: prior acknowledged data"
+        );
+        writer = pending.finish_pending(Completion::Succeeded);
+        cut += 1;
+    }
+    assert!(writer.finished());
+    assert_eq!(cut, 13);
+    assert!(cache.is_empty());
+    assert_eq!(
+        &stable[target as usize * 4096..(target as usize + 1) * 4096],
+        pattern(0x77)
+    );
+}
+
+#[test]
 fn writer_crash_cuts_recover_before_or_after_and_success_is_retired() {
     let (mut initial, layout, _, target) = fixture();
     let uuid = initial[1128..1144].to_vec();

@@ -9,13 +9,13 @@
   "writable_mount_enabled": false,
   "verification": {
     "status": "core_and_models_checked",
-    "verus_verified_units": 387,
+    "verus_verified_units": 401,
     "verification_errors": 0,
-    "checked_named_proof_functions": 193,
+    "checked_named_proof_functions": 206,
     "checked_named_executable_functions": 106,
     "runner_validated": true,
     "negative_gate_checks_passed": 6,
-    "host_compatibility_tests_passed": 18,
+    "host_compatibility_tests_passed": 20,
     "evidence": "verification-evidence.json",
     "request_boundary_rejections_passed": 6
   },
@@ -28,7 +28,7 @@
     "block_role_and_initialization_invariants": "checked_abstractly",
     "total_structural_parsers_and_selected_codecs": "checked_for_FORMAT_PROFILE_subset",
     "host_owned_snapshot_and_escape_restore": "checked",
-    "linux_ext4_jbd2_disk_history_refinement": "not_proved",
+    "linux_ext4_jbd2_disk_history_refinement": "checked_for_serialized_writer_histories_and_repeated_recovery_under_declared_contract_full_filesystem_and_driver_open",
     "device_driver_and_ostd_persistence_refinement": "not_proved",
     "filesystem_operations_and_namespace": "not_implemented",
     "kernel_concurrency_and_authorization": "not_proved",
@@ -45,14 +45,15 @@
     "owned_transaction_encoder": "checked_and_related_to_exact_canonical_scan_input",
     "physical_block_map_to_journal_bytes": "checked",
     "serial_writer_command_pipeline": "checked_order_ownership_partition_bounds_and_finite_completion",
-    "physical_writer_persistence_and_history": "single_transaction_checked_multi_transaction_composition_open",
+    "physical_writer_persistence_and_history": "checked_serialized_byte_valued_generations_under_explicit_device_contract_runtime_gate_and_driver_open",
     "writer_factory_admission": "checked_exact_can_prepare_profile",
     "single_transaction_writer_byte_persistence_and_fresh_commit_recognition": "checked_under_explicit_atomicity_flush_quiescent_start_contract_without_crc_identity_assumption",
     "flush_to_finite_issued_atomic_writes": "checked",
     "failure_free_writer_execution": "checked_finite_constructive_witness",
     "terminal_transaction_recovery": "checked_retires_at_scan_next_sequence_without_allocating_an_epoch",
     "single_writer_actual_scan_and_recovery": "checked_complete_before_or_after_nonjournal_home_bytes_outside_block_zero_with_separate_volume_identity_replay_policy",
-    "recovery_request_partition_bounds_and_scan_certificate_preservation": "checked"
+    "recovery_request_partition_bounds_and_scan_certificate_preservation": "checked",
+    "repeated_recovery_admission_and_input_closure": "checked_for_arbitrary_finite_attempts_under_declared_contract"
   },
   "production_activation_gate": "All applicable obligations in PROOF_OBLIGATIONS.md must be discharged for the admitted profile.",
   "evidence_policy": "Only successful pinned entire-crate checking plus compilation produces a valid build report; it certifies only the declared source/model scope."

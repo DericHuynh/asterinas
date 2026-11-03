@@ -57,4 +57,23 @@ pub proof fn selected_superblock_targets_satisfy_the_replay_policy(journal: Seq<
     }
 }
 
+pub proof fn safe_streams_survive_valid_superblock_replay(source: Source, before: Seq<u8>, after: Seq<u8>, partition_bytes: u64)
+    requires safe_committed_streams(source, before, partition_bytes), super_state::replay_ok(before, after, partition_bytes),
+    ensures safe_committed_streams(source, after, partition_bytes),
+{
+    hide(crc::fold);
+    reveal(safe_committed_streams);
+    assert forall|records: Seq<Record>| #[trigger] scan_trace::well_formed(records, source)
+        && (records.len() == 0 || records.last().kind == 2) implies
+        (forall|i: int| 0 <= i < scan_trace::writes(records).len()
+            && (#[trigger] scan_trace::writes(records)[i]).block == 0 ==>
+                super_state::replay_ok(after, scan_trace::writes(records)[i].image, partition_bytes)) by {
+        assert forall|i: int| 0 <= i < scan_trace::writes(records).len()
+            && (#[trigger] scan_trace::writes(records)[i]).block == 0 implies
+            super_state::replay_ok(after, scan_trace::writes(records)[i].image, partition_bytes) by {
+            super_state::replay_policy_is_stable_under_another_valid_replay(before, after, scan_trace::writes(records)[i].image, partition_bytes);
+        }
+    }
+}
+
 }

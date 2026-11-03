@@ -29,6 +29,21 @@ pub open spec fn snapshot(disk: Disk, layout: LayoutView) -> Seq<u8> {
     })
 }
 
+pub proof fn equal_journal_blocks_have_equal_snapshots(a: Disk, b: Disk, layout: LayoutView)
+    requires mapped(a, layout), mapped(b, layout),
+        forall|logical: u32| logical < layout.journal_blocks ==>
+            (#[trigger] a[(layout.start + logical) as u32]) == b[(layout.start + logical) as u32],
+    ensures snapshot(a, layout) == snapshot(b, layout),
+{
+    assert(snapshot(a, layout) =~= snapshot(b, layout)) by {
+        assert forall|i: int| 0 <= i < layout.journal_blocks as nat * 4096 implies
+            #[trigger] snapshot(a, layout)[i] == snapshot(b, layout)[i] by {
+            let logical = (i / 4096) as u32;
+            assert(a[(layout.start + logical) as u32] == b[(layout.start + logical) as u32]);
+        }
+    }
+}
+
 pub proof fn snapshot_block_is_the_physical_image(disk: Disk, layout: LayoutView, logical: u32)
     requires mapped(disk, layout), logical < layout.journal_blocks,
     ensures snapshot(disk, layout).subrange(logical as int * 4096, (logical as int + 1) * 4096)

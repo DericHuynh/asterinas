@@ -64,7 +64,9 @@
     "src/scan_budget.rs",
     "src/write_admission.rs",
     "src/recovery_profile.rs",
-    "src/write_recovery.rs"
+    "src/write_recovery.rs",
+    "src/write_history.rs",
+    "src/recovery_closure.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -183,6 +185,7 @@
     "scan_stop::a_stopped_prefix_has_no_further_valid_record",
     "scan_stop::maximal_canonical_prefix_is_unique",
     "scan_stop::every_recognized_prefix_is_a_prefix_of_a_stopped_stream",
+    "journal_view::equal_journal_blocks_have_equal_snapshots",
     "journal_view::snapshot_block_is_the_physical_image",
     "journal_view::scanned_block_is_the_reserved_ring_image",
     "journal_view::writing_a_journal_block_splices_exactly_one_image",
@@ -255,11 +258,23 @@
     "write_admission::every_committed_writer_stream_satisfies_the_superblock_replay_policy",
     "write_admission::every_writer_crash_snapshot_can_prepare_recovery",
     "recovery_profile::selected_superblock_targets_satisfy_the_replay_policy",
+    "recovery_profile::safe_streams_survive_valid_superblock_replay",
+    "write_recovery::original_targets_exist",
     "write_recovery::every_returned_writer_scan_is_empty_or_the_complete_transaction",
     "write_recovery::complete_redo_overrides_any_partial_writer_homes",
     "write_recovery::a_retired_writer_has_complete_home_after_bytes",
     "write_recovery::replaying_every_writer_cut_gives_a_complete_before_or_after_home_image",
-    "write_recovery::successful_recovery_of_every_writer_cut_has_before_or_after_home_bytes"
+    "write_recovery::successful_recovery_of_every_writer_cut_has_before_or_after_home_bytes",
+    "write_history::initialization",
+    "write_history::append_successful_generation",
+    "write_history::every_completed_cut_has_exact_acknowledged_home_bytes",
+    "write_history::completed_generations_cannot_persist_again",
+    "write_history::recovery_after_a_physical_history_includes_every_acknowledgement",
+    "recovery_closure::every_recovery_cut_keeps_the_journal_mapped",
+    "recovery_closure::partial_recovery_keeps_the_primary_volume_identity",
+    "recovery_closure::every_recovery_crash_snapshot_can_prepare_another_recovery",
+    "recovery_closure::a_new_scan_of_uncleared_recovery_keeps_the_same_committed_input",
+    "recovery_closure::every_finite_sequence_of_recovery_crashes_preserves_admission"
   ],
   "required_flags": [
     "--no-cheating",

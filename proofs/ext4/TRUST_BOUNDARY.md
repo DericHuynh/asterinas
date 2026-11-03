@@ -113,7 +113,7 @@ It allows a cached write to persist before its completion and after abort,
 requires home flush before retirement, and proves each allowed event preserves
 the recovery invariant. Its success image equals the byte-valued Linux redo
 result plus the retired tail. This theorem does not establish device atomicity,
-the absence of old-generation requests, repeated recovery admission/closure or global replay authorization. A device with only 512-byte addressing has not met this contract.
+the absence of old-generation requests, global replay authorization or actual device behavior. A device with only 512-byte addressing has not met this contract.
 
 Every returned scan includes a source-bound contiguous record certificate,
 all descriptor payloads, the last committed cut and a stopping witness.
@@ -124,7 +124,9 @@ only part of the log has persisted. Recovery preparation also has a checked suff
 writer crash snapshot satisfies it. Actual scan selection plus modeled successful
 recovery has complete before/after nonjournal home bytes outside block zero.
 Block zero has a separate preserved-identity and replay-policy proof. These
-results do not establish global replay authorization or repeated recovery admission. Retirement stores the scan
+results do not establish global replay authorization. Repeated recovery admission
+is checked after every modeled crash cut and arbitrary finite sequences of
+attempts; an uncleared journal has the same committed input. Retirement stores the scan
 next-sequence value without allocating a new epoch, so terminal-ID recovery
 remains possible; future writer admission still refuses wraparound.
 
@@ -143,8 +145,11 @@ machine and its single-transaction byte/persistence simulation are checked under
 the stated device contract. Each persistence event inserts exactly its issued
 image at its physical address; successful flush has a finite issued-write
 refinement. Fresh commit recognition derives from epoch/provenance and prepared
-log durability, without CRC injectivity. Multi-transaction physical history and
-the actual device adapter remain open.
+log durability, without CRC injectivity. Serialized physical writer generations
+compose over their actual durable maps; the final recovery includes every
+acknowledged generation. The runtime gate, filesystem operation authority and
+actual device adapter remain open. A crash discards volatile cache and a new
+attempt requires quiescent-start device semantics; abort does not imply them.
 The device contract applies to each submitted partition-relative 4 KiB span,
 including physical alignment. The partition wrapper must establish that relation.
 

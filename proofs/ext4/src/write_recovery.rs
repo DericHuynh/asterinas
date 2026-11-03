@@ -49,7 +49,7 @@ proof fn snapshot_state(m: Machine, before: Disk, v: write_io::Images, layout: &
     }
 }
 
-proof fn original_targets_exist(before: Disk, v: write_io::Images)
+pub proof fn original_targets_exist(before: Disk, v: write_io::Images)
     requires write_recognition::context(before, v),
     ensures replay_refinement::all_targets_exist(before, transaction_refinement::log(v.tx)),
 {

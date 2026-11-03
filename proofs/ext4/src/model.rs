@@ -83,3 +83,7 @@ mod write_admission;
 pub mod recovery_profile;
 
 mod write_recovery;
+
+mod write_history;
+
+mod recovery_closure;
