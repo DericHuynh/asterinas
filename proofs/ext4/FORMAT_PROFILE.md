@@ -2,93 +2,83 @@
 
 # Linux compatibility profile
 
-Status: planned, not implemented or verified. There is currently no supported
-mount profile. This manifest is not a claim that a default mke2fs image works.
+Status: the following **structural parsers and selected encoders are implemented
+and Verus-checked**.
+There is no admitted mount profile or production disk writer yet.
+The accepted byte structures do not certify the whole volume.
 
-## Initial candidate
+## Implemented structural subset
 
-- ext4 byte format, 4 KiB filesystem blocks, 256-byte inodes, one device.
-- An internal JBD2 journal with an immutable, validated mapping.
-- Extent-backed regular files and linear directories; checked sparse and
-  unwritten-extent reads.
-- Full data journaling, synchronous bounded operations, serialized mutation.
-- A deliberately restricted filesystem-size/address range until 64-bit group
-  descriptors and journal tags are proved.
-- No writable admission before the parser, operation, recovery, and adapter gates.
-
-The exact mkfs feature allowlist is to be locked by the codec/admission proof.
-There is no untested formatting command in this proposal.
-
-## Feature policy
-
-| Feature/representation | Initial decision |
+| Structure | Accepted representation |
 | --- | --- |
-| HAS_JOURNAL, FILETYPE, EXTENTS | Required candidate features; prove parser and writer. |
-| RECOVER | A state condition to validate and handle; never blindly ignore it. |
-| METADATA_CSUM | Planned checksum correctness and validation, not authentication. |
-| SPARSE_SUPER, LARGE_FILE, EXTRA_ISIZE | Admit only after corresponding geometry/inode obligations pass. |
-| 64BIT / high extent addresses | Reject outside the proved address profile until expanded. |
-| FLEX_BG, META_BG, BIGALLOC | Not initially admitted. |
-| DIR_INDEX / indexed-directory inode flag | Not initially admitted; do not parse an htree as a normal dirent block. |
-| INLINE_DATA, encryption, verity | Not initially admitted. |
-| External journal, async commit, fast commit | Not initially admitted. |
-| ORPHAN_FILE and other new orphan formats | Not initially admitted; prove a specific orphan representation first. |
-| Unknown COMPAT/RO_COMPAT/INCOMPAT bits | Reject in the first strict profile, including otherwise "ignorable" bits. |
-| Legacy indirect mappings or special inode encodings | Reject unless explicitly covered by the profile. |
+| ext4 superblock | 1024 bytes, Linux creator OS, revision 1, 4 KiB blocks/clusters, 256-byte inodes, first data block 0, first ordinary inode 11, internal journal inode 8. |
+| Geometry | 32-bit block count, 32768 blocks/group, positive inodes/group <=32768 and divisible by 16, checked group/count/partition relationships. |
+| Feature COMPAT | Exactly HAS_JOURNAL (`0x0004`). |
+| Feature INCOMPAT | FILETYPE + EXTENTS (`0x0042`), optionally RECOVER (`0x0046`). RECOVER is surfaced to the caller; it is not recovered or ignored. |
+| Feature RO_COMPAT | Exactly SPARSE_SUPER + LARGE_FILE + EXTRA_ISIZE + METADATA_CSUM (`0x0443`). |
+| Group descriptor | 32 bytes, bitmaps and inode table inside the group and locally disjoint, initialized bitmaps/table (`bg_flags=4`), bounded counters and metadata CRC32C truncation. |
+| Inode | 256 bytes, extra_isize 32, live regular file/directory, EXTENTS flag only, no ACL/xattr block, 32-bit i_size, Linux UID/GID high halves and inode CRC32C. |
+| Extent root | Inline depth-zero leaf root, max four entries, sorted nonoverlapping logical intervals, 32-bit physical addresses. Written length up to 32768; unwritten length up to 32767; zero length rejected. |
+| Directory | Linear 4 KiB records with FILETYPE and metadata checksum tail; live entries limited to regular files/directories; no NUL or slash in a name. |
+| JBD2 superblock | Version 2, 4 KiB journal blocks, first log position 1, >=1024 journal blocks, one user, matching filesystem UUID, no stored error/dynamic copy/fast-commit blocks. |
+| Journal features | No feature bits for a clean mke2fs journal, or CSUM_V3 with optional REVOKE. Unknown bits, 64-bit tags and async commit rejected. The REVOKE flag is decoded, not implemented as replay support. |
+| JBD2 records | Bounded header/tag codecs, 16-byte v3 tags, UUID/sequence/payload CRC primitives, commit checksum check, owned escaping/restoration. Complete descriptor/revoke/transaction scanning is not implemented. |
 
-Filesystem feature masks alone are insufficient: also check inode flags, inode
-types, extent encodings, journal features/tags, checksum variants, UUID binding,
-and mount-state fields. A Linux-compatible subset must emit canonical ext4/JBD2
-bytes with no private replacement journal format.
+Superblock reserved-GDT blocks and high block-count fields must be zero.
+The descriptor size is zero or 32; minimum/desired inode extra sizes are 32.
+Unknown feature masks are rejected even when Linux could ignore them.
+Indexed directories, indirect trees, nonzero extent depth, inline data,
+64BIT, FLEX_BG, META_BG, BIGALLOC, huge files, encryption, verity,
+external/async/fast journals and ORPHAN_FILE are outside the implemented subset.
+The target design may expand these restrictions only with corresponding proofs.
 
-## Parser obligations
+A controlled interoperable fixture is generated by:
 
-1. Device and partition sizes, checked byte/sector/block conversions, nonzero
-   geometry, supported block and inode sizes, and descriptor-table bounds.
-2. Every length and offset before indexing or allocating, including directory
-   rec_len/name_len, tags, revoke records, inode extras, and extent entries.
-3. Extent ordering/non-overlap, bounded depth, child validity, physical ranges,
-   initialized versus unwritten lengths, holes, and i_size limits.
-4. Reserved-region construction and role disjointness, including all admitted
-   backup superblocks/descriptors, bitmaps, inode tables, and journal extents.
-5. Byte-order conversion: ext4 fields are little endian; JBD2 is big endian.
-6. CRC algorithms, correct seeds/covered bytes, UUID and sequence association,
-   tag escaping, and preserve/encode rules for every admitted field.
-7. Bounded traversal and resource budgets; malicious media must not cause an
-   unchecked loop, recursion, allocation, out-of-partition access, or publication
-   of uninitialized memory.
-8. Global ownership/namespace validation or a proved alternative certificate.
-   Local extent bounds alone do not rule out cross-inode block aliasing.
+~~~sh
+mke2fs -F -t ext4 -b 4096 -I 256 \
+  -O none,has_journal,extent,filetype,sparse_super,large_file,extra_isize,metadata_csum \
+  -E lazy_itable_init=0,lazy_journal_init=0 image 16384
+~~~
 
-Validate recovery input in a shadow/overlay view before publishing the mounted
-filesystem. Dirty home metadata is not necessarily a valid complete state.
-A replay target from an on-disk tag must not be allowed to overwrite the journal
-or escape the partition. Do not write arbitrary unvalidated replay records
-before proving the allowed-target policy and recovered-state validity.
+`tools/check_compat.py` creates its own temporary image and adds a regular file
+with debugfs; no existing device is formatted.
+The local validation used e2fsprogs 1.47.0.
+This command creates test input, not a volume safe to mount with this package.
 
-## Journal-specific obligations
+## Checksums and generations
 
-Prove descriptors, flags, escaped payloads, checksums, commit records, revokes,
-and journal superblock updates against Linux's admitted representation.
-Prove the scan/revoke/replay relationship; revokes are not merely "last write
-wins" records. Prove no earlier metadata replay can overwrite a later reused
-data block.
+ext4 fields are little endian; JBD2 fields are big endian.
+CRC32C follows Linux's raw accumulator convention, without an implicit complement.
+The superblock checksum uses seed `~0` through offset 1020.
+Group checksums include the UUID seed and LE group number with the checksum field zero.
+Inode checksums include the UUID seed, LE inode number and generation,
+with both checksum halves zero.
+Directory checksums use the inode seed and exclude the 12-byte tail.
+JBD2 tag checksums cover the BE sequence and the **escaped** payload.
+JBD2 superblock and commit checksums zero their respective checksum fields.
 
-Neither a matching CRC nor a magic/TID pair authenticates a record.
-Generation, active-window, write-before-commit, and retirement properties must
-establish that an accepted record belongs to the correct live transaction.
-Counter wrap, stale records, delayed I/O, and circular-log reuse are mandatory
-cases. The initial implementation must refuse an unproved wrap or feature
-rather than extend a nat theorem to u32 by assumption.
+These relations and the executable CRC implementation are checked.
+They are integrity checks, not authentication or a collision-free record oracle.
+Binding caller-supplied seeds/identifiers to a validated mounted object remains
+an integration obligation.
 
-The ext4 needs-recovery flag and journal head/tail/sequence updates require
-their own crash protocol. Do not infer a clean mount from a single zero field.
-A clean Linux volume may be admitted earlier than a foreign dirty journal;
-unsupported recovery is rejected, never silently skipped.
+The composed model uses bounded u32 transaction IDs, stops before wrap,
+and reserves MAX for a representable terminal next-tail value.
+The counter helper is not authority to start a transaction.
+On-disk sequence/window validation across remount and old journal contents is
+still unproved; a nat generation theorem alone is insufficient.
 
-## Compatibility validation after proofs
+## Unfinished mount and write obligations
 
-Use controlled Linux/e2fsprogs images for every admitted feature profile.
-Round-trip through both implementations, run fsck, inject crashes, and compare
-operation/error behavior. These checks validate the implementation/model
-connection; they do not replace Verus proofs.
+- Complete group/backup-super/GDT/journal reserved-region construction.
+- Bitmap/free-counter consistency and global no-alias extent ownership.
+- Inode topology, links, directory lookup/rename and orphan/reclamation rules.
+- Verified read/write/allocation operation preservation and transaction closure.
+- Complete JBD2 scan/revoke/replay, escaped-tag UUID rules, freshness and tail updates.
+- Recovery validation in a shadow view, replay-target policy, repeatable physical recovery.
+- OSTD frame/DMA/device and VFS/credential refinements.
+
+A replay target must not escape the partition or overwrite the journal.
+A locally bounded extent must not be accepted as proof that it belongs to the inode.
+A zero journal start field alone must not establish a clean mounted filesystem.
+No raw parser result is used to bypass these gates.

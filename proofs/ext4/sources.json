@@ -82,6 +82,48 @@
       "url": "https://github.com/verus-lang/verus/blob/release/0.2026.11.02.8bf68ee/source/docs/guide/src/tcb.md",
       "blob_sha": "6666cf14ad11c4f8c9c87017019d3e31f31d1a3e",
       "review_scope": "file or selected definitions"
+    },
+    {
+      "path": "include/linux/jbd2.h",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/include/linux/jbd2.h",
+      "blob_sha": "a53a00d36228ce281e31f94fddb50246da62bb32",
+      "review_scope": "selected relevant definitions; reference only, not imported as proved code"
+    },
+    {
+      "path": "fs/jbd2/journal.c",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/jbd2/journal.c",
+      "blob_sha": "cb2c529a8f1bea33df6d4135e5782b9a77792732",
+      "review_scope": "selected relevant definitions; reference only, not imported as proved code"
+    },
+    {
+      "path": "fs/namei.c",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/namei.c",
+      "blob_sha": "9e5500dad14f59caad5e79c57c97410d1900171a",
+      "review_scope": "selected relevant definitions; reference only, not imported as proved code"
+    },
+    {
+      "path": "source/vstd/resource/combinators/exclusive.rs",
+      "url": "https://github.com/verus-lang/verus/blob/8bf68ee741df833ea5d0fe6a2255126fdea87e47/source/vstd/resource/combinators/exclusive.rs",
+      "blob_sha": "ea1764d754b15d8953b8ccb8fe7c53075b76051b",
+      "review_scope": "selected relevant definitions; reference only, not imported as proved code"
+    },
+    {
+      "path": "source/vstd/resource/lib.rs",
+      "url": "https://github.com/verus-lang/verus/blob/8bf68ee741df833ea5d0fe6a2255126fdea87e47/source/vstd/resource/lib.rs",
+      "blob_sha": "88acb1656a2ce7928450ebb2ebc3a9c717101630",
+      "review_scope": "selected relevant definitions; reference only, not imported as proved code"
+    },
+    {
+      "path": "source/vstd/resource/pcm.rs",
+      "url": "https://github.com/verus-lang/verus/blob/8bf68ee741df833ea5d0fe6a2255126fdea87e47/source/vstd/resource/pcm.rs",
+      "blob_sha": "c3bbcc43d7cf4425dae3131b87d0100c7d20edbb",
+      "review_scope": "selected relevant definitions; reference only, not imported as proved code"
+    },
+    {
+      "path": "source/vstd/resource/combinators/option.rs",
+      "url": "https://github.com/verus-lang/verus/blob/8bf68ee741df833ea5d0fe6a2255126fdea87e47/source/vstd/resource/combinators/option.rs",
+      "blob_sha": "ae7a4eeabfbfa5753185c740166b7f6d618dea46",
+      "review_scope": "selected relevant definitions; reference only, not imported as proved code"
     }
   ]
 }

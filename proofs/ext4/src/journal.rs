@@ -2,9 +2,10 @@
 
 //! M0: one transaction, asynchronous persistence, partial checkpointing.
 //! This is NOT an ext4/JBD2 decoder, a device implementation, or a proof
-//! about arbitrary untrusted media. All proof bodies are unchecked drafts.
+//! about arbitrary untrusted media. See the checked scope in ../proof-status.json.
 
 use vstd::prelude::*;
+use vstd::assert_maps_equal;
 use crate::redo::{Disk, compatible, overlay, complete_redo_overrides_partial_checkpoint,
     overlay_is_idempotent};
 
@@ -45,12 +46,12 @@ pub open spec fn init(before: Disk, patch: Disk) -> State {
     }
 }
 
-pub open spec fn invariant(s: State) -> bool {
+pub open spec fn inv(s: State) -> bool {
     &&& compatible(s.before, s.home, s.patch)
     &&& s.issued.subset_of(s.patch.dom())
     &&& s.log.dom().subset_of(s.issued)
-    &&& forall|unit: nat| s.log.dom().contains(unit)
-        ==> #[trigger] s.log[unit] == s.patch[unit]
+    &&& (forall|unit: nat| s.log.dom().contains(unit)
+        ==> #[trigger] s.log[unit] == s.patch[unit])
     &&& (!s.committed ==> s.home == s.before)
     &&& (s.prepared ==> s.log == s.patch && s.issued == s.patch.dom())
     &&& (s.commit_issued ==> s.prepared)
@@ -135,20 +136,25 @@ pub open spec fn recover(image: CrashImage) -> Disk {
 
 pub proof fn initial_state_is_valid(before: Disk, patch: Disk)
     requires patch.dom().subset_of(before.dom()),
-    ensures invariant(init(before, patch)),
+    ensures inv(init(before, patch)),
 {
 }
 
 pub proof fn payload_issue_preserves(s: State, unit: nat)
-    requires invariant(s), !s.aborted, !s.prepared, s.patch.dom().contains(unit),
-    ensures invariant(issue_payload(s, unit)),
+    requires inv(s), !s.aborted, !s.prepared, s.patch.dom().contains(unit),
+    ensures inv(issue_payload(s, unit)),
 {
 }
 
 pub proof fn payload_persistence_preserves(s: State, unit: nat)
-    requires invariant(s), s.issued.contains(unit),
-    ensures invariant(persist_payload(s, unit)),
+    requires inv(s), s.issued.contains(unit),
+    ensures inv(persist_payload(s, unit)),
 {
+    let t = persist_payload(s, unit);
+    assert(s.patch.dom().contains(unit));
+    if s.prepared {
+        assert_maps_equal!(t.log, s.patch, u => { });
+    }
     assert forall|u: nat| persist_payload(s, unit).log.dom().contains(u)
         implies #[trigger] persist_payload(s, unit).log[u] == s.patch[u] by {
         if u != unit {
@@ -159,60 +165,63 @@ pub proof fn payload_persistence_preserves(s: State, unit: nat)
 }
 
 pub proof fn prepare_preserves(s: State)
-    requires invariant(s), !s.aborted,
+    requires inv(s), !s.aborted,
         s.issued == s.patch.dom(), s.log == s.patch,
-    ensures invariant(finish_prepare(s)),
+    ensures inv(finish_prepare(s)),
 {
 }
 
 pub proof fn commit_issue_preserves(s: State)
-    requires invariant(s), !s.aborted, s.prepared,
-    ensures invariant(issue_commit(s)),
+    requires inv(s), !s.aborted, s.prepared,
+    ensures inv(issue_commit(s)),
 {
 }
 
 pub proof fn commit_persistence_preserves(s: State)
-    requires invariant(s), s.commit_issued,
-    ensures invariant(persist_commit(s)),
+    requires inv(s), s.commit_issued,
+    ensures inv(persist_commit(s)),
 {
 }
 
 pub proof fn checkpoint_preserves(s: State, unit: nat)
-    requires invariant(s), s.committed, s.patch.dom().contains(unit),
-    ensures invariant(checkpoint_unit(s, unit)),
+    requires inv(s), s.committed, s.patch.dom().contains(unit),
+    ensures inv(checkpoint_unit(s, unit)),
 {
     let t = checkpoint_unit(s, unit);
+    assert(s.before.dom().contains(unit));
+    assert(t.home.dom() =~= s.before.dom());
+    assert(target(t) == target(s));
     assert forall|u: nat| s.before.dom().contains(u)
         && !s.patch.dom().contains(u)
         implies #[trigger] t.home[u] == s.before[u] by {
         assert(u != unit);
     }
     if s.retired {
-        assert_maps_equal!(t.home == target(s), u => { });
+        assert_maps_equal!(t.home, target(s), u => { });
     }
 }
 
 pub proof fn retirement_preserves(s: State)
-    requires invariant(s), s.committed, s.home == target(s),
-    ensures invariant(persist_retirement(s)),
+    requires inv(s), s.committed, s.home == target(s),
+    ensures inv(persist_retirement(s)),
 {
 }
 
 pub proof fn acknowledgement_preserves(s: State)
-    requires invariant(s), !s.aborted, s.committed,
-    ensures invariant(acknowledge(s)),
+    requires inv(s), !s.aborted, s.committed,
+    ensures inv(acknowledge(s)),
 {
 }
 
 pub proof fn abort_preserves(s: State)
-    requires invariant(s),
-    ensures invariant(abort(s)),
+    requires inv(s),
+    ensures inv(abort(s)),
 {
 }
 
 pub proof fn every_step_preserves_invariant(s: State, t: State)
-    requires invariant(s), next(s, t),
-    ensures invariant(t),
+    requires inv(s), next(s, t),
+    ensures inv(t),
 {
     if exists|u: nat| !s.aborted && !s.prepared
         && s.patch.dom().contains(u) && t == issue_payload(s, u) {
@@ -249,7 +258,7 @@ pub proof fn every_step_preserves_invariant(s: State, t: State)
 }
 
 pub proof fn recovery_is_a_legal_single_transaction_cut(s: State)
-    requires invariant(s),
+    requires inv(s),
     ensures recover(crash(s)) == s.before || recover(crash(s)) == target(s),
 {
     if s.committed && !s.retired {
@@ -258,7 +267,7 @@ pub proof fn recovery_is_a_legal_single_transaction_cut(s: State)
 }
 
 pub proof fn acknowledged_transaction_survives(s: State)
-    requires invariant(s), s.acknowledged,
+    requires inv(s), s.acknowledged,
     ensures recover(crash(s)) == target(s),
 {
     if !s.retired {
@@ -310,7 +319,14 @@ pub proof fn missing_prepare_can_lose_an_acknowledged_change() {
         commit_issued: true, committed: true, acknowledged: true,
         ..init(before, patch)
     };
-    assert(!invariant(bad));
+    assert(bad.commit_issued);
+    assert(!bad.prepared);
+    assert(!inv(bad)) by {
+        if inv(bad) {
+            assert(bad.commit_issued ==> bad.prepared);
+            assert(false);
+        }
+    }
     assert(recover(crash(bad))[0] == 7);
     assert(target(bad)[0] == 11);
 }
@@ -319,7 +335,14 @@ pub proof fn premature_checkpoint_can_expose_a_partial_transaction() {
     let before = Map::<nat, nat>::empty().insert(0, 7).insert(1, 8);
     let patch = Map::<nat, nat>::empty().insert(0, 11).insert(1, 12);
     let bad = State { home: before.insert(0, 11), ..init(before, patch) };
-    assert(!invariant(bad));
+    assert(!inv(bad)) by {
+        if inv(bad) {
+            assert(!bad.committed);
+            assert(bad.home == bad.before);
+            assert(bad.home[0] == 11);
+            assert(bad.before[0] == 7);
+        }
+    }
     assert(recover(crash(bad))[0] == 11);
     assert(recover(crash(bad))[1] == 8);
     assert(recover(crash(bad)) != before);

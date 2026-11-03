@@ -2,13 +2,15 @@
 
 # Trust boundary and required adapters
 
-Status: contracts to discharge, not verified adapters.
+Status: explicit foundation and contracts; concrete kernel adapters remain unproved.
 
 ## Trusted foundation
 
 The final claim will be conditional on a reviewed foundation: the pinned Verus
 and vstd semantics/axioms, SMT soundness, Rust compiler/code generation and
-erasure, the machine model, and explicit hardware/device assumptions.
+erasure, vstd resource-algebra ghost ownership, the machine model, and explicit
+hardware/device assumptions. The verified runner itself, installer and test
+harness are ordinary trusted build/validation tools, not Verus-proved code.
 
 OSTD/CortenMM, VFS authorization, block drivers, and DMA routines are not
 automatically proved by proving this package. Either import an existing checked
@@ -67,7 +69,9 @@ user buffer. Once captured for the journal they remain immutable.
 Model the operation gate with Verus tracked permissions and then prove that an
 actual OSTD lock acquisition yields exactly the matching live capability.
 A pure integer actor/generation predicate alone is not an unforgeable capability.
-The current lease.rs only models that predicate.
+lease.rs models that predicate. gate.rs adds an affine capability backed by
+vstd's exclusive resource algebra and proves uniqueness and stale-generation
+rejection. It still does not establish an actual OSTD mutex acquisition.
 
 Audit entry paths from VFS/dentry/inode locks before fixing the global hierarchy.
 Include error paths, callbacks, eviction, unmount, reset, cancellation, and
@@ -90,3 +94,31 @@ historical file contents, defeat rollback by a hostile drive, prove physical
 secure erasure, or eliminate hardware timing side channels. Mount nosuid/nodev
 and any namespace/credential mapping must have a real VFS contract; they are
 not consequences of the ext4 format.
+
+## Current executable boundary
+
+The core is compiled by the pinned verifier into a host Rust library and exercised
+by a separate unverified interoperability harness.
+There are no local assumptions, admitted lemmas, trusted function bodies,
+trusted generated token APIs, or calls to a handwritten unverified core helper.
+All public executable functions perform their own checks and have no `requires` clauses.
+
+`FrozenBlock` owns initialized Rust bytes and exposes no mutable borrow or Clone.
+This proves the host snapshot relationship; it does not prove an OSTD frame loan.
+Kernel integration must capture bytes through `VmReader`/`VmWriter` and CortenMM
+ownership, account for fallible memory reservation, and relate frozen frames and
+DMA callbacks to these checked models.
+The existing cloneable BIO segment is not treated as an exclusive snapshot.
+
+The current block-device metadata does not advertise power-loss atomicity,
+persistence domains or a formal flush/DMA contract.
+A verified adapter cannot infer them from a sector size or a completed BIO.
+The driver/OSTD contracts and their implementation refinements must be supplied
+before a writable mount can be enabled.
+
+The Rust standard library/allocator and their pinned vstd specifications are part
+of the host-core foundation. The snapshot's allocating loops have checked bounds;
+this does not prove successful allocation under arbitrary memory pressure.
+The kernel adapter must provide fallible reservation and OSTD memory semantics.
+The DAC core takes the filesystem UID and already mapped owner/group/capability
+facts; it does not implement credential authentication, idmapped mounts or LSMs.

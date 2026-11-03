@@ -1,84 +1,96 @@
 <!-- SPDX-License-Identifier: MPL-2.0 -->
 
-# Ext4 design and Verus models
+# Ext4 core and Verus proofs for Asterinas
 
-This package starts the design of an independent, safe Rust implementation of a
-**Linux-compatible ext4 subset for Asterinas**. Linux ext4 and JBD2 are format and
-behavior references. The selected scope is compatibility with a restricted,
-explicitly admitted profile, rather than a new disk format.
+This package implements and verifies part of an independent, safe Rust
+implementation of a **Linux-compatible ext4 subset**.
+It is not a complete filesystem and is not registered with the kernel VFS.
+No mount or filesystem write path is enabled.
 
-**Status: design/model candidates; NOT VERIFIED; no filesystem implementation.**
-The executor was unavailable during authoring. None of the Verus proof bodies,
-the proof runner, or the proposed device/format refinements has been checked.
-A function named "proof" is not evidence that the verifier accepted it.
-This package does not register an ext4 driver or enable any disk writes.
+The pinned Verus run checks **128 obligations with zero errors**, including
+66 named proof functions and 45 named executable functions.
+Eight host interoperability/regression tests pass on Linux-created metadata.
+[Proof status](proof-status.json) and [recorded evidence](verification-evidence.json)
+state the exact scope; tests do not discharge formal obligations.
 
-The first proposed writable profile uses full data journaling, one transaction
-in flight, and a sleeping operation gate held through checkpoint and retirement.
-This intentionally limits the initial concurrency and durability protocol. It
-does not promise Linux feature completeness or production performance.
+## Implemented and checked
 
-## Read in this order
+| Component | Checked behavior |
+| --- | --- |
+| `bytes.rs`, `crc.rs` | Total endian codecs, checked ranges, CRC32C and streaming/zero-field checksum relations. |
+| `superblock.rs`, `group.rs`, `inode.rs` | Strict profile checks, geometry/ranges, Linux metadata checksums, typed field decoding. |
+| `extent.rs` | Leaf extent codec, initialized/unwritten lengths, logical ordering and disjointness, bounded block resolution. |
+| `directory.rs` | Bounded linear dirent parsing, filename validation, directory checksum tails. |
+| `jbd2.rs`, `journal_superblock.rs` | Header/tag codecs, UUID binding, checksum primitives, counter bounds and superblock parsing. |
+| `frozen.rs` | Owned immutable snapshots, JBD2 escape/restore, snapshot contents independent of the source buffer. |
+| `ring.rs` | Bounded credits and injective circular-log position mapping. |
+| `gate.rs` | Affine writer capability backed by vstd's exclusive resource algebra; no local trusted token generator. |
+| `ownership.rs` | Abstract role separation, zero initialization, stale-generation rejection and no disclosure across block reuse. |
+| `journal.rs`, `history.rs`, `persistence.rs`, `system.rs` | Transaction invariants, per-unit completion/persistence interleavings, quiescent reuse, bounded generations, arbitrary finite histories and acknowledged-prefix recovery. |
 
-1. [Design and crash model](DESIGN.md).
-2. [Compatibility profile and parser boundary](FORMAT_PROFILE.md).
-3. [Security, concurrency, and durability obligations](PROOF_OBLIGATIONS.md).
-4. [Trust and adapter contracts](TRUST_BOUNDARY.md).
-5. [Proof status](proof-status.json) and [pinned toolchain](toolchain.lock.json).
-6. [Abstract model entry point](src/model.rs) and [source references](sources.json).
+The top-level model theorem is
+`system::crash_at_every_interleaving_preserves_the_acknowledged_prefix`.
+Its premise is an execution of the specified device/transaction machine.
+Commit and retirement are semantic durable facts in that machine;
+**their refinement from actual JBD2 bytes and driver events is still unproved**.
+The proof does not establish durability of a mounted Asterinas filesystem.
 
-## What is modeled now
+All public executable entry points validate their inputs without `requires`
+clauses that an unverified caller could bypass.
+A successful structural parse is not an ownership, authorization or mount certificate.
+CRC checks do not authenticate a disk or prove freshness.
 
-- Abstract after-image replay, including replay over a partial checkpoint.
-- A single transaction with separately issued and persistent writes, preparation,
-  commit submission, durable commit, acknowledgement, partial checkpoint, and
-  durable retirement.
-- An abort that does not magically cancel already submitted I/O.
-- An abstract operation-gate owner and generation, including stale-lease rejection.
-- Concrete witnesses for missing preparation and premature checkpointing.
+## Reproduce
 
-The durable commit/retirement fields are **semantic storage predicates**. They
-are not a parser that trusts a magic number or CRC. Proving their relationship
-to real JBD2 bytes, torn sectors, sequence numbers, and flush completions is a
-required later refinement. The model is not a proof of a filesystem, a driver,
-all histories, or all races. The registry makes those gaps explicit.
-
-## Verification gate
-
-The only accepted proof checker for this work is Verus. Tests, crash injection,
-Linux mounting, and fsck will be useful implementation validation, but cannot
-discharge any formal obligation.
-
-The runner is a draft, too. Once an executor is available, install the exact
-release and Rust toolchain in toolchain.lock.json, validate the release archive
-digest, and run:
+Install the Rust toolchain and the digest-pinned Verus release:
 
 ~~~sh
-VERUS_BIN=/absolute/path/to/pinned/verus python3 proofs/ext4/tools/verify.py
+rustup toolchain install 1.99.1 --profile minimal
+export RUSTUP_TOOLCHAIN=1.99.1
+python3 proofs/ext4/tools/install_verus.py /absolute/path/to/new-verus-directory
+export VERUS_BIN=/absolute/path/to/new-verus-directory/verus
+export VERUS_LIB_DIR=/absolute/path/to/new-verus-directory
+python3 proofs/ext4/tools/verify.py
+python3 proofs/ext4/tools/check_gate.py
+python3 proofs/ext4/tools/check_compat.py
 ~~~
 
-It supplies "--no-cheating" and "--output-json", allows no verification filters,
-requires a successful entire-crate result, checks named proof coverage, and
-records source hashes. It rejects local proof escapes. The pinned Verus/vstd
-trusted foundation is still part of the trust boundary.
+The compatibility check requires `mke2fs` and `debugfs` from e2fsprogs,
+and `rustc` from the pinned toolchain.
+`RUSTC_BIN`, `MKE2FS_BIN` and `DEBUGFS_BIN` may select executable paths.
+The installer accepts `--archive` for an offline, digest-checked installation.
 
-A successful result for these models would discharge only their scoped abstract
-lemmas. It would not turn the compatibility, security, concurrent refinement,
-device, or writable-mount gates green. There is no current successful result.
+The runner checks the entire crate with `--no-cheating --no-external-by-default --output-json --compile`.
+It rejects local proof escapes, extra flags, omitted modules and source-inventory drift;
+requires named proof and executable coverage; invalidates stale artifacts on failure;
+and records source, runner, manifest, verifier and emitted-library hashes.
+The negative checks include an actual failing Verus assertion in a disposable copy.
+[CI](../../.github/workflows/verify_ext4.yml) runs the same checks.
 
-## Proposed milestone order
+The emitted host library exercises proof erasure and Linux byte compatibility.
+Do not link it into the kernel: its target and toolchain differ from the kernel's.
+A kernel source build and its OSTD adapter refinement remain necessary.
 
-- M0: check and repair the abstract replay/journal/gate candidates.
-- M1: arbitrary finite traces, multiple transactions, physical persistence and
-  crashes at every I/O boundary, journal reuse, and repeated recovery.
-- M2: checked ext4/JBD2 parsers and encoders, feature admission, CRC computation,
-  sequence/wrap policy, and byte-format refinement.
-- M3: ownership, initialization, namespace/handle authorization, and filesystem
-  operation preservation.
-- M4: linear tracked capabilities and OSTD lock/frame/DMA/device refinements.
-- M5: prove a read-only Linux-compatible mount and bounded traversal.
-- M6: prove and enable the restricted writable profile.
-- M7: separately prove higher concurrency, ordered-data mode, mmap, direct I/O,
-  allocation optimizations, and additional ext4 features.
+## Remaining acceptance gates
 
-No milestone is complete in this change.
+[DESIGN.md](DESIGN.md) remains the target design.
+[PROOF_OBLIGATIONS.md](PROOF_OBLIGATIONS.md) distinguishes checked abstractions
+from the missing implementation/refinement work.
+The full design is **not implemented or proved**.
+In particular, these are still missing:
+
+- Global ext4 ownership/namespace validation and filesystem operation implementations,
+  including allocation, create/unlink/rename, orphan handling, permissions integration and fsync.
+- Complete JBD2 transaction/descriptor/revoke scanning, recovery, crash-safe superblock/tail updates,
+  and byte-level freshness/tearing/reuse proofs.
+- CortenMM/OSTD frame, sleeping-lock, BIO, DMA and device-persistence adapters,
+  with verified callback generations, snapshot loans, quiescence and ingress contracts.
+- Read-only/writable mount integration and end-to-end progress proofs.
+
+The framekernel boundary remains unchanged.
+Future kernel code must use CortenMM/OSTD ownership, `VmReader`/`VmWriter` and submitted BIOs;
+Linux `struct page`, `buffer_head` and folio ownership are not imported.
+The host snapshot type does not certify an OSTD frame or DMA loan.
+
+Read [FORMAT_PROFILE.md](FORMAT_PROFILE.md), [TRUST_BOUNDARY.md](TRUST_BOUNDARY.md)
+and [sources.json](sources.json) before extending the implementation.

@@ -1,28 +1,39 @@
 {
   "schema": 1,
   "license": "MPL-2.0",
-  "phase": "design_and_modelling",
+  "phase": "partial_implementation_and_checked_proofs",
   "format_goal": "linux_compatible_ext4_subset",
-  "implementation_present": false,
+  "implementation_present": true,
+  "full_filesystem_implementation_present": false,
+  "kernel_integration_present": false,
   "writable_mount_enabled": false,
   "verification": {
-    "status": "not_run",
-    "reason": "No usable execution environment was available; executor rejected execution even after the cloud status reported connected.",
-    "candidate_proof_functions": 24,
-    "checked_proof_functions": 0,
-    "runner_validated": false
+    "status": "core_and_models_checked",
+    "verus_verified_units": 128,
+    "verification_errors": 0,
+    "checked_named_proof_functions": 66,
+    "checked_named_executable_functions": 45,
+    "runner_validated": true,
+    "negative_gate_checks_passed": 6,
+    "host_compatibility_tests_passed": 8,
+    "evidence": "verification-evidence.json"
   },
   "claims": {
-    "abstract_redo": "candidate_unchecked",
-    "single_transaction_crash_safety": "candidate_unchecked",
-    "gate_predicates": "candidate_unchecked",
-    "arbitrary_transaction_histories": "not_proved",
-    "linux_ext4_jbd2_byte_refinement": "not_proved",
-    "device_persistence_contract": "not_proved",
+    "abstract_redo": "checked",
+    "single_transaction_crash_safety": "checked_abstractly",
+    "arbitrary_finite_transaction_histories": "checked_in_specified_model",
+    "per_unit_io_abort_quiescence_and_bounded_generation_composition": "checked_in_specified_model",
+    "affine_writer_capability": "checked_using_vstd_resource_algebra",
+    "block_role_and_initialization_invariants": "checked_abstractly",
+    "total_structural_parsers_and_selected_codecs": "checked_for_FORMAT_PROFILE_subset",
+    "host_owned_snapshot_and_escape_restore": "checked",
+    "linux_ext4_jbd2_disk_history_refinement": "not_proved",
+    "device_driver_and_ostd_persistence_refinement": "not_proved",
+    "filesystem_operations_and_namespace": "not_implemented",
     "kernel_concurrency_and_authorization": "not_proved",
     "filesystem_durability": "not_proved",
-    "liveness": "not_proved"
+    "end_to_end_liveness": "not_proved"
   },
   "production_activation_gate": "All applicable obligations in PROOF_OBLIGATIONS.md must be discharged for the admitted profile.",
-  "evidence_policy": "Only a successful pinned entire-crate Verus run may produce build/proof-report.json; that report still proves only its declared model scope."
+  "evidence_policy": "Only successful pinned entire-crate checking plus compilation produces a valid build report; it certifies only the declared source/model scope."
 }
