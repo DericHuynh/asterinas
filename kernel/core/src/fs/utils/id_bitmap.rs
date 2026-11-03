@@ -26,6 +26,9 @@ pub(crate) struct IdBitmap {
 }
 
 impl IdBitmap {
+    // Bulk filling costs more than individual bit updates for these tiny ranges.
+    const SMALL_RANGE_MAX_LEN: usize = 2;
+
     /// Creates a new ID bitmap out of a given buffer, whose first `len`-bits represent valid IDs.
     ///
     /// # Panics
@@ -128,10 +131,13 @@ impl IdBitmap {
             curr_range
         };
 
-        // Set every bit to 1 within the allocated range.
-        let bit_slice_mut = self.bit_slice_mut();
-        for id in allocated_range.clone() {
-            bit_slice_mut.set(id as usize, true);
+        let bits = self.bit_slice_mut();
+        if allocated_range.len() <= Self::SMALL_RANGE_MAX_LEN {
+            for id in allocated_range.clone() {
+                bits.set(id as usize, true);
+            }
+        } else {
+            bits[allocated_range.start as usize..allocated_range.end as usize].fill(true);
         }
 
         // In case we need to update `first_available_id`.
@@ -168,10 +174,16 @@ impl IdBitmap {
         }
 
         let range_start = range.start;
-        let bit_slice_mut = self.bit_slice_mut();
-        for id in range {
-            debug_assert!(bit_slice_mut[id as usize]);
-            bit_slice_mut.set(id as usize, false);
+        let bits = self.bit_slice_mut();
+        if range.len() <= Self::SMALL_RANGE_MAX_LEN {
+            for id in range {
+                debug_assert!(bits[id as usize]);
+                bits.set(id as usize, false);
+            }
+        } else {
+            let bits = &mut bits[range.start as usize..range.end as usize];
+            debug_assert!(bits.all());
+            bits.fill(false);
         }
 
         if range_start < self.first_available_id {
@@ -225,5 +237,59 @@ mod test {
         // Allocating one more ID should fail since the
         // bitmap's `first_available_id` + `count` is out of bounds.
         assert!(bitmap.alloc_consecutive(1).is_none());
+    }
+
+    #[ktest]
+    fn bitmap_ranges_preserve_neighbors_and_padding() {
+        let len = IdBitmap::capacity() - 3;
+        for range in [0..1, 1..8, 3..19, 7..10, 8..16, 15..len] {
+            let original = vec![0xff; BLOCK_SIZE];
+            let mut bitmap = IdBitmap::from_buf(original.clone().into_boxed_slice(), len);
+            let mut expected = original.clone();
+            for id in range.clone() {
+                expected[id as usize / 8] &= !(1 << (id % 8));
+            }
+
+            bitmap.free_consecutive(range.clone());
+            assert_eq!(bitmap.as_bytes(), expected);
+            assert_eq!(
+                bitmap.alloc_consecutive(range.end - range.start),
+                Some(range)
+            );
+            assert_eq!(bitmap.as_bytes(), original);
+            assert_eq!(bitmap.alloc(), None);
+        }
+    }
+
+    #[ktest]
+    fn bitmap_allocations_match_first_free_run() {
+        const LEN: u16 = 8;
+        for mask in 0..=u8::MAX {
+            for count in 0..=LEN + 1 {
+                let mut original = vec![0xff; BLOCK_SIZE];
+                original[0] = mask;
+                let mut bitmap = IdBitmap::from_buf(original.clone().into_boxed_slice(), LEN);
+                let expected_range = (count > 0 && count <= LEN)
+                    .then(|| {
+                        (0..=LEN - count)
+                            .find(|start| (0..count).all(|idx| mask & (1 << (start + idx)) == 0))
+                            .map(|start| start..start + count)
+                    })
+                    .flatten();
+                assert_eq!(bitmap.alloc_consecutive(count), expected_range);
+
+                let mut expected = original.clone();
+                if let Some(range) = expected_range {
+                    for id in range.clone() {
+                        expected[0] |= 1 << id;
+                    }
+                    assert_eq!(bitmap.as_bytes(), expected);
+                    bitmap.free_consecutive(range);
+                }
+                assert_eq!(bitmap.as_bytes(), original);
+                let expected_id = (0..LEN).find(|id| mask & (1 << id) == 0);
+                assert_eq!(bitmap.alloc(), expected_id);
+            }
+        }
     }
 }
