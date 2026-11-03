@@ -75,3 +75,7 @@ mod write_device;
 mod write_media;
 
 mod write_recognition;
+
+pub mod scan_budget;
+
+mod write_admission;

@@ -60,7 +60,9 @@
     "src/freshness.rs",
     "src/write_device.rs",
     "src/write_media.rs",
-    "src/write_recognition.rs"
+    "src/write_recognition.rs",
+    "src/scan_budget.rs",
+    "src/write_admission.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -236,7 +238,16 @@
     "write_recognition::before_a_durable_commit_the_home_image_is_unchanged_except_recovery_marking",
     "write_recognition::recovery_without_a_persisted_commit_cannot_publish_a_transaction",
     "write_recognition::journal_activation_always_has_a_valid_recovery_marked_superblock",
-    "write_recognition::an_active_journal_snapshot_has_the_prepared_sequence_uuid_and_checksum"
+    "write_recognition::an_active_journal_snapshot_has_the_prepared_sequence_uuid_and_checksum",
+    "scan_budget::prefix_is_bounded",
+    "scan_budget::next_descriptor_has_room_and_credits",
+    "scan_budget::next_revoke_has_credits_and_permitted_targets",
+    "scan_stop::every_recognized_prefix_is_a_prefix_of_a_stopped_stream",
+    "write_admission::a_shaped_journal_has_only_small_recognized_prefixes",
+    "write_admission::a_shaped_writer_journal_fits_scan_limits",
+    "write_admission::every_fresh_header_is_an_issued_metadata_image",
+    "write_admission::every_writer_media_has_a_shaped_active_stream",
+    "write_admission::every_writer_crash_snapshot_is_admitted"
   ],
   "required_flags": [
     "--no-cheating",

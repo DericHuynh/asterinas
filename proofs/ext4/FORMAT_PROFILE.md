@@ -23,7 +23,7 @@ The accepted byte structures do not certify the whole volume.
 | JBD2 superblock | Version 2, 4 KiB journal blocks, first log position 1, >=1024 journal blocks, one user, matching filesystem UUID, no stored error/dynamic copy/fast-commit blocks. |
 | Journal features | No feature bits for a clean mke2fs journal, or CSUM_V3 with optional REVOKE. A dirty journal without v3 is rejected. Unknown bits, 64-bit tags and async commit rejected. |
 | JBD2 records | Canonical v3 descriptors with 1..250 16-byte tags, first-tag UUID and later SAME_UUID, one terminator and checksum tail; 32-bit revoke blocks with 0..1019 records; checked full commit images and escaped payload CRCs. |
-| Recovery bounds | One initialized journal extent of 1024..32768 blocks; at most 4096 staged payload/revoke entries; no transaction-ID wrap; a fully occupied ring without a proved stopping boundary is rejected. |
+| Recovery bounds | One initialized journal extent of 1024..32768 blocks; at most 4096 staged payload/revoke entries, with whole-record preflight; no transaction-ID wrap; a fully occupied ring without a proved stopping boundary is rejected. |
 
 Superblock reserved-GDT blocks and high block-count fields must be zero.
 The descriptor size is zero or 32; minimum/desired inode extra sizes are 32.
@@ -71,8 +71,11 @@ header-shaped old transaction ID, irrespective of checksums, and refuses the
 terminal range. The checked replay window is shorter than 32768 transactions,
 so its numeric ordering agrees with Linux's signed modular ordering.
 Returned scans have checked contiguous record coverage, stopping witnesses and
-a unique maximal canonical prefix. General active-journal admission/progress,
-the transaction writer, remount and physical-slot reuse refinement remain open.
+a unique maximal canonical prefix. The sufficient active-scan resource profile
+is checked, and all writer crash snapshots satisfy it. Recovery preparation
+admission, remount and multi-transaction physical-slot reuse remain open.
+Recovery retirement uses the scan next sequence, including MAX; it does not
+allocate a new epoch. Writer admission still refuses exhausted generations.
 
 Recovery allows filesystem block zero as a target, but excludes the journal.
 Its block-zero after-image must retain RECOVER, pass the ext4 checksum/profile
@@ -86,7 +89,7 @@ This local policy is not global inode/bitmap/ownership validation.
 - Bitmap/free-counter consistency and global no-alias extent ownership.
 - Inode topology, links, directory lookup/rename and orphan/reclamation rules.
 - Verified read/write/allocation operation preservation and transaction closure.
-- Active-journal admission/progress, writer/boot ordering and physical log reuse.
+- Recovery preparation admission/progress, unmount ordering and physical log reuse.
 - Recovery validation in a shadow view, replay-target policy, repeatable physical recovery.
 - OSTD frame/DMA/device and VFS/credential refinements.
 

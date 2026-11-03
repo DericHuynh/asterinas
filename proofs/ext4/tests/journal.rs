@@ -102,6 +102,47 @@ fn descriptor_and_revoke_roundtrips_at_capacity() {
 }
 
 #[test]
+fn scanner_preflights_complete_record_credits_and_reserved_revoke_targets() {
+    let (image, layout, seed, target) = fixture();
+    let uuid = image[1128..1144].to_vec();
+    let base = layout.offset(0, image.len() as u64).unwrap() as usize;
+    let header =
+        core::journal_state::encode(&image[base..base + 4096], &uuid, layout.blocks(), 9, 1)
+            .unwrap();
+    for total in [4096usize, 4097] {
+        let mut snapshot = vec![0u8; layout.blocks() as usize * 4096];
+        snapshot[..4096].copy_from_slice(header.as_slice());
+        let mut remaining = total;
+        let mut ordinal = 1;
+        while remaining > 0 {
+            let count = remaining.min(1019);
+            let raw =
+                core::revoke::encode(&vec![target; count], 9, layout.filesystem_blocks(), seed)
+                    .unwrap();
+            snapshot[ordinal * 4096..(ordinal + 1) * 4096].copy_from_slice(raw.as_slice());
+            remaining -= count;
+            ordinal += 1;
+        }
+        let commit = core::jbd2::encode_commit(9, seed).unwrap();
+        snapshot[ordinal * 4096..(ordinal + 1) * 4096].copy_from_slice(commit.as_slice());
+        let result = core::scan::recover(&snapshot, &uuid, geometry(&image).0);
+        if total == 4096 {
+            let scan = result.expect("the exact replay-credit boundary is supported");
+            assert_eq!(scan.committed_transactions(), 1);
+            assert_eq!(scan.replay_plan().len(), 0);
+        } else {
+            assert!(result.is_none());
+        }
+    }
+    let mut snapshot = vec![0u8; layout.blocks() as usize * 4096];
+    snapshot[..4096].copy_from_slice(header.as_slice());
+    let raw =
+        core::revoke::encode(&[(base / 4096) as u32], 9, layout.filesystem_blocks(), seed).unwrap();
+    snapshot[4096..8192].copy_from_slice(raw.as_slice());
+    assert!(core::scan::recover(&snapshot, &uuid, geometry(&image).0).is_none());
+}
+
+#[test]
 fn malformed_descriptor_terminators_flags_and_checksums_are_rejected() {
     let uuid = [7u8; 16];
     let seed = core::crc::crc32c(0xffffffff, &uuid);
@@ -398,7 +439,7 @@ fn linux_recovery_accepts_emitted_records_wrap_revoke_and_incomplete_tail() {
         let clean = core::scan::recover(retired, &uuid, geometry(&protocol_image).0).unwrap();
         assert_eq!(clean.committed_transactions(), 0);
         assert_eq!(clean.replay_plan().len(), 0);
-        assert!(clean.next_sequence() > scan.next_sequence());
+        assert_eq!(clean.next_sequence(), scan.next_sequence());
         let path = format!("build/linux-replay-{case}.img");
         let recovered = linux_recover(&path, &image);
         let data = &recovered[target as usize * 4096..(target as usize + 1) * 4096];
@@ -564,6 +605,94 @@ fn state_codecs_preserve_unrelated_bytes_and_epochs_do_not_trust_checksums() {
             geometry(&std::fs::read("build/linux.img").unwrap()).0,
             dirty.as_slice(),
             64 * 1024 * 1024
+        )
+        .is_some()
+    );
+}
+
+#[test]
+fn terminal_transaction_recovers_and_retires_without_allocating_an_epoch() {
+    let (mut image, layout, seed, target) = fixture();
+    let uuid = image[1128..1144].to_vec();
+    let base = layout.offset(0, image.len() as u64).unwrap() as usize;
+    let header = core::journal_state::encode(
+        &image[base..base + 4096],
+        &uuid,
+        layout.blocks(),
+        u32::MAX - 1,
+        1,
+    )
+    .unwrap();
+    image[base..base + 4096].copy_from_slice(header.as_slice());
+    append_transaction(
+        &mut image,
+        &layout,
+        &uuid,
+        seed,
+        1,
+        &mut 0,
+        u32::MAX - 1,
+        Some((target, 0x99)),
+        None,
+        true,
+    );
+    let dirty =
+        core::super_state::recovery_image(&image[..4096], image.len() as u64, true).unwrap();
+    image[..4096].copy_from_slice(dirty.as_slice());
+    let snapshot = &image[base..base + layout.blocks() as usize * 4096];
+    let scanned = core::scan::recover(snapshot, &uuid, geometry(&image).0).unwrap();
+    assert_eq!(scanned.committed_transactions(), 1);
+    assert_eq!(scanned.next_sequence(), u32::MAX);
+    let expected = scanned.replay_plan().get(0).unwrap().image().to_vec();
+    let linux = linux_recover("build/terminal-linux.img", &image);
+    assert_eq!(
+        &linux[target as usize * 4096..(target as usize + 1) * 4096],
+        expected
+    );
+    let mut engine = core::recovery_io::prepare(
+        snapshot,
+        &uuid,
+        geometry(&image).0,
+        &image[..4096],
+        image.len() as u64,
+    )
+    .unwrap();
+    let mut stable = image.clone();
+    let mut operations = 0;
+    loop {
+        let pending = match core::recovery_request::dispatch(engine) {
+            Ok(pending) => pending,
+            Err(done) => {
+                engine = done;
+                break;
+            }
+        };
+        if let core::recovery_io::Command::Write { block, image } = pending.pending_command() {
+            stable[block as usize * 4096..(block as usize + 1) * 4096].copy_from_slice(image);
+        }
+        engine = pending.finish_pending(Completion::Succeeded);
+        operations += 1;
+    }
+    assert_eq!(operations, 4);
+    assert!(engine.finished());
+    let header =
+        core::journal_superblock::parse(&stable[base..base + 1024], &uuid, layout.blocks())
+            .unwrap();
+    assert_eq!((header.sequence, header.start), (u32::MAX, 0));
+    let linux = linux_recover("build/terminal-retired.img", &stable);
+    assert_eq!(
+        &linux[target as usize * 4096..(target as usize + 1) * 4096],
+        expected
+    );
+    let next = core::transaction::AfterImage::capture(target, &expected).unwrap();
+    assert!(
+        core::write_io::prepare(
+            &stable[base..base + layout.blocks() as usize * 4096],
+            &uuid,
+            geometry(&stable).0,
+            &stable[..4096],
+            stable.len() as u64,
+            vec![next],
         )
         .is_none()
     );

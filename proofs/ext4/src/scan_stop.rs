@@ -116,4 +116,27 @@ pub proof fn maximal_canonical_prefix_is_unique(a: Seq<Record>, b: Seq<Record>, 
     }
 }
 
+pub proof fn every_recognized_prefix_is_a_prefix_of_a_stopped_stream(prefix: Seq<Record>, stopped: Seq<Record>,
+    stop: Stop, source: Source, next: u32)
+    requires scan_trace::well_formed(prefix, source), scan_trace::well_formed(stopped, source),
+        !(stop is Clean), at_boundary(stop, stopped, source, next),
+        next as nat == scan_trace::next_sequence(stopped, source.first),
+    ensures prefix.len() <= stopped.len(), stopped.take(prefix.len() as int) == prefix,
+{
+    if prefix.len() > stopped.len() {
+        reveal(scan_trace::well_formed);
+        let i = stopped.len() as int;
+        if i > 0 {
+            scan_trace::well_formed_prefixes_agree_at_every_common_position(prefix, stopped, source, (i - 1) as nat);
+        }
+        assert(prefix[i].start == scan_trace::end(stopped) && prefix[i].sequence == next);
+        a_stopped_prefix_has_no_further_valid_record(stop, stopped, source, next, prefix[i]);
+    }
+    assert(stopped.take(prefix.len() as int) =~= prefix) by {
+        assert forall|i: int| 0 <= i < prefix.len() implies #[trigger] prefix[i] == stopped[i] by {
+            scan_trace::well_formed_prefixes_agree_at_every_common_position(prefix, stopped, source, i as nat);
+        }
+    }
+}
+
 }

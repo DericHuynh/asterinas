@@ -5,7 +5,7 @@
 //! A kernel adapter must bind successful Flush reports to its device contract.
 
 use vstd::prelude::*;
-use crate::{bytes, epoch, frozen::FrozenBlock, journal_state, layout::JournalLayout, replay, scan, super_state, superblock};
+use crate::{bytes, frozen::FrozenBlock, journal_state, journal_superblock, layout::JournalLayout, replay, scan, scan_budget, super_state, superblock};
 
 verus! {
 
@@ -61,6 +61,7 @@ pub struct Recovery {
 impl Recovery {
     pub closed spec fn state(&self) -> State { self.state }
     pub closed spec fn plan(&self) -> &replay::ReplayPlan { self.scan.plan() }
+    pub closed spec fn scan_result(&self) -> &scan::Scan { &self.scan }
     pub closed spec fn tail(&self) -> Seq<u8> { self.tail.view() }
     pub closed spec fn journal_block(&self) -> u32 { self.journal_block }
     pub closed spec fn primary(&self) -> Seq<u8> { self.primary@ }
@@ -70,6 +71,7 @@ impl Recovery {
     spec fn valid(self) -> bool {
         &&& self.plan().refines() && wf(self.state(), self.plan().selection().len())
         &&& self.tail().len() == 4096 && bytes::be32(self.tail(), 28) == 0
+        &&& bytes::be32(self.tail(), 24) == self.scan_result().next() as nat
         &&& self.journal_block() == self.plan().layout().view().start
         &&& !self.plan().layout().allowed(self.journal_block())
         &&& (forall|p: int| 0 <= p < self.plan().selection().len() ==>
@@ -169,8 +171,13 @@ pub fn prepare(journal: &[u8], uuid: &[u8], layout: JournalLayout, primary: &[u8
     ensures match r {
         Some(s) => s.plan().refines() && s.plan().layout().view() == layout.view()
             && s.state().cursor == 0 && s.state().request == 0 && !s.state().pending && !s.state().faulted
-            && epoch::newer(journal@, bytes::be32(journal@, 24) as u32, bytes::be32(s.tail(), 24) as u32)
+            && bytes::be32(s.tail(), 24) == s.scan_result().next() as nat
+            && s.scan_result().first() as nat == bytes::be32(journal@, 24)
+            && s.scan_result().next() as nat == s.scan_result().first() as nat + s.scan_result().committed() as nat
+            && s.scan_result().certificate(scan_budget::source(journal@, uuid@, &layout))
+            && s.scan_result().maximal(scan_budget::source(journal@, uuid@, &layout))
             && journal_state::preserves(journal@.subrange(0, 4096), s.tail())
+            && journal_superblock::accepted(s.tail().subrange(0, 1024), uuid@, layout.view().journal_blocks)
             && s.primary() == primary@ && s.partition_bytes() == partition_bytes
             && superblock::accepted(primary@.subrange(1024, 2048), partition_bytes)
             && (bytes::be32(journal@, 28) != 0 ==> bytes::le32(primary@, 1120) == 0x46)
@@ -211,8 +218,7 @@ pub fn prepare(journal: &[u8], uuid: &[u8], layout: JournalLayout, primary: &[u8
         }
         i += 1;
     }
-    let minimum = scan.next_sequence();
-    let sequence = match epoch::fresh_sequence(journal, minimum) { Some(s) => s, None => { return None; } };
+    let sequence = scan.next_sequence();
     let blocks = (journal.len() / 4096) as u32;
     let tail = match journal_state::encode(&journal[..4096], uuid, blocks, sequence, 0) {
         Some(s) => s, None => { return None; }

@@ -178,8 +178,11 @@ history.rs, persistence.rs and system.rs compose arbitrary finite histories,
 per-unit completion/persistence events, quiescent reuse and bounded u32 IDs.
 The "committed" and "retired" bits still mean semantic durable facts;
 they are not a concrete record recognizer.
-Physical-record recognition, tail updates, revokes and on-disk generation/window
-refinement remain open. Ring position injectivity and counter arithmetic helpers
+Single-transaction physical record recognition, tail ordering, revoke replay
+and fresh epoch selection are now checked under the explicit device contract.
+The active scanner admits every writer crash snapshot under its resource
+profile. Multi-transaction physical generation/window composition and the
+actual driver refinement remain open. Ring position injectivity and counter arithmetic helpers
 do not discharge those obligations. The model stops before counter wrap and
 reserves room for a representable next-tail sequence.
 
