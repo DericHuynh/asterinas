@@ -281,24 +281,15 @@ impl BlockGroup {
 
         let mut metadata = self.metadata.write();
 
-        let mut requested_count = count
+        let requested_count = count
             .min(group_size)
             .min(metadata.desc.free_blocks_count as u32)
             .min(sb_free_blocks) as u16;
 
-        // TODO: Improve bitmap allocation to reduce fragmentation (e.g., find the
-        // first free block directly instead of retrying with smaller counts).
-        let mut allocated_range = None;
-        while requested_count > 0 {
-            let candidate_range = metadata.block_bitmap.alloc_consecutive(requested_count);
-            if candidate_range.is_some() {
-                allocated_range = candidate_range;
-                break;
-            }
-            requested_count /= 2;
-        }
-
-        let Some(range) = allocated_range else {
+        let Some(range) = metadata
+            .block_bitmap
+            .alloc_consecutive_with_fallback(requested_count)
+        else {
             if metadata.desc.free_blocks_count > 0 {
                 return_errno_with_message!(Errno::EIO, "block bitmap corruption detected");
             }

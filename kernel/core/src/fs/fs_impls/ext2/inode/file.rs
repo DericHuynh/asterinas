@@ -28,11 +28,7 @@ impl Inode {
             return Ok(0);
         }
 
-        let read_len = self.inner.read().read_at(offset, writer)?;
-        if read_len > 0 {
-            self.inner.write().set_atime(utils::now());
-        }
-        Ok(read_len)
+        self.read_with_atime(|inner| inner.read_at(offset, writer))
     }
 
     /// Writes file data at `offset` through the page cache.
@@ -67,11 +63,7 @@ impl Inode {
         }
 
         let fs = self.fs()?;
-        let read_len = self.inner.read().read_direct_at(&fs, offset, writer)?;
-        if read_len > 0 {
-            self.inner.write().set_atime(utils::now());
-        }
-        Ok(read_len)
+        self.read_with_atime(|inner| inner.read_direct_at(&fs, offset, writer))
     }
 
     /// Direct-I/O write path with pre-allocation and rollback.
@@ -175,6 +167,26 @@ impl Inode {
 
         inner.set_mtime_ctime(utils::now());
         Ok(())
+    }
+    fn read_with_atime<F>(&self, read_fn: F) -> Result<usize>
+    where
+        F: FnOnce(&InodeInner) -> Result<usize>,
+    {
+        let read_len = {
+            let inner = self.inner.read();
+            let read_len = read_fn(&inner)?;
+            // Cache hits within one coarse-clock tick need no metadata change.
+            // Keep shared access instead of serializing these readers.
+            if read_len == 0 || inner.atime() == utils::now() {
+                return Ok(read_len);
+            }
+            read_len
+        };
+
+        // Read the clock after acquiring exclusive access, as a waiter may
+        // have been blocked across a clock tick.
+        self.inner.write().set_atime(utils::now());
+        Ok(read_len)
     }
 }
 
@@ -471,6 +483,57 @@ mod test {
         time::clocks,
         vm::page_cache::VmoMapMode,
     };
+
+    #[ktest]
+    fn file_reads_preserve_access_time_rules() {
+        clocks::init_for_ktest();
+        let f = Ext2FixtureBuilder::new(1, 256)
+            .with_free_blocks(2, 2)
+            .with_free_inodes(1000, 1000)
+            .build()
+            .unwrap();
+        let file = create_file(&f.root(), "read_atime");
+        let data = vec![0x5a; BLOCK_SIZE];
+        file.write_at(0, &mut VmReader::from(data.as_slice()).to_fallible())
+            .unwrap();
+        let old_atime = Duration::new(17, 123);
+
+        for direct in [false, true] {
+            file.set_atime(old_atime);
+            let mut empty = [];
+            let mut writer = VmWriter::from(empty.as_mut_slice()).to_fallible();
+            let read_len = if direct {
+                file.read_direct_at(0, &mut writer).unwrap()
+            } else {
+                file.read_at(0, &mut writer).unwrap()
+            };
+            assert_eq!(read_len, 0);
+            assert_eq!(file.atime(), old_atime);
+
+            let mut output = vec![0; BLOCK_SIZE];
+            let mut writer = VmWriter::from(output.as_mut_slice()).to_fallible();
+            let read_len = if direct {
+                file.read_direct_at(BLOCK_SIZE, &mut writer).unwrap()
+            } else {
+                file.read_at(BLOCK_SIZE, &mut writer).unwrap()
+            };
+            assert_eq!(read_len, 0);
+            assert_eq!(file.atime(), old_atime);
+
+            for _ in 0..2 {
+                let before = utils::now();
+                let mut writer = VmWriter::from(output.as_mut_slice()).to_fallible();
+                let read_len = if direct {
+                    file.read_direct_at(0, &mut writer).unwrap()
+                } else {
+                    file.read_at(0, &mut writer).unwrap()
+                };
+                assert_eq!(read_len, BLOCK_SIZE);
+                assert_eq!(output, data);
+                assert!(file.atime() >= before && file.atime() <= utils::now());
+            }
+        }
+    }
 
     #[ktest]
     fn file_write_enospc_rollback() {

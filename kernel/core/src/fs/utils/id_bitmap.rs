@@ -26,6 +26,9 @@ pub(crate) struct IdBitmap {
 }
 
 impl IdBitmap {
+    // Bulk filling costs more than individual bit updates for these tiny ranges.
+    const SMALL_RANGE_MAX_LEN: usize = 2;
+
     /// Creates a new ID bitmap out of a given buffer, whose first `len`-bits represent valid IDs.
     ///
     /// # Panics
@@ -98,8 +101,10 @@ impl IdBitmap {
     ///
     /// If allocation is not possible, it returns `None`.
     pub(crate) fn alloc_consecutive(&mut self, count: u16) -> Option<Range<u16>> {
-        if count == 0 {
-            return None;
+        match count {
+            0 => return None,
+            1 => return self.alloc().map(|id| id..id + 1),
+            _ => (),
         }
 
         let end = self.first_available_id.checked_add(count)?;
@@ -110,9 +115,21 @@ impl IdBitmap {
         // Scan the bitmap from the position `first_available_id`
         // for the first `count` number of consecutive 0's.
         let allocated_range = {
-            // Invariance: all bits within `curr_range` are 0's.
             let bit_slice = self.bit_slice();
             let mut curr_range = self.first_available_id..self.first_available_id + 1;
+            if count > u8::BITS as u16 {
+                // Check the initial candidate in bulk. On fragmentation, resume
+                // the scalar scan just after the first occupied bit.
+                curr_range =
+                    match bit_slice[self.first_available_id as usize..end as usize].first_one() {
+                        Some(occupied) => {
+                            let next = self.first_available_id + occupied as u16 + 1;
+                            next..next
+                        }
+                        None => self.first_available_id..end,
+                    };
+            }
+
             while curr_range.len() < count as usize && curr_range.end < self.len {
                 if !bit_slice[curr_range.end as usize] {
                     curr_range.end += 1;
@@ -128,19 +145,70 @@ impl IdBitmap {
             curr_range
         };
 
-        // Set every bit to 1 within the allocated range.
-        let bit_slice_mut = self.bit_slice_mut();
-        for id in allocated_range.clone() {
-            bit_slice_mut.set(id as usize, true);
+        self.mark_allocated(&allocated_range);
+        Some(allocated_range)
+    }
+
+    /// Allocates consecutive IDs, falling back to successively halved counts.
+    ///
+    /// Returns the first range for the largest fitting count from
+    /// `count`, `count / 2`, and so on, or `None` if none fits.
+    pub(crate) fn alloc_consecutive_with_fallback(&mut self, count: u16) -> Option<Range<u16>> {
+        self.alloc_consecutive(count)
+            .or_else(|| self.alloc_fallback(count / 2))
+    }
+
+    fn alloc_fallback(&mut self, count: u16) -> Option<Range<u16>> {
+        if count == 0 || self.first_available_id >= self.len {
+            return None;
+        }
+        let bits = self.bit_slice();
+        let mut current = self.first_available_id..self.first_available_id + 1;
+        let mut best = self.first_available_id..self.first_available_id;
+        // Keep the first candidate for the largest feasible fallback count.
+        let consider_fn = |current: &Range<u16>, best: &mut Range<u16>| {
+            if current.len() <= best.len() {
+                return;
+            }
+            let mut candidate_count = count;
+            while candidate_count as usize > current.len() {
+                candidate_count /= 2;
+            }
+            if candidate_count as usize > best.len() {
+                *best = current.start..current.start + candidate_count;
+            }
+        };
+        while current.len() < count as usize && current.end < self.len {
+            if !bits[current.end as usize] {
+                current.end += 1;
+            } else {
+                consider_fn(&current, &mut best);
+                current = current.end + 1..current.end + 1;
+            }
+        }
+        consider_fn(&current, &mut best);
+        if best.is_empty() {
+            return None;
+        }
+        self.mark_allocated(&best);
+        Some(best)
+    }
+
+    fn mark_allocated(&mut self, range: &Range<u16>) {
+        let bits = self.bit_slice_mut();
+        if range.len() <= Self::SMALL_RANGE_MAX_LEN {
+            for id in range.clone() {
+                bits.set(id as usize, true);
+            }
+        } else {
+            bits[range.start as usize..range.end as usize].fill(true);
         }
 
         // In case we need to update `first_available_id`.
         let bit_slice = self.bit_slice();
         if bit_slice[self.first_available_id as usize] {
-            self.update_first_available_id(allocated_range.end);
+            self.update_first_available_id(range.end);
         }
-
-        Some(allocated_range)
     }
 
     /// Releases the allocated `id`.
@@ -168,10 +236,16 @@ impl IdBitmap {
         }
 
         let range_start = range.start;
-        let bit_slice_mut = self.bit_slice_mut();
-        for id in range {
-            debug_assert!(bit_slice_mut[id as usize]);
-            bit_slice_mut.set(id as usize, false);
+        let bits = self.bit_slice_mut();
+        if range.len() <= Self::SMALL_RANGE_MAX_LEN {
+            for id in range {
+                debug_assert!(bits[id as usize]);
+                bits.set(id as usize, false);
+            }
+        } else {
+            let bits = &mut bits[range.start as usize..range.end as usize];
+            debug_assert!(bits.all());
+            bits.fill(false);
         }
 
         if range_start < self.first_available_id {
@@ -225,5 +299,171 @@ mod test {
         // Allocating one more ID should fail since the
         // bitmap's `first_available_id` + `count` is out of bounds.
         assert!(bitmap.alloc_consecutive(1).is_none());
+    }
+
+    #[ktest]
+    fn bitmap_ranges_preserve_neighbors_and_padding() {
+        let len = IdBitmap::capacity() - 3;
+        for range in [0..1, 1..8, 3..19, 7..10, 8..16, 15..len] {
+            let original = vec![0xff; BLOCK_SIZE];
+            let mut bitmap = IdBitmap::from_buf(original.clone().into_boxed_slice(), len);
+            let mut expected = original.clone();
+            for id in range.clone() {
+                expected[id as usize / 8] &= !(1 << (id % 8));
+            }
+
+            bitmap.free_consecutive(range.clone());
+            assert_eq!(bitmap.as_bytes(), expected);
+            assert_eq!(
+                bitmap.alloc_consecutive(range.end - range.start),
+                Some(range)
+            );
+            assert_eq!(bitmap.as_bytes(), original);
+            assert_eq!(bitmap.alloc(), None);
+        }
+    }
+
+    #[ktest]
+    fn bitmap_allocations_match_first_free_run() {
+        const LEN: u16 = 8;
+        for mask in 0..=u8::MAX {
+            for count in 0..=LEN + 1 {
+                let mut original = vec![0xff; BLOCK_SIZE];
+                original[0] = mask;
+                let mut bitmap = IdBitmap::from_buf(original.clone().into_boxed_slice(), LEN);
+                let expected_range = (count > 0 && count <= LEN)
+                    .then(|| {
+                        (0..=LEN - count)
+                            .find(|start| (0..count).all(|idx| mask & (1 << (start + idx)) == 0))
+                            .map(|start| start..start + count)
+                    })
+                    .flatten();
+                assert_eq!(bitmap.alloc_consecutive(count), expected_range);
+
+                let mut expected = original.clone();
+                if let Some(range) = expected_range {
+                    for id in range.clone() {
+                        expected[0] |= 1 << id;
+                    }
+                    assert_eq!(bitmap.as_bytes(), expected);
+                    bitmap.free_consecutive(range);
+                }
+                assert_eq!(bitmap.as_bytes(), original);
+                let expected_id = (0..LEN).find(|id| mask & (1 << id) == 0);
+                assert_eq!(bitmap.alloc(), expected_id);
+            }
+        }
+    }
+    #[ktest]
+    fn consecutive_allocations_match_first_free_run() {
+        for offset in [0u16, 5, 57] {
+            let len = offset + 37;
+            for mask in 0..=u8::MAX {
+                for count in 0..=34 {
+                    let mut original = vec![0xff; BLOCK_SIZE];
+                    for id in offset..offset + 8 {
+                        if mask & (1 << (id - offset)) == 0 {
+                            original[id as usize / 8] &= !(1 << (id % 8));
+                        }
+                    }
+                    for id in offset + 8..offset + 32 {
+                        original[id as usize / 8] &= !(1 << (id % 8));
+                    }
+                    let is_free = |id: u16| original[id as usize / 8] & (1 << (id % 8)) == 0;
+                    let expected_range = (count > 0 && count <= len)
+                        .then(|| {
+                            (0..=len - count)
+                                .find(|start| (*start..*start + count).all(is_free))
+                                .map(|start| start..start + count)
+                        })
+                        .flatten();
+
+                    let mut bitmap = IdBitmap::from_buf(original.clone().into_boxed_slice(), len);
+                    assert_eq!(bitmap.alloc_consecutive(count), expected_range);
+                    let mut expected = original;
+                    if let Some(range) = expected_range {
+                        for id in range {
+                            expected[id as usize / 8] |= 1 << (id % 8);
+                        }
+                    }
+                    assert_eq!(bitmap.as_bytes(), expected);
+                    let next_free =
+                        (0..len).find(|id| expected[*id as usize / 8] & (1 << (id % 8)) == 0);
+                    assert_eq!(bitmap.alloc(), next_free);
+                }
+            }
+        }
+    }
+
+    #[ktest]
+    fn single_id_ranges_follow_first_free_order() {
+        for start in [0u16, 5, 57] {
+            for mask in 0..=u8::MAX {
+                let mut expected = vec![0xff; BLOCK_SIZE];
+                for offset in 0..8 {
+                    let id = start + offset;
+                    if mask & (1 << offset) == 0 {
+                        expected[id as usize / 8] &= !(1 << (id % 8));
+                    }
+                }
+                let mut bitmap = IdBitmap::from_buf(expected.clone().into_boxed_slice(), start + 9);
+                assert!(bitmap.alloc_consecutive(0).is_none());
+                assert_eq!(bitmap.as_bytes(), expected);
+
+                for offset in 0..8 {
+                    if mask & (1 << offset) != 0 {
+                        continue;
+                    }
+                    let id = start + offset;
+                    assert_eq!(bitmap.alloc_consecutive(1), Some(id..id + 1));
+                    expected[id as usize / 8] |= 1 << (id % 8);
+                    assert_eq!(bitmap.as_bytes(), expected);
+                }
+                assert!(bitmap.alloc_consecutive(1).is_none());
+                assert!(bitmap.alloc().is_none());
+                assert_eq!(bitmap.as_bytes(), expected);
+            }
+        }
+
+        let mut empty = IdBitmap::from_buf(vec![0; BLOCK_SIZE].into_boxed_slice(), 0);
+        assert!(empty.alloc_consecutive(1).is_none());
+    }
+
+    #[ktest]
+    fn fallback_allocations_match_repeated_searches() {
+        for start in [0u16, 5, 57, IdBitmap::capacity() - 16] {
+            for mask in 0..=u8::MAX {
+                for free_tail in [false, true] {
+                    let mut original = vec![0xff; BLOCK_SIZE];
+                    for offset in 0..16 {
+                        if (offset < 8 && mask & (1 << offset) == 0) || (offset >= 8 && free_tail) {
+                            let id = start + offset;
+                            original[id as usize / 8] &= !(1 << (id % 8));
+                        }
+                    }
+                    for count in (0..=34).chain([IdBitmap::capacity(), u16::MAX]) {
+                        let mut expected =
+                            IdBitmap::from_buf(original.clone().into_boxed_slice(), start + 16);
+                        let mut actual = expected.clone();
+                        let mut requested_count = count;
+                        let mut expected_range = None;
+                        while requested_count > 0 {
+                            expected_range = expected.alloc_consecutive(requested_count);
+                            if expected_range.is_some() {
+                                break;
+                            }
+                            requested_count /= 2;
+                        }
+                        assert_eq!(
+                            actual.alloc_consecutive_with_fallback(count),
+                            expected_range
+                        );
+                        assert_eq!(actual.as_bytes(), expected.as_bytes());
+                        assert_eq!(actual.alloc(), expected.alloc());
+                        assert_eq!(actual.as_bytes(), expected.as_bytes());
+                    }
+                }
+            }
+        }
     }
 }

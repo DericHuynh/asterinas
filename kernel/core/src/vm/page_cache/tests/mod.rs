@@ -49,6 +49,108 @@ fn write_vmo_bytes(vmo: &Vmo, bytes: &[u8]) {
     assert_eq!(writer.write(&mut reader), bytes.len());
 }
 
+/// Reads cached and cold pages across several page-collection batches.
+#[ktest]
+fn multi_page_read_preserves_order() {
+    const NUM_PAGES: usize = 67;
+    let backend = MockPageCacheBackend::new(NUM_PAGES);
+    let page_cache = new_backend_page_cache(&backend, NUM_PAGES);
+    let mut expected = Vec::new();
+    for idx in 0..NUM_PAGES {
+        let bytes = vec![idx as u8; PAGE_SIZE];
+        backend.set_persisted_page_bytes(idx, &bytes);
+        expected.extend_from_slice(&bytes);
+        if idx.is_multiple_of(3) {
+            page_cache
+                .as_vmo()
+                .commit_on(idx, VmoMapMode::SharedRead)
+                .unwrap();
+        }
+    }
+
+    let offset = 17;
+    let end = expected.len() - 29;
+    let mut observed = vec![0xff; end - offset];
+    for _ in 0..2 {
+        page_cache.read_bytes(offset, &mut observed).unwrap();
+        assert_eq!(observed, expected[offset..end]);
+        for idx in 0..NUM_PAGES {
+            assert_eq!(backend.read_count(idx), 1);
+        }
+    }
+}
+
+/// Preserves full-page and partial-page writes across collection batches.
+#[ktest]
+fn multi_page_write_survives_writeback() {
+    const NUM_PAGES: usize = 67;
+    let backend = MockPageCacheBackend::new(NUM_PAGES);
+    let page_cache = new_backend_page_cache(&backend, NUM_PAGES);
+    let mut expected = vec![0x3c; NUM_PAGES * PAGE_SIZE];
+    page_cache.write_bytes(0, &expected).unwrap();
+
+    let offset = PAGE_SIZE - 17;
+    let replacement = vec![0xa5; 33 * PAGE_SIZE + 29];
+    page_cache.write_bytes(offset, &replacement).unwrap();
+    expected[offset..offset + replacement.len()].copy_from_slice(&replacement);
+
+    page_cache.flush_range(0..expected.len()).unwrap();
+    for idx in 0..NUM_PAGES {
+        assert_eq!(backend.read_count(idx), 0);
+        assert_eq!(backend.write_count(idx), 1);
+        assert_eq!(
+            backend.persisted_page_bytes(idx),
+            expected[idx * PAGE_SIZE..(idx + 1) * PAGE_SIZE]
+        );
+    }
+    page_cache.evict_range(0..expected.len()).unwrap();
+    let mut observed = vec![0; expected.len()];
+    page_cache.read_bytes(0, &mut observed).unwrap();
+    assert_eq!(observed, expected);
+}
+
+/// Keeps anonymous reads and partial writes independent of a backend.
+#[ktest]
+fn multi_page_anonymous_io_preserves_unwritten_bytes() {
+    let page_cache = PageCache::new_anon(67 * PAGE_SIZE).unwrap();
+    let mut expected = vec![0; page_cache.size()];
+    let offset = PAGE_SIZE - 17;
+    let replacement = vec![0xa5; 33 * PAGE_SIZE + 29];
+    page_cache.write_bytes(offset, &replacement).unwrap();
+    expected[offset..offset + replacement.len()].copy_from_slice(&replacement);
+
+    let mut observed = vec![0xff; expected.len()];
+    page_cache.read_bytes(0, &mut observed).unwrap();
+    assert_eq!(observed, expected);
+}
+
+/// Preserves bytes around partial writes across small and large ranges.
+#[ktest]
+fn varied_read_write_ranges_preserve_contents() {
+    for num_pages in [1, 2, 3, 31, 32, 33, 65] {
+        let backend = MockPageCacheBackend::new(num_pages);
+        for cache in [
+            PageCache::new_anon(num_pages * PAGE_SIZE).unwrap(),
+            new_backend_page_cache(&backend, num_pages),
+        ] {
+            let mut expected = vec![0; num_pages * PAGE_SIZE];
+            let payload: Vec<u8> = (0..expected.len() - 29).map(|idx| idx as u8).collect();
+            cache.write_bytes(17, &payload).unwrap();
+            expected[17..17 + payload.len()].copy_from_slice(&payload);
+            let mut observed = vec![0xff; expected.len()];
+            cache.read_bytes(0, &mut observed).unwrap();
+            assert_eq!(observed, expected);
+
+            let crossing = vec![0xa5; 31];
+            let offset = if num_pages > 1 { PAGE_SIZE - 13 } else { 37 };
+            cache.write_bytes(offset, &crossing).unwrap();
+            expected[offset..offset + crossing.len()].copy_from_slice(&crossing);
+            cache.read_bytes(0, &mut observed).unwrap();
+            assert_eq!(observed, expected);
+        }
+    }
+}
+
 /// Serializes a cold read and a later overwrite with the caller-provided
 /// buffered-I/O lock required by the page-cache synchronization model.
 #[ktest]

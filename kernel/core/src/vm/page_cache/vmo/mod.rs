@@ -27,6 +27,7 @@ use ostd::{
     mm::{HasPaddr, io::util::HasVmReaderWriter},
     task::disable_preempt,
 };
+use smallvec::SmallVec;
 use xarray::{Cursor, LockedXArray, XArray};
 
 use crate::{
@@ -356,11 +357,12 @@ impl Vmo {
             )));
         }
 
+        let backed_vmo = self.as_backed_vmo();
         let (_, page) = {
             let guard = disable_preempt();
             let mut cursor = self.pages.cursor(&guard, page_idx as u64);
             // `VmoMapMode::try_ensure` checks if the page has been initialized.
-            self.try_commit_with_cursor(&mut cursor, CommitMode::Overwrite)?
+            self.try_commit_with_cursor(&mut cursor, CommitMode::Overwrite, backed_vmo.as_ref())?
         };
         let mode = map_mode.try_ensure(page_idx, &page)?;
         Ok((page, mode))
@@ -370,8 +372,9 @@ impl Vmo {
         &self,
         cursor: &mut Cursor<'_, CachePage>,
         commit_mode: CommitMode,
+        backed_vmo: Option<&BackedVmo<'_>>,
     ) -> Result<(usize, CachePage), VmoCommitError> {
-        if let Some(backed_vmo) = self.as_backed_vmo() {
+        if let Some(backed_vmo) = backed_vmo {
             return backed_vmo.try_commit_with_cursor(cursor, commit_mode);
         } else if let Some(page) = cursor.load() {
             let index = cursor.index() as usize;
@@ -441,10 +444,14 @@ impl Vmo {
         }
 
         let page_idx_range = get_page_idx_range(range);
+        // Retain the backend for the whole traversal instead of upgrading and
+        // dropping the same weak reference for every page in the batch.
+        let backed_vmo = self.as_backed_vmo();
         let guard = disable_preempt();
         let mut cursor = self.pages.cursor(&guard, page_idx_range.start as u64);
         for _ in page_idx_range {
-            let mut commit_fn = || self.try_commit_with_cursor(&mut cursor, commit_mode);
+            let mut commit_fn =
+                || self.try_commit_with_cursor(&mut cursor, commit_mode, backed_vmo.as_ref());
             operate(&mut commit_fn)?;
             cursor.next();
         }
@@ -525,6 +532,10 @@ impl Vmo {
     }
 }
 
+// Keep the scratch space for one- and two-page I/O inline without reserving a
+// full batch on the kernel stack. Larger I/O retains heap-backed batching.
+type IoPageBatch = SmallVec<[(usize, CachePage); 2]>;
+
 // Implement the read/write methods for `Vmo`.
 impl Vmo {
     /// Maximum number of pages collected per batch from the `XArray`.
@@ -543,7 +554,7 @@ impl Vmo {
         let mut current_idx = page_idx_range.start;
         let mut page_offset = offset % PAGE_SIZE;
         let mut page_batch =
-            Vec::with_capacity(min(page_idx_range.len(), Self::PAGE_BATCH_CAPACITY));
+            IoPageBatch::with_capacity(min(page_idx_range.len(), Self::PAGE_BATCH_CAPACITY));
 
         while current_idx < page_idx_range.end {
             self.collect_pages(
@@ -576,7 +587,7 @@ impl Vmo {
 
         let write_range = offset..write_end;
         let mut page_offset = offset % PAGE_SIZE;
-        let mut page_batch = Vec::with_capacity(min(
+        let mut page_batch = IoPageBatch::with_capacity(min(
             write_range.len().div_ceil(PAGE_SIZE),
             Self::PAGE_BATCH_CAPACITY,
         ));
@@ -673,7 +684,7 @@ impl Vmo {
         range: &Range<usize>,
         page_offset: &mut usize,
         reader: &mut VmReader,
-        page_batch: &mut Vec<(usize, CachePage)>,
+        page_batch: &mut IoPageBatch,
     ) -> Result<()> {
         let page_idx_range = get_page_idx_range(range);
         let mut current_idx = page_idx_range.start;
@@ -709,7 +720,7 @@ impl Vmo {
         page_offset: &mut usize,
         reader: &mut VmReader,
         commit_mode: CommitMode,
-        page_batch: &mut Vec<(usize, CachePage)>,
+        page_batch: &mut IoPageBatch,
     ) -> Result<()> {
         let page_idx_range = get_page_idx_range(range);
         let mut current_idx = page_idx_range.start;
@@ -775,7 +786,7 @@ impl Vmo {
         start_idx: usize,
         end_idx: usize,
         commit_mode: CommitMode,
-        pages: &mut Vec<(usize, CachePage)>,
+        pages: &mut IoPageBatch,
     ) -> Result<()> {
         let end_idx = end_idx.min(start_idx + pages.capacity());
         pages.clear();
