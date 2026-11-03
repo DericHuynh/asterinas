@@ -1,0 +1,55 @@
+{
+  "schema": 1,
+  "license": "MPL-2.0",
+  "verus": {
+    "release": "release/0.2026.11.02.8bf68ee",
+    "commit": "8bf68ee741df833ea5d0fe6a2255126fdea87e47",
+    "rust_toolchain": "1.99.1",
+    "x86_linux_archive": "https://github.com/verus-lang/verus/releases/download/release/0.2026.11.02.8bf68ee/verus-0.2026.11.02.8bf68ee-x86-linux.zip",
+    "x86_linux_sha256": "f3a0119292df8855e4435da8130bee1873b0e6a60c306accf81a08ea687bba3c"
+  },
+  "linux_reference": {
+    "tag": "v7.0",
+    "commit": "028ef9c96e96197026887c0f092424679298aae8"
+  },
+  "asterinas_reference": {
+    "commit": "e57e69819c5df349e1743a2c06578fb500c39890"
+  },
+  "model_root": "src/model.rs",
+  "model_files": [
+    "src/model.rs",
+    "src/redo.rs",
+    "src/journal.rs",
+    "src/lease.rs"
+  ],
+  "required_proofs": [
+    "redo::overlay_preserves_domain",
+    "redo::overlay_is_idempotent",
+    "redo::complete_redo_overrides_partial_checkpoint",
+    "journal::initial_state_is_valid",
+    "journal::payload_issue_preserves",
+    "journal::payload_persistence_preserves",
+    "journal::prepare_preserves",
+    "journal::commit_issue_preserves",
+    "journal::commit_persistence_preserves",
+    "journal::checkpoint_preserves",
+    "journal::retirement_preserves",
+    "journal::acknowledgement_preserves",
+    "journal::abort_preserves",
+    "journal::every_step_preserves_invariant",
+    "journal::recovery_is_a_legal_single_transaction_cut",
+    "journal::acknowledged_transaction_survives",
+    "journal::replay_is_restartable",
+    "journal::a_nonempty_transaction_can_commit_and_retire",
+    "journal::missing_prepare_can_lose_an_acknowledged_change",
+    "journal::premature_checkpoint_can_expose_a_partial_transaction",
+    "lease::two_current_writers_are_the_same_actor",
+    "lease::claim_advances_generation",
+    "lease::releasing_revokes_current_lease",
+    "lease::stale_lease_cannot_return_after_reacquisition"
+  ],
+  "required_flags": [
+    "--no-cheating",
+    "--output-json"
+  ]
+}
