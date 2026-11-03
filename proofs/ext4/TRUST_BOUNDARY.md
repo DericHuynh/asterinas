@@ -129,6 +129,13 @@ requests, duplicate completion and retargeting through the internal numeric-ID
 method. This does not supply the kernel gate, actual callback binding, request
 drain, DMA lifetime, or a trustworthy device completion report.
 
+The writer uses the same ownership boundary and validates every emitted write's
+4 KiB image and partition range. Its six fences order dirty marking, journal
+activation, prepared log, commit, checkpoint and retirement. The command state
+machine is checked; its physical persistence/history simulation remains open.
+The device contract applies to each submitted partition-relative 4 KiB span,
+including physical alignment. The partition wrapper must establish that relation.
+
 `FrozenBlock` owns initialized Rust bytes and exposes no mutable borrow or Clone.
 This proves the host snapshot relationship; it does not prove an OSTD frame loan.
 Kernel integration must capture bytes through `VmReader`/`VmWriter` and CortenMM

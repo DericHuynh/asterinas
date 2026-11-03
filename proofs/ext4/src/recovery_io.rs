@@ -43,7 +43,7 @@ pub enum Command<'a> { Write { block: u32, image: &'a [u8] }, Flush }
 pub enum CommandView { Write { block: u32, image: Seq<u8> }, Flush }
 
 impl<'a> Command<'a> {
-    pub closed spec fn view(&self) -> CommandView {
+    pub open spec fn view(&self) -> CommandView {
         match self { Command::Write { block, image } => CommandView::Write { block: *block, image: image@ },
             Command::Flush => CommandView::Flush }
     }

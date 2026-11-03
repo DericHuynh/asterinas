@@ -568,3 +568,298 @@ fn state_codecs_preserve_unrelated_bytes_and_epochs_do_not_trust_checksums() {
         .is_none()
     );
 }
+
+#[test]
+fn constructed_transactions_recover_exact_owned_afterimages() {
+    let (mut image, layout, seed, target) = fixture();
+    let uuid = image[1128..1144].to_vec();
+    let targets: Vec<_> = (1..layout.filesystem_blocks())
+        .filter(|b| layout.allows_target(*b))
+        .take(250)
+        .collect();
+    for count in [1, 2, 250] {
+        let mut input = Vec::new();
+        let mut expected = Vec::new();
+        for i in 0..count {
+            let mut bytes = vec![i as u8; 4096];
+            if i % 2 == 0 {
+                bytes[..4].copy_from_slice(&core::jbd2::MAGIC.to_be_bytes());
+            }
+            input.push(core::transaction::AfterImage::capture(targets[i], &bytes).unwrap());
+            expected.push(bytes.clone());
+            bytes.fill(0x55); // The transaction must not observe a caller's later mutation.
+        }
+        let tx = core::transaction::encode(
+            input,
+            &uuid,
+            57,
+            &layout,
+            &image[..4096],
+            image.len() as u64,
+        )
+        .unwrap();
+        assert_eq!(tx.payload_count(), count);
+        assert_eq!(tx.transaction_id(), 57);
+        assert!(core::jbd2::valid_commit(tx.commit_bytes(), 57, seed));
+        let descriptor = core::descriptor::parse(
+            tx.descriptor_bytes(),
+            &uuid,
+            57,
+            layout.filesystem_blocks(),
+            seed,
+        )
+        .unwrap();
+        assert_eq!(descriptor.tags().len(), count);
+        for i in 0..count {
+            let raw = tx.payload_at(i).unwrap();
+            let decoded =
+                core::replay::decode_payload(&descriptor.tags()[i], raw, 57, seed, &layout)
+                    .unwrap();
+            assert_eq!((decoded.block(), decoded.sequence()), (targets[i], 57));
+            assert_eq!(decoded.image(), expected[i]);
+            assert_eq!(
+                tx.original_at(i).unwrap(),
+                (targets[i], expected[i].as_slice())
+            );
+        }
+        assert!(tx.payload_at(count).is_none());
+        assert!(tx.original_at(count).is_none());
+    }
+    let same = || core::transaction::AfterImage::capture(target, &[0u8; 4096]).unwrap();
+    assert!(
+        core::transaction::encode(
+            vec![same(), same()],
+            &uuid,
+            57,
+            &layout,
+            &image[..4096],
+            image.len() as u64
+        )
+        .is_none()
+    );
+    assert!(
+        core::transaction::encode(
+            vec![same()],
+            &uuid,
+            u32::MAX,
+            &layout,
+            &image[..4096],
+            image.len() as u64
+        )
+        .is_none()
+    );
+    let journal_target = (layout.offset(0, image.len() as u64).unwrap() / 4096) as u32;
+    let illegal = core::transaction::AfterImage::capture(journal_target, &[0u8; 4096]).unwrap();
+    assert!(
+        core::transaction::encode(
+            vec![illegal],
+            &uuid,
+            57,
+            &layout,
+            &image[..4096],
+            image.len() as u64
+        )
+        .is_none()
+    );
+    let clear = core::transaction::AfterImage::capture(0, &image[..4096]).unwrap();
+    assert!(
+        core::transaction::encode(
+            vec![clear],
+            &uuid,
+            57,
+            &layout,
+            &image[..4096],
+            image.len() as u64
+        )
+        .is_none()
+    );
+
+    let dirty =
+        core::super_state::recovery_image(&image[..4096], image.len() as u64, true).unwrap();
+    image[..4096].copy_from_slice(dirty.as_slice());
+    let mut metadata = image[..4096].to_vec();
+    metadata[1144..1160].copy_from_slice(b"verus-encoded-tx");
+    let checksum = core::crc::crc32c(0xffffffff, &metadata[1024..2044]);
+    metadata[2044..2048].copy_from_slice(&checksum.to_le_bytes());
+    let mut data = vec![0x71u8; 4096];
+    data[..4].copy_from_slice(&core::jbd2::MAGIC.to_be_bytes());
+    let tx = core::transaction::encode(
+        vec![
+            core::transaction::AfterImage::capture(0, &metadata).unwrap(),
+            core::transaction::AfterImage::capture(target, &data).unwrap(),
+        ],
+        &uuid,
+        57,
+        &layout,
+        &image[..4096],
+        image.len() as u64,
+    )
+    .unwrap();
+    let base = layout.offset(0, image.len() as u64).unwrap() as usize;
+    let activated =
+        core::journal_state::encode(&image[base..base + 4096], &uuid, layout.blocks(), 57, 1)
+            .unwrap();
+    image[base..base + 4096].copy_from_slice(activated.as_slice());
+    let mut ordinal = 0;
+    append_record(&mut image, &layout, 1, &mut ordinal, tx.descriptor_bytes());
+    for i in 0..tx.payload_count() {
+        append_record(
+            &mut image,
+            &layout,
+            1,
+            &mut ordinal,
+            tx.payload_at(i).unwrap(),
+        );
+    }
+    append_record(&mut image, &layout, 1, &mut ordinal, tx.commit_bytes());
+    let recovered = core::scan::recover(
+        &image[base..base + layout.blocks() as usize * 4096],
+        &uuid,
+        geometry(&image).0,
+    )
+    .unwrap();
+    assert_eq!(recovered.committed_transactions(), 1);
+    assert_eq!(recovered.replay_plan().len(), 2);
+    for i in 0..2 {
+        let w = recovered.replay_plan().get(i).unwrap();
+        assert_eq!(
+            w.image(),
+            if w.block() == 0 {
+                metadata.as_slice()
+            } else {
+                data.as_slice()
+            }
+        );
+    }
+    let linux = linux_recover("build/linux-transaction.img", &image);
+    assert_eq!(
+        &linux[target as usize * 4096..(target as usize + 1) * 4096],
+        data
+    );
+    assert_eq!(&linux[1144..1160], b"verus-encoded-tx");
+}
+
+#[test]
+fn writer_crash_cuts_recover_before_or_after_and_success_is_retired() {
+    let (mut initial, layout, _, target) = fixture();
+    let uuid = initial[1128..1144].to_vec();
+    let base = layout.offset(0, initial.len() as u64).unwrap() as usize;
+    let stale = core::jbd2::encode_header(2, 400).unwrap();
+    let last = base + (layout.blocks() as usize - 1) * 4096;
+    initial[last..last + 12].copy_from_slice(&stale); // Freshness must ignore checksum validity.
+    let old_data = initial[target as usize * 4096..(target as usize + 1) * 4096].to_vec();
+    let old_label = initial[1144..1160].to_vec();
+    let dirty =
+        core::super_state::recovery_image(&initial[..4096], initial.len() as u64, true).unwrap();
+    let mut metadata = dirty.as_slice().to_vec();
+    metadata[1144..1160].copy_from_slice(b"verus-writer-tx!");
+    let checksum = core::crc::crc32c(0xffffffff, &metadata[1024..2044]);
+    metadata[2044..2048].copy_from_slice(&checksum.to_le_bytes());
+    let mut data = vec![0x63u8; 4096];
+    data[..4].copy_from_slice(&core::jbd2::MAGIC.to_be_bytes());
+    let input = || {
+        vec![
+            core::transaction::AfterImage::capture(0, &metadata).unwrap(),
+            core::transaction::AfterImage::capture(target, &data).unwrap(),
+        ]
+    };
+    let mut writer = core::write_io::prepare(
+        &initial[base..base + layout.blocks() as usize * 4096],
+        &uuid,
+        geometry(&initial).0,
+        &initial[..4096],
+        initial.len() as u64,
+        input(),
+    )
+    .unwrap();
+    let mut stable = initial.clone();
+    let mut cache: Vec<(u32, Vec<u8>)> = Vec::new();
+    let mut committed = false;
+    let mut operations = 0;
+    loop {
+        let pending = match core::write_io::dispatch(writer) {
+            Ok(p) => p,
+            Err(w) => {
+                writer = w;
+                break;
+            }
+        };
+        match pending.pending_command() {
+            core::recovery_io::Command::Write { block, image } => {
+                if core::bytes::read_be32(image, 0) == Some(core::jbd2::MAGIC)
+                    && core::bytes::read_be32(image, 4) == Some(2)
+                {
+                    assert_eq!(core::bytes::read_be32(image, 8), Some(401));
+                    committed = true;
+                }
+                cache.push((block, image.to_vec()));
+            }
+            core::recovery_io::Command::Flush => {
+                for (block, image) in cache.drain(..) {
+                    stable[block as usize * 4096..(block as usize + 1) * 4096]
+                        .copy_from_slice(&image);
+                }
+            }
+        }
+        let mut crash = stable.clone();
+        for (block, image) in &cache {
+            crash[*block as usize * 4096..(*block as usize + 1) * 4096].copy_from_slice(image);
+        }
+        let recovered = linux_recover(&format!("build/writer-cut-{operations}.img"), &crash);
+        assert_eq!(
+            &recovered[target as usize * 4096..(target as usize + 1) * 4096],
+            if committed {
+                data.as_slice()
+            } else {
+                old_data.as_slice()
+            },
+            "cut {operations}"
+        );
+        assert_eq!(
+            &recovered[1144..1160],
+            if committed {
+                b"verus-writer-tx!".as_slice()
+            } else {
+                old_label.as_slice()
+            }
+        );
+        writer = pending.finish_pending(Completion::Succeeded);
+        operations += 1;
+    }
+    assert_eq!(operations, 15);
+    assert!(writer.finished());
+    assert!(!writer.failed());
+    assert!(cache.is_empty());
+    let journal = &stable[base..base + layout.blocks() as usize * 4096];
+    let retired =
+        core::journal_superblock::parse(&journal[..1024], &uuid, layout.blocks()).unwrap();
+    assert_eq!((retired.sequence, retired.start), (402, 0));
+    assert_eq!(
+        &stable[target as usize * 4096..(target as usize + 1) * 4096],
+        data
+    );
+    for fail_at in 0..operations {
+        let mut writer = core::write_io::prepare(
+            &initial[base..base + layout.blocks() as usize * 4096],
+            &uuid,
+            geometry(&initial).0,
+            &initial[..4096],
+            initial.len() as u64,
+            input(),
+        )
+        .unwrap();
+        for _ in 0..fail_at {
+            let pending = core::write_io::dispatch(writer).ok().unwrap();
+            writer = pending.finish_pending(Completion::Succeeded);
+        }
+        let pending = core::write_io::dispatch(writer)
+            .ok()
+            .unwrap()
+            .abort_pending();
+        let _ = pending.pending_command();
+        let failed = pending.finish_pending(Completion::Failed);
+        assert!(failed.failed());
+        assert!(!failed.finished());
+        assert!(core::write_io::dispatch(failed).is_err());
+    }
+}

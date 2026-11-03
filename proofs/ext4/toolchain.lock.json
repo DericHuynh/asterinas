@@ -51,7 +51,12 @@
     "src/recovery_device.rs",
     "src/scan_trace.rs",
     "src/recovery_request.rs",
-    "src/scan_stop.rs"
+    "src/scan_stop.rs",
+    "src/transaction.rs",
+    "src/journal_view.rs",
+    "src/transaction_refinement.rs",
+    "src/write_protocol.rs",
+    "src/write_io.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -167,7 +172,20 @@
     "scan_trace::decoding_one_record_is_deterministic",
     "scan_trace::well_formed_prefixes_agree_at_every_common_position",
     "scan_stop::maximal_canonical_prefix_is_unique",
-    "scan::recovered_input_is_unique_for_the_frozen_journal"
+    "scan::recovered_input_is_unique_for_the_frozen_journal",
+    "journal_view::snapshot_block_is_the_physical_image",
+    "journal_view::scanned_block_is_the_reserved_ring_image",
+    "journal_view::writing_a_journal_block_splices_exactly_one_image",
+    "journal_view::nonjournal_write_preserves_every_journal_byte",
+    "transaction_refinement::payload_images_form_one_exact_descriptor_record",
+    "transaction_refinement::encoded_transaction_has_a_complete_committed_certificate",
+    "transaction_refinement::complete_encoded_journal_has_a_concrete_disk_witness",
+    "transaction_refinement::successful_scan_of_encoded_transaction_recovers_every_original",
+    "write_protocol::initialization",
+    "write_protocol::successful_pair_preserves_and_makes_progress",
+    "write_protocol::failure_free_completion_is_finite",
+    "write_protocol::abort_keeps_the_pending_request",
+    "write_io::expected_command_is_confined"
   ],
   "required_flags": [
     "--no-cheating",
@@ -266,6 +284,21 @@
     "recovery_request::pending_command",
     "recovery_request::abort_pending",
     "recovery_request::finish_pending",
-    "recovery_request::dispatch"
+    "recovery_request::dispatch",
+    "transaction::capture",
+    "transaction::payload_count",
+    "transaction::transaction_id",
+    "transaction::descriptor_bytes",
+    "transaction::commit_bytes",
+    "transaction::payload_at",
+    "transaction::original_at",
+    "transaction::encode",
+    "write_io::finished",
+    "write_io::failed",
+    "write_io::pending_command",
+    "write_io::abort_pending",
+    "write_io::finish_pending",
+    "write_io::dispatch",
+    "write_io::prepare"
   ]
 }

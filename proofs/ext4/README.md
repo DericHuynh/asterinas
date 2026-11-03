@@ -7,9 +7,9 @@ implementation of a **Linux-compatible ext4 subset**.
 It is not a complete filesystem and is not registered with the kernel VFS.
 No mount or filesystem write path is enabled.
 
-The pinned Verus run checks **263 obligations with zero errors**, including
-114 named proof functions and 91 named executable functions.
-Fourteen host interoperability/regression tests pass on Linux-created metadata.
+The pinned Verus run checks **301 obligations with zero errors**, including
+127 named proof functions and 106 named executable functions.
+Sixteen host interoperability/regression tests pass on Linux-created metadata.
 [Proof status](proof-status.json) and [recorded evidence](verification-evidence.json)
 state the exact scope; tests do not discharge formal obligations.
 
@@ -29,6 +29,9 @@ state the exact scope; tests do not discharge formal obligations.
 | `epoch.rs`, `journal_state.rs`, `super_state.rs` | Conservative fresh IDs independent of checksums; exact superblock state images; immutable geometry/UUID/boot framing; recovery flag retained during replay. |
 | `recovery_io.rs`, `recovery_device.rs` | Owned immutable recovery command protocol, stale/duplicate report rejection, sticky abort, two flushes, finite failure-free completion; byte-valued persistence refinement under an explicit 4 KiB atomicity contract. |
 | `recovery_request.rs` | An outstanding request owns its exact recovery machine; completion consumes that object. External callers cannot forge/reuse requests or redirect a completion using a recycled numeric ID. |
+| `transaction.rs`, `transaction_refinement.rs` | Owned unique after-images; exact canonical transaction encoding; concrete journal-map witness; returned scans recover every encoded original image. A candidate patch is not filesystem authority. |
+| `journal_view.rs` | Physical block-map projection equals scanner bytes; a journal write splices exactly one image; nonjournal writes preserve the snapshot. |
+| `write_protocol.rs`, `write_io.rs` | Conservative serial dirty/activation/log/commit/checkpoint/retirement commands, six fences, owned requests, sticky abort, partition confinement and finite failure-free completion. Physical writer persistence refinement remains open. |
 | `frozen.rs` | Owned immutable snapshots, JBD2 escape/restore, snapshot contents independent of the source buffer. |
 | `ring.rs` | Bounded credits and injective circular-log position mapping. |
 | `gate.rs` | Affine writer capability backed by vstd's exclusive resource algebra; no local trusted token generator. |
@@ -39,7 +42,7 @@ The top-level model theorem is
 `system::crash_at_every_interleaving_preserves_the_acknowledged_prefix`.
 Its premise is an execution of the specified device/transaction machine.
 Commit and retirement are semantic durable facts in that machine;
-**their refinement from actual JBD2 bytes and driver events is still unproved**.
+**their full refinement from the writer's JBD2 bytes and driver events is still unproved**.
 The proof does not establish durability of a mounted Asterinas filesystem.
 
 The recovery theorem `recovery_device::success_image_equals_linux_redo` proves
@@ -47,7 +50,7 @@ that the stable image equals chronological redo plus the retired journal tail.
 Its machine permits persistence before completion and after abort, and proves
 that a persisted clear tail implies durable home data. It is conditional on a
 correct, complete replay plan, a quiescent device and the stated atomicity/flush
-contract. Active-journal admission/progress, transaction creation, whole-volume validation
+contract. Active-journal admission/progress, physical writer refinement, whole-volume validation
 and the actual driver refinement remain open.
 
 All public executable entry points validate their inputs without `requires`
@@ -80,8 +83,8 @@ It rejects local proof escapes, extra flags, omitted modules and source-inventor
 requires named proof and executable coverage; invalidates stale artifacts on failure;
 and records source, runner, manifest, verifier and emitted-library hashes.
 The negative checks include an actual failing Verus assertion in a disposable copy.
-Three additional negative Rust compilation checks reject request reuse,
-request forgery and external access to the internal completion method.
+Six additional negative Rust compilation checks reject recovery/writer request
+reuse and forgery, external completion redirection and writer-state replacement.
 [CI](../../.github/workflows/verify_ext4.yml) runs the same checks.
 
 The emitted host library exercises proof erasure and Linux byte compatibility.
@@ -89,6 +92,9 @@ The journal tests compare checked replay with Linux recovery for seven histories
 including revokes, reallocation, same-transaction revokes, an incomplete tail,
 ring wrap and block-zero metadata. They also exercise retired images and five
 recovery interruption cuts with `e2fsck`; these examples are not formal proofs.
+The complete transaction encoder is tested at 1, 2 and 250 payloads. The serial
+writer is checked against Linux recovery at all fifteen command cuts for a
+two-payload transaction, with abort injection at each position.
 Do not link it into the kernel: its target and toolchain differ from the kernel's.
 A kernel source build and its OSTD adapter refinement remain necessary.
 

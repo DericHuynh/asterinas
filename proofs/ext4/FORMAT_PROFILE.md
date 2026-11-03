@@ -2,7 +2,7 @@
 
 # Linux compatibility profile
 
-Status: the following **structural parsers and selected encoders are implemented
+Status: the following **structural parsers and canonical encoders are implemented
 and Verus-checked**.
 There is no admitted mount profile or production disk writer yet.
 The accepted byte structures do not certify the whole volume.
@@ -94,3 +94,9 @@ A replay target must not escape the partition or overwrite the journal.
 A locally bounded extent must not be accepted as proof that it belongs to the inode.
 A zero journal start field alone must not establish a clean mounted filesystem.
 No raw parser result is used to bypass these gates.
+
+The candidate transaction encoder accepts 1..250 unique, nonjournal home targets
+and emits one descriptor, escaped payloads and a commit. Its writer requires a
+clean journal, selects a fresh nonwrapping epoch and stages dirty/activation/
+log/commit/checkpoint/retirement commands. These host commands do not authorize
+filesystem operations or enable a production disk writer.

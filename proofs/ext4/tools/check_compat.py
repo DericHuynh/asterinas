@@ -69,6 +69,13 @@ def main():
                                 "{ let _ = e.complete(1, true); }\n", "E0624"),
         "forge_request": ("pub fn misuse(engine: verified_ext4::recovery_io::Recovery) "
                           "{ let _ = verified_ext4::recovery_request::Pending { engine, id: 1 }; }\n", "E0451"),
+        "reuse_write_request": ("use verified_ext4::{write_io::Pending, recovery_request::Completion};\n"
+                                "pub fn misuse(p: Pending) { let _ = p.finish_pending(Completion::Succeeded); "
+                                "let _ = p.finish_pending(Completion::Succeeded); }\n", "E0382"),
+        "forge_write_request": ("pub fn misuse(writer: verified_ext4::write_io::Writer) "
+                                "{ let _ = verified_ext4::write_io::Pending { writer }; }\n", "E0451"),
+        "replace_write_state": ("pub fn misuse(mut w: verified_ext4::write_io::Writer, s: verified_ext4::write_protocol::State) "
+                                "{ w.state = s; }\n", "E0616"),
     }
     for name, (source, code) in misuse.items():
         path = BUILD / (name + ".rs")
