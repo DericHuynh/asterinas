@@ -49,7 +49,7 @@ proof fn candidate_source_facts(v: WriteView)
 pub proof fn a_timed_write_preserves_every_unselected_file_or_extent_block(v: WriteView, admission: AdmissionView,
     images: Images, seconds: int, nanos: nat, block: u32)
     requires timed_admission(v, admission, images, seconds, nanos),
-        block < v.node.volume.census.roles.len(), 4 <= v.node.volume.census.roles[block as int].kind <= 6,
+        block < v.node.volume.census.roles.len(), 4 <= v.node.volume.census.roles[block as int].kind <= 7,
         block != v.image.block,
     ensures writer_admission::final_source(admission.boot.source, images).subrange(block as int * 4096, (block as int + 1) * 4096)
         == v.node.volume.index.source.subrange(block as int * 4096, (block as int + 1) * 4096),
@@ -317,6 +317,55 @@ pub proof fn a_timed_write_preserves_every_complete_extent_mapping(v: WriteView,
     reveal(group_index::valid);
     extent_frame::preserving_the_root_and_owned_metadata_preserves_the_complete_tree(before, after,
         extent_claims::depth(v.node.volume.index, v.node.number), extent_claims::owner(v.node.volume.index, v.node.number), logical, span);
+}
+
+pub proof fn a_timed_write_preserves_every_external_xattr_block(v: WriteView, admission: AdmissionView,
+    images: Images, seconds: int, nanos: nat, block: u32)
+    requires timed_admission(v, admission, images, seconds, nanos),
+        block < v.node.volume.census.roles.len(), v.node.volume.census.roles[block as int].kind == 7,
+    ensures writer_admission::final_source(admission.boot.source, images).subrange(block as int * 4096, (block as int + 1) * 4096)
+        == v.node.volume.index.source.subrange(block as int * 4096, (block as int + 1) * 4096),
+{
+    candidate_source_facts(v);
+    a_timed_write_preserves_every_unselected_file_or_extent_block(v, admission, images, seconds, nanos, block);
+}
+
+proof fn sealed_inode_keeps_attribute_storage(raw: Seq<u8>, number: u32, inodes: u32, seed: u32, huge: bool, seconds: int, nanos: nat)
+    requires crate::inode::metadata_accepted_with_features(raw, number, inodes, seed, huge), inode_time::representable(seconds, nanos),
+    ensures inode_touch::sealed_bytes(raw, number, seed, seconds, nanos).subrange(160, 256) == raw.subrange(160, 256),
+        crate::xattr::inode_address(inode_touch::sealed_bytes(raw, number, seed, seconds, nanos)) == crate::xattr::inode_address(raw),
+{
+    hide(crate::crc::fold); hide(inode_touch::sealed_bytes);
+    inode_touch::touching_times_preserves_inode_metadata_identity_and_validity(raw, number, inodes, seed, huge, seconds, nanos);
+    let sealed = inode_touch::sealed_bytes(raw, number, seed, seconds, nanos);
+    assert(sealed.subrange(160, 256) =~= raw.subrange(160, 256));
+    assert(crate::xattr::inode_address(sealed) == crate::xattr::inode_address(raw));
+}
+
+pub proof fn a_timed_write_preserves_inline_xattr_bytes_and_the_external_pointer(v: WriteView, admission: AdmissionView,
+    images: Images, seconds: int, nanos: nat)
+    requires timed_admission(v, admission, images, seconds, nanos),
+    ensures writer_admission::final_source(admission.boot.source, images).subrange(inode_table::start(v.node.volume.index, v.node.number) as int + 160,
+            inode_table::start(v.node.volume.index, v.node.number) as int + 256)
+        == inode_table::raw(v.node.volume.index, v.node.number).subrange(160, 256),
+        crate::xattr::inode_address(writer_admission::final_source(admission.boot.source, images).subrange(
+            inode_table::start(v.node.volume.index, v.node.number) as int, inode_table::start(v.node.volume.index, v.node.number) as int + 256))
+            == crate::xattr::inode_address(inode_table::raw(v.node.volume.index, v.node.number)),
+{
+    hide(file_read::maps); hide(crate::crc::fold);
+    hide(inode_touch::sealed_bytes); hide(writer_admission::final_source);
+    hide(patch_set::apply); hide(content_write::timed_inode_image);
+    candidate_source_facts(v);
+    allocation::every_inode_table_position_has_a_metadata_role(v.node.volume, v.node.number);
+    the_admitted_timed_inode_home_is_exact(v, admission, images, seconds, nanos);
+    a_timed_write_has_the_exact_updated_inode_and_unchanged_extent_root(v, admission, images, seconds, nanos);
+    let volume = v.node.volume;
+    let raw = inode_table::raw(volume.index, v.node.number);
+    sealed_inode_keeps_attribute_storage(raw, v.node.number, volume.index.inodes,
+        volume.index.seed, group_index::has_huge_files(volume.index), seconds, nanos);
+    let position = inode_table::start(volume.index, v.node.number) as int;
+    let after = writer_admission::final_source(admission.boot.source, images);
+    vstd::seq::lemma_seq_subrange_composition(after, position, position + 256, 160, 256);
 }
 
 }

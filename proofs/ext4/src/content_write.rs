@@ -12,7 +12,7 @@ use crate::{access::{self, Credentials}, allocated_inode::{self, AllocatedInode,
 verus! {
 
 pub struct WriteView {
-    pub node: NodeView, pub offset: u64, pub data: Seq<u8>, pub image: ImageView, pub credentials: Credentials,
+    pub node: NodeView, pub offset: u64, pub data: Seq<u8>, pub image: ImageView, pub credentials: Credentials, pub authorization: Option<crate::acl_access::AuthorizationView>,
 }
 
 pub open spec fn mode_only_safe(v: crate::group_index::IndexView, n: u32) -> bool {
@@ -20,11 +20,17 @@ pub open spec fn mode_only_safe(v: crate::group_index::IndexView, n: u32) -> boo
         && attributes.index == v && attributes.number == n && crate::xattr_inode::absent(attributes, 2, Seq::empty())
 }
 
+pub open spec fn permission(node: NodeView, credentials: Credentials, authorization: Option<crate::acl_access::AuthorizationView>) -> bool {
+    match authorization {
+        None => mode_only_safe(node.volume.index, node.number) && access::permitted(node.mode, node.uid, &credentials, 2, false),
+        Some(grant) => crate::acl_access::valid(grant) && grant.node == node && grant.credentials == credentials && grant.request == 2,
+    }
+}
+
 #[verifier::opaque]
 pub open spec fn valid(v: WriteView) -> bool {
     &&& allocated_inode::valid(v.node) && v.node.mode & 0xf000 == 0x8000 && v.node.mode & 0o6000 == 0
-    &&& access::permitted(v.node.mode, v.node.uid, &v.credentials, 2, false)
-    &&& mode_only_safe(v.node.volume.index, v.node.number)
+    &&& permission(v.node, v.credentials, v.authorization)
     &&& 0 < v.data.len() <= 4096 && v.offset < v.node.size && v.offset as nat + v.data.len() <= v.node.size
     &&& v.offset as nat % 4096 + v.data.len() <= 4096
     &&& v.image.image.len() == 4096 && (v.image.block as nat + 1) * 4096 <= v.node.volume.index.source.len()
@@ -36,7 +42,7 @@ pub open spec fn valid(v: WriteView) -> bool {
 
 pub struct Candidate<'n, 'v, 'a> {
     node: &'n AllocatedInode<'v, 'a>, image: AfterImage, offset: u64, length: usize,
-    data: Ghost<Seq<u8>>, credentials: Ghost<Credentials>,
+    data: Ghost<Seq<u8>>, credentials: Ghost<Credentials>, authorization: Ghost<Option<crate::acl_access::AuthorizationView>>,
 }
 
 pub open spec fn timed_inode_image(v: WriteView, seconds: int, nanos: nat) -> ImageView {
@@ -67,7 +73,7 @@ fn fill_part(mut part: edit_handles::Part<'_>, bytes: &[u8]) -> (r: bool)
 
 impl<'n, 'v, 'a> Candidate<'n, 'v, 'a> {
     pub closed spec fn view(&self) -> WriteView {
-        WriteView { node: self.node.view(), offset: self.offset, data: self.data@, image: self.image.view(), credentials: self.credentials@ }
+        WriteView { node: self.node.view(), offset: self.offset, data: self.data@, image: self.image.view(), credentials: self.credentials@, authorization: self.authorization@ }
     }
     pub closed spec fn wf(&self) -> bool { valid(self.view()) && self.length == self.data@.len() }
 
@@ -201,9 +207,39 @@ pub fn prepare_chunk<'n, 'v, 'a>(node: &'n AllocatedInode<'v, 'a>, offset: u64, 
         assert(crate::xattr_inode::valid(attributes.view()));
         assert(crate::xattr_inode::absent(attributes.view(), 2, Seq::empty()));
     }
-    if info.mode & 0xf000 != 0x8000 || info.mode & 0o6000 != 0
-        || !access::allowed(info.mode, info.uid, credentials, 2, false)
-        || input.len() == 0 || offset >= info.size { return None; }
+    if !access::allowed(info.mode, info.uid, credentials, 2, false) { return None; }
+    prepare_checked(node, offset, input, credentials, Ghost(None))
+}
+
+pub fn prepare_authorized<'n, 'v, 'a>(grant: crate::acl_access::Authorization<'n, 'v, 'a>, offset: u64, input: &[u8])
+    -> (r: Option<Candidate<'n, 'v, 'a>>)
+    ensures grant.wf(), match r {
+        Some(candidate) => candidate.wf() && candidate.view().node == grant.view().node && candidate.view().credentials == grant.view().credentials
+            && candidate.view().offset == offset && candidate.view().authorization == Some(grant.view())
+            && candidate.view().data == input@.take(file_read::chunk_length(grant.view().node, offset, input.len()) as int),
+        None => true,
+    },
+{
+    let (node, credentials, request, Ghost(view)) = grant.release();
+    if request != 2 { return None; }
+    prepare_checked(node, offset, input, &credentials, Ghost(Some(view)))
+}
+
+fn prepare_checked<'n, 'v, 'a>(node: &'n AllocatedInode<'v, 'a>, offset: u64, input: &[u8], credentials: &Credentials,
+    Ghost(authorization): Ghost<Option<crate::acl_access::AuthorizationView>>) -> (r: Option<Candidate<'n, 'v, 'a>>)
+    requires node.wf(), permission(node.view(), *credentials, authorization),
+    ensures node.wf(), match r {
+        Some(candidate) => candidate.wf() && candidate.view().node == node.view() && candidate.view().offset == offset
+            && candidate.view().credentials == *credentials && candidate.view().authorization == authorization
+            && candidate.view().data == input@.take(file_read::chunk_length(node.view(), offset, input.len()) as int)
+            && candidate.view().data.len() == file_read::chunk_length(node.view(), offset, input.len()),
+        None => true,
+    },
+{
+    hide(file_read::maps);
+    hide(file_read::owned);
+    let info = node.info();
+    if info.mode & 0xf000 != 0x8000 || info.mode & 0o6000 != 0 || input.len() == 0 || offset >= info.size { return None; }
     let huge = node.volume().index().huge_files();
     proof { inode_size::offsets_never_truncate_to_a_different_logical_block(4096, huge, info.size, offset); }
     let logical = (offset / 4096) as u32;
@@ -221,9 +257,9 @@ pub fn prepare_chunk<'n, 'v, 'a>(node: &'n AllocatedInode<'v, 'a>, offset: u64, 
     if !bytes::write_bytes(data.as_mut_slice(), within, &input[..length]) { return None; }
     assert(data.len() == 4096);
     let image = AfterImage::capture(physical, &data).unwrap();
-    let ghost view = WriteView { node: node.view(), offset, data: input@.take(length as int), image: image.view(), credentials: *credentials };
+    let ghost view = WriteView { node: node.view(), offset, data: input@.take(length as int), image: image.view(), credentials: *credentials, authorization };
     assert(valid(view)) by { reveal(valid); }
-    Some(Candidate { node, image, offset, length, data: Ghost(input@.take(length as int)), credentials: Ghost(*credentials) })
+    Some(Candidate { node, image, offset, length, data: Ghost(input@.take(length as int)), credentials: Ghost(*credentials), authorization: Ghost(authorization) })
 }
 
 pub proof fn an_initialized_content_write_cannot_touch_another_inode(v: WriteView)

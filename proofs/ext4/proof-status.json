@@ -9,15 +9,15 @@
   "writable_mount_enabled": false,
   "verification": {
     "status": "core_and_models_checked",
-    "verus_verified_units": 1417,
+    "verus_verified_units": 1460,
     "verification_errors": 0,
-    "checked_named_proof_functions": 507,
-    "checked_named_executable_functions": 417,
+    "checked_named_proof_functions": 516,
+    "checked_named_executable_functions": 426,
     "runner_validated": true,
     "negative_gate_checks_passed": 6,
-    "host_compatibility_tests_passed": 132,
+    "host_compatibility_tests_passed": 135,
     "evidence": "verification-evidence.json",
-    "request_boundary_rejections_passed": 55
+    "request_boundary_rejections_passed": 61
   },
   "claims": {
     "abstract_redo": "checked",
@@ -123,7 +123,8 @@
     "source_selected_backup_layouts": "checked_exact_Linux_group_zero_SPARSE_SUPER2_explicit_slot_precedence_classic_sparse_power_and_all_group_nonsparse_selection_source_bound_complete_metadata_reservations_lazy_BLOCK_UNINIT_canonical_bitmaps_free_counters_global_disjoint_ownership_and_primary_identity_framing_in_bounded_32_group_4KiB_32_64_byte_FLEX_BG_profile_resize_META_BG_reserved_GDT_growth_other_geometry_and_CortenMM_runtime_open",
     "source_selected_directory_link_counts": "checked_actual_superblock_DIR_NLINK_directory_only_unknown_stored_count_1_requires_at_least_two_source_references_exact_other_directory_and_all_regular_counts_unchanged_complete_dot_parent_root_namespace_checks_total_Linux_65000_overflow_and_persistent_sentinel_decrement_codecs_Htree_operations_creation_unlink_and_runtime_open",
     "readonly_feature_and_stable_inode_marker_policy": "checked_exact_source_COMPAT_RO_COMPAT_INCOMPAT_masks_retained_in_parsed_superblock_READONLY_refusal_in_raw_and_sealed_serial_and_concurrent_fresh_writer_factories_before_IO_owned_program_invariants_committed_cold_recovery_keeps_policy_STABLE_INODES_marker_and_UUID_geometry_framing_legacy_BTREE_DIR_admission_Linux_COMPRESSION_DIRDATA_rejection_policy_kernel_mount_VFS_authority_resize_offline_renumbering_encryption_policy_and_device_CortenMM_runtime_open",
-    "source_bound_xattr_storage": "checked_inline_and_external_Linux_tables_full_namespace_name_keys_physical_checksum_identity_cross_location_uniqueness_exact_source_get_absence_global_shared_block_refcount_canonical_disjoint_claims_i_blocks_bitmap_and_free_counter_composition_mode_only_write_access_ACL_exclusion_mutation_ACL_LSM_EA_INODE_CortenMM_and_runtime_open"
+    "source_bound_xattr_storage": "checked_inline_and_external_Linux_tables_full_namespace_name_keys_physical_checksum_identity_cross_location_uniqueness_exact_source_get_absence_global_shared_block_refcount_canonical_disjoint_claims_i_blocks_bitmap_and_free_counter_composition_mode_only_write_access_ACL_exclusion_mutation_ACL_LSM_EA_INODE_CortenMM_and_runtime_open",
+    "source_bound_posix_acl_decisions": "checked_compact_Linux_version_1_entry_widths_tag_state_permission_ID_and_mask_rules_exact_executable_permission_order_named_user_masking_single_group_complete_requests_denied_group_no_OTHER_fallback_source_allocated_inode_and_actual_xattr_value_binding_mode_equivalence_before_capability_handling_consumed_content_candidate_authorization_and_external_inline_xattr_byte_framing_authenticated_VFS_idmap_LSM_inheritance_mutation_CortenMM_runtime_open"
   },
   "production_activation_gate": "All applicable obligations in PROOF_OBLIGATIONS.md must be discharged for the admitted profile.",
   "evidence_policy": "Only successful pinned entire-crate checking plus compilation produces a valid build report; it certifies only the declared source/model scope.",
