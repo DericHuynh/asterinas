@@ -6141,6 +6141,8 @@ mod htree_indexes {
         assert_eq!(root.hash_and_levels().1, 0);
         let index = root.routing_index();
         assert!(index.child_count() > 1);
+        let mut logical_blocks = vec![&img[0..0]; blocks as usize];
+        logical_blocks[0] = raw;
         for i in 0..index.child_count() {
             let edge = index.child(i).unwrap();
             let hash = edge.hash & !1u32;
@@ -6155,10 +6157,17 @@ mod htree_indexes {
                 .trim()
                 .parse::<usize>()
                 .unwrap();
+            logical_blocks[edge.block as usize] = &img[physical * 4096..(physical + 1) * 4096];
             assert!(core::directory::valid_tail(
                 &img[physical * 4096..(physical + 1) * 4096],
                 seed
             ));
+        }
+        let graph = core::htree_topology::parse(&logical_blocks, inodes, seed, false).unwrap();
+        assert_eq!(graph.logical_block_count(), blocks);
+        assert_eq!(graph.logical_role(0), Some(1));
+        for logical in 1..blocks {
+            assert_eq!(graph.logical_role(logical), Some(3));
         }
         assert!(
             core::image_validation::inspect(core::snapshot::Snapshot::from_bytes(&img)).is_none(),
@@ -6167,6 +6176,80 @@ mod htree_indexes {
         for file in [path, "build/htree-empty.bin", "build/htree-debugfs.txt"] {
             let _ = std::fs::remove_file(file);
         }
+    }
+
+    fn empty_leaf(seed: u32) -> Vec<u8> {
+        let mut raw = vec![0u8; 4096];
+        raw[4..6].copy_from_slice(&4084u16.to_le_bytes());
+        raw[4088..4090].copy_from_slice(&12u16.to_le_bytes());
+        raw[4091] = 0xde;
+        let checksum = core::crc::crc32c(seed, &raw[..4084]);
+        raw[4092..4096].copy_from_slice(&checksum.to_le_bytes());
+        raw
+    }
+
+    #[test]
+    fn complete_htree_graph_rejects_orphans_reuse_cycles_and_unchecked_leaves() {
+        use core::htree_topology;
+        let seed = 0x12345678;
+        let mut root = block(4096, true, true);
+        root[30] = 2;
+        root[34..36].copy_from_slice(&1u16.to_le_bytes());
+        root[36..40].copy_from_slice(&1u32.to_le_bytes());
+        seal(&mut root, 32, seed);
+        let mut node = block(4096, false, true);
+        node[10..12].copy_from_slice(&1u16.to_le_bytes());
+        node[12..16].copy_from_slice(&2u32.to_le_bytes());
+        seal(&mut node, 8, seed);
+        let mut nested = node.clone();
+        nested[12..16].copy_from_slice(&3u32.to_le_bytes());
+        seal(&mut nested, 8, seed);
+        let leaf = empty_leaf(seed);
+        let source = [&root[..], &node, &nested, &leaf];
+        let graph = htree_topology::parse(&source, 4096, seed, true).unwrap();
+        assert_eq!(graph.logical_block_count(), 4);
+        assert_eq!(graph.logical_role(0), Some(1));
+        assert_eq!(graph.logical_role(1), Some(1));
+        assert_eq!(graph.logical_role(2), Some(1));
+        assert_eq!(graph.logical_role(3), Some(3));
+        assert_eq!(graph.logical_role(4), None);
+        assert!(htree_topology::parse(&source, 4096, seed, false).is_none());
+        let orphan = [&root[..], &node, &nested, &leaf, &leaf];
+        assert!(htree_topology::parse(&orphan, 4096, seed, true).is_none());
+        let mut cycle = node.clone();
+        cycle[12..16].copy_from_slice(&1u32.to_le_bytes());
+        seal(&mut cycle, 8, seed);
+        assert!(
+            htree_topology::parse(&[&root, &cycle, &nested, &leaf], 4096, seed, true).is_none()
+        );
+        let mut invalid = leaf.clone();
+        invalid[4092] ^= 1;
+        assert!(
+            htree_topology::parse(&[&root, &node, &nested, &invalid], 4096, seed, true).is_none()
+        );
+        let mut duplicate = block(4096, true, true);
+        duplicate[34..36].copy_from_slice(&2u16.to_le_bytes());
+        duplicate[36..40].copy_from_slice(&1u32.to_le_bytes());
+        duplicate[44..48].copy_from_slice(&1u32.to_le_bytes());
+        seal(&mut duplicate, 32, seed);
+        assert!(htree_topology::parse(&[&duplicate, &leaf], 4096, seed, false).is_none());
+        duplicate[44..48].copy_from_slice(&2u32.to_le_bytes());
+        seal(&mut duplicate, 32, seed);
+        assert!(
+            htree_topology::parse(&[&duplicate, &leaf, &leaf], 4096, seed, false).is_some(),
+            "equal bytes in distinct logical slots need no checksum injectivity assumption"
+        );
+        duplicate[34..36].copy_from_slice(&1u16.to_le_bytes());
+        seal(&mut duplicate, 32, seed);
+        let minimal = htree_topology::parse(&[&duplicate, &leaf], 4096, seed, false).unwrap();
+        assert_eq!(minimal.logical_block_count(), 2);
+        assert_eq!(minimal.logical_role(0), Some(1));
+        assert_eq!(minimal.logical_role(1), Some(3));
+        assert_eq!(
+            minimal.logical_role(2),
+            None,
+            "private ledger padding is not a directory block"
+        );
     }
 }
 

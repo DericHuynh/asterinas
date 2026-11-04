@@ -243,3 +243,5 @@ pub mod acl_access;
 pub mod htree;
 
 pub mod dir_hash;
+
+pub mod htree_topology;

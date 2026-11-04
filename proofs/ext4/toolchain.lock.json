@@ -163,7 +163,8 @@
     "src/acl.rs",
     "src/acl_access.rs",
     "src/htree.rs",
-    "src/dir_hash.rs"
+    "src/dir_hash.rs",
+    "src/htree_topology.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -684,7 +685,10 @@
     "write_frame::a_timed_write_preserves_inline_xattr_bytes_and_the_external_pointer",
     "htree::a_probe_has_one_exact_initial_child",
     "htree::odd_hash_continuations_are_distinct_from_initial_even_boundaries",
-    "dir_hash::every_unkeyed_hash_reserves_the_collision_bit_and_eof_value"
+    "dir_hash::every_unkeyed_hash_reserves_the_collision_bit_and_eof_value",
+    "htree_topology::a_checked_node_retains_its_header_and_every_source_child",
+    "htree_topology::every_supplied_logical_block_is_reachable_from_the_exact_root",
+    "htree_topology::two_tree_claims_cannot_reuse_one_logical_block"
   ],
   "required_flags": [
     "--no-cheating",
@@ -1127,6 +1131,10 @@
     "htree::routing_index",
     "htree::hash_and_levels",
     "htree::parse_root",
-    "dir_hash::calculate"
+    "dir_hash::calculate",
+    "htree_topology::logical_block_count",
+    "htree_topology::logical_role",
+    "htree_topology::checked_root",
+    "htree_topology::parse"
   ]
 }
