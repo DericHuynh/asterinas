@@ -62,6 +62,7 @@ pub proof fn validated_final_image_has_the_expected_block(admission: AdmissionVi
     requires writer_admission::valid(admission, images), block < images.tx.layout.fs_blocks,
     ensures writer_admission::final_source(admission.boot.source, images).subrange(block as int * 4096,
         (block as int + 1) * 4096) == expected_block(admission.boot.source, images, block),
+        writer_admission::final_source(admission.boot.source, images).len() == admission.boot.source.len(),
 {
     hide(patch_set::apply);
     admission_byte_shapes(admission, images);
@@ -116,6 +117,22 @@ proof fn log_targets_are_exactly_the_encoded_record_range(images: Images, block:
         let index = choose|i: int| 0 <= i < logs.len() && (#[trigger] logs[i]).block as int == block;
         assert(logs[index].block as int == images.journal_block as int + 1 + index);
     }
+}
+
+pub proof fn blocks_outside_the_home_journal_and_primary_targets_retain_their_source_bytes(admission: AdmissionView, images: Images, block: u32)
+    requires writer_admission::valid(admission, images), 0 < block < images.tx.layout.fs_blocks,
+        !(images.tx.layout.start <= block < images.tx.layout.start as nat + images.tx.layout.journal_blocks),
+        patch_set::selected(images.tx.original, block as int).is_none(),
+    ensures writer_admission::final_source(admission.boot.source, images).subrange(block as int * 4096, (block as int + 1) * 4096)
+        == admission.boot.source.subrange(block as int * 4096, (block as int + 1) * 4096),
+{
+    hide(crate::crc::fold);
+    validated_final_image_has_the_expected_block(admission, images, block);
+    admission_byte_shapes(admission, images);
+    reveal(writer_admission::valid);
+    reveal(write_io::valid_images);
+    reveal(crate::transaction::wf);
+    log_targets_are_exactly_the_encoded_record_range(images, block);
 }
 
 #[verifier::rlimit(30)]

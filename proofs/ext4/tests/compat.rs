@@ -131,6 +131,67 @@ fn exercise_complete_owned_tree_depths(img: &[u8], number: u32) {
     }
 }
 
+fn exercise_timed_tree_write(img: &[u8], number: u32, offset: u64) {
+    use core::{file_read::Chunk, recovery_request::Completion, snapshot::Snapshot};
+    let volume = core::allocation::parse(Snapshot::from_bytes(img)).unwrap();
+    let node = core::allocated_inode::get(&volume, number).unwrap();
+    let original_root = node.raw()[40..100].to_vec();
+    let size = node.info().size;
+    let read_file = |node: &core::allocated_inode::AllocatedInode<'_, '_>| {
+        let mut bytes = Vec::new();
+        while bytes.len() < size as usize {
+            match core::file_read::chunk(node, bytes.len() as u64, 4096) {
+                Chunk::Data(data) => bytes.extend_from_slice(data),
+                Chunk::Zero(length) => bytes.resize(bytes.len() + length, 0),
+                Chunk::End => panic!("read stopped before the checked inode size"),
+            }
+        }
+        bytes
+    };
+    let mut expected = read_file(&node);
+    let credentials = core::access::Credentials {
+        fsuid: node.info().uid,
+        in_inode_group: false,
+        dac_override: false,
+        dac_read_search: false,
+    };
+    let input = [0x97; 79];
+    let candidate =
+        core::content_write::prepare_chunk(&node, offset, &input, &credentials).unwrap();
+    let length = candidate.written_prefix();
+    expected[offset as usize..offset as usize + length].copy_from_slice(&input[..length]);
+    let mut writer = candidate.begin_timed(12345678901, 876543210).unwrap();
+    let mut stable = img.to_vec();
+    loop {
+        let pending = match writer.dispatch() {
+            Ok(pending) => pending,
+            Err(done) => {
+                writer = done;
+                break;
+            }
+        };
+        if let core::recovery_io::Command::Write { block, image } = pending.pending_command() {
+            stable[block as usize * 4096..(block as usize + 1) * 4096].copy_from_slice(image);
+        }
+        writer = pending.finish_pending(Completion::Succeeded);
+    }
+    assert!(writer.finished());
+    let after = core::allocation::parse(Snapshot::from_bytes(&stable)).unwrap();
+    let updated = core::allocated_inode::get(&after, number).unwrap();
+    assert_eq!(updated.raw()[40..100], original_root);
+    assert_eq!(read_file(&updated), expected);
+    for block in 0..volume.index().parameters().0 {
+        if volume.census().role_of(block).unwrap().kind == 6 {
+            assert_eq!(
+                &stable[block as usize * 4096..(block as usize + 1) * 4096],
+                &img[block as usize * 4096..(block as usize + 1) * 4096],
+                "every external extent node, including off-path nodes, retains its exact source bytes"
+            );
+        }
+    }
+    assert!(core::image_validation::inspect(Snapshot::from_bytes(&stable)).is_some());
+}
+
 fn first_data_block(raw: &[u8], blocks: u32) -> u32 {
     let root = &raw[40..100];
     let count = core::extent::validate_inline_root(root, blocks).expect("inline leaf root");
@@ -1019,6 +1080,7 @@ fn linux_created_external_extent_nodes_match_source_capture_and_inode_checksum_s
         ));
     }
     assert!(core::image_validation::inspect(Snapshot::from_bytes(&written)).is_some());
+    exercise_timed_tree_write(&written, number, 7);
     exercise_complete_owned_tree_depths(&img, number);
 
     let mut huge_tree = img.clone();

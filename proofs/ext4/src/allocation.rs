@@ -77,6 +77,95 @@ pub open spec fn valid(v: AllocationView) -> bool {
     &&& block_claims::free_roles(v.census.roles, 0, v.census.roles.len()) == bytes::le32(v.index.source, 1036)
 }
 
+proof fn a_reserved_prefix_contains_each_group_claim(v: IndexView, count: nat, number: u32, claim: Claim)
+    requires number < count <= v.groups.len(), group_claims::claims(v.groups[number as int].descriptor, number, v.ipg).contains(claim),
+    ensures reserved(v, count).contains(claim),
+    decreases count,
+{
+    reveal(reserved);
+    let prefix = reserved(v, (count - 1) as nat);
+    let suffix = group_claims::claims(v.groups[count as int - 1].descriptor, (count - 1) as u32, v.ipg);
+    if number < count - 1 {
+        a_reserved_prefix_contains_each_group_claim(v, (count - 1) as nat, number, claim);
+        let i = choose|i: int| 0 <= i < prefix.len() && prefix[i] == claim;
+        assert((prefix + suffix)[i] == claim);
+    } else {
+        assert(number as int == count - 1 && (count - 1) as u32 == number);
+        let i = choose|i: int| 0 <= i < suffix.len() && suffix[i] == claim;
+        assert((prefix + suffix)[prefix.len() as int + i] == claim);
+    }
+}
+
+pub proof fn every_reserved_group_claim_has_its_exact_role(v: AllocationView, number: u32, claim: Claim, block: int)
+    requires valid(v), number < v.index.groups.len(),
+        group_claims::claims(v.index.groups[number as int].descriptor, number, v.index.ipg).contains(claim),
+        block_claims::covers(claim, block),
+    ensures 0 <= block < v.census.roles.len(), v.census.roles[block] == block_claims::at(claim, block),
+{
+    reveal(valid);
+    let reserved = reserved(v.index, v.index.groups.len());
+    a_reserved_prefix_contains_each_group_claim(v.index, v.index.groups.len(), number, claim);
+    let i = choose|i: int| 0 <= i < reserved.len() && reserved[i] == claim;
+    assert(v.census.claims[i] == claim);
+    block_claims::a_ledger_claim_determines_its_exact_physical_slot(v.census.roles, v.census.claims, claim, block);
+}
+
+pub proof fn the_internal_journal_has_only_journal_roles(v: AllocationView, block: u32)
+    requires valid(v), v.journal.start <= block < v.journal.start as nat + v.journal.journal_blocks,
+    ensures block < v.census.roles.len(), v.census.roles[block as int].kind == 2,
+{
+    reveal(valid);
+    let claim = journal_claim(v.journal);
+    let i = reserved(v.index, v.index.groups.len()).len() as int;
+    assert(v.census.claims[i] == claim);
+    assert(v.census.claims.contains(claim));
+    block_claims::a_ledger_claim_determines_its_exact_physical_slot(v.census.roles, v.census.claims, claim, block as int);
+}
+
+pub proof fn the_primary_superblock_and_descriptor_have_reserved_roles(v: AllocationView)
+    requires valid(v),
+    ensures v.census.roles.len() > 2, v.census.roles[0].kind == 1, v.census.roles[1].kind == 1,
+{
+    reveal(valid);
+    reveal(group_index::valid);
+    let claim = group_claims::metadata(0, 2, 1);
+    let claims = group_claims::claims(v.index.groups[0].descriptor, 0, v.index.ipg);
+    assert(claims[0] == claim && claims.contains(claim));
+    every_reserved_group_claim_has_its_exact_role(v, 0, claim, 0);
+    every_reserved_group_claim_has_its_exact_role(v, 0, claim, 1);
+}
+
+pub proof fn every_inode_table_position_has_a_metadata_role(v: AllocationView, number: u32)
+    requires valid(v), 0 < number <= v.index.inodes,
+    ensures inode_table::start(v.index, number) + 256 <= v.index.blocks as nat * 4096 <= v.index.source.len(),
+        inode_table::start(v.index, number) % 4096 <= 3840,
+        v.census.roles[(inode_table::start(v.index, number) / 4096) as int].kind == 3,
+{
+    reveal(valid);
+    reveal(group_index::valid);
+    reveal(group_index::records_match);
+    vstd::arithmetic::mul::lemma_mul_is_commutative(v.index.ipg as int, v.index.groups.len() as int);
+    vstd::arithmetic::div_mod::lemma_multiply_divide_lt(number as int - 1, v.index.ipg as int, v.index.groups.len() as int);
+    vstd::arithmetic::div_mod::lemma_fundamental_div_mod(number as int - 1, v.index.ipg as int);
+    let group = (number as int - 1) / v.index.ipg as int;
+    let slot = (number as int - 1) % v.index.ipg as int;
+    let meta = v.index.groups[group];
+    assert(crate::group_metadata::valid(meta));
+    reveal(crate::group_metadata::valid);
+    reveal(crate::group::accepted_with_features);
+    let claim = group_claims::metadata(meta.inode_table, (v.index.ipg / 16) as u32, 3);
+    let claims = group_claims::claims(meta.descriptor, group as u32, v.index.ipg);
+    let index = if group_claims::sparse_super(group as u32) { 3int } else { 2int };
+    assert(claims[index] == claim && claims.contains(claim));
+    vstd::arithmetic::div_mod::lemma_fundamental_div_mod(slot, 16);
+    vstd::arithmetic::div_mod::lemma_fundamental_div_mod_converse(meta.inode_table as int * 4096 + slot * 256, 4096,
+        meta.inode_table as int + slot / 16, slot % 16 * 256);
+    vstd::arithmetic::div_mod::lemma_multiply_divide_lt(slot, 16, (v.index.ipg / 16) as int);
+    let block = (inode_table::start(v.index, number) / 4096) as int;
+    assert(block_claims::covers(claim, block));
+    every_reserved_group_claim_has_its_exact_role(v, group as u32, claim, block);
+}
+
 pub struct Allocation<'a> { index: GroupIndex<'a>, census: Census, journal: JournalLayout }
 
 impl<'a> Allocation<'a> {

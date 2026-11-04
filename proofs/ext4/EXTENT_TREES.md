@@ -104,3 +104,8 @@ compose owned depth-two-through-five trees, initialized reads and unwritten zero
 with complete namespace/image validation, and reject stale seeds, wrong sector
 counts, shared empty nodes and metadata/data/journal/cross-inode aliases. Tests supplement
 the Verus proof; they do not establish Linux-driver or CortenMM refinement.
+
+Complete-tree source framing now composes with the exact admitted timed-content
+writer image, including dirty/log/home/retirement overlays. See
+[EXTENT_WRITE_FRAMING.md](EXTENT_WRITE_FRAMING.md) for the unchanged root and
+external metadata proof and its fresh-source/runtime limits.

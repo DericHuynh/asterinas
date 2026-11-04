@@ -122,7 +122,9 @@
     "src/writer_image.rs",
     "src/disk_image.rs",
     "src/recovery_image.rs",
-    "src/recovery_crash_image.rs"
+    "src/recovery_crash_image.rs",
+    "src/extent_frame.rs",
+    "src/write_frame.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -459,7 +461,17 @@
     "recovery_crash_image::a_changed_retirement_tail_cut_already_has_the_complete_validated_image",
     "recovery_crash_image::every_admitted_recovery_cut_is_complete_or_repairable_with_its_exact_plan",
     "recovery_crash_image::unchanged_tail_recovery_cuts_keep_the_exact_canonical_journal_input",
-    "recovery_crash_image::every_finite_admitted_recovery_execution_has_complete_or_repairable_crash_cuts"
+    "recovery_crash_image::every_finite_admitted_recovery_execution_has_complete_or_repairable_crash_cuts",
+    "extent_frame::preserving_the_root_and_owned_metadata_preserves_the_complete_tree",
+    "block_claims::a_ledger_claim_determines_its_exact_physical_slot",
+    "allocation::every_reserved_group_claim_has_its_exact_role",
+    "allocation::the_internal_journal_has_only_journal_roles",
+    "allocation::the_primary_superblock_and_descriptor_have_reserved_roles",
+    "allocation::every_inode_table_position_has_a_metadata_role",
+    "writer_image::blocks_outside_the_home_journal_and_primary_targets_retain_their_source_bytes",
+    "write_frame::a_timed_write_preserves_every_external_extent_metadata_block",
+    "write_frame::a_timed_write_has_the_exact_updated_inode_and_unchanged_extent_root",
+    "write_frame::a_timed_write_preserves_every_complete_extent_mapping"
   ],
   "required_flags": [
     "--no-cheating",

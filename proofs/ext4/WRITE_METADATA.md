@@ -57,3 +57,8 @@ contracts. No kernel mount/write path is enabled.
 Successful serialized durable-map equality with the complete validated result
 now composes through [WRITER_IMAGE.md](WRITER_IMAGE.md). The remaining crash,
 concurrent and actual driver boundaries stay explicit.
+
+[Extent write framing](EXTENT_WRITE_FRAMING.md) now proves that the complete final
+writer image preserves every external extent metadata block and the inline
+root, with identical complete tree claims and mappings in the rebased context.
+Fresh-source inode/index read composition and runtime exclusion remain open.
