@@ -233,4 +233,26 @@ impl PatchSet {
     pub fn into_images(self) -> (r: Vec<AfterImage>) ensures transaction::images(r@) == self.view() { self.images }
 }
 
+pub proof fn applying_patches_preserves_the_source_length(source: Seq<u8>, patches: Seq<ImageView>)
+    ensures apply(source, patches).len() == source.len(),
+{
+}
+
+
+pub proof fn a_single_patch_selects_exactly_its_target(image: ImageView, block: int)
+    ensures selected(seq![image], block) == if block == image.block as int { Some(image.image) } else { None },
+{
+    let entries = seq![image];
+    if block == image.block as int {
+        assert(entries.len() == 1 && entries[0] == image);
+        assert(0 <= 0int < entries.len() && entries[0].block as int == block);
+        assert(exists|i: int| 0 <= i < entries.len() && (#[trigger] entries[i]).block as int == block);
+        let i = choose|i: int| 0 <= i < entries.len() && (#[trigger] entries[i]).block as int == block;
+        assert(i == 0);
+    } else {
+        assert forall|i: int| 0 <= i < entries.len() implies (#[trigger] entries[i]).block as int != block by { assert(i == 0); }
+    }
+}
+
+
 }

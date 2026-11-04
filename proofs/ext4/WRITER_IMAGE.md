@@ -8,6 +8,10 @@ the entire resulting byte image with the already validated final filesystem
 image, including block zero, journal records, home images, the retired tail and
 any partition bytes beyond the filesystem.
 
+The source-map and byte-projection helpers now live in `disk_image.rs` and are
+shared with the complete admitted recovery refinement in
+[RECOVERY_IMAGE.md](RECOVERY_IMAGE.md).
+
 ## Checked relation
 
 The initial physical map has exactly the filesystem block addresses. Its finite
