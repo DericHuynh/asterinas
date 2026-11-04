@@ -131,7 +131,9 @@
     "src/recovery_bootstrap.rs",
     "src/claim_admission.rs",
     "src/claim_budget.rs",
-    "src/allocation_budget.rs"
+    "src/allocation_budget.rs",
+    "src/journal_queue.rs",
+    "src/journal_queue_trace.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -519,7 +521,14 @@
     "allocation_budget::every_live_inode_fits_the_volume_sized_audit_budget",
     "claim_admission::a_valid_prefix_extension_keeps_the_remaining_claims_appendable",
     "claim_budget::an_appended_claim_sequence_fits_the_final_ledger",
-    "claim_admission::an_appendable_sequence_has_appendable_prefixes"
+    "claim_admission::an_appendable_sequence_has_appendable_prefixes",
+    "journal_queue::editing_preserves_the_shared_reservations",
+    "journal_queue::every_queue_event_preserves_credits_and_versions",
+    "journal_queue_trace::sealed_versions_reserve_disjoint_physical_log_slots",
+    "journal_queue_trace::every_finite_queue_interleaving_keeps_reservations_and_frozen_bytes",
+    "journal_queue_trace::cancellation_cannot_resurrect_its_reservation_serial",
+    "journal_queue_trace::a_terminal_reservation_counter_never_wraps",
+    "journal_queue_trace::nonempty_older_frozen_and_newer_private_versions_example"
   ],
   "required_flags": [
     "--no-cheating",
@@ -866,6 +875,18 @@
     "inode_time_fields::set_time",
     "inode_touch::touch",
     "content_write::begin_timed",
-    "extent_claims::audit_allocated"
+    "extent_claims::audit_allocated",
+    "edit_handles::image_at",
+    "journal_queue::reservation",
+    "journal_queue::image_count",
+    "journal_queue::image_at",
+    "journal_queue::log_slot",
+    "journal_queue::new",
+    "journal_queue::accounting",
+    "journal_queue::reserve",
+    "journal_queue::cancel",
+    "journal_queue::seal",
+    "journal_queue::frozen_versions",
+    "journal_queue::borrow_work"
   ]
 }
