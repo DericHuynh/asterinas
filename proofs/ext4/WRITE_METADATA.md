@@ -62,3 +62,8 @@ concurrent and actual driver boundaries stay explicit.
 writer image preserves every external extent metadata block and the inline
 root, with identical complete tree claims and mappings in the rebased context.
 Fresh-source inode/index read composition and runtime exclusion remain open.
+
+[Write/read results](WRITE_READ_RESULTS.md) composes result allocation-bit and
+inode-coordinate checks with every logical file byte and actual read chunks,
+including the successful physical writer model. General validator completeness,
+full operations and runtime integration remain open.

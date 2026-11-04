@@ -135,6 +135,31 @@ pub proof fn blocks_outside_the_home_journal_and_primary_targets_retain_their_so
     log_targets_are_exactly_the_encoded_record_range(images, block);
 }
 
+pub proof fn an_untargeted_primary_is_exactly_the_dirty_identity_image(admission: AdmissionView, images: Images)
+    requires writer_admission::valid(admission, images), patch_set::selected(images.tx.original, 0).is_none(),
+    ensures writer_admission::final_source(admission.boot.source, images).subrange(0, 4096) == images.dirty,
+        crate::super_state::preserves(admission.boot.source.subrange(0, 4096), writer_admission::final_source(admission.boot.source, images).subrange(0, 4096)),
+{
+    hide(crate::crc::fold);
+    reveal(writer_admission::valid);
+    reveal(write_io::valid_images);
+    reveal(crate::transaction::wf);
+    validated_final_image_has_the_expected_block(admission, images, 0);
+    log_targets_are_exactly_the_encoded_record_range(images, 0);
+}
+
+pub proof fn a_selected_home_outside_the_journal_has_the_exact_final_bytes(admission: AdmissionView, images: Images, block: u32, image: Seq<u8>)
+    requires writer_admission::valid(admission, images), block < images.tx.layout.fs_blocks,
+        !(images.tx.layout.start <= block < images.tx.layout.start as nat + images.tx.layout.journal_blocks),
+        patch_set::selected(images.tx.original, block as int) == Some(image),
+    ensures writer_admission::final_source(admission.boot.source, images).subrange(block as int * 4096, (block as int + 1) * 4096) == image,
+{
+    hide(crate::crc::fold);
+    validated_final_image_has_the_expected_block(admission, images, block);
+    assert(write_io::valid_images(images)) by { reveal(writer_admission::valid); }
+    reveal(write_io::valid_images);
+}
+
 #[verifier::rlimit(30)]
 pub proof fn successful_media_has_exactly_the_expected_block(admission: AdmissionView, images: Images, machine: Machine, block: u32)
     requires writer_admission::valid(admission, images), write_device::inv(machine, images.tx.payloads.len()),

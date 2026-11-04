@@ -179,3 +179,5 @@ pub mod recovery_image;
 pub mod recovery_crash_image;
 pub mod extent_frame;
 pub mod write_frame;
+pub mod inode_projection;
+pub mod write_result;
