@@ -129,7 +129,9 @@
     "src/write_result.rs",
     "src/bootstrap_frame.rs",
     "src/recovery_bootstrap.rs",
-    "src/claim_admission.rs"
+    "src/claim_admission.rs",
+    "src/claim_budget.rs",
+    "src/allocation_budget.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -511,7 +513,10 @@
     "group_metadata::every_valid_group_is_the_unique_source_projection",
     "group_index::every_valid_index_is_the_unique_source_projection",
     "claim_admission::every_valid_ledger_extension_was_appendable",
-    "claim_admission::appending_one_claim_keeps_the_remaining_claims_appendable"
+    "claim_admission::appending_one_claim_keeps_the_remaining_claims_appendable",
+    "extent_claims::an_inode_audit_visits_at_most_its_claimed_blocks_plus_the_inline_root",
+    "claim_budget::every_disjoint_claim_ledger_fits_the_physical_volume",
+    "allocation_budget::every_live_inode_fits_the_volume_sized_audit_budget"
   ],
   "required_flags": [
     "--no-cheating",
@@ -857,6 +862,7 @@
     "inode_time_fields::get_time",
     "inode_time_fields::set_time",
     "inode_touch::touch",
-    "content_write::begin_timed"
+    "content_write::begin_timed",
+    "extent_claims::audit_allocated"
   ]
 }

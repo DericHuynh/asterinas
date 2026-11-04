@@ -41,6 +41,36 @@ pub open spec fn accepted(index: IndexView, number: u32) -> bool {
     &&& extent_tree::subtree_valid(c, extent_tree::root_node(c), None, depth(index, number), None, extent::MAX_LOGICAL_END)
 }
 
+/// Structural admission and the exact number of audit visits are separate
+/// from global allocation ownership. A repeated child address still consumes
+/// another visit; the later census is responsible for rejecting aliases.
+pub open spec fn binding_admissible(index: IndexView, number: u32, budget: u64) -> bool {
+    let c = context(index, number);
+    accepted(index, number) && extent_tree::tree_visits(c, extent_tree::root_node(c), depth(index, number)) <= budget
+}
+
+proof fn an_admitted_binding_supplies_the_parser_and_auditor_inputs(index: IndexView, number: u32, budget: u64)
+    ensures binding_admissible(index, number, budget) ==> {
+        let c = context(index, number);
+        &&& allocated_inode::live(index, number)
+        &&& inode::metadata_accepted_with_features(inode_table::raw(index, number), number, index.inodes,
+            index.seed, group_index::has_huge_files(index))
+        &&& (number == 2 ==> bytes::le16(inode_table::raw(index, number), 0) as u16 & 0xf000 == 0x4000)
+        &&& extent_tree::context_valid(c)
+        &&& bytes::le16(extent_tree::root_node(c).raw, 6) == depth(index, number)
+        &&& extent_tree::subtree_valid(c, extent_tree::root_node(c), None, depth(index, number), None, extent::MAX_LOGICAL_END)
+        &&& extent_tree::tree_visits(c, extent_tree::root_node(c), depth(index, number)) <= budget
+    },
+{
+    hide(crc::fold);
+    hide(extent_tree::children_valid);
+    hide(extent_tree::tree_visits);
+    if binding_admissible(index, number, budget) {
+        reveal(accepted);
+        reveal(extent_tree::subtree_valid);
+    }
+}
+
 pub open spec fn metadata_claim(address: u64, owner: Owner) -> Claim {
     Claim { start: address as u32, length: 1, kind: 6, inode: owner.number, generation: owner.generation, logical: 0, initialized: false }
 }
@@ -93,6 +123,59 @@ pub proof fn allocated_concatenation(a: Seq<Claim>, b: Seq<Claim>)
     } else { assert(a + b =~= a); }
 }
 
+proof fn subtree_visits_are_bounded_by_collected_claim_lengths(c: Context, node: NodeView, address: Option<u64>, depth: u16, owner: Owner)
+    ensures extent_tree::tree_visits(c, node, depth)
+        <= inode_claims::allocated(node_claims(c, node, address, depth, owner)) + if address is None { 1nat } else { 0nat },
+    decreases depth, 0nat, 0nat,
+{
+    hide(crc::fold);
+    let own = match address { Some(number) => seq![metadata_claim(number, owner)], None => Seq::empty() };
+    assert(inode_claims::allocated(Seq::empty()) == 0) by { reveal(inode_claims::allocated); }
+    assert(inode_claims::allocated(own) == if address is None { 0nat } else { 1nat }) by {
+        if let Some(number) = address {
+            assert(own.drop_last() =~= Seq::<Claim>::empty());
+            assert(own.last().length == 1);
+        } else { assert(own =~= Seq::<Claim>::empty()); }
+        reveal(inode_claims::allocated);
+    }
+    reveal(node_claims);
+    reveal(extent_tree::tree_visits);
+    if depth == 0 {
+        allocated_concatenation(own, leaf_claims(node.raw, bytes::le16(node.raw, 2), owner));
+    } else {
+        children_visits_are_bounded_by_collected_claim_lengths(c, node, bytes::le16(node.raw, 2), (depth - 1) as u16, owner);
+        allocated_concatenation(own, children_claims(c, node, bytes::le16(node.raw, 2), (depth - 1) as u16, owner));
+    }
+}
+
+proof fn children_visits_are_bounded_by_collected_claim_lengths(c: Context, node: NodeView, count: nat, depth: u16, owner: Owner)
+    ensures extent_tree::prefix_visits(c, node, count, depth) <= inode_claims::allocated(children_claims(c, node, count, depth, owner)),
+    decreases depth, 1nat, count,
+{
+    hide(crc::fold);
+    reveal(children_claims);
+    reveal(extent_tree::prefix_visits);
+    if count > 0 {
+        let child = extent_node::child(node.raw, count as int - 1) as u64;
+        children_visits_are_bounded_by_collected_claim_lengths(c, node, (count - 1) as nat, depth, owner);
+        subtree_visits_are_bounded_by_collected_claim_lengths(c, extent_tree::external_node(c, child), Some(child), depth, owner);
+        allocated_concatenation(children_claims(c, node, (count - 1) as nat, depth, owner),
+            node_claims(c, extent_tree::external_node(c, child), Some(child), depth, owner));
+    } else { reveal(inode_claims::allocated); }
+}
+
+/// Every external-node visit contributes a metadata-block claim. Data-block
+/// lengths can only increase the budget; the inline root consumes one visit
+/// without consuming a separate physical block. Repeated addresses are still
+/// charged separately, before the global census rejects any physical alias.
+pub proof fn an_inode_audit_visits_at_most_its_claimed_blocks_plus_the_inline_root(index: IndexView, number: u32)
+    ensures extent_tree::tree_visits(context(index, number), extent_tree::root_node(context(index, number)), depth(index, number))
+        <= inode_claims::allocated(claims(index, number)) + 1,
+{
+    subtree_visits_are_bounded_by_collected_claim_lengths(context(index, number), extent_tree::root_node(context(index, number)),
+        None, depth(index, number), owner(index, number));
+}
+
 pub struct BoundInode<'v, 'image> { index: &'v GroupIndex<'image>, number: u32, info: Inode, tree: CheckedTree<'v, 'image> }
 
 impl<'v, 'image> BoundInode<'v, 'image> {
@@ -133,11 +216,16 @@ impl<'v, 'image> BoundInode<'v, 'image> {
 
 pub fn bind<'v, 'image>(index: &'v GroupIndex<'image>, number: u32, budget: u64) -> (r: Option<BoundInode<'v, 'image>>)
     ensures index.wf(), match r {
-        Some(node) => node.wf() && node.index_view() == index.view() && node.inode_number() == number,
-        None => true,
+        Some(node) => node.wf() && node.index_view() == index.view() && node.inode_number() == number
+            && binding_admissible(index.view(), number, budget),
+        None => !binding_admissible(index.view(), number, budget),
     },
 {
     hide(crc::fold);
+    hide(accepted);
+    hide(extent_tree::tree_visits);
+    hide(extent_tree::subtree_valid);
+    proof { an_admitted_binding_supplies_the_parser_and_auditor_inputs(index.view(), number, budget); }
     let (blocks, inodes, ipg, seed) = index.parameters();
     if (number != 2 && number < 11) || number == 0 || number > inodes { return None; }
     proof { reveal(group_index::valid); }
@@ -157,14 +245,34 @@ pub fn bind<'v, 'image>(index: &'v GroupIndex<'image>, number: u32, budget: u64)
     if number == 2 && info.mode & 0xf000 != 0x4000 { return None; }
     let root = inode_table::position(index, number).unwrap() + 40;
     let checksum_seed = inode::inode_seed(seed, number, info.generation);
+    assert((extent_tree::Context { source: index.view().source, root, blocks: blocks as u64,
+        size: 4096, checksum: BlockChecksum::Crc32c(checksum_seed) }) == context(index.view(), number));
     let tree = match extent_tree::audit(index.source(), root, blocks as u64, 4096, BlockChecksum::Crc32c(checksum_seed), budget) {
         Ok(tree) => tree, Err(_) => { return None; },
     };
     proof {
         assert(tree.context() == context(index.view(), number));
         assert(accepted(index.view(), number)) by { reveal(accepted); }
+        assert(binding_admissible(index.view(), number, budget));
     }
     Some(BoundInode { index, number, info, tree })
+}
+
+/// A checked allocated inode needs no guessed budget and no fallible
+/// structural-admission result. Its existing whole-volume ownership
+/// certificate proves a sufficient visit budget for this complete audit.
+pub fn audit_allocated<'v, 'image>(inode: &allocated_inode::AllocatedInode<'v, 'image>) -> (r: BoundInode<'v, 'image>)
+    ensures inode.wf(), r.wf(), r.index_view() == inode.view().volume.index, r.inode_number() == inode.view().number,
+{
+    let volume = inode.volume();
+    let number = inode.number();
+    let index = volume.index();
+    let (blocks, _, _, _) = index.parameters();
+    proof {
+        reveal(allocated_inode::valid);
+        crate::allocation_budget::every_live_inode_fits_the_volume_sized_audit_budget(volume.view(), number);
+    }
+    bind(index, number, blocks as u64 + 1).unwrap()
 }
 
 struct Parameters { root: u64, blocks: u32, seed: u32, owner: Owner }

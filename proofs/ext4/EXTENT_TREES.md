@@ -109,3 +109,8 @@ Complete-tree source framing now composes with the exact admitted timed-content
 writer image, including dirty/log/home/retirement overlays. See
 [EXTENT_WRITE_FRAMING.md](EXTENT_WRITE_FRAMING.md) for the unchanged root and
 external metadata proof and its fresh-source/runtime limits.
+
+Complete binding admission and the physical volume audit-budget proof now
+compose through the total audit_allocated API. See
+[EXTENT_BINDING.md](EXTENT_BINDING.md). The broader allocation, namespace and
+recovery parser-completeness obligations remain open.

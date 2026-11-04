@@ -117,6 +117,8 @@ fn exercise_complete_owned_tree_depths(img: &[u8], number: u32) {
             );
         }
         let node = core::allocated_inode::get(&volume, number).unwrap();
+        let complete = extent_claims::audit_allocated(&node);
+        assert_eq!(complete.tree().checked_nodes(), depth as u64 + 1);
         assert_eq!(
             extent_tree::lookup_allocated(&node, 0)
                 .unwrap()
