@@ -140,6 +140,9 @@ pub proof fn every_inode_table_position_has_a_metadata_role(v: AllocationView, n
     ensures inode_table::start(v.index, number) + 256 <= v.index.blocks as nat * 4096 <= v.index.source.len(),
         inode_table::start(v.index, number) % 4096 <= 3840,
         v.census.roles[(inode_table::start(v.index, number) / 4096) as int].kind == 3,
+        0 <= ((number as int - 1) / (v.index.ipg as int)) < v.index.groups.len(),
+        v.index.groups[(number as int - 1) / v.index.ipg as int].inode_table <= inode_table::start(v.index, number) / 4096
+            < v.index.groups[(number as int - 1) / v.index.ipg as int].inode_table as nat + v.index.ipg as nat / 16,
 {
     reveal(valid);
     reveal(group_index::valid);
@@ -156,7 +159,10 @@ pub proof fn every_inode_table_position_has_a_metadata_role(v: AllocationView, n
     let claim = group_claims::metadata(meta.inode_table, (v.index.ipg / 16) as u32, 3);
     let claims = group_claims::claims(meta.descriptor, group as u32, v.index.ipg);
     let index = if group_claims::sparse_super(group as u32) { 3int } else { 2int };
-    assert(claims[index] == claim && claims.contains(claim));
+    assert(group as u32 as int == group);
+    assert(meta.inode_table as nat == bytes::le32(meta.descriptor, 8));
+    assert(0 <= index < claims.len() && claims[index] == claim);
+    assert(claims.contains(claim));
     vstd::arithmetic::div_mod::lemma_fundamental_div_mod(slot, 16);
     vstd::arithmetic::div_mod::lemma_fundamental_div_mod_converse(meta.inode_table as int * 4096 + slot * 256, 4096,
         meta.inode_table as int + slot / 16, slot % 16 * 256);
@@ -164,6 +170,27 @@ pub proof fn every_inode_table_position_has_a_metadata_role(v: AllocationView, n
     let block = (inode_table::start(v.index, number) / 4096) as int;
     assert(block_claims::covers(claim, block));
     every_reserved_group_claim_has_its_exact_role(v, group as u32, claim, block);
+}
+
+pub proof fn every_group_inode_bitmap_has_a_metadata_role(v: AllocationView, number: u32)
+    requires valid(v), number < v.index.groups.len(),
+    ensures v.index.groups[number as int].inode_bitmap < v.census.roles.len(),
+        v.census.roles[v.index.groups[number as int].inode_bitmap as int].kind == 3,
+{
+    hide(crate::crc::fold);
+    reveal(valid);
+    reveal(group_index::valid);
+    reveal(group_index::records_match);
+    let meta = v.index.groups[number as int];
+    assert(crate::group_metadata::valid(meta));
+    reveal(crate::group_metadata::valid);
+    let claim = group_claims::metadata(meta.inode_bitmap, 1, 3);
+    let claims = group_claims::claims(meta.descriptor, number, v.index.ipg);
+    let index = if group_claims::sparse_super(number) { 2int } else { 1int };
+    assert(meta.inode_bitmap as nat == bytes::le32(meta.descriptor, 4));
+    assert(0 <= index < claims.len() && claims[index] == claim);
+    assert(claims.contains(claim));
+    every_reserved_group_claim_has_its_exact_role(v, number, claim, meta.inode_bitmap as int);
 }
 
 pub struct Allocation<'a> { index: GroupIndex<'a>, census: Census, journal: JournalLayout }

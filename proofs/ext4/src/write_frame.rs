@@ -29,6 +29,7 @@ proof fn candidate_source_facts(v: WriteView)
     ensures allocation::valid(v.node.volume), group_index::valid(v.node.volume.index),
         v.node.volume.census.roles.len() == v.node.volume.index.blocks,
         v.node.volume.journal.fs_blocks == v.node.volume.index.blocks,
+        v.image.block < v.node.volume.index.blocks,
         v.node.volume.census.roles[v.image.block as int].kind == 4,
         crate::inode::metadata_accepted_with_features(inode_table::raw(v.node.volume.index, v.node.number), v.node.number,
             v.node.volume.index.inodes, v.node.volume.index.seed, group_index::has_huge_files(v.node.volume.index)),
@@ -45,10 +46,11 @@ proof fn candidate_source_facts(v: WriteView)
     reveal(inode_group::ordinary_checked);
 }
 
-pub proof fn a_timed_write_preserves_every_external_extent_metadata_block(v: WriteView, admission: AdmissionView,
+pub proof fn a_timed_write_preserves_every_unselected_file_or_extent_block(v: WriteView, admission: AdmissionView,
     images: Images, seconds: int, nanos: nat, block: u32)
     requires timed_admission(v, admission, images, seconds, nanos),
-        block < v.node.volume.census.roles.len(), v.node.volume.census.roles[block as int].kind == 6,
+        block < v.node.volume.census.roles.len(), 4 <= v.node.volume.census.roles[block as int].kind <= 6,
+        block != v.image.block,
     ensures writer_admission::final_source(admission.boot.source, images).subrange(block as int * 4096, (block as int + 1) * 4096)
         == v.node.volume.index.source.subrange(block as int * 4096, (block as int + 1) * 4096),
 {
@@ -71,6 +73,78 @@ pub proof fn a_timed_write_preserves_every_external_extent_metadata_block(v: Wri
         }
     }
     writer_image::blocks_outside_the_home_journal_and_primary_targets_retain_their_source_bytes(admission, images, block);
+}
+
+pub proof fn a_timed_write_preserves_every_external_extent_metadata_block(v: WriteView, admission: AdmissionView,
+    images: Images, seconds: int, nanos: nat, block: u32)
+    requires timed_admission(v, admission, images, seconds, nanos),
+        block < v.node.volume.census.roles.len(), v.node.volume.census.roles[block as int].kind == 6,
+    ensures writer_admission::final_source(admission.boot.source, images).subrange(block as int * 4096, (block as int + 1) * 4096)
+        == v.node.volume.index.source.subrange(block as int * 4096, (block as int + 1) * 4096),
+{
+    candidate_source_facts(v);
+    a_timed_write_preserves_every_unselected_file_or_extent_block(v, admission, images, seconds, nanos, block);
+}
+
+proof fn blocks_distinct_from_both_timed_homes_are_unselected(v: WriteView, images: Images, seconds: int, nanos: nat, block: u32)
+    requires images.tx.original == content_write::timed_images(v, seconds, nanos),
+        block != v.image.block, block != content_write::timed_inode_image(v, seconds, nanos).block,
+    ensures patch_set::selected(images.tx.original, block as int).is_none(),
+{
+    if patch_set::selected(images.tx.original, block as int).is_some() {
+        let i = choose|i: int| 0 <= i < images.tx.original.len() && (#[trigger] images.tx.original[i]).block as int == block;
+        assert(i == 0 || i == 1);
+    }
+}
+
+pub proof fn a_timed_write_preserves_the_primary_identity_and_complete_gdt(v: WriteView, admission: AdmissionView,
+    images: Images, seconds: int, nanos: nat)
+    requires timed_admission(v, admission, images, seconds, nanos),
+    ensures crate::super_state::preserves(v.node.volume.index.source.subrange(0, 4096),
+            writer_admission::final_source(admission.boot.source, images).subrange(0, 4096)),
+        writer_admission::final_source(admission.boot.source, images).subrange(4096, 8192) == v.node.volume.index.source.subrange(4096, 8192),
+{
+    hide(file_read::maps);
+    hide(crate::crc::fold);
+    hide(inode_touch::sealed_bytes);
+    candidate_source_facts(v);
+    let volume = v.node.volume;
+    allocation::the_primary_superblock_and_descriptor_have_reserved_roles(volume);
+    allocation::every_inode_table_position_has_a_metadata_role(volume, v.node.number);
+    assert(v.image.block != 0 && v.image.block != 1);
+    let metadata = content_write::timed_inode_image(v, seconds, nanos);
+    assert(metadata.block != 0 && metadata.block != 1);
+    blocks_distinct_from_both_timed_homes_are_unselected(v, images, seconds, nanos, 0);
+    blocks_distinct_from_both_timed_homes_are_unselected(v, images, seconds, nanos, 1);
+    writer_image::an_untargeted_primary_is_exactly_the_dirty_identity_image(admission, images);
+    assert(volume.journal.start > 1) by { reveal(allocation::valid); reveal(allocation::journal_matches); }
+    writer_image::blocks_outside_the_home_journal_and_primary_targets_retain_their_source_bytes(admission, images, 1);
+}
+
+#[verifier::rlimit(30)]
+pub proof fn a_timed_write_has_the_exact_content_home(v: WriteView, admission: AdmissionView,
+    images: Images, seconds: int, nanos: nat)
+    requires timed_admission(v, admission, images, seconds, nanos),
+    ensures writer_admission::final_source(admission.boot.source, images).subrange(v.image.block as int * 4096,
+        (v.image.block as int + 1) * 4096) == v.image.image,
+{
+    hide(file_read::maps);
+    hide(crate::crc::fold);
+    hide(inode_touch::sealed_bytes);
+    candidate_source_facts(v);
+    let volume = v.node.volume;
+    if volume.journal.start <= v.image.block < volume.journal.start as nat + volume.journal.journal_blocks {
+        allocation::the_internal_journal_has_only_journal_roles(volume, v.image.block);
+        assert(false);
+    }
+    let metadata = content_write::timed_inode_image(v, seconds, nanos);
+    allocation::every_inode_table_position_has_a_metadata_role(volume, v.node.number);
+    assert(v.image.block != metadata.block);
+    let index = if v.image.block < metadata.block { 0int } else { 1int };
+    assert(images.tx.original[index] == v.image);
+    assert(patch_set::valid(images.tx.original)) by { reveal(writer_admission::valid); }
+    patch_set::one_target_has_one_image(images.tx.original, index);
+    writer_image::a_selected_home_outside_the_journal_has_the_exact_final_bytes(admission, images, v.image.block, v.image.image);
 }
 
 #[verifier::rlimit(30)]

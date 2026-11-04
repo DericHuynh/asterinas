@@ -71,6 +71,17 @@ pub open spec fn valid(v: IndexView) -> bool {
     &&& free_inodes(v.groups) == bytes::le32(v.source, 1040)
 }
 
+pub proof fn every_checked_group_retains_its_source_and_geometry(index: IndexView, number: int)
+    requires valid(index), 0 <= number < index.groups.len(),
+    ensures group_metadata::valid(index.groups[number]), index.groups[number].source == index.source,
+        index.groups[number].number as int == number, index.groups[number].ipg == index.ipg,
+        index.groups[number].blocks == index.blocks, index.groups[number].seed == index.seed,
+{
+    reveal(valid);
+    reveal(records_match);
+    assert(group_metadata::valid(index.groups[number]));
+}
+
 pub struct GroupIndex<'a> {
     source: Snapshot<'a>, groups: Vec<GroupMetadata>, blocks: u32, inodes: u32, ipg: u32, seed: u32,
 }

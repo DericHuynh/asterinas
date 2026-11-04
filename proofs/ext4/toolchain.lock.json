@@ -124,7 +124,9 @@
     "src/recovery_image.rs",
     "src/recovery_crash_image.rs",
     "src/extent_frame.rs",
-    "src/write_frame.rs"
+    "src/write_frame.rs",
+    "src/inode_projection.rs",
+    "src/write_result.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -471,7 +473,25 @@
     "writer_image::blocks_outside_the_home_journal_and_primary_targets_retain_their_source_bytes",
     "write_frame::a_timed_write_preserves_every_external_extent_metadata_block",
     "write_frame::a_timed_write_has_the_exact_updated_inode_and_unchanged_extent_root",
-    "write_frame::a_timed_write_preserves_every_complete_extent_mapping"
+    "write_frame::a_timed_write_preserves_every_complete_extent_mapping",
+    "writer_image::an_untargeted_primary_is_exactly_the_dirty_identity_image",
+    "allocated_inode::a_live_source_projection_is_a_valid_inode",
+    "write_frame::a_timed_write_preserves_every_unselected_file_or_extent_block",
+    "write_frame::a_timed_write_preserves_the_primary_identity_and_complete_gdt",
+    "inode_projection::a_preserved_primary_and_gdt_keep_index_geometry_and_group_addresses",
+    "inode_projection::a_preserved_primary_and_gdt_keep_every_inode_coordinate",
+    "allocation::every_group_inode_bitmap_has_a_metadata_role",
+    "file_read::an_initialized_file_byte_is_the_exact_source_byte",
+    "file_read::a_missing_initialized_mapping_reads_as_zero",
+    "file_read::a_sourced_chunk_matches_the_logical_file_bytes",
+    "file_read::a_zero_chunk_matches_the_logical_file_bytes",
+    "write_frame::a_timed_write_has_the_exact_content_home",
+    "write_result::a_timed_write_keeps_the_actual_validated_inode_and_extent_coordinates",
+    "group_index::every_checked_group_retains_its_source_and_geometry",
+    "writer_image::a_selected_home_outside_the_journal_has_the_exact_final_bytes",
+    "write_result::a_timed_write_preserves_the_actual_inode_mappings",
+    "write_result::a_timed_write_has_the_exact_logical_file_byte_result",
+    "write_result::a_successful_timed_writer_has_exact_durable_logical_file_bytes"
   ],
   "required_flags": [
     "--no-cheating",

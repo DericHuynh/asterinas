@@ -32,7 +32,7 @@ retained by the admitted writer.
 | Protocol frame | Blocks outside the primary, journal and home targets retain their exact source bytes through all overlays | Actual driver/device/source-capture refinement |
 | External nodes | Every extent-metadata role remains byte-for-byte unchanged, including other inodes and off-path nodes | Concurrent mutation and overlapping transaction queues |
 | Inline root | The final inode equals the exact timestamp/checksum reseal and its complete extent root remains unchanged | Allocation, extent insertion/removal, conversion and inode-format expansion |
-| Complete tree | Rebased source context has the same valid tree, exact claims and all stored mappings | Fresh-source inode/index projection and complete file-read operation composition |
+| Complete tree | Rebased source context has the same valid tree, exact claims and all stored mappings | Result-inode/index and pointwise read composition checked in WRITE_READ_RESULTS.md; full validator completeness/runtime remain open |
 
 The candidate constructors now expose their journal-layout equality. Borrowing
 edit parts explicitly preserves the running batch's layout and credit count,
@@ -49,3 +49,7 @@ The host interoperability check writes content and timestamps through a
 Linux-created external tree, reparses the complete allocation/namespace image,
 reads the entire file including holes, and compares every external tree block
 and the inline root byte-for-byte. Tests supplement the complete Verus proof.
+
+[Write/read results](WRITE_READ_RESULTS.md) now checks the result inode and every
+logical file byte through any independently validated exact result allocation
+source, with actual read-chunk and successful physical-model composition.

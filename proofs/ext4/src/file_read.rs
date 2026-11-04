@@ -31,6 +31,14 @@ pub open spec fn owned(v: NodeView, logical: u32, physical: u32) -> bool {
     &&& v.volume.census.roles[physical as int].initialized
 }
 
+pub open spec fn byte_at(v: NodeView, offset: u64) -> u8 {
+    if offset >= v.size { 0u8 }
+    else if exists|physical: u32| #[trigger] maps(v, (offset / 4096) as u32, physical) {
+        let physical = choose|physical: u32| #[trigger] maps(v, (offset / 4096) as u32, physical);
+        v.volume.index.source[physical as int * 4096 + offset as int % 4096]
+    } else { 0u8 }
+}
+
 pub proof fn an_initialized_mapping_has_exact_ownership(v: NodeView, logical: u32, physical: u32)
     requires allocated_inode::valid(v), maps(v, logical, physical),
     ensures owned(v, logical, physical),
@@ -70,6 +78,62 @@ pub proof fn initialized_mapping_is_unique(v: NodeView, logical: u32, a: u32, b:
     let y = choose|span: SpanView| #[trigger] extent_tree_model::stored_mapping(c, extent_tree::root_node(c), d, logical, span)
         && span.initialized && extent_span::mapping(span, logical) == Some(b as u64);
     extent_tree_model::complete_tree_has_unique_covering_extent(c, extent_tree::root_node(c), None, d, None, extent::MAX_LOGICAL_END, logical, x, y);
+}
+
+pub proof fn an_initialized_file_byte_is_the_exact_source_byte(v: NodeView, offset: u64, physical: u32)
+    requires allocated_inode::valid(v), offset < v.size, maps(v, (offset / 4096) as u32, physical),
+    ensures byte_at(v, offset) == v.volume.index.source[physical as int * 4096 + offset as int % 4096],
+{
+    hide(maps);
+    assert(exists|p: u32| #[trigger] maps(v, (offset / 4096) as u32, p));
+    let selected = choose|p: u32| #[trigger] maps(v, (offset / 4096) as u32, p);
+    initialized_mapping_is_unique(v, (offset / 4096) as u32, selected, physical);
+}
+
+pub proof fn a_missing_initialized_mapping_reads_as_zero(v: NodeView, offset: u64)
+    requires allocated_inode::valid(v), offset < v.size,
+        !exists|physical: u32| #[trigger] maps(v, (offset / 4096) as u32, physical),
+    ensures byte_at(v, offset) == 0,
+{
+    hide(maps);
+}
+
+proof fn bounded_chunk_bytes_stay_in_the_same_logical_block(offset: u64, length: nat, index: int)
+    requires offset as nat % 4096 + length <= 4096, offset as nat + length <= 18446744073709551615, 0 <= index < length,
+    ensures ((offset as int + index) as u64) as int == offset as int + index,
+        ((offset as int + index) as u64) / 4096 == offset / 4096,
+        ((offset as int + index) as u64) % 4096 == offset as int % 4096 + index,
+{
+    vstd::arithmetic::div_mod::lemma_fundamental_div_mod(offset as int, 4096);
+    vstd::arithmetic::div_mod::lemma_fundamental_div_mod_converse(offset as int + index, 4096,
+        offset as int / 4096, offset as int % 4096 + index);
+}
+
+pub proof fn a_sourced_chunk_matches_the_logical_file_bytes(v: NodeView, offset: u64, length: nat, physical: u32)
+    requires allocated_inode::valid(v), offset < v.size, offset as nat + length <= v.size,
+        offset as nat % 4096 + length <= 4096, maps(v, (offset / 4096) as u32, physical),
+    ensures forall|i: int| 0 <= i < length ==> #[trigger] byte_at(v, (offset as int + i) as u64)
+        == v.volume.index.source[physical as int * 4096 + offset as int % 4096 + i],
+{
+    hide(maps);
+    assert forall|i: int| 0 <= i < length implies #[trigger] byte_at(v, (offset as int + i) as u64)
+        == v.volume.index.source[physical as int * 4096 + offset as int % 4096 + i] by {
+        bounded_chunk_bytes_stay_in_the_same_logical_block(offset, length, i);
+        an_initialized_file_byte_is_the_exact_source_byte(v, (offset as int + i) as u64, physical);
+    }
+}
+
+pub proof fn a_zero_chunk_matches_the_logical_file_bytes(v: NodeView, offset: u64, length: nat)
+    requires allocated_inode::valid(v), offset < v.size, offset as nat + length <= v.size,
+        offset as nat % 4096 + length <= 4096,
+        !exists|physical: u32| #[trigger] maps(v, (offset / 4096) as u32, physical),
+    ensures forall|i: int| 0 <= i < length ==> #[trigger] byte_at(v, (offset as int + i) as u64) == 0,
+{
+    hide(maps);
+    assert forall|i: int| 0 <= i < length implies #[trigger] byte_at(v, (offset as int + i) as u64) == 0 by {
+        bounded_chunk_bytes_stay_in_the_same_logical_block(offset, length, i);
+        a_missing_initialized_mapping_reads_as_zero(v, (offset as int + i) as u64);
+    }
 }
 
 pub enum Resolution { Zero, Data(u32) }
@@ -137,14 +201,16 @@ pub fn chunk<'a>(node: &AllocatedInode<'_, 'a>, offset: u64, wanted: usize) -> (
         Chunk::Zero(length) => wanted > 0 && offset < node.view().size && 0 < length
             && length as nat == chunk_length(node.view(), offset, wanted) && length <= wanted
             && offset as nat + length <= node.view().size
-            && !exists|physical: u32| #[trigger] maps(node.view(), (offset / 4096) as u32, physical),
+            && (!exists|physical: u32| #[trigger] maps(node.view(), (offset / 4096) as u32, physical))
+            && (forall|i: int| 0 <= i < length ==> #[trigger] byte_at(node.view(), (offset as int + i) as u64) == 0),
         Chunk::Data(bytes) => wanted > 0 && offset < node.view().size && bytes.len() > 0
             && bytes.len() == chunk_length(node.view(), offset, wanted) && bytes.len() <= wanted
             && offset as nat + bytes.len() <= node.view().size
             && exists|physical: u32| #[trigger] maps(node.view(), (offset / 4096) as u32, physical)
                 && owned(node.view(), (offset / 4096) as u32, physical)
                 && bytes@ == node.view().volume.index.source.subrange(physical as int * 4096 + offset as int % 4096,
-                    physical as int * 4096 + offset as int % 4096 + bytes.len()),
+                    physical as int * 4096 + offset as int % 4096 + bytes.len())
+            && (forall|i: int| 0 <= i < bytes.len() ==> #[trigger] byte_at(node.view(), (offset as int + i) as u64) == bytes@[i]),
     },
 {
     let info = node.info();
@@ -158,7 +224,10 @@ pub fn chunk<'a>(node: &AllocatedInode<'_, 'a>, offset: u64, wanted: usize) -> (
     if remaining < length as u64 { length = remaining as usize; }
     if wanted < length { length = wanted; }
     match resolve(node, logical) {
-        Resolution::Zero => Chunk::Zero(length),
+        Resolution::Zero => {
+            proof { a_zero_chunk_matches_the_logical_file_bytes(node.view(), offset, length as nat); }
+            Chunk::Zero(length)
+        },
         Resolution::Data(physical) => {
             let source = node.volume().index().source();
             assert((physical as nat + 1) * 4096 <= source.view().len()) by {
@@ -166,6 +235,7 @@ pub fn chunk<'a>(node: &AllocatedInode<'_, 'a>, offset: u64, wanted: usize) -> (
             }
             let block = source.block(physical).unwrap();
             let bytes = block.range(within, length).unwrap();
+            proof { a_sourced_chunk_matches_the_logical_file_bytes(node.view(), offset, length as nat, physical); }
             Chunk::Data(bytes)
         }
     }

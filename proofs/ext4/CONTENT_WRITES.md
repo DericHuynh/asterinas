@@ -60,3 +60,8 @@ updates to the same journal batch as the content image. See
 [WRITE_METADATA.md](WRITE_METADATA.md) for its checked table placement, adjacent
 inode preservation and two-image transaction contract. Full POSIX/VFS and
 runtime operation semantics remain open.
+
+[Write/read results](WRITE_READ_RESULTS.md) now proves the exact prefix and every
+unchanged logical file byte through the actual validated result inode, including
+holes/unwritten zeros, actual read chunks and successful modeled durable media.
+Full operation/admission completeness and runtime authority remain open.

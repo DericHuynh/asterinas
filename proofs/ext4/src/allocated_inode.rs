@@ -68,6 +68,17 @@ pub proof fn checked_view_is_the_source_projection(v: NodeView)
     reveal(valid);
 }
 
+pub proof fn a_live_source_projection_is_a_valid_inode(volume: AllocationView, number: u32)
+    requires allocation::valid(volume), live(volume.index, number),
+    ensures valid(source_view(volume, number)),
+{
+    hide(crate::crc::fold);
+    every_live_inode_has_source_bound_claims(volume, number);
+    reveal(inode_group::ordinary_checked);
+    reveal(extent_claims::accepted);
+    reveal(valid);
+}
+
 pub struct AllocatedInode<'v, 'a> { volume: &'v Allocation<'a>, number: u32, info: Inode }
 
 impl<'v, 'a> AllocatedInode<'v, 'a> {
