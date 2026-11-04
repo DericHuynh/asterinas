@@ -118,7 +118,8 @@
     "src/content_write.rs",
     "src/inode_time.rs",
     "src/inode_time_fields.rs",
-    "src/inode_touch.rs"
+    "src/inode_touch.rs",
+    "src/writer_image.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -432,7 +433,17 @@
     "inode_time_fields::field_presence_uses_declared_extra_size_not_buffer_capacity",
     "inode_time_fields::updated_field_decodes_to_the_requested_time",
     "bytes::little_endian_encoding_recovers_every_word",
-    "inode_touch::touching_times_preserves_inode_metadata_identity_and_validity"
+    "inode_touch::touching_times_preserves_inode_metadata_identity_and_validity",
+    "writer_image::initial_block_map_has_the_exact_source_bytes",
+    "writer_image::flat_projection_preserves_partition_bytes_beyond_the_filesystem",
+    "writer_image::a_flat_source_has_the_exact_mapped_journal",
+    "writer_image::an_admitted_source_supplies_the_physical_writer_context",
+    "writer_image::initial_disk_addresses_are_exactly_the_filesystem_range",
+    "writer_image::validated_final_image_has_the_expected_block",
+    "writer_image::successful_media_has_exactly_the_expected_block",
+    "writer_image::validated_final_image_preserves_extra_partition_bytes",
+    "writer_image::successful_durable_writer_is_the_complete_validated_filesystem_image",
+    "writer_image::every_admitted_writer_has_a_finite_validated_completion"
   ],
   "required_flags": [
     "--no-cheating",

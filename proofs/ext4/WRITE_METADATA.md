@@ -38,7 +38,7 @@ membership is not inferred from physical table placement.
 | Inode checksum | Actual source domain, recomputed checksum, metadata validity | Other inode formats/features |
 | Table placement | Actual source group/slot and precise 256-byte splice | Concurrent mapping/mount epoch |
 | Candidate closure | Exact two-image frozen transaction and complete result admission | Allocation, size extension, unwritten conversion and other operation closures |
-| Durability | Existing serialized writer applies under its declared device model | Full filesystem/physical-ledger closure, overlapping commit/checkpoint and concrete driver |
+| Durability | Existing serialized writer applies under its declared device model | Full filesystem crash/recovery closure, overlapping commit/checkpoint and concrete driver |
 | Security boundary | Existing regular-file, initialized ownership, DAC-input and set-ID rejection rules | Authenticated VFS handles/credentials, mount policy, CortenMM locks and DMA |
 
 This is a verified transaction candidate with content and time metadata, not a
@@ -53,3 +53,7 @@ containing content plus its inode table, preservation of adjacent journal inode
 64BIT/HUGE_FILE/CSUM_SEED combinations additionally exercise live inode 4097 in
 a relocated FLEX_BG table. Full pinned Verus verification checks all bodies and
 contracts. No kernel mount/write path is enabled.
+
+Successful serialized durable-map equality with the complete validated result
+now composes through [WRITER_IMAGE.md](WRITER_IMAGE.md). The remaining crash,
+concurrent and actual driver boundaries stay explicit.
