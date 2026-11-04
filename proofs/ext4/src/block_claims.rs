@@ -372,6 +372,16 @@ pub proof fn a_recorded_claim_determines_its_exact_physical_slot(census: &Census
     one_covering_claim_determines_lookup(census.view().claims, block, index as int);
 }
 
+pub proof fn a_ledger_claim_determines_its_exact_physical_slot(roles: Seq<Slot>, claims: Seq<Claim>, claim: Claim, block: int)
+    requires ledger(roles, claims), claims.contains(claim), covers(claim, block),
+    ensures 0 <= block < roles.len(), roles[block] == at(claim, block),
+{
+    reveal(ledger);
+    let index = choose|i: int| 0 <= i < claims.len() && claims[i] == claim;
+    assert(valid_claim(claims[index], roles.len()));
+    one_covering_claim_determines_lookup(claims, block, index);
+}
+
 #[verifier::opaque]
 pub open spec fn mapped_claims(roles: Seq<Slot>, claims: Seq<Claim>) -> bool {
     &&& forall|i: int| 0 <= i < claims.len() ==> #[trigger] valid_claim(claims[i], roles.len())

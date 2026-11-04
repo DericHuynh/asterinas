@@ -191,7 +191,8 @@ impl Running {
     }
 
     pub fn borrow_parts(&mut self, at: usize) -> (r: Option<(Part<'_>, Part<'_>)>)
-        ensures old(self).wf() ==> final(self).wf(), match r {
+        ensures old(self).wf() ==> final(self).wf(), final(self).layout_view() == old(self).layout_view(),
+            final(self).credits() == old(self).credits(), match r {
             Some((left, right)) => old(self).wf() && at <= old(self).edit_view().len() && left.wf() && right.wf()
                 && left.part_view() == old(self).edit_view().take(at as int)
                 && right.part_view() == old(self).edit_view().skip(at as int)

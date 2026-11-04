@@ -81,7 +81,8 @@ impl<'n, 'v, 'a> Candidate<'n, 'v, 'a> {
     pub fn begin(self) -> (r: Option<CheckedWriter<'v, 'a>>)
         ensures self.wf(), match r {
             Some(writer) => writer.wf() && writer.view().boot.source == self.view().node.volume.index.source
-                && writer.owner().images().tx.original == seq![self.view().image],
+                && writer.owner().images().tx.original == seq![self.view().image]
+                && writer.owner().images().tx.layout == self.view().node.volume.journal,
             None => true,
         },
     {
@@ -106,6 +107,7 @@ impl<'n, 'v, 'a> Candidate<'n, 'v, 'a> {
         assert(running.edit_view() == seq![edit_handles::EditView { target, stage: edit_handles::StageView {
             status: edit_handles::Status::Closed, image: Some(self.image.view()) } }]);
         let frozen = match running.freeze() { Ok(frozen) => frozen, Err(_) => { return None; } };
+        assert(frozen.frozen_layout() == self.view().node.volume.journal);
         assert(frozen.frozen_view() == seq![self.image.view()]) by { reveal_with_fuel(edit_handles::selected, 2); }
         writer_admission::prepare(source, frozen)
     }
@@ -114,7 +116,8 @@ impl<'n, 'v, 'a> Candidate<'n, 'v, 'a> {
         ensures self.wf(), match r {
             Some(writer) => writer.wf() && writer.view().boot.source == self.view().node.volume.index.source
                 && crate::inode_time::representable(seconds as int, nanoseconds as nat)
-                && writer.owner().images().tx.original == timed_images(self.view(), seconds as int, nanoseconds as nat),
+                && writer.owner().images().tx.original == timed_images(self.view(), seconds as int, nanoseconds as nat)
+                && writer.owner().images().tx.layout == self.view().node.volume.journal,
             None => true,
         },
     {
@@ -161,6 +164,7 @@ impl<'n, 'v, 'a> Candidate<'n, 'v, 'a> {
             if !fill_part(right, second.as_slice()) { return None; }
         }
         let frozen = match running.freeze() { Ok(frozen) => frozen, Err(_) => { return None; } };
+        assert(frozen.frozen_layout() == self.view().node.volume.journal);
         assert(frozen.frozen_view() == timed_images(self.view(), seconds as int, nanoseconds as nat)) by {
             reveal_with_fuel(edit_handles::selected, 3);
         }
