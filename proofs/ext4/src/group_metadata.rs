@@ -21,6 +21,36 @@ pub open spec fn valid_bits(blocks: u32, number: u32) -> nat {
     (group::end(blocks, number) - number as nat * 32768) as nat
 }
 
+/// The interpretation is fixed by source bytes, including the logical
+/// bitmap selected by each lazy-initialization flag. No physical stale
+/// bitmap bytes can select a different admitted interpretation.
+pub open spec fn projection(source: Seq<u8>, number: u32) -> GroupView {
+    let sb = source.subrange(1024, 2048);
+    let width = superblock::descriptor_bytes(sb);
+    let descriptor = source.subrange(4096 + number as int * width, 4096 + (number as int + 1) * width);
+    let blocks = bytes::le32(source, 1028) as u32;
+    let ipg = bytes::le32(source, 1064) as u32;
+    let seed = superblock::metadata_seed(sb);
+    let block_bitmap = bytes::le32(descriptor, 0) as u32;
+    let inode_bitmap = bytes::le32(descriptor, 4) as u32;
+    let allocation = if group::block_uninitialized(descriptor) {
+        block_bitmap::canonical(block_bitmap::context(descriptor, number, blocks, ipg))
+    } else { source.subrange(block_bitmap as int * 4096, (block_bitmap as int + 1) * 4096) };
+    let inodes = if group::inode_uninitialized(descriptor) { bitmap::empty_inode_bytes(ipg as nat) }
+        else { source.subrange(inode_bitmap as int * 4096, (inode_bitmap as int + 1) * 4096) };
+    GroupView { source, descriptor, number, blocks, ipg, seed, block_bitmap, inode_bitmap,
+        inode_table: bytes::le32(descriptor, 8) as u32, table_blocks: (ipg / 16) as u32,
+        allocation: BitmapView { raw: allocation, valid: valid_bits(blocks, number) as u32, meaningful: 32768,
+            free: bytes::le16(descriptor, 12) as u32, seed,
+            checksum: if group::block_uninitialized(descriptor) { (crc::fold(seed, allocation) & 0xffffu32) as u16 }
+                else { bytes::le16(descriptor, 24) as u16 } },
+        inodes: BitmapView { raw: inodes, valid: ipg, meaningful: ipg, free: bytes::le16(descriptor, 14) as u32, seed,
+            checksum: if group::inode_uninitialized(descriptor) { (crc::fold(seed, inodes.take(ipg as int / 8)) & 0xffffu32) as u16 }
+                else { bytes::le16(descriptor, 26) as u16 } } }
+}
+
+pub open spec fn admissible(source: Seq<u8>, number: u32) -> bool { valid(projection(source, number)) }
+
 #[verifier::opaque]
 pub open spec fn valid(v: GroupView) -> bool {
     &&& v.source.len() <= 18446744073709551615
@@ -53,6 +83,44 @@ pub open spec fn valid(v: GroupView) -> bool {
     &&& bitmap::accepted(v.inodes.raw, v.inodes.valid, v.inodes.meaningful, v.inodes.free, v.inodes.checksum, v.seed)
     &&& (v.descriptor.len() == 64 && !group::inode_uninitialized(v.descriptor) ==> crc::fold(v.seed, v.inodes.raw.take(v.ipg as int / 8))
         == group_fields::counter(v.descriptor, 26, 58, true))
+}
+
+pub proof fn every_valid_group_is_the_unique_source_projection(v: GroupView)
+    requires valid(v),
+    ensures v == projection(v.source, v.number), admissible(v.source, v.number),
+{
+    hide(crc::fold);
+    reveal(valid);
+}
+
+#[verifier::rlimit(30)]
+proof fn an_admitted_source_supplies_the_group_parser_inputs(source: Seq<u8>, number: u32)
+    ensures admissible(source, number) ==> {
+        let v = projection(source, number);
+        &&& 8192 <= source.len() <= 18446744073709551615
+        &&& superblock::accepted(source.subrange(1024, 2048), source.len() as u64)
+        &&& 2 < v.blocks <= block_claims::MAX_BLOCKS && number < 32 && number as nat * 32768 < v.blocks
+        &&& v.blocks as nat * 4096 <= source.len()
+        &&& group::accepted_with_features(v.descriptor, number, v.blocks, v.ipg, v.seed,
+            superblock::flex_bg(source.subrange(1024, 2048)))
+        &&& v.block_bitmap < v.blocks && v.inode_bitmap < v.blocks
+        &&& bitmap::accepted(v.allocation.raw, v.allocation.valid, 32768, v.allocation.free, v.allocation.checksum, v.seed)
+        &&& bitmap::accepted(v.inodes.raw, v.ipg, v.ipg, v.inodes.free, v.inodes.checksum, v.seed)
+        &&& (group::block_uninitialized(v.descriptor) ==> block_bitmap::admitted_with_features(v.descriptor,
+            number, v.blocks, v.ipg, v.seed, superblock::flex_bg(source.subrange(1024, 2048))))
+        &&& (v.descriptor.len() == 64 && !group::block_uninitialized(v.descriptor) ==>
+            crc::fold(v.seed, v.allocation.raw) == group_fields::counter(v.descriptor, 24, 56, true))
+        &&& (v.descriptor.len() == 64 && !group::inode_uninitialized(v.descriptor) ==>
+            crc::fold(v.seed, v.inodes.raw.take(v.ipg as int / 8)) == group_fields::counter(v.descriptor, 26, 58, true))
+    },
+{
+    hide(crc::fold);
+    if admissible(source, number) {
+        reveal(valid);
+        reveal(superblock::accepted);
+        reveal(group::accepted_with_features);
+        reveal(block_bitmap::admitted_with_features);
+    }
 }
 
 pub struct GroupMetadata {
@@ -121,13 +189,15 @@ fn capture_descriptor(raw: &[u8]) -> (r: Vec<u8>)
 
 pub fn parse(source: &Snapshot<'_>, number: u32) -> (r: Option<GroupMetadata>)
     ensures match r {
-        Some(meta) => meta.wf() && meta.view().source == source.view() && meta.view().number == number,
-        None => true,
+        Some(meta) => meta.wf() && meta.view().source == source.view() && meta.view().number == number
+            && meta.view() == projection(source.view(), number) && admissible(source.view(), number),
+        None => !admissible(source.view(), number),
     },
 {
     hide(crc::fold);
     hide(superblock::accepted);
     hide(group::accepted_with_features);
+    proof { an_admitted_source_supplies_the_group_parser_inputs(source.view(), number); }
     if number >= 32 { return None; }
     let primary = match source.block(0) { Some(block) => block, None => { return None; } };
     let boot = primary.range(1024, 1024).unwrap();
@@ -178,6 +248,7 @@ pub fn parse(source: &Snapshot<'_>, number: u32) -> (r: Option<GroupMetadata>)
         inode_table: group.inode_table, table_blocks: group.inode_table_blocks,
         allocation: allocation.view(), inodes: inodes.view() };
     assert(valid(assembled)) by { reveal(valid); }
+    proof { every_valid_group_is_the_unique_source_projection(assembled); }
     let meta = GroupMetadata { source: Ghost(source.view()), descriptor, group, blocks, ipg, seed, allocation, inodes };
     assert(meta.view() == assembled);
     Some(meta)

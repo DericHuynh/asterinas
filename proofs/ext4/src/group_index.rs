@@ -27,6 +27,19 @@ pub struct IndexView {
     pub source: Seq<u8>, pub groups: Seq<GroupView>, pub blocks: u32, pub inodes: u32, pub ipg: u32, pub seed: u32,
 }
 
+pub open spec fn projected_groups(source: Seq<u8>, count: nat) -> Seq<GroupView> {
+    Seq::new(count, |i: int| group_metadata::projection(source, i as u32))
+}
+
+pub open spec fn projection(source: Seq<u8>) -> IndexView {
+    let blocks = bytes::le32(source, 1028) as u32;
+    IndexView { source, blocks, inodes: bytes::le32(source, 1024) as u32,
+        ipg: bytes::le32(source, 1064) as u32, seed: superblock::metadata_seed(source.subrange(1024, 2048)),
+        groups: projected_groups(source, (blocks as nat + 32767) / 32768) }
+}
+
+pub open spec fn admissible(source: Seq<u8>) -> bool { valid(projection(source)) }
+
 pub open spec fn has_flex_groups(v: IndexView) -> bool { superblock::flex_bg(v.source.subrange(1024, 2048)) }
 
 pub open spec fn has_huge_files(v: IndexView) -> bool { bytes::le32(v.source, 1124) as u32 & 8 != 0 }
@@ -80,6 +93,48 @@ pub proof fn every_checked_group_retains_its_source_and_geometry(index: IndexVie
     reveal(valid);
     reveal(records_match);
     assert(group_metadata::valid(index.groups[number]));
+}
+
+pub proof fn every_valid_index_is_the_unique_source_projection(index: IndexView)
+    requires valid(index),
+    ensures index == projection(index.source), admissible(index.source),
+{
+    hide(group_metadata::valid);
+    hide(superblock::accepted);
+    reveal(valid);
+    assert(index.groups =~= projection(index.source).groups) by {
+        assert forall|i: int| 0 <= i < index.groups.len() implies
+            #[trigger] index.groups[i] == projection(index.source).groups[i] by {
+            every_checked_group_retains_its_source_and_geometry(index, i);
+            group_metadata::every_valid_group_is_the_unique_source_projection(index.groups[i]);
+        }
+    }
+}
+
+proof fn an_admitted_source_supplies_the_index_parser_inputs(source: Seq<u8>)
+    ensures admissible(source) ==> 8192 <= source.len() <= 18446744073709551615
+        && superblock::accepted(source.subrange(1024, 2048), source.len() as u64)
+        && 2 < bytes::le32(source, 1028) <= block_claims::MAX_BLOCKS,
+{
+    hide(superblock::accepted);
+    if admissible(source) { reveal(valid); }
+}
+
+proof fn every_group_of_an_admitted_index_is_admissible(source: Seq<u8>, number: u32)
+    ensures admissible(source) && number < projection(source).groups.len() ==> group_metadata::admissible(source, number),
+{
+    hide(group_metadata::valid);
+    if admissible(source) && number < projection(source).groups.len() {
+        every_checked_group_retains_its_source_and_geometry(projection(source), number as int);
+        group_metadata::every_valid_group_is_the_unique_source_projection(projection(source).groups[number as int]);
+    }
+}
+
+proof fn appending_the_next_group_extends_the_source_projection(source: Seq<u8>, count: nat, next: GroupView)
+    requires count < 32, next == group_metadata::projection(source, count as u32),
+    ensures projected_groups(source, count).push(next) == projected_groups(source, count + 1),
+{
+    assert(projected_groups(source, count).push(next) =~= projected_groups(source, count + 1));
 }
 
 pub struct GroupIndex<'a> {
@@ -138,10 +193,15 @@ impl<'a> GroupIndex<'a> {
 }
 
 pub fn parse<'a>(source: Snapshot<'a>) -> (r: Option<GroupIndex<'a>>)
-    ensures match r { Some(index) => index.wf() && index.view().source == source.view(), None => true },
+    ensures match r {
+        Some(index) => index.wf() && index.view().source == source.view()
+            && index.view() == projection(source.view()) && admissible(source.view()),
+        None => !admissible(source.view()),
+    },
 {
     hide(crc::fold);
     hide(superblock::accepted);
+    proof { an_admitted_source_supplies_the_index_parser_inputs(source.view()); }
     let primary = match source.block(0) { Some(block) => block, None => { return None; } };
     let boot = primary.range(1024, 1024).unwrap();
     let sb = match superblock::parse(boot, source.partition_bytes()) { Some(sb) => sb, None => { return None; } };
@@ -159,9 +219,12 @@ pub fn parse<'a>(source: Snapshot<'a>) -> (r: Option<GroupIndex<'a>>)
     let mut inode_free = 0u64;
     assert(free_blocks(Seq::empty()) == 0 && free_inodes(Seq::empty()) == 0) by { reveal(free_blocks); reveal(free_inodes); }
     assert(views(groups@) =~= Seq::<GroupView>::empty());
+    assert(views(groups@) =~= projected_groups(source.view(), 0));
     assert(records_match(views(groups@), source.view(), blocks, ipg, seed)) by { reveal(records_match); }
     while number < count
         invariant groups.len() == number, number <= count <= 32,
+            count as nat == projection(source.view()).groups.len(),
+            views(groups@) == projected_groups(source.view(), number as nat),
             source.view().len() >= 4096,
             blocks as nat * 4096 <= source.view().len(), 0 < ipg <= 32768, ipg % 16 == 0, inodes >= 11,
             blocks as nat == bytes::le32(source.view(), 1028), ipg as nat == bytes::le32(source.view(), 1064),
@@ -171,6 +234,7 @@ pub fn parse<'a>(source: Snapshot<'a>) -> (r: Option<GroupIndex<'a>>)
             records_match(views(groups@), source.view(), blocks, ipg, seed),
         decreases count - number,
     {
+        proof { every_group_of_an_admitted_index_is_admissible(source.view(), number); }
         let meta = match group_metadata::parse(&source, number) { Some(meta) => meta, None => { return None; } };
         assert(meta.view().blocks == blocks && meta.view().ipg == ipg && meta.view().seed == seed) by { reveal(group_metadata::valid); }
         let (allocation, inodes) = meta.bitmaps();
@@ -182,6 +246,7 @@ pub fn parse<'a>(source: Snapshot<'a>) -> (r: Option<GroupIndex<'a>>)
         groups.push(meta);
         proof {
             assert(views(groups@) =~= previous.push(latest));
+            appending_the_next_group_extends_the_source_projection(source.view(), number as nat, latest);
             assert(views(groups@).drop_last() =~= previous);
             assert(free_blocks(views(groups@)) == free_blocks(previous) + latest.allocation.free as nat) by { reveal(free_blocks); }
             assert(free_inodes(views(groups@)) == free_inodes(previous) + latest.inodes.free as nat) by { reveal(free_inodes); }
@@ -189,10 +254,13 @@ pub fn parse<'a>(source: Snapshot<'a>) -> (r: Option<GroupIndex<'a>>)
         }
         number += 1;
     }
+    assert(views(groups@) == projection(source.view()).groups);
+    proof { if admissible(source.view()) { reveal(valid); } }
     if block_free != bytes::read_le32(boot, 12).unwrap() as u64
         || inode_free != bytes::read_le32(boot, 16).unwrap() as u64 { return None; }
     let ghost assembled = IndexView { source: source.view(), groups: views(groups@), blocks, inodes, ipg, seed };
     assert(valid(assembled)) by { reveal(valid); }
+    proof { every_valid_index_is_the_unique_source_projection(assembled); }
     Some(GroupIndex { source, groups, blocks, inodes, ipg, seed })
 }
 
