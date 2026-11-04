@@ -85,7 +85,7 @@ STABLE_INODES is admitted within the fixed-geometry profile. Primary identity
 preservation proves that UUID, size and the stable marker cannot change across
 admitted updates. Resizing, offline inode renumbering and encryption-specific
 stable-identity policies are not introduced. BTREE_DIR is the pinned Linux legacy
-RO_COMPAT marker; it does not enable unimplemented DIR_INDEX/HTree formats.
+RO_COMPAT marker. DIR_INDEX is admitted separately through the complete source/tree/hash/name and namespace checks in [HTree admission](HTREE_ADMISSION.md); mutations remain open.
 
 ## Design and proof table
 

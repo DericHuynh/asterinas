@@ -226,6 +226,19 @@ def main():
                                      "let graph = verified_ext4::htree_topology::parse(&blocks, 4096, 0, false).unwrap(); "
                                      "leaf[0] = 1; let _ = graph.logical_role(1); }\n", "E0502"),
     })
+    misuse.update({
+        "forge_htree_name_catalog": ("pub fn misuse(d: verified_ext4::htree_names::Directory<'_>) "
+                                      "{ let _ = verified_ext4::htree_names::Directory { ..d }; }\n", "E0451"),
+        "forge_htree_source_record": ("pub fn misuse(e: verified_ext4::htree_names::Entry<'_>) "
+                                      "{ let _ = verified_ext4::htree_names::Entry { ..e }; }\n", "E0451"),
+        "mutate_live_htree_name_source": ("pub fn misuse(root: Vec<u8>, mut leaf: Vec<u8>) { "
+                                           "let blocks: [&[u8]; 2] = [&root, &leaf]; "
+                                           "let seed = verified_ext4::dir_hash::State { a: 0, b: 0, c: 0, d: 0 }; "
+                                           "let d = verified_ext4::htree_names::build(&blocks, 4096, 0, seed, false, false).unwrap(); "
+                                           "leaf[8] = 1; let _ = d.lookup(b\"a\"); }\n", "E0502"),
+        "forge_directory_piece": ("pub fn misuse(p: verified_ext4::directory_piece::Piece<'_>) "
+                                    "{ let _ = verified_ext4::directory_piece::Piece { ..p }; }\n", "E0451"),
+    })
     for name, (source, code) in misuse.items():
         path = BUILD / (name + ".rs")
         path.write_text(source)

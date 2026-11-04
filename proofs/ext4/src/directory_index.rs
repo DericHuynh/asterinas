@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Complete source-bound linear-directory enumeration and typed unique names.
+//! Complete source-bound linear/indexed-directory enumeration and typed unique names.
 //! Every allocated directory block is checked, including empty preallocation.
 //! This index does not yet certify dot/parent topology, link counts, recovery,
 //! a mount, credentials or OSTD/device authority.
@@ -83,9 +83,9 @@ fn append_block(node: &AllocatedInode<'_, '_>, logical: u32, mut entries: Vec<En
     let mut i = 0usize;
     while i < count
         invariant node.wf(), volume.view() == node.view().volume, number == node.view().number,
-            block.wf(), block.view().raw == directory_source::raw(volume.view(), number, logical),
-            block.view().records == directory_source::records(volume.view(), number, logical),
-            directory_source::valid_block(volume.view(), number, logical), i <= count <= 510, count == block.view().records.len(),
+            block.wf(), block.view().block.raw == directory_source::raw(volume.view(), number, logical),
+            block.view().block.records == directory_source::records(volume.view(), number, logical),
+            directory_source::valid_block(volume.view(), number, logical), i <= count <= 510, count == block.view().block.records.len(),
             model::entries_typed(volume.view(), views(entries@)), names.wf(), names.view().keys == model::keys(views(entries@)),
             views(entries@) == original + model::block_entries(volume.view(), number, logical, i as nat),
         decreases count - i,
@@ -229,13 +229,14 @@ pub fn build<'v, 'a>(volume: &'v Allocation<'a>) -> (r: Option<DirectoryIndex<'v
                     let count = info.size / 4096;
                     if count > (model::MAX_DIRECTORY_BLOCKS - blocks) as u64 { return None; }
                     let count = count as u32;
+                    if !crate::directory_htree::validate(&node) { return None; }
                     let ghost base = views(entries@);
                     let mut logical = 0u32;
                     assert(model::directory_entries(volume.view(), number, 0) == Seq::<EntryView>::empty()) by { reveal(model::directory_entries); }
                     assert(model::blocks_valid(volume.view(), number, 0)) by { reveal(model::blocks_valid); }
                     while logical < count
                         invariant volume.wf(), node.wf(), node.view().volume == volume.view(), node.view().number == number,
-                            model::is_directory(volume.view(), number), logical <= count <= model::MAX_DIRECTORY_BLOCKS,
+                            model::is_directory(volume.view(), number), crate::directory_htree::admitted(volume.view(), number), logical <= count <= model::MAX_DIRECTORY_BLOCKS,
                             count > 0, allocated_inode::source_view(volume.view(), number).size as nat == count as nat * 4096,
                             count as nat == model::block_count(volume.view(), number),
                             base == model::entries(volume.view(), completed as nat),

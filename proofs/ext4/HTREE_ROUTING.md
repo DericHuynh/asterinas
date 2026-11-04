@@ -4,8 +4,9 @@
 
 The standalone host codec reads Linux HTree roots and internal index nodes over
 1–64 KiB blocks. It does not enable DIR_INDEX in full filesystem admission.
-Full directory hashing, whole-tree/leaf/name equivalence, mutation and kernel
-runtime integration remain required before that feature can be admitted.
+Complete source/tree/hash/name admission is composed separately in
+[HTree admission](HTREE_ADMISSION.md). Mutation and kernel runtime integration
+remain open.
 
 The format and routing reference is Linux v7.0 commit
 `028ef9c96e96197026887c0f092424679298aae8`, `fs/ext4/namei.c`: dx_root,
@@ -33,6 +34,5 @@ reserved word and a zero checksum word. Unused table slots are excluded. Native
 regressions check this domain, counts, sortedness, collisions, masked pointers,
 invalid headers, depth limits and both checksum profiles at all seven block
 sizes. A Linux-created directory is indexed with e2fsck -D; its root, inode-seeded
-checksum, logical edges and leaf checksums are checked against the codec. The
-full-image validator still rejects its DIR_INDEX feature, as intended until the
-remaining directory proofs are complete.
+checksum, logical edges and leaf checksums are checked against the codec. The complete source adapter now additionally checks all names, hash ranges and
+whole-image namespace admission; see HTREE_ADMISSION.md.

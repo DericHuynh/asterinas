@@ -261,4 +261,54 @@ pub proof fn two_tree_claims_cannot_reuse_one_logical_block(graph: &Graph<'_>, a
     block_claims::two_recorded_claims_cannot_own_the_same_physical_block(&graph.census, a, b, number as int);
 }
 
+proof fn canonical_claims_are_unit_metadata(c: Context, number: u32, depth: u8, length: nat, i: nat)
+    requires i < claims(c, number, depth, length).len(),
+    ensures claims(c, number, depth, length)[i as int].length == 1,
+        claims(c, number, depth, length)[i as int].kind == 1 || claims(c, number, depth, length)[i as int].kind == 3,
+        claims(c, number, depth, length)[i as int] == owned(claims(c, number, depth, length)[i as int].start, claims(c, number, depth, length)[i as int].kind),
+    decreases depth, length,
+{
+    reveal(claims);
+    if length > 0 {
+        let before = claims(c, number, depth, (length - 1) as nat);
+        if i < before.len() { canonical_claims_are_unit_metadata(c, number, depth, (length - 1) as nat, i); }
+        else if depth > 0 {
+            let target = child(c, number, (length - 1) as nat);
+            canonical_claims_are_unit_metadata(c, target, (depth - 1) as u8, count(c, target), (i - before.len()) as nat);
+        }
+    }
+}
+proof fn a_source_leaf_claim_has_checked_records(c: Context, number: u32, depth: u8, length: nat, i: nat, logical: u32)
+    requires checked_prefix(c, number, depth, length), i < claims(c, number, depth, length).len(), claims(c, number, depth, length)[i as int] == owned(logical, 3),
+    ensures leaf(c, logical),
+    decreases depth, length,
+{
+    reveal(claims); reveal(checked_prefix);
+    if length > 0 {
+        let before = claims(c, number, depth, (length - 1) as nat);
+        if i < before.len() { a_source_leaf_claim_has_checked_records(c, number, depth, (length - 1) as nat, i, logical); }
+        else if depth > 0 {
+            let target = child(c, number, (length - 1) as nat);
+            a_source_leaf_claim_has_checked_records(c, target, (depth - 1) as u8, count(c, target), (i - before.len()) as nat, logical);
+        }
+    }
+}
+
+pub proof fn every_leaf_role_has_a_checked_source_leaf_claim(v: GraphView, logical: u32)
+    requires valid(v), logical < v.context.source.len(), v.census.roles[logical as int].kind == 3,
+    ensures leaf(v.context, logical), exists|i: int| 0 <= i < claims(v.context, 0, v.depth, count(v.context, 0)).len()
+        && (#[trigger] claims(v.context, 0, v.depth, count(v.context, 0))[i]) == owned(logical, 3),
+{
+    reveal(valid); reveal(block_claims::ledger);
+    assert(block_claims::lookup(v.census.claims, logical as int) == v.census.roles[logical as int]);
+    nonfree_lookup_has_a_covering_claim(v.census.claims, logical as int);
+    let i = choose|i: int| 0 <= i < v.census.claims.len() && #[trigger] block_claims::covers(v.census.claims[i], logical as int);
+    canonical_claims_are_unit_metadata(v.context, 0, v.depth, count(v.context, 0), i as nat);
+    let claim = v.census.claims[i];
+    assert(v.census.claims.contains(claim));
+    block_claims::a_ledger_claim_determines_its_exact_physical_slot(v.census.roles, v.census.claims, claim, logical as int);
+    assert(claim == owned(logical, 3));
+    a_source_leaf_claim_has_checked_records(v.context, 0, v.depth, count(v.context, 0), i as nat, logical);
+}
+
 }
