@@ -4773,6 +4773,42 @@ mod flex_group_tests {
                     assert!(tree.tree().checked_nodes() > 1);
                     assert!(core::image_validation::inspect(source.duplicate()).is_some());
                     assert!(core::recovery_admission::prepare(&source).is_some());
+                    let credentials = core::access::Credentials {
+                        fsuid: node.info().uid,
+                        in_inode_group: false,
+                        dac_override: false,
+                        dac_read_search: false,
+                    };
+                    let candidate =
+                        core::content_write::prepare_chunk(&node, 13, &[0x87; 117], &credentials)
+                            .unwrap();
+                    let writer = candidate.begin_timed(2147483648, 345678901).unwrap();
+                    assert_eq!(writer.engine_ref().original_count(), 2);
+                    let metadata = (0..2)
+                        .map(|index| writer.engine_ref().original_image(index).unwrap())
+                        .find(|(block, _)| *block == fields.inode_table)
+                        .unwrap()
+                        .1;
+                    let inode = &metadata[..256];
+                    assert!(
+                        core::inode::parse_metadata_with_features(
+                            inode,
+                            4097,
+                            sb.inodes(),
+                            seed,
+                            huge
+                        )
+                        .is_some()
+                    );
+                    let changed_time = core::inode_time_fields::get_time(
+                        inode,
+                        core::inode_time_fields::Field::Mtime,
+                    )
+                    .unwrap();
+                    assert_eq!(
+                        (changed_time.seconds, changed_time.nanoseconds),
+                        (2147483648, 345678901)
+                    );
                     let boot = core::bootstrap::locate(&source).unwrap();
                     assert!(boot.prepare_recovery().is_some());
                     for dirty in [false, true] {

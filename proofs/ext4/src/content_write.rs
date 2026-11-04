@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
 //! Source-bound initialized regular-file content replacement, one clipped
-//! block at a time. These host candidates do not implement POSIX write/open,
-//! timestamps, credential authentication or a CortenMM cache/extent lock.
+//! block at a time, with an optional inode-time/checksum transaction closure.
+//! POSIX write/open, credential authentication and CortenMM locks remain open.
 
 use vstd::prelude::*;
 use crate::{access::{self, Credentials}, allocated_inode::{self, AllocatedInode, NodeView}, bytes,
-    edit_handles, file_read::{self, Resolution}, inode_size, transaction::{AfterImage, ImageView},
+    edit_handles, file_read::{self, Resolution}, inode_size, inode_table, inode_touch, transaction::{AfterImage, ImageView},
     writer_admission::{self, CheckedWriter}};
 
 verus! {
@@ -31,6 +31,32 @@ pub open spec fn valid(v: WriteView) -> bool {
 pub struct Candidate<'n, 'v, 'a> {
     node: &'n AllocatedInode<'v, 'a>, image: AfterImage, offset: u64, length: usize,
     data: Ghost<Seq<u8>>, credentials: Ghost<Credentials>,
+}
+
+pub open spec fn timed_inode_image(v: WriteView, seconds: int, nanos: nat) -> ImageView {
+    let position = inode_table::start(v.node.volume.index, v.node.number);
+    let block = (position / 4096) as u32;
+    let original = v.node.volume.index.source.subrange(block as int * 4096, (block as int + 1) * 4096);
+    ImageView { block, image: bytes::splice(original, position as int % 4096,
+        inode_touch::sealed_bytes(inode_table::raw(v.node.volume.index, v.node.number), v.node.number, v.node.volume.index.seed, seconds, nanos)) }
+}
+
+pub open spec fn timed_images(v: WriteView, seconds: int, nanos: nat) -> Seq<ImageView> {
+    let metadata = timed_inode_image(v, seconds, nanos);
+    if v.image.block < metadata.block { seq![v.image, metadata] } else { seq![metadata, v.image] }
+}
+
+fn fill_part(mut part: edit_handles::Part<'_>, bytes: &[u8]) -> (r: bool)
+    ensures r ==> part.part_credits() == 1 && part.future_view() == seq![edit_handles::EditView {
+        target: part.part_view()[0].target, stage: edit_handles::StageView { status: edit_handles::Status::Closed,
+            image: Some(ImageView { block: part.part_view()[0].target, image: bytes@ }) } }],
+{
+    if part.part_count() != 1 { return false; }
+    let mut handle = match part.handle_at(0) { Some(handle) => handle, None => { return false; } };
+    if !handle.stage(bytes) { return false; }
+    if !handle.close() { return false; }
+    part.release();
+    true
 }
 
 impl<'n, 'v, 'a> Candidate<'n, 'v, 'a> {
@@ -81,6 +107,63 @@ impl<'n, 'v, 'a> Candidate<'n, 'v, 'a> {
             status: edit_handles::Status::Closed, image: Some(self.image.view()) } }]);
         let frozen = match running.freeze() { Ok(frozen) => frozen, Err(_) => { return None; } };
         assert(frozen.frozen_view() == seq![self.image.view()]) by { reveal_with_fuel(edit_handles::selected, 2); }
+        writer_admission::prepare(source, frozen)
+    }
+
+    pub fn begin_timed(self, seconds: i64, nanoseconds: u32) -> (r: Option<CheckedWriter<'v, 'a>>)
+        ensures self.wf(), match r {
+            Some(writer) => writer.wf() && writer.view().boot.source == self.view().node.volume.index.source
+                && crate::inode_time::representable(seconds as int, nanoseconds as nat)
+                && writer.owner().images().tx.original == timed_images(self.view(), seconds as int, nanoseconds as nat),
+            None => true,
+        },
+    {
+        proof { use_type_invariant(&self); }
+        let node = self.node;
+        let volume = node.volume();
+        let index = volume.index();
+        let source = index.source();
+        let number = node.number();
+        let (_, inodes, _, seed) = index.parameters();
+        let raw = node.raw();
+        let mut inode: Vec<u8> = Vec::new();
+        let mut cursor = 0usize;
+        while cursor < raw.len()
+            invariant cursor <= raw.len() == 256, inode@ == raw@.take(cursor as int),
+            decreases raw.len() - cursor,
+        {
+            inode.push(raw[cursor]);
+            cursor += 1;
+        }
+        assert(inode@ == raw@);
+        let huge = index.huge_files();
+        if !inode_touch::touch(inode.as_mut_slice(), number, inodes, seed, huge, seconds, nanoseconds) { return None; }
+        let position = match inode_table::position(index, number) { Some(position) => position, None => { return None; } };
+        if position / 4096 > 4294967295 { return None; }
+        let block = (position / 4096) as u32;
+        let within = (position % 4096) as usize;
+        if within > 3840 { return None; }
+        let original = match source.block(block) { Some(original) => original, None => { return None; } };
+        let mut metadata = bytes::zero_block();
+        if !bytes::write_bytes(metadata.as_mut_slice(), 0, original.as_slice()) { return None; }
+        if !bytes::write_bytes(metadata.as_mut_slice(), within, &inode) { return None; }
+        let metadata = match AfterImage::capture(block, &metadata) { Some(metadata) => metadata, None => { return None; } };
+        assert(metadata.view() == timed_inode_image(self.view(), seconds as int, nanoseconds as nat));
+        let data_target = self.image.block();
+        if data_target == block { return None; }
+        let (first, second) = if data_target < block { (&self.image, &metadata) } else { (&metadata, &self.image) };
+        let mut running = match edit_handles::reserve(&[first.block(), second.block()], volume.journal().duplicate()) {
+            Some(running) => running, None => { return None; }
+        };
+        {
+            let (left, right) = match running.borrow_parts(1) { Some(parts) => parts, None => { return None; } };
+            if !fill_part(left, first.as_slice()) { return None; }
+            if !fill_part(right, second.as_slice()) { return None; }
+        }
+        let frozen = match running.freeze() { Ok(frozen) => frozen, Err(_) => { return None; } };
+        assert(frozen.frozen_view() == timed_images(self.view(), seconds as int, nanoseconds as nat)) by {
+            reveal_with_fuel(edit_handles::selected, 3);
+        }
         writer_admission::prepare(source, frozen)
     }
 }

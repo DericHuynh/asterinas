@@ -34,7 +34,7 @@ content. Full operation policy must implement the Linux privilege-removal rules.
 | Patch bytes | Exact replacement inside the requested span; all surrounding bytes preserved | Allocation, unwritten conversion, size extension and tree mutation |
 | Permission inputs | Source mode/owner DAC predicate; directories/set-ID files rejected | Authenticated credentials, VFS handles, mount policy and privilege removal |
 | Writer construction | Consumes candidate into reserved handle/close/freeze and same-source complete writer admission | Global operation gate, commit/checkpoint overlap and physical media binding |
-| POSIX write | Not implemented | Timestamp/version updates, metadata closure, errors, open/fsync semantics and observable results |
+| POSIX write | Not implemented | Remaining inode-version/metadata policies, errors, open/fsync semantics and observable results |
 
 `Candidate::begin` consumes the candidate and constructs a real one-slot edit
 handle, stages the owned image, consumes close, freezes the batch, and enters
@@ -45,7 +45,7 @@ No I/O occurs during planning or failed admission.
 Linux v7.0 `fs/ext4/inode.c`, especially `ext4_journalled_write_end`, separates
 copied bytes, block initialization, inode-size changes, metadata dirtying and
 journal completion. This primitive covers existing initialized content only;
-timestamp and other inode changes need a larger operation closure. The algorithm
+the timed path includes ctime/mtime and checksum closure, while other inode changes need broader operation closure. The algorithm
 uses owned Rust bytes and the framekernel design's future CortenMM/OSTD adapter;
 Linux folio/page/buffer-head ownership is not imported.
 
@@ -54,3 +54,9 @@ unchanged surrounding bytes, changed caller input, directory/DAC/set-ID rejectio
 holes/unwritten extents and same-source writer execution with e2fsprogs. These
 checks supplement the pinned complete Verus proof run. No mount or VFS mutation
 path is activated.
+
+`Candidate::begin_timed` now adds exact source-bound ctime/mtime and inode-checksum
+updates to the same journal batch as the content image. See
+[WRITE_METADATA.md](WRITE_METADATA.md) for its checked table placement, adjacent
+inode preservation and two-image transaction contract. Full POSIX/VFS and
+runtime operation semantics remain open.

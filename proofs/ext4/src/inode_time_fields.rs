@@ -117,16 +117,6 @@ pub fn set_time(raw: &mut [u8], field: Field, seconds: i64, nanoseconds: u32) ->
     true
 }
 
-proof fn le32_encoded_word(value: u32)
-    ensures bytes::le32(bytes::encoded_le(value), 0) == value,
-{
-    vstd::arithmetic::div_mod::lemma_fundamental_div_mod(value as int, 256);
-    vstd::arithmetic::div_mod::lemma_fundamental_div_mod(value as int / 256, 256);
-    vstd::arithmetic::div_mod::lemma_fundamental_div_mod(value as int / 65536, 256);
-    vstd::arithmetic::div_mod::lemma_div_denominator(value as int, 256, 256);
-    vstd::arithmetic::div_mod::lemma_div_denominator(value as int, 65536, 256);
-}
-
 pub proof fn updated_field_decodes_to_the_requested_time(raw: Seq<u8>, field: Field, sec: int, nanos: nat)
     requires can_set(raw, field, sec, nanos),
     ensures admitted(update(raw, field, sec, nanos), field),
@@ -145,14 +135,14 @@ pub proof fn updated_field_decodes_to_the_requested_time(raw: Seq<u8>, field: Fi
     assert(shape(after) && effective_size(after) == effective_size(raw));
     let extended = has_extra(raw, field);
     let low = (if extended { inode_time::base_word(sec) } else { inode_time::legacy_word(sec) }) as u32;
-    le32_encoded_word(low);
+    bytes::little_endian_encoding_recovers_every_word(low);
     let base = base_offset(field) as int;
     assert(after.subrange(base, base + 4) =~= bytes::encoded_le(low));
     assert(bytes::le32(after, base) == low);
     if extended {
         inode_time::extended_fields_reconstruct_the_original_seconds_and_nanoseconds(sec, nanos);
         let high = inode_time::extra_word(sec, nanos) as u32;
-        le32_encoded_word(high);
+        bytes::little_endian_encoding_recovers_every_word(high);
         let extra = extra_offset(field) as int;
         assert(after.subrange(extra, extra + 4) =~= bytes::encoded_le(high));
         assert(bytes::le32(after, extra) == high);

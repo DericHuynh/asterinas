@@ -655,6 +655,86 @@ mod content_writes {
     }
 
     #[test]
+    fn timed_content_writer_commits_data_and_resealed_inode_metadata_together() {
+        let (image, _, seed, target) = fixture();
+        let volume = core::allocation::parse(core::snapshot::Snapshot::from_bytes(&image)).unwrap();
+        let file = core::allocated_inode::get(&volume, 12).unwrap();
+        let candidate =
+            core::content_write::prepare_chunk(&file, 73, &[0x86; 141], &owner()).unwrap();
+        let expected = candidate.after_image().as_slice().to_vec();
+        let mut writer = candidate.begin_timed(2147483648, 234567890).unwrap();
+        assert_eq!(writer.engine_ref().original_count(), 2);
+        let table = core::bytes::read_le32(&image, 4104).unwrap();
+        let metadata = (0..2)
+            .map(|index| writer.engine_ref().original_image(index).unwrap())
+            .find(|(block, _)| *block == table)
+            .unwrap()
+            .1;
+        assert_eq!(
+            &metadata[7 * 256..8 * 256],
+            &image[table as usize * 4096 + 7 * 256..table as usize * 4096 + 8 * 256],
+            "the journal inode sharing this table block must remain exact"
+        );
+        let touched = &metadata[11 * 256..12 * 256];
+        let inodes = core::bytes::read_le32(&image, 1024).unwrap();
+        assert!(core::inode::parse_metadata(touched, 12, inodes, seed).is_some());
+        for field in [
+            core::inode_time_fields::Field::Mtime,
+            core::inode_time_fields::Field::Ctime,
+        ] {
+            let value = core::inode_time_fields::get_time(touched, field).unwrap();
+            assert_eq!((value.seconds, value.nanoseconds), (2147483648, 234567890));
+        }
+        let mut stable = image.clone();
+        loop {
+            let pending = match writer.dispatch() {
+                Ok(pending) => pending,
+                Err(done) => {
+                    writer = done;
+                    break;
+                }
+            };
+            if let core::recovery_io::Command::Write { block, image } = pending.pending_command() {
+                stable[block as usize * 4096..(block as usize + 1) * 4096].copy_from_slice(image);
+            }
+            writer = pending.finish_pending(Completion::Succeeded);
+        }
+        assert!(writer.finished());
+        assert_eq!(
+            &stable[target as usize * 4096..(target as usize + 1) * 4096],
+            expected
+        );
+        assert!(
+            core::image_validation::inspect(core::snapshot::Snapshot::from_bytes(&stable))
+                .is_some()
+        );
+        let linux = linux_recover("build/timed-content-write.img", &stable);
+        assert_eq!(
+            &linux[target as usize * 4096..(target as usize + 1) * 4096],
+            expected
+        );
+        assert_eq!(
+            &linux[table as usize * 4096..(table as usize + 1) * 4096],
+            &stable[table as usize * 4096..(table as usize + 1) * 4096]
+        );
+    }
+
+    #[test]
+    fn timed_content_candidate_rejects_unrepresentable_metadata_before_io() {
+        let (image, _, _, _) = fixture();
+        let volume = core::allocation::parse(core::snapshot::Snapshot::from_bytes(&image)).unwrap();
+        let file = core::allocated_inode::get(&volume, 12).unwrap();
+        for (seconds, nanos) in [
+            (core::inode_time::MIN_SECONDS - 1, 0),
+            (core::inode_time::MAX_SECONDS + 1, 0),
+            (0, 1000000000),
+        ] {
+            let candidate = core::content_write::prepare_chunk(&file, 0, &[1], &owner()).unwrap();
+            assert!(candidate.begin_timed(seconds, nanos).is_none());
+        }
+    }
+
+    #[test]
     fn content_candidate_begins_only_the_same_source_validated_writer_and_linux_accepts_the_result()
     {
         let (image, _, _, target) = fixture();
@@ -842,6 +922,61 @@ mod inode_times {
         let decoded = fields::get_time(&legacy, Field::Atime).unwrap();
         assert_eq!((decoded.seconds, decoded.nanoseconds), (2147483647, 0));
         assert!(!fields::set_time(&mut legacy, Field::Crtime, 0, 0));
+    }
+
+    #[test]
+    fn touching_inode_times_reseals_checksums_and_preserves_identity_and_other_fields() {
+        let (image, _, seed, _) = fixture();
+        let table = core::bytes::read_le32(&image, 4104).unwrap() as usize;
+        let start = table * 4096 + 11 * 256;
+        let before = image[start..start + 256].to_vec();
+        let mut after = before.clone();
+        let inodes = core::bytes::read_le32(&image, 1024).unwrap();
+        assert!(core::inode_touch::touch(
+            &mut after, 12, inodes, seed, false, 2147483648, 999999999
+        ));
+        assert!(core::inode::parse_metadata(&after, 12, inodes, seed).is_some());
+        for field in [Field::Mtime, Field::Ctime] {
+            let value = fields::get_time(&after, field).unwrap();
+            assert_eq!((value.seconds, value.nanoseconds), (2147483648, 999999999));
+        }
+        for index in 0..256 {
+            if !(12..20).contains(&index)
+                && !(124..126).contains(&index)
+                && !(130..140).contains(&index)
+            {
+                assert_eq!(before[index], after[index], "inode byte {index}");
+            }
+        }
+    }
+
+    #[test]
+    fn inode_touch_rejects_bad_identity_checksum_and_time_before_mutation() {
+        let (image, _, seed, _) = fixture();
+        let table = core::bytes::read_le32(&image, 4104).unwrap() as usize;
+        let start = table * 4096 + 11 * 256;
+        let pristine = image[start..start + 256].to_vec();
+        let inodes = core::bytes::read_le32(&image, 1024).unwrap();
+        for case in 0..6 {
+            let mut raw = pristine.clone();
+            if case == 0 {
+                raw[124] ^= 1;
+            }
+            if case == 5 {
+                raw.truncate(128);
+            }
+            let before = raw.clone();
+            assert!(!core::inode_touch::touch(
+                &mut raw,
+                if case == 1 { 13 } else { 12 },
+                inodes,
+                if case == 2 { seed ^ 1 } else { seed },
+                false,
+                if case == 3 { time::MAX_SECONDS + 1 } else { 0 },
+                if case == 4 { 1000000000 } else { 0 }
+            ));
+            assert_eq!(raw, before);
+        }
     }
 
     #[test]
