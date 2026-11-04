@@ -39,6 +39,20 @@ pub struct WindowView {
 
 pub open spec fn counts(v: WindowView) -> Seq<nat> { Seq::new(v.txs.len(), |i: int| v.txs[i].tx.original.len()) }
 
+#[verifier::opaque]
+pub open spec fn entries(txs: Seq<PositionedView>) -> nat
+    decreases txs.len(),
+{
+    if txs.len() == 0 { 0 } else { entries(txs.drop_last()) + txs.last().tx.original.len() }
+}
+
+pub(crate) proof fn entries_push(txs: Seq<PositionedView>, tx: PositionedView)
+    ensures entries(txs.push(tx)) == entries(txs) + tx.tx.original.len(),
+{
+    assert(txs.push(tx).drop_last() =~= txs);
+    reveal(entries);
+}
+
 pub open spec fn tail_offset(txs: Seq<PositionedView>, prefix: int) -> u32 {
     if prefix == txs.len() { 0u32 } else { txs[prefix].source.first }
 }
@@ -77,6 +91,7 @@ pub open spec fn valid(v: WindowView) -> bool {
 
 pub open spec fn transaction_window(txs: Seq<PositionedView>, layout: LayoutView, uuid: Seq<u8>, dirty: Seq<u8>, partition_bytes: u64, first: u32) -> bool {
     &&& 0 < txs.len() <= 64 && first > 0 && first as nat + txs.len() <= 4294967295
+    &&& entries(txs) <= 4096
     &&& (forall|i: int| 0 <= i < txs.len() ==> #[trigger] positioned_valid(txs[i])
         && txs[i].tx.layout == layout && txs[i].tx.uuid == uuid && txs[i].tx.primary == dirty
         && txs[i].tx.partition_bytes == partition_bytes && txs[i].tx.sequence as nat == first as nat + i
@@ -106,6 +121,7 @@ pub proof fn a_window_retains_its_geometry_and_bounded_counts(v: WindowView)
         v.layout.start > 1, 1024 <= v.layout.journal_blocks <= 32768,
         v.layout.start as nat + v.layout.journal_blocks <= v.layout.fs_blocks,
         v.layout.fs_blocks as nat * 4096 <= v.partition_bytes, v.tails.len() == v.txs.len() + 1,
+        entries(v.txs) <= 4096,
 {
     hide(crc::fold);
     reveal(valid);
@@ -463,8 +479,11 @@ fn encode_versions(versions: &[FrozenVersion], uuid: &[u8], first: u32, layout: 
     let mut index = 0usize;
     let mut cursor = 1u32;
     let mut previous_serial = 0u64;
+    let mut credits = 0usize;
+    assert(entries(positioned_views(txs@)) == 0) by { reveal(entries); }
     while index < versions.len()
         invariant index <= versions.len() <= 64, versions.len() > 0, txs.len() == index,
+            credits <= 4096, credits as nat == entries(positioned_views(txs@)),
             first > 0, first as nat + versions.len() <= 4294967295,
             cursor as nat == if index == 0 { 1nat } else { positioned_views(txs@)[index as int - 1].source.first as nat
                 + positioned_views(txs@)[index as int - 1].source.blocks as nat },
@@ -483,13 +502,17 @@ fn encode_versions(versions: &[FrozenVersion], uuid: &[u8], first: u32, layout: 
         let version = &versions[index];
         let (serial, logical, blocks) = version.reservation();
         if logical != cursor || serial <= previous_serial { return None; }
+        let count = version.image_count();
+        if count > 4096 - credits { return None; }
         let positioned = match copy_and_encode(version, uuid, first + index as u32, &layout, primary, partition_bytes) {
             Some(positioned) => positioned, None => { return None; },
         };
         let ghost previous = positioned_views(txs@);
         let ghost last = positioned.view();
+        assert(last.tx.original.len() == count) by { reveal(positioned_valid); }
         txs.push(positioned);
         assert(positioned_views(txs@) =~= previous.push(last));
+        proof { entries_push(previous, last); }
         proof {
             assert forall|i: int| 0 <= i < index + 1 implies #[trigger] positioned_valid(positioned_views(txs@)[i])
                 && positioned_views(txs@)[i].source == versions@[i].view()
@@ -518,6 +541,7 @@ fn encode_versions(versions: &[FrozenVersion], uuid: &[u8], first: u32, layout: 
         }
         cursor = logical + blocks;
         previous_serial = serial;
+        credits += count;
         index += 1;
     }
     assert forall|i: int| 0 <= i < versions.len() implies positioned_views(txs@)[i].source == (#[trigger] versions@[i]).view() by {

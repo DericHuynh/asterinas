@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "license": "MPL-2.0",
-  "recorded_at": "2026-11-04T17:46:23.459537+00:00",
+  "recorded_at": "2026-11-04T18:50:43.293717+00:00",
   "scope": "Checked host core and specified abstract machines; not a complete or kernel-integrated ext4 filesystem",
   "verifier_version": {
     "verus": {
@@ -19,7 +19,7 @@
     "encountered-error": false,
     "encountered-vir-error": false,
     "success": true,
-    "verified": 1206,
+    "verified": 1284,
     "errors": 0,
     "is-verifying-entire-crate": true
   },
@@ -31,7 +31,7 @@
     "--crate-type=rlib"
   ],
   "source_sha256": {
-    "src/model.rs": "722ca2f64db2577a2e76e13f2e3e9c5c31d9c719be05663b664d2654e559c1f8",
+    "src/model.rs": "fe3283c8e38418c2dd643774ca5682fca6d57b9803281dead810867d529565cb",
     "src/redo.rs": "e964baa83ca170c3cc60dbc8df4bfc470a81549ac23a5cfe4526a9cb0edb7e7f",
     "src/journal.rs": "eef5dcc269f81cbc1c7e8c6a4daf0a58cf7015423657a9cfe1f0fff186b91834",
     "src/lease.rs": "37358276a3719454ddeaf16177a2ce058b5e382c57b0609cea97031da084b1aa",
@@ -149,12 +149,22 @@
     "src/journal_queue.rs": "0151362bc8156cbcc47c436a81fbcfc00e84fef6ec751386ceed5f324b8e01f3",
     "src/journal_queue_trace.rs": "a1b19d5bf0532fe5a296ed34f21b052cca5c883be128268ccb2e7d28bbb410e2",
     "src/journal_program.rs": "149cd0fc0ef59b7571e036112a3a7e0ef2b10f23309d94d9a043392968f4d988",
-    "src/journal_window.rs": "f61ff4079b1708a876a190fb6eba6c480d4f6674ac17ffe0ac2a0654b6caefe2",
+    "src/journal_window.rs": "62102aa3a1ad2c03f834714a6247b78627ea7be53e24ec502925455ceab2d89d",
     "src/journal_window_device.rs": "bc7428cba08f3b5fea8dd635f27e587962a5674512467e25101795ae5ba17597",
-    "src/journal_window_media.rs": "3ee98ddc388bba3dafdde6647ae0288df0539ba967aba2d8ca76a40b3298b171",
-    "src/journal_window_progress.rs": "b3febaa616f34b968464e99819b30c350f17271f9377a76616507acb8a349b7e"
+    "src/journal_window_media.rs": "cd083a6b75ea8a968fed75a30c767bb5d9d600b297427559006750547fdb4789",
+    "src/journal_window_progress.rs": "b3febaa616f34b968464e99819b30c350f17271f9377a76616507acb8a349b7e",
+    "src/window_provenance.rs": "0b30da297daf44ee7c76b2a96cea11240160585accccc1235ff1206fb606857c",
+    "src/window_stream.rs": "44990d2942c6aefe37b3e9d2a6a20e941b808604a908d34e20ee043b9c2ad795",
+    "src/window_snapshot.rs": "32caa4618efda58ab993a54b7a8982066ab6ec1ac306f3c641d42d75789d1491",
+    "src/window_scan.rs": "b6395cad9562170adc247d60b5050570ce12b101b1d30354d6008f53f5d419ad",
+    "src/window_records.rs": "4c629574f5d002aae869a8160e6e337a7602f174836fa087a9ccc43a46a9a799",
+    "src/window_recognition.rs": "20a57addad9c9d231cc105fb32e7a3bd40b70f117f4fd756830d07e023e1ddde",
+    "src/window_recovery_profile.rs": "8ab590ad348087a3beb5cea64057d3439cf879313b4fd32a3c25aa90056fe0f1",
+    "src/window_redo.rs": "630cc9f6e5e6d49503fbf73f156d9df8e8a069344a6b9ac6738bce37a3f32c80",
+    "src/window_recovery.rs": "e927bd2ae4177f7792d6daf9cbefcb755a15a16890d8606e60a308020c4be393",
+    "src/window_repeated_recovery.rs": "3e0becc7c6b1469595493a7a66481b921641bf4060737e20d9970c60d7378f78"
   },
-  "lock_sha256": "3b4e4eae206c77249435382dbec17bb3bb1f5d77ac292dcfd966e2cfaa243015",
+  "lock_sha256": "5e1126095394edba76a215514848f74214994c43e727baf53d964ea9625951a7",
   "runner_sha256": "de6b473ab50632068de9e7fc619591c7b4d5afbc0058a1fcd7f946c0198beb91",
   "named_proof_coverage": [
     "access::override_cannot_execute_a_nonexecutable_regular_file",
@@ -503,6 +513,48 @@
     "tree_model::gathered_path_starts_resolution",
     "tree_model::path_successor",
     "tree_model::resolve_next_node",
+    "window_provenance::a_fresh_metadata_header_is_an_issued_descriptor_or_commit",
+    "window_provenance::an_absent_last_image_means_no_stable_write",
+    "window_provenance::an_unpersisted_log_slot_keeps_its_exact_original_bytes",
+    "window_provenance::every_block_is_initial_or_its_last_issued_stable_image",
+    "window_provenance::every_nonbootstrap_write_requires_durable_activation",
+    "window_provenance::every_other_stable_alias_is_older",
+    "window_provenance::stable_commit_records_are_exactly_a_contiguous_prefix",
+    "window_recognition::an_active_actual_source_is_the_physical_reserved_suffix",
+    "window_recognition::every_committed_recognized_stream_stops_within_the_durable_prefix",
+    "window_recognition::every_committed_stream_contains_exact_original_afterimages",
+    "window_recognition::every_durable_suffix_has_a_complete_canonical_certificate",
+    "window_recognition::every_window_crash_snapshot_is_admitted_by_scan",
+    "window_recognition::the_actual_maximal_scan_returns_exactly_the_unretired_durable_suffix",
+    "window_records::adjacent_transaction_logs_compose_exactly",
+    "window_records::complete_encoded_transactions_form_a_committed_scan_prefix",
+    "window_records::every_log_entry_has_the_exact_original_transaction_source",
+    "window_records::every_original_payload_occurs_in_its_transaction_log",
+    "window_recovery::every_finite_lane_and_cache_interleaving_recovers_a_complete_acknowledged_prefix",
+    "window_recovery::every_returned_actual_scan_has_exactly_the_durable_replay_suffix",
+    "window_recovery::scanning_and_replaying_every_window_cut_gives_the_exact_complete_durable_prefix",
+    "window_recovery::successful_actual_recovery_from_every_window_cut_has_exact_prefix_bytes",
+    "window_recovery_profile::all_finite_recovery_attempts_after_a_window_crash_preserve_admission",
+    "window_recovery_profile::all_finite_window_crash_cuts_can_prepare_actual_recovery",
+    "window_recovery_profile::every_committed_window_stream_is_safe_for_the_actual_primary",
+    "window_recovery_profile::every_window_crash_snapshot_can_prepare_actual_recovery",
+    "window_recovery_profile::recovery_from_a_window_cut_can_crash_and_be_prepared_again",
+    "window_redo::a_retired_only_home_block_has_its_exact_prefix_image",
+    "window_redo::every_window_log_target_exists_in_the_initial_device",
+    "window_redo::redo_of_the_unretired_suffix_covers_every_partial_home_checkpoint",
+    "window_repeated_recovery::every_finite_recovery_crash_history_preserves_the_window_recovery_target",
+    "window_repeated_recovery::successful_recovery_after_any_finite_crash_history_has_exact_window_prefix_bytes",
+    "window_scan::a_durable_transaction_has_its_complete_encoded_scanner_images",
+    "window_scan::a_reserved_record_is_the_exact_scanned_physical_block",
+    "window_scan::every_physical_window_cut_has_a_shaped_scanner_source",
+    "window_snapshot::every_actual_header_is_initial_or_an_ordered_prefix_image",
+    "window_snapshot::every_actual_journal_header_retains_its_validated_identity",
+    "window_snapshot::every_primary_image_preserves_identity_and_active_recovery_policy",
+    "window_snapshot::every_window_crash_keeps_the_initialized_journal_mapping",
+    "window_stream::every_recognized_prefix_has_the_reserved_transaction_shape",
+    "window_stream::every_shaped_window_is_admitted_by_the_actual_scanner",
+    "window_stream::recognized_entries_are_the_exact_reserved_payload_prefix",
+    "window_stream::reserved_boundaries_match_the_exact_payload_prefixes",
     "write_admission::a_shaped_journal_has_only_small_recognized_prefixes",
     "write_admission::a_shaped_writer_journal_fits_scan_limits",
     "write_admission::every_committed_writer_stream_satisfies_the_superblock_replay_policy",
@@ -958,14 +1010,14 @@
     "writer_admission::prepare",
     "writer_admission::source_snapshot"
   ],
-  "host_library_sha256": "6834aacd06153118feb29e1470b8e6e29ffaa0fa5db11320bd4b4eea9a08b641",
+  "host_library_sha256": "2aa5fdf9f2a3f81d2d7a7e67c0777d3f7f8c4b16ad067da2c9bf1bd322a4f064",
   "compatibility": {
     "schema": 1,
     "status": "passed",
     "scope": "host interoperability tests, not formal proof",
     "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
-    "proof_artifact_sha256": "6834aacd06153118feb29e1470b8e6e29ffaa0fa5db11320bd4b4eea9a08b641",
-    "image_sha256": "6c1452f81cd7148ef62929c5b1230f927cb014691443a7d02303913eae896892",
+    "proof_artifact_sha256": "2aa5fdf9f2a3f81d2d7a7e67c0777d3f7f8c4b16ad067da2c9bf1bd322a4f064",
+    "image_sha256": "042c59f079029c52097751820dc197ca259593238c36e2f2264d6d544ab8da0f",
     "request_boundary_rejections": [
       "reuse_request",
       "redirect_completion",
@@ -1015,10 +1067,10 @@
     "compatibility_runner_sha256": "1a4253324c1c2d0e7201a2e5ef1c407f4b96c7bb929b12a73994ec4ac3aab08e",
     "test_source_sha256": {
       "compat": "9276c96cbaccdfcf64a6fa5514607983af7a3fd2e58ba0b668cbfbd9bf19c242",
-      "journal": "0470adea1bd7735fc97f3ebeea22d7e02ed6856b788b2f06d55e19415db94e4f"
+      "journal": "ea4746338233151f2f3f4facee9bf2293c31e87dc1de33fb30d9c550862ec1e3"
     }
   },
-  "compatibility_test_count": 109,
+  "compatibility_test_count": 111,
   "e2fsprogs_version": "1.47.0",
   "negative_gate_checks": {
     "status": "passed",
@@ -1123,8 +1175,62 @@
     ],
     "formal_failure_free_witness": true,
     "initial_request_work_bound": 32452,
-    "actual_concurrent_scanner_recovery_closure_proved": false,
+    "actual_concurrent_scanner_recovery_closure_proved": true,
     "circular_reclamation_present": false,
-    "ostd_cortenmm_driver_refinement_present": false
+    "ostd_cortenmm_driver_refinement_present": false,
+    "closure_scope": "bounded window with retained validated mapping, explicit device contracts and no filesystem/driver claim; see concurrent_window_crash_recovery_closure"
+  },
+  "concurrent_window_crash_recovery_closure": {
+    "scope": "bounded closed host journal window with retained validated mapping; one pending request; no mounted filesystem or hardware claim",
+    "modules": [
+      "window_provenance.rs",
+      "window_stream.rs",
+      "window_snapshot.rs",
+      "window_scan.rs",
+      "window_records.rs",
+      "window_recognition.rs",
+      "window_recovery_profile.rs",
+      "window_redo.rs",
+      "window_recovery.rs",
+      "window_repeated_recovery.rs"
+    ],
+    "actual_scanner_exact_durable_suffix_checked": true,
+    "all_finite_lane_and_persistence_crash_cuts_checked": true,
+    "exact_partial_checkpoint_redo_closure_checked": true,
+    "primary_block_exact_relative_to_persisted_recovery_mark": true,
+    "all_finite_recovery_attempts_preserve_admission": true,
+    "all_finite_recovery_attempts_preserve_exact_byte_target": true,
+    "final_successful_recovery_reaches_original_window_prefix": true,
+    "cumulative_recovery_entry_limit": 4096,
+    "linux_native_credit_boundary": {
+      "filesystem_bytes": 134217728,
+      "journal_bytes": 33554432,
+      "accepted_payloads": 4096,
+      "accepted_transactions": 17,
+      "rejected_payloads_before_io": 4097
+    },
+    "native_variable_transaction_payload_counts": [
+      3,
+      2,
+      2
+    ],
+    "native_recovery_interruption_positions": [
+      1,
+      2,
+      4,
+      5
+    ],
+    "native_exact_final_primary_and_data_bytes": true,
+    "contract_premises": [
+      "exclusive protected journal window",
+      "quiescent initial device matches retained snapshot",
+      "atomic 4KiB writes",
+      "successful flush drains earlier issued writes",
+      "fresh recovery attempt starts from quiescent crash/reset snapshot"
+    ],
+    "cold_boot_journal_mapping_rediscovery_proved": false,
+    "full_filesystem_admission_or_operation_authority_proved": false,
+    "circular_reclamation_present": false,
+    "multiple_pending_BIOs_or_ostd_cortenmm_driver_refinement_present": false
   }
 }

@@ -29,7 +29,7 @@ closed window and does not append to it or reclaim its reservations.
 The initial journal must be clean and match the supplied UUID and internal
 single-extent geometry. Encodings retain exact frozen after-images and validated
 primary/journal sources. Preparation rejects gaps or reordered reservation
-serials, wrong geometry, unsupported codecs, resource limits and insufficient
+serials, wrong geometry, unsupported codecs, the cumulative 4,096-payload recovery budget, other resource limits and insufficient
 nonwrapping JBD2 sequence space. Reservation serials remain separate from disk
 sequence numbers. All public executable APIs validate inputs without public
 preconditions. Private state and consuming Pending objects prevent request
@@ -48,7 +48,7 @@ by a completed fence, and stable bytes follow actual issue order.
 
 | Design obligation | Accomplished in this component | Remaining |
 | --- | --- | --- |
-| C-COMMIT / J-ACK | Ordered multi-version commit requests, exact durable descriptor/payload/commit bytes for the reported prefix under the device contract, immutable owned request buffers | Actual scanner/recovery acknowledged-prefix composition across concurrent window cuts; operation and mount admission; driver reports |
+| C-COMMIT / J-ACK | Ordered multi-version commit requests, exact durable descriptor/payload/commit bytes for the reported prefix under the device contract, immutable owned request buffers | Bounded actual-scanner/recovery prefix closure now composes in [concurrent recovery closure](CONCURRENT_RECOVERY_CLOSURE.md); operation/mount admission and driver reports remain open |
 | C-CHECKPOINT | FIFO home generations, commit-before-home, full home-prefix persistence before tail issue, coalesced prefix headers, fenced tail generations, exact latest final home bytes and final clean tail | Circular log reuse, sealed-credit reclamation, restart/append admission and hardware quiescence |
 | J-BOOT | Recovery marking and activation fences, retained geometry/UUID, fresh contiguous IDs and exact active/retired header images | Actual-device source provenance, clean unmount, external journals and other unsupported format features |
 | S-RACE | Every finite modeled lane/persistence/completion/abort interleaving preserves the ledger and repeated-address ordering; abort retains effects | Kernel locks, worker fairness, overlapping pending BIOs, DMA loans, reset and unmount integration |
@@ -67,8 +67,7 @@ drains independent pending writes in reverse order, overlaps a newer commit
 with an older checkpoint, delays tail fences while checkpoint work advances,
 and permits late persistence after abort at every command cut. The checked
 scanner and independent Linux/e2fsprogs recovery are compared on those cuts.
-These examples supplement the formal results; they do not prove scanner closure
-for every concurrent crash snapshot.
+These examples supplement the formal results. Formal actual-scanner and repeated-recovery closure now composes for every bounded window crash snapshot in [concurrent recovery closure](CONCURRENT_RECOVERY_CLOSURE.md).
 
 ## Linux reference and framekernel integration
 

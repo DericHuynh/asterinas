@@ -36,7 +36,7 @@ pub open spec fn precedes(a: Operation, b: Operation) -> bool {
     }
 }
 
-proof fn log_spans_are_ordered(v: WindowView, i: int, j: int)
+pub(crate) proof fn log_spans_are_ordered(v: WindowView, i: int, j: int)
     requires journal_window::valid(v), 0 <= i < j < v.txs.len(),
     ensures v.txs[i].source.first as nat + v.txs[i].source.blocks <= v.txs[j].source.first,
     decreases j - i,
@@ -49,7 +49,7 @@ proof fn log_spans_are_ordered(v: WindowView, i: int, j: int)
     }
 }
 
-proof fn log_location(v: WindowView, op: Operation)
+pub(crate) proof fn log_location(v: WindowView, op: Operation)
     requires journal_window::valid(v), device::legal(op, journal_window::counts(v)), is_log(op),
     ensures 0 <= log_index(op) < v.txs.len(),
         log_offset(v, op) < v.txs[log_index(op)].source.blocks,
@@ -62,7 +62,7 @@ proof fn log_location(v: WindowView, op: Operation)
     reveal(journal_window::positioned_valid);
 }
 
-proof fn home_location(v: WindowView, t: usize, k: usize)
+pub(crate) proof fn home_location(v: WindowView, t: usize, k: usize)
     requires journal_window::valid(v), device::legal(Operation::Home(t, k), journal_window::counts(v)),
     ensures !(v.layout.start <= address(v, Operation::Home(t, k)) < v.layout.start as nat + v.layout.journal_blocks),
 {
@@ -287,7 +287,7 @@ proof fn last_stable_write_determines_the_bytes(before: Disk, v: WindowView, wri
     }
 }
 
-proof fn a_stable_log_record_has_exact_bytes(m: Media, initial: Disk, v: WindowView, op: Operation)
+pub(crate) proof fn a_stable_log_record_has_exact_bytes(m: Media, initial: Disk, v: WindowView, op: Operation)
     requires inv(m, v), is_log(op), m.ledger.stable.contains(op),
     ensures disk(m, initial, v)[address(v, op)] == image(v, op),
 {
