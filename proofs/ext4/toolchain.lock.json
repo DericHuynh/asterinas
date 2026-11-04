@@ -115,7 +115,9 @@
     "src/edit_handles.rs",
     "src/edit_schedule.rs",
     "src/writer_admission.rs",
-    "src/content_write.rs"
+    "src/content_write.rs",
+    "src/inode_time.rs",
+    "src/inode_time_fields.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -421,7 +423,13 @@
     "content_write::bytes_outside_the_requested_content_span_are_preserved",
     "content_write::replacement_bytes_equal_the_exact_requested_prefix",
     "content_write::every_replaced_byte_stays_in_the_same_logical_block",
-    "content_write::candidates_for_distinct_physical_blocks_commute"
+    "content_write::candidates_for_distinct_physical_blocks_commute",
+    "inode_time::extended_fields_reconstruct_the_original_seconds_and_nanoseconds",
+    "inode_time::canonical_extended_words_have_a_unique_encoding",
+    "inode_time::negative_legacy_seconds_are_not_misread_as_a_future_epoch",
+    "inode_time_fields::time_updates_preserve_every_unrelated_inode_byte",
+    "inode_time_fields::field_presence_uses_declared_extra_size_not_buffer_capacity",
+    "inode_time_fields::updated_field_decodes_to_the_requested_time"
   ],
   "required_flags": [
     "--no-cheating",
@@ -760,6 +768,11 @@
     "content_write::after_image",
     "content_write::begin",
     "content_write::prepare_chunk",
-    "edit_handles::release"
+    "edit_handles::release",
+    "inode_time::decode_words",
+    "inode_time::encode_extended",
+    "inode_time::encode_legacy",
+    "inode_time_fields::get_time",
+    "inode_time_fields::set_time"
   ]
 }
