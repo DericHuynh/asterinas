@@ -37,6 +37,21 @@ mapping epoch. A read or DMA loan pins the allocation generation until it is
 returned; freeing or reassigning that block requires those loans to be drained.
 An old read result cannot authorize access to a newer owner after reuse.
 
+The checked block_lifetime.rs specification now models per-block shared readers
+and exclusive writers, explicit volume/allocation epochs, fresh writer serials,
+private/unwritten/published states and zeroing before initialized publication.
+All enabled finite interleavings preserve its invariant. Returned read-pin IDs
+stay retired; stale allocation epochs, wrong volumes and stale writer leases
+are rejected. Disjoint writes commute, with nonempty concurrent reader/writer
+examples for every modeled power-of-two 1 through 64 KiB block size.
+
+Those are file-block/cache-state transitions, not physical write atomicity.
+This model does not prove scheduler progress, counter lowering/exhaustion,
+mapping-epoch capture, DMA or outstanding physical-I/O quiescence. Scalar model
+keys do not establish unforgeable runtime guards; tracked-token and actual
+OSTD-lock refinement remain required. Extent lookup must also capture/check an
+inode mapping epoch: an allocation epoch alone is not a complete lookup proof.
+
 The journal model must represent running transactions/handles, one committing
 transaction, and a queue of committed checkpoint transactions. Joining a
 transaction reserves credits; the final handle closes its running state before
@@ -77,13 +92,23 @@ VmReader/VmWriter/BIO DMA loans remain the memory and I/O ownership boundary.
 No Linux page/folio/buffer_head ownership is imported. Host immutable slices
 and owned vectors are a proof-core representation, not that adapter proof.
 
+The reviewed concrete boundaries are:
+
+| Asterinas/OSTD API | Required refinement |
+| --- | --- |
+| [Frame and Segment](../../ostd/src/mm/frame/mod.rs) | Reference counts preserve physical-memory lifetime. Untyped-frame readers/writers do not enforce Rust's alias/mutability rule, so a cloned frame is not an immutable snapshot. Track byte access, cache version and outstanding aliases separately. |
+| [UniqueFrame](../../ostd/src/mm/frame/unique.rs) | Unique metadata access must remain consistent with frame ownership and any later sharing; it does not turn a disk block number into a memory capability. |
+| [DmaStream](../../ostd/src/mm/dma/dma_stream.rs) | Preserve direction, initialization, mapping lifetime, cache coherence and sync_to_device/sync_from_device obligations. Keep frozen bytes unavailable to CPU mutation while the device owns a loan. |
+| [Bio](../../kernel/core/comps/block/src/bio.rs) | Submission consumes segments and the FnOnce callback. Bind request identity and buffers to the modeled generation; completion still does not prove durable persistence or cancellation of pending device effects. |
+| [RwMutex](../../ostd/src/sync/rwmutex.rs) | Refine shared/exclusive model leases to sleeping guards and wait queues; prove callback dependencies and lock ranks separately from memory safety. |
+
 ## Obligations
 
 | ID | Required result | Current status |
 | --- | --- | --- |
-| C-BLOCK | Unique allocation ownership; generation-aware pinning; reuse waits for all read/DMA/I/O loans. | Existing ownership model proves abstract zeroing/owner uniqueness; concurrent pins and runtime refinement open. |
-| C-EXTENT | Interval/tree equivalence and pointwise mapping preservation under split/merge, insertion, conversion and removal. | Initial inline-leaf parsing/lookup plus 64-bit block intervals, 48-bit extent-start codecs and pointwise split preservation checked. Tree refinement and other transitions open. |
-| C-LOCK | Compatible readers, exclusive writers, stale epoch rejection and deadlock-free lock order. | Existing global affine writer gate checked; per-block/inode concurrency open. |
+| C-BLOCK | Unique allocation ownership; generation-aware pinning; reuse waits for all read/DMA/I/O loans. | Abstract per-block shared read pins, exclusive writer leases, volume/allocation epochs, retired pin IDs and zeroing/publication preserve all finite interleavings in block_lifetime.rs. DMA, physical-I/O quiescence, extent binding and runtime refinement remain open. |
+| C-EXTENT | Interval/tree equivalence and pointwise mapping preservation under split/merge, insertion, conversion and removal. | Initial inline-leaf parsing/lookup plus 64-bit block intervals, 48-bit extent-start codecs and pointwise split/merge preservation checked. Tree refinement and other transitions open. |
+| C-LOCK | Compatible readers, exclusive writers, stale epoch rejection and deadlock-free lock order. | Global affine gate and abstract per-block reader/writer exclusion, stale allocation epoch/lease rejection and disjoint-write commutation checked. Inode mapping epochs, runtime guard refinement and deadlock freedom open. |
 | C-RUN | Concurrent handles reserve credits and close/freeze a transaction exactly once. | Open. |
 | C-COMMIT | Running/committing overlap uses distinct immutable versions; durable commits respect transaction dependencies. | Serialized writer checked; concurrent refinement open. |
 | C-CHECKPOINT | Multiple checkpoint transactions cannot overwrite newer versions or reuse blocks/log slots with pending effects. | Serialized reuse checked; overlapping checkpoint proof open. |

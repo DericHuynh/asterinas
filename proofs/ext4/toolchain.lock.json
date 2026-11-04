@@ -99,7 +99,8 @@
     "src/recovery_patch.rs",
     "src/recovery_admission.rs",
     "src/block_range.rs",
-    "src/extent_span.rs"
+    "src/extent_span.rs",
+    "src/block_lifetime.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -345,7 +346,26 @@
     "recovery_patch::each_selected_image_is_the_exact_shadow_patch",
     "recovery_patch::unselected_targets_have_no_shadow_patch",
     "block_range::split_is_an_exact_disjoint_partition",
-    "extent_span::splitting_preserves_every_mapping"
+    "extent_span::splitting_preserves_every_mapping",
+    "block_lifetime::every_event_preserves",
+    "block_lifetime::a_reader_excludes_cpu_write_and_reuse",
+    "block_lifetime::unwritten_and_private_blocks_do_not_grant_a_read_pin",
+    "block_lifetime::disjoint_writes_commute",
+    "block_lifetime::every_finite_interleaving_preserves_block_lifetimes",
+    "block_lifetime::two_distinct_readers_can_coexist",
+    "block_lifetime::nonempty_concurrent_read_example",
+    "block_lifetime::a_stale_allocation_epoch_cannot_pin",
+    "block_lifetime::writer_leases_for_one_block_are_identical",
+    "block_lifetime::release_and_reacquisition_reject_the_old_writer_lease",
+    "block_lifetime::released_pin_ids_never_return",
+    "block_lifetime::initialization_transition_zeroes_previous_contents",
+    "block_lifetime::allocation_after_free_cannot_publish_previous_bytes",
+    "block_lifetime::retired_read_pins_stay_retired_in_every_interleaving",
+    "block_lifetime::two_distinct_blocks_can_have_different_writers",
+    "block_lifetime::nonempty_concurrent_write_example",
+    "extent_span::merging_preserves_every_mapping",
+    "block_lifetime::a_foreign_volume_request_cannot_pin",
+    "block_lifetime::a_writer_lease_cannot_authorize_another_block_or_volume"
   ],
   "required_flags": [
     "--no-cheating",
@@ -590,6 +610,7 @@
     "extent_span::physical_block",
     "extent_span::encode",
     "extent_span::split",
-    "extent_span::parse"
+    "extent_span::parse",
+    "extent_span::merge"
   ]
 }

@@ -360,6 +360,8 @@ fn extent_spans_preserve_48_bit_addresses_and_every_mapping_across_splits() {
                 let (left, right) = decoded.split(length / 2).unwrap();
                 assert_eq!(left.info().initialized, initialized);
                 assert_eq!(right.info().initialized, initialized);
+                assert_eq!(left.merge(&right).unwrap().encode().unwrap(), raw);
+                assert!(right.merge(&left).is_none());
                 for logical in 41..=42 + length {
                     let a = left.physical_block(logical);
                     let b = right.physical_block(logical);
@@ -380,6 +382,21 @@ fn extent_spans_preserve_48_bit_addresses_and_every_mapping_across_splits() {
     assert!(
         description.encode().is_none(),
         "a model range is not automatically an encodable 48-bit extent"
+    );
+    let first = ExtentSpan::new(0, 1, 100, ExtentState::Written, 65536).unwrap();
+    for incompatible in [
+        ExtentSpan::new(1, 1, 101, ExtentState::Unwritten, 65536).unwrap(),
+        ExtentSpan::new(2, 1, 101, ExtentState::Written, 65536).unwrap(),
+        ExtentSpan::new(1, 1, 102, ExtentState::Written, 65536).unwrap(),
+        ExtentSpan::new(1, 1, 101, ExtentState::Written, 65537).unwrap(),
+    ] {
+        assert!(first.merge(&incompatible).is_none());
+    }
+    let a = ExtentSpan::new(0, 20000, 100, ExtentState::Written, 65536).unwrap();
+    let b = ExtentSpan::new(20000, 20000, 20100, ExtentState::Written, 65536).unwrap();
+    assert!(
+        a.merge(&b).is_none(),
+        "a merged extent must fit the Linux length encoding"
     );
 }
 

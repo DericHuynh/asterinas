@@ -184,6 +184,30 @@
       "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/extents.c",
       "blob_sha": "8cce1479be6d1e8d4f57428a0a0ed1088744e72e",
       "review_scope": "ext4_valid_extent logical exclusive-end wrap rejection, ordered extent/index entry validation, tree header/depth/capacity checks"
+    },
+    {
+      "path": "ostd/src/mm/frame/mod.rs",
+      "url": "https://github.com/asterinas/asterinas/blob/e57e69819c5df349e1743a2c06578fb500c39890/ostd/src/mm/frame/mod.rs",
+      "blob_sha": "6753151bbd3e217d4e6be599dfa3f005e049e98a",
+      "review_scope": "Frame/Segment lifetime and untyped-frame reader/writer aliasing boundaries"
+    },
+    {
+      "path": "ostd/src/mm/frame/unique.rs",
+      "url": "https://github.com/asterinas/asterinas/blob/e57e69819c5df349e1743a2c06578fb500c39890/ostd/src/mm/frame/unique.rs",
+      "blob_sha": "17985b783306a26125782e5e1b744171606e7228",
+      "review_scope": "UniqueFrame metadata exclusivity, sharing and lifetime boundary"
+    },
+    {
+      "path": "ostd/src/mm/dma/dma_stream.rs",
+      "url": "https://github.com/asterinas/asterinas/blob/e57e69819c5df349e1743a2c06578fb500c39890/ostd/src/mm/dma/dma_stream.rs",
+      "blob_sha": "d5906e18827b8af866c1e30242c296f1c63e82da",
+      "review_scope": "DmaStream direction, zeroed/uninitialized allocation and coherence/synchronization obligations"
+    },
+    {
+      "path": "ostd/src/sync/rwmutex.rs",
+      "url": "https://github.com/asterinas/asterinas/blob/e57e69819c5df349e1743a2c06578fb500c39890/ostd/src/sync/rwmutex.rs",
+      "blob_sha": "f6e0375a8286aa6f5a16132631176720047e600a",
+      "review_scope": "Sleeping shared/exclusive guards and wait queue semantics; not imported as a proved lock"
     }
   ]
 }

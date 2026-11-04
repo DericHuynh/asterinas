@@ -9,8 +9,8 @@ and a [concurrent block/extent/transaction protocol](CONCURRENCY.md).
 It is not a complete filesystem and is not registered with the kernel VFS.
 No mount or filesystem write path is enabled.
 
-The pinned Verus run checks **683 obligations with zero errors**, including
-244 named proof functions and 237 named executable functions.
+The pinned Verus run checks **709 obligations with zero errors**, including
+263 named proof functions and 238 named executable functions.
 39 host interoperability/regression tests pass on Linux-created metadata.
 [Proof status](proof-status.json) and [recorded evidence](verification-evidence.json)
 state the exact scope; tests do not discharge formal obligations.
@@ -21,7 +21,8 @@ state the exact scope; tests do not discharge formal obligations.
 | --- | --- |
 | `bytes.rs`, `crc.rs` | Total endian codecs, checked ranges, CRC32C and streaming/zero-field checksum relations. |
 | `superblock.rs`, `group.rs`, `inode.rs` | Strict profile checks, geometry/ranges, Linux metadata checksums, typed field decoding. |
-| `block_range.rs`, `extent_span.rs` | 64-bit block interval bounds, disjointness and exact split partition; Linux 48-bit physical-start codec, reserved terminal logical block and pointwise logical/physical mapping preservation under splitting. Descriptors do not establish allocation, read initialization, concurrency or full-tree admission. |
+| `block_range.rs`, `extent_span.rs` | 64-bit block interval bounds, disjointness and exact split partition; Linux 48-bit physical-start codec, reserved terminal logical block and pointwise logical/physical mapping preservation under splitting and merging. Descriptors do not establish allocation, read initialization, concurrency or full-tree admission. |
+| `block_lifetime.rs` | Abstract per-block shared read pins, exclusive volume/block/epoch-bound writer leases, initialization/publication and reuse. All finite enabled interleavings preserve the invariant; retired pin IDs stay retired, stale requests/leases are rejected, disjoint writes commute, and nonempty reader/writer examples cover modeled block sizes 1 through 64 KiB. No runtime thread, extent-map, DMA or concurrent journal refinement is claimed. |
 | `extent.rs` | Leaf extent codec, initialized/unwritten lengths, logical ordering and disjointness, bounded block resolution. |
 | `directory.rs` | Bounded linear dirent parsing, filename validation, directory checksum tails. |
 | `jbd2.rs`, `journal_superblock.rs` | Header/tag codecs, UUID binding, checksum primitives, counter bounds and superblock parsing. |

@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "license": "MPL-2.0",
-  "recorded_at": "2026-11-04T01:54:15.371472+00:00",
+  "recorded_at": "2026-11-04T02:19:02.906268+00:00",
   "scope": "Checked host core and specified abstract machines; not a complete or kernel-integrated ext4 filesystem",
   "verifier_version": {
     "verus": {
@@ -19,7 +19,7 @@
     "encountered-error": false,
     "encountered-vir-error": false,
     "success": true,
-    "verified": 683,
+    "verified": 709,
     "errors": 0,
     "is-verifying-entire-crate": true
   },
@@ -31,7 +31,7 @@
     "--crate-type=rlib"
   ],
   "source_sha256": {
-    "src/model.rs": "9bc652810743623d8a845df58adb7dcf6d2a727f87297f4f39648b60fa170707",
+    "src/model.rs": "d29ca50d31accf7b0c3c1a19130d021d30399c4d805466ffd352d7e1ffbafccc",
     "src/redo.rs": "e964baa83ca170c3cc60dbc8df4bfc470a81549ac23a5cfe4526a9cb0edb7e7f",
     "src/journal.rs": "eef5dcc269f81cbc1c7e8c6a4daf0a58cf7015423657a9cfe1f0fff186b91834",
     "src/lease.rs": "37358276a3719454ddeaf16177a2ce058b5e382c57b0609cea97031da084b1aa",
@@ -113,9 +113,10 @@
     "src/recovery_patch.rs": "340313f189ef3ade684fdc91b6adec4e0bff09b2cb347d316c68bb009229024e",
     "src/recovery_admission.rs": "02999edfc1761994b65c549cfc96763bf4ada0cfda9c6188e6ee017046263392",
     "src/block_range.rs": "a6e3533805cb938ffd1b2677a7bfa975560f85fb9bb5429497e255ba440e1b0c",
-    "src/extent_span.rs": "2374ff84c1ee9db8e9150954831037962ca3fd2313134bd8fdbec1b72263e270"
+    "src/extent_span.rs": "c5be075b23c101c6566e74f8fa6d277fb50ab7e1ff4d6a1cf6c169b2b4b5dadf",
+    "src/block_lifetime.rs": "af9bb37afd4dae722685e3f5ca1e450bd6e00674d25322f41218fad38d5623e4"
   },
-  "lock_sha256": "eeb19a21fd37a9abc79acbfa07486d859b5123745f48556c6ef343e84424fbb9",
+  "lock_sha256": "de399f9d5061154d4c560ecdebd8913f2ef1370a5320cd55b23efba156a277a3",
   "runner_sha256": "de6b473ab50632068de9e7fc619591c7b4d5afbc0058a1fcd7f946c0198beb91",
   "named_proof_coverage": [
     "access::override_cannot_execute_a_nonexecutable_regular_file",
@@ -131,6 +132,24 @@
     "block_claims::occupied_preservation_keeps_mapped_claims",
     "block_claims::occupied_slot_preservation_is_transitive",
     "block_claims::two_recorded_claims_cannot_own_the_same_physical_block",
+    "block_lifetime::a_foreign_volume_request_cannot_pin",
+    "block_lifetime::a_reader_excludes_cpu_write_and_reuse",
+    "block_lifetime::a_stale_allocation_epoch_cannot_pin",
+    "block_lifetime::a_writer_lease_cannot_authorize_another_block_or_volume",
+    "block_lifetime::allocation_after_free_cannot_publish_previous_bytes",
+    "block_lifetime::disjoint_writes_commute",
+    "block_lifetime::every_event_preserves",
+    "block_lifetime::every_finite_interleaving_preserves_block_lifetimes",
+    "block_lifetime::initialization_transition_zeroes_previous_contents",
+    "block_lifetime::nonempty_concurrent_read_example",
+    "block_lifetime::nonempty_concurrent_write_example",
+    "block_lifetime::release_and_reacquisition_reject_the_old_writer_lease",
+    "block_lifetime::released_pin_ids_never_return",
+    "block_lifetime::retired_read_pins_stay_retired_in_every_interleaving",
+    "block_lifetime::two_distinct_blocks_can_have_different_writers",
+    "block_lifetime::two_distinct_readers_can_coexist",
+    "block_lifetime::unwritten_and_private_blocks_do_not_grant_a_read_pin",
+    "block_lifetime::writer_leases_for_one_block_are_identical",
     "block_range::split_is_an_exact_disjoint_partition",
     "bytes::splice_frame",
     "bytes::splice_word_frame",
@@ -145,6 +164,7 @@
     "directory_source::checked_mapping_and_records_are_the_canonical_source",
     "epoch::fresh_epoch_has_no_old_commit",
     "extent::disjoint_logical_ranges",
+    "extent_span::merging_preserves_every_mapping",
     "extent_span::splitting_preserves_every_mapping",
     "file_read::an_initialized_mapping_has_exact_ownership",
     "file_read::initialized_mapping_is_unique",
@@ -447,6 +467,7 @@
     "extent::validate_inline_root",
     "extent_span::encode",
     "extent_span::info",
+    "extent_span::merge",
     "extent_span::new",
     "extent_span::parse",
     "extent_span::physical_block",
@@ -602,14 +623,14 @@
     "write_io::pending_command",
     "write_io::prepare"
   ],
-  "host_library_sha256": "8ea3bd154e54a0ff3371f4895d9fce00a300ab063652646c279cb4046e7fab7c",
+  "host_library_sha256": "2ee1a40c8f9197352e30f4ea3c536067b7b3d857fc2e9b2ba462224980df7b6e",
   "compatibility": {
     "schema": 1,
     "status": "passed",
     "scope": "host interoperability tests, not formal proof",
     "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
-    "proof_artifact_sha256": "8ea3bd154e54a0ff3371f4895d9fce00a300ab063652646c279cb4046e7fab7c",
-    "image_sha256": "e15797d4d0b5fd119cc1c9a01d18dcbc3889e9a28a4e24116dadabb919de0b98",
+    "proof_artifact_sha256": "2ee1a40c8f9197352e30f4ea3c536067b7b3d857fc2e9b2ba462224980df7b6e",
+    "image_sha256": "03642802426657059a69acfab6e77abab3ddc477cc06afe70a3f6e7fa254603e",
     "request_boundary_rejections": [
       "reuse_request",
       "redirect_completion",
@@ -623,7 +644,7 @@
     ],
     "compatibility_runner_sha256": "2f6f5b5a4aec23fb701df2be9f42ce64a9c8a9cbea23a212ea44ac36fd39e866",
     "test_source_sha256": {
-      "compat": "643633a90cdc0bed59fbcd06958dc0cf96a0f9a01a811a5d11fddd80504d3b3c",
+      "compat": "c45e49595fc5387d494382d56d3c9d86ade54954c28fe2da0af2c81466a7ecaf",
       "journal": "249e839c4d5197df757c39066cf518cfa98c2695dc5396e03688138d9b9cec9e"
     }
   },
@@ -684,5 +705,6 @@
   "retained_static_image_certificate": "checked_actual_allocation_directory_namespace_validation_retained_immutable_source_not_mount_or_IO_authority",
   "recovery_image_admission": "checked_same_source_bootstrap_selected_homes_and_retired_tail_shadow_complete_allocation_namespace_validation_exact_bootstrap_identity_and_journal_mapping_preserved_through_owned_dispatch_abort_completion_no_kernel_mount_or_driver_claim",
   "wide_block_intervals": "checked_64_bit_overflow_safe_bounds_membership_disjointness_and_exact_split_partition_descriptions_not_capabilities",
-  "wide_extent_intervals": "checked_Linux_48_bit_start_codec_64_bit_physical_arithmetic_written_unwritten_lengths_reserved_terminal_logical_block_and_pointwise_mapping_preservation_on_split_no_tree_or_allocation_authority"
+  "wide_extent_intervals": "checked_Linux_48_bit_start_codec_64_bit_physical_arithmetic_written_unwritten_lengths_reserved_terminal_logical_block_and_pointwise_mapping_preservation_on_split_and_merge_no_tree_or_allocation_authority",
+  "concurrent_block_lifetime_model": "checked_all_finite_enabled_interleavings_shared_read_pins_per_block_writer_leases_volume_and_allocation_epochs_retired_IDs_stale_reacquisition_zeroing_publication_reuse_disjoint_write_commutation_nonempty_examples_1_to_64_KiB_runtime_extent_DMA_journal_refinement_open"
 }

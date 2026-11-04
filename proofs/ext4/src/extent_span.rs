@@ -46,6 +46,12 @@ pub open spec fn mapping(v: SpanView, logical: u32) -> Option<u64> {
     } else { None }
 }
 
+pub open spec fn mergeable(a: SpanView, b: SpanView) -> bool {
+    &&& a.initialized == b.initialized && a.blocks == b.blocks
+    &&& a.logical as nat + a.length == b.logical && a.physical as nat + a.length == b.physical
+    &&& a.length as nat + b.length <= if a.initialized { 32768nat } else { 32767nat }
+}
+
 pub struct ExtentSpan { logical: u32, length: u32, range: BlockRange, state: ExtentState }
 
 impl ExtentSpan {
@@ -121,6 +127,24 @@ impl ExtentSpan {
         Some((ExtentSpan { logical: self.logical, length: left, range: a, state: left_state },
             ExtentSpan { logical: self.logical + left, length: self.length - left, range: b, state: right_state }))
     }
+
+    pub fn merge(&self, other: &Self) -> (r: Option<Self>)
+        ensures self.wf(), other.wf(), match r {
+            Some(joined) => mergeable(self.view(), other.view()) && joined.wf()
+                && joined.view() == (SpanView { length: (self.view().length + other.view().length) as u32, ..self.view() }),
+            None => !mergeable(self.view(), other.view()),
+        },
+    {
+        proof { use_type_invariant(self); use_type_invariant(other); }
+        let a = self.info();
+        let b = other.info();
+        let length = a.length + b.length;
+        let max_length = if a.initialized { 32768u32 } else { 32767u32 };
+        if a.initialized != b.initialized || a.blocks != b.blocks || a.logical as u64 + a.length as u64 != b.logical as u64
+            || a.physical + a.length as u64 != b.physical || length > max_length { return None; }
+        let state = if a.initialized { ExtentState::Written } else { ExtentState::Unwritten };
+        Some(ExtentSpan::new(a.logical, length, a.physical, state, a.blocks).unwrap())
+    }
 }
 
 pub fn parse(raw: &[u8], offset: usize, blocks: u64) -> (r: Option<ExtentSpan>)
@@ -148,6 +172,17 @@ pub proof fn splitting_preserves_every_mapping(before: SpanView, left: u32, logi
             physical: (before.physical + left) as u64, ..before };
         &&& valid(a) && valid(b)
         &&& mapping(before, logical) == if mapping(a, logical).is_some() { mapping(a, logical) } else { mapping(b, logical) }
+        &&& !(mapping(a, logical).is_some() && mapping(b, logical).is_some())
+    },
+{
+}
+
+pub proof fn merging_preserves_every_mapping(a: SpanView, b: SpanView, logical: u32)
+    requires valid(a), valid(b), mergeable(a, b),
+    ensures {
+        let joined = SpanView { length: (a.length + b.length) as u32, ..a };
+        &&& valid(joined)
+        &&& mapping(joined, logical) == if mapping(a, logical).is_some() { mapping(a, logical) } else { mapping(b, logical) }
         &&& !(mapping(a, logical).is_some() && mapping(b, logical).is_some())
     },
 {
