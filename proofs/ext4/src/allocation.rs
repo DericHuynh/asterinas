@@ -16,7 +16,7 @@ pub open spec fn reserved(v: IndexView, count: nat) -> Seq<Claim>
     decreases count,
 {
     if count == 0 { Seq::empty() }
-    else { reserved(v, (count - 1) as nat) + group_claims::claims(v.groups[count as int - 1].descriptor, (count - 1) as u32, v.ipg) }
+    else { reserved(v, (count - 1) as nat) + group_claims::claims_for_source(v.source, v.groups[count as int - 1].descriptor, (count - 1) as u32, v.ipg) }
 }
 
 #[verifier::opaque]
@@ -78,13 +78,13 @@ pub open spec fn valid(v: AllocationView) -> bool {
 }
 
 proof fn a_reserved_prefix_contains_each_group_claim(v: IndexView, count: nat, number: u32, claim: Claim)
-    requires number < count <= v.groups.len(), group_claims::claims(v.groups[number as int].descriptor, number, v.ipg).contains(claim),
+    requires number < count <= v.groups.len(), group_claims::claims_for_source(v.source, v.groups[number as int].descriptor, number, v.ipg).contains(claim),
     ensures reserved(v, count).contains(claim),
     decreases count,
 {
     reveal(reserved);
     let prefix = reserved(v, (count - 1) as nat);
-    let suffix = group_claims::claims(v.groups[count as int - 1].descriptor, (count - 1) as u32, v.ipg);
+    let suffix = group_claims::claims_for_source(v.source, v.groups[count as int - 1].descriptor, (count - 1) as u32, v.ipg);
     if number < count - 1 {
         a_reserved_prefix_contains_each_group_claim(v, (count - 1) as nat, number, claim);
         let i = choose|i: int| 0 <= i < prefix.len() && prefix[i] == claim;
@@ -98,7 +98,7 @@ proof fn a_reserved_prefix_contains_each_group_claim(v: IndexView, count: nat, n
 
 pub proof fn every_reserved_group_claim_has_its_exact_role(v: AllocationView, number: u32, claim: Claim, block: int)
     requires valid(v), number < v.index.groups.len(),
-        group_claims::claims(v.index.groups[number as int].descriptor, number, v.index.ipg).contains(claim),
+        group_claims::claims_for_source(v.index.source, v.index.groups[number as int].descriptor, number, v.index.ipg).contains(claim),
         block_claims::covers(claim, block),
     ensures 0 <= block < v.census.roles.len(), v.census.roles[block] == block_claims::at(claim, block),
 {
@@ -129,7 +129,7 @@ pub proof fn the_primary_superblock_and_descriptor_have_reserved_roles(v: Alloca
     reveal(valid);
     reveal(group_index::valid);
     let claim = group_claims::metadata(0, 2, 1);
-    let claims = group_claims::claims(v.index.groups[0].descriptor, 0, v.index.ipg);
+    let claims = group_claims::claims_for_source(v.index.source, v.index.groups[0].descriptor, 0, v.index.ipg);
     assert(claims[0] == claim && claims.contains(claim));
     every_reserved_group_claim_has_its_exact_role(v, 0, claim, 0);
     every_reserved_group_claim_has_its_exact_role(v, 0, claim, 1);
@@ -157,8 +157,8 @@ pub proof fn every_inode_table_position_has_a_metadata_role(v: AllocationView, n
     reveal(crate::group_metadata::valid);
     reveal(crate::group::accepted_with_features);
     let claim = group_claims::metadata(meta.inode_table, (v.index.ipg / 16) as u32, 3);
-    let claims = group_claims::claims(meta.descriptor, group as u32, v.index.ipg);
-    let index = if group_claims::sparse_super(group as u32) { 3int } else { 2int };
+    let claims = group_claims::claims_for_source(v.index.source, meta.descriptor, group as u32, v.index.ipg);
+    let index = if crate::backup_layout::present(v.index.source.subrange(1024, 2048), group as u32) { 3int } else { 2int };
     assert(group as u32 as int == group);
     assert(meta.inode_table as nat == bytes::le32(meta.descriptor, 8));
     assert(0 <= index < claims.len() && claims[index] == claim);
@@ -185,8 +185,8 @@ pub proof fn every_group_inode_bitmap_has_a_metadata_role(v: AllocationView, num
     assert(crate::group_metadata::valid(meta));
     reveal(crate::group_metadata::valid);
     let claim = group_claims::metadata(meta.inode_bitmap, 1, 3);
-    let claims = group_claims::claims(meta.descriptor, number, v.index.ipg);
-    let index = if group_claims::sparse_super(number) { 2int } else { 1int };
+    let claims = group_claims::claims_for_source(v.index.source, meta.descriptor, number, v.index.ipg);
+    let index = if crate::backup_layout::present(v.index.source.subrange(1024, 2048), number) { 2int } else { 1int };
     assert(meta.inode_bitmap as nat == bytes::le32(meta.descriptor, 4));
     assert(0 <= index < claims.len() && claims[index] == claim);
     assert(claims.contains(claim));
@@ -239,11 +239,14 @@ pub fn parse<'a>(source: Snapshot<'a>) -> (r: Option<Allocation<'a>>)
         decreases count - g,
     {
         let meta = index.get(g).unwrap();
-        census = match group_claims::reserve_with_features(census, meta.descriptor(), g, blocks, ipg, seed, flex) {
+        assert(index.view().source.len() >= 4096) by { reveal(group_index::valid); }
+        let backup = crate::backup_layout::source_group(index.source(), g).unwrap();
+        assert(backup == crate::backup_layout::present(index.view().source.subrange(1024, 2048), g));
+        census = match group_claims::reserve_with_backup(census, meta.descriptor(), g, blocks, ipg, seed, flex, backup) {
             Some(next) => next, None => { return None; }
         };
         assert(reserved(index.view(), g as nat + 1) == reserved(index.view(), g as nat)
-            + group_claims::claims(index.view().groups[g as int].descriptor, g, ipg)) by { reveal(reserved); }
+            + group_claims::claims_for_source(index.view().source, index.view().groups[g as int].descriptor, g, ipg)) by { reveal(reserved); }
         g += 1;
     }
     let raw = inode_table::read(&index, 8).unwrap();

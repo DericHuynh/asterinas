@@ -15,9 +15,9 @@ The accepted byte structures do not certify the whole volume.
 | --- | --- |
 | ext4 superblock | 1024 bytes, Linux creator OS, revision 1, 4 KiB blocks/clusters, 256-byte inodes, first data block 0, first ordinary inode 11, internal journal inode 8. |
 | Geometry | Bounded block count with zero high fields, 32768 blocks/group, positive inodes/group <=32768 and divisible by 16, checked group/count/partition relationships. |
-| Feature COMPAT | Exactly HAS_JOURNAL (`0x0004`). |
+| Feature COMPAT | HAS_JOURNAL (`0x0004`), optionally SPARSE_SUPER2 (`0x0200`) and STABLE_INODES (`0x0800`). |
 | Feature INCOMPAT | FILETYPE + EXTENTS (`0x0042`), optionally RECOVER (`0x4`), 64BIT (`0x80`), FLEX_BG (`0x200`) and CSUM_SEED (`0x2000`); all sixteen incompatibility combinations admitted. Raw parsing surfaces RECOVER; recovery preparation requires it when the journal has a nonzero start. |
-| Feature RO_COMPAT | SPARSE_SUPER + LARGE_FILE + EXTRA_ISIZE + METADATA_CSUM (`0x0443`), optionally HUGE_FILE (`0x044b`). |
+| Feature RO_COMPAT | LARGE_FILE + EXTRA_ISIZE + METADATA_CSUM (`0x0442`), optionally SPARSE_SUPER (`0x1`), legacy BTREE_DIR (`0x4`), HUGE_FILE (`0x8`), DIR_NLINK (`0x20`) and READONLY (`0x1000`). Without a sparse marker every group reserves backups; SPARSE_SUPER2 overrides classic sparse selection. |
 | Group descriptor | 32 bytes without 64BIT, 64 bytes with it; bitmaps and inode table locally disjoint and inside the physical group without FLEX_BG or inside the filesystem with it, initialized or canonical logical block/inode bitmaps (`bg_flags` 0 through 7), bounded counters with zero high address/counter fields, and CRC32C over the complete descriptor with 16-bit checksum storage. |
 | Inode | 256 bytes, extra_isize 32, live regular file/directory, EXTENTS flag, optionally HUGE_FILE when the filesystem feature is present, no ACL/xattr block, 64-bit regular-file i_size up to Linux's 2 TiB-minus-4 KiB bound without HUGE_FILE or 16 TiB-minus-4 KiB with it, low-only directory size with zero high field, Linux UID/GID high halves and inode CRC32C. |
 | Ordinary inode extent tree | Inline root with up to four entries, external 4 KiB nodes at depth 0–5, exact parent/depth/key bounds and checksums; complete same-source metadata/data ownership census. Physical addresses must fit the bounded volume, despite the 48-bit codec. Written length up to 32768; unwritten length up to 32767; zero length rejected. |
@@ -67,6 +67,15 @@ mke2fs -F -t ext4 -b 4096 -I 256 \
 with debugfs; no existing device is formatted.
 The local validation used e2fsprogs 1.47.0.
 This command creates test input, not a volume safe to mount with this package.
+
+## Feature semantics extension
+
+[FEATURE_POLICY.md](FEATURE_POLICY.md) documents optional STABLE_INODES, legacy
+BTREE_DIR, DIR_NLINK and READONLY handling, SPARSE_SUPER2 explicit backup groups
+and non-sparse backup layouts. The actual source selection drives the complete
+census and synthesized lazy bitmaps. READONLY blocks new serial/window writes
+while permitting checked committed-journal recovery. These additions retain the
+existing geometry, inode, extent and journal bounds and do not enable other bits.
 
 ## Checksums and generations
 

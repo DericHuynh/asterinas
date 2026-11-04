@@ -73,6 +73,7 @@ pub open spec fn valid(v: WindowView) -> bool {
     &&& v.layout.start as nat + v.layout.journal_blocks <= v.layout.fs_blocks
     &&& v.layout.fs_blocks as nat * 4096 <= v.partition_bytes
     &&& 0 < v.txs.len() <= 64 && journal_program::counts_valid(counts(v))
+    &&& !crate::feature_policy::readonly(v.initial_primary.subrange(1024, 2048))
     &&& v.initial_primary.len() == 4096 && superblock::accepted(v.initial_primary.subrange(1024, 2048), v.partition_bytes)
     &&& bytes::le32(v.initial_primary, 1028) == v.layout.fs_blocks
     &&& v.initial_journal.len() == v.layout.journal_blocks as nat * 4096
@@ -608,6 +609,7 @@ pub fn prepare(versions: &[FrozenVersion], journal: &[u8], uuid: &[u8], layout: 
     hide(journal_superblock::accepted);
     if versions.len() == 0 || versions.len() > 64 || !layout.valid() || primary.len() != 4096
         || journal.len() as u64 != layout.blocks() as u64 * 4096 { return None; }
+    if crate::feature_policy::is_readonly(&primary[1024..2048]).unwrap() { return None; }
     let boot = match superblock::parse(&primary[1024..2048], partition_bytes) { Some(boot) => boot, None => { return None; } };
     if boot.blocks() != layout.filesystem_blocks() { return None; }
     assert(layout.view().fs_blocks as nat * 4096 <= partition_bytes) by { reveal(superblock::accepted); }

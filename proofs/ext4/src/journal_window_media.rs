@@ -135,11 +135,15 @@ pub open spec fn inv(m: Media, v: WindowView) -> bool {
         ==> #[trigger] precedes(m.writes[i], m.writes[j]) && m.ledger.stable.contains(m.writes[i]))
 }
 
+spec fn ordered_writes(m: Media, v: WindowView) -> bool {
+    forall|i: int, j: int| 0 <= i < j < m.writes.len() && address(v, m.writes[i]) == address(v, m.writes[j])
+        ==> #[trigger] precedes(m.writes[i], m.writes[j]) && m.ledger.stable.contains(m.writes[i])
+}
+
 proof fn assemble_invariant(m: Media, v: WindowView)
     requires device::inv(m.ledger, journal_window::counts(v)), m.writes.no_duplicates(),
         m.writes.to_set() == m.ledger.issued,
-        forall|i: int, j: int| 0 <= i < j < m.writes.len() && address(v, m.writes[i]) == address(v, m.writes[j])
-            ==> #[trigger] precedes(m.writes[i], m.writes[j]) && m.ledger.stable.contains(m.writes[i]),
+        ordered_writes(m, v),
     ensures inv(m, v),
 { }
 
@@ -166,6 +170,7 @@ pub proof fn initialization(v: WindowView)
     assert(device::inv(initial().ledger, journal_window::counts(v)));
 }
 
+#[verifier::rlimit(30)]
 pub proof fn every_event_preserves(m: Media, e: Event, v: WindowView)
     requires journal_window::valid(v), inv(m, v), device::enabled(m.ledger, e, journal_window::counts(v)),
     ensures inv(next(m, e, v), v),
@@ -200,6 +205,7 @@ pub proof fn every_event_preserves(m: Media, e: Event, v: WindowView)
         implies #[trigger] precedes(n.writes[i], n.writes[j]) && n.ledger.stable.contains(n.writes[i]) by {
         if j < m.writes.len() { assert(precedes(m.writes[i], m.writes[j])); }
     }
+    assert(ordered_writes(n, v));
     assemble_invariant(n, v);
 }
 

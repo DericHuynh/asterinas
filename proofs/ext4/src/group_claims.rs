@@ -55,11 +55,18 @@ fn candidate(start: u32, length: u32, kind: u8) -> (r: Claim) ensures r == metad
     Claim { start, length, kind, inode: 0, generation: 0, logical: 0, initialized: false }
 }
 
-pub open spec fn claims(raw: Seq<u8>, number: u32, ipg: u32) -> Seq<Claim> {
+pub open spec fn claims_with_backup(raw: Seq<u8>, number: u32, ipg: u32, backup: bool) -> Seq<Claim> {
     let ordinary = seq![metadata(bytes::le32(raw, 0) as u32, 1, 3), metadata(bytes::le32(raw, 4) as u32, 1, 3),
         metadata(bytes::le32(raw, 8) as u32, (ipg / 16) as u32, 3)];
-    if sparse_super(number) { seq![metadata((number as nat * 32768) as u32, 2, 1)] + ordinary }
-    else { ordinary }
+    if backup { seq![metadata((number as nat * 32768) as u32, 2, 1)] + ordinary } else { ordinary }
+}
+
+pub open spec fn claims(raw: Seq<u8>, number: u32, ipg: u32) -> Seq<Claim> {
+    claims_with_backup(raw, number, ipg, sparse_super(number))
+}
+
+pub open spec fn claims_for_source(source: Seq<u8>, raw: Seq<u8>, number: u32, ipg: u32) -> Seq<Claim> {
+    claims_with_backup(raw, number, ipg, crate::backup_layout::present(source.subrange(1024, 2048), number))
 }
 
 pub open spec fn reservation_admissible(census: CensusView, raw: Seq<u8>, number: u32, blocks: u32, ipg: u32, seed: u32, flex: bool) -> bool {
@@ -91,19 +98,40 @@ pub fn reserve_with_features(initial: Census, raw: &[u8], number: u32, blocks: u
         None => !reservation_admissible(initial.view(), raw@, number, blocks, ipg, seed, flex),
     },
 {
+    let backup = match backup_group(number) { Some(backup) => backup, None => { return None; } };
+    reserve_with_backup(initial, raw, number, blocks, ipg, seed, flex, backup)
+}
+
+pub open spec fn reservation_admissible_with_backup(census: CensusView, raw: Seq<u8>, number: u32, blocks: u32, ipg: u32, seed: u32, flex: bool, backup: bool) -> bool {
+    &&& census.roles.len() == blocks && number < 32
+    &&& group::accepted_with_features(raw, number, blocks, ipg, seed, flex)
+    &&& claim_admission::appendable(census.roles, claims_with_backup(raw, number, ipg, backup))
+}
+
+pub fn reserve_with_backup(initial: Census, raw: &[u8], number: u32, blocks: u32, ipg: u32, seed: u32, flex: bool, backup: bool) -> (r: Option<Census>)
+    ensures match r {
+        Some(next) => group::accepted_with_features(raw@, number, blocks, ipg, seed, flex) && number < 32
+            && next.wf() && next.view().roles.len() == initial.view().roles.len() && next.view().roles.len() == blocks
+            && next.view().claims == initial.view().claims + claims_with_backup(raw@, number, ipg, backup)
+            && block_claims::mapped_claims(next.view().roles, claims_with_backup(raw@, number, ipg, backup))
+            && block_claims::preserves_occupied(initial.view().roles, next.view().roles)
+            && reservation_admissible_with_backup(initial.view(), raw@, number, blocks, ipg, seed, flex, backup),
+        None => !reservation_admissible_with_backup(initial.view(), raw@, number, blocks, ipg, seed, flex, backup),
+    },
+{
     hide(crc::fold);
     hide(group::accepted_with_features);
     let ghost original = initial.view();
     let mut census = initial;
     if census.block_count() != blocks { return None; }
     let desc = match group::parse_with_features(raw, number, blocks, ipg, seed, flex) { Some(desc) => desc, None => { return None; } };
-    let backup = match backup_group(number) { Some(backup) => backup, None => { return None; } };
+    if number >= 32 { return None; }
     let mut input = Vec::new();
     if backup { input.push(candidate(number * 32768, 2, 1)); }
     input.push(candidate(desc.block_bitmap, 1, 3));
     input.push(candidate(desc.inode_bitmap, 1, 3));
     input.push(candidate(desc.inode_table, desc.inode_table_blocks, 3));
-    let ghost source = claims(raw@, number, ipg);
+    let ghost source = claims_with_backup(raw@, number, ipg, backup);
     assert(input@ =~= source);
     assert(block_claims::preserves_occupied(original.roles, census.view().roles)) by { reveal(block_claims::preserves_occupied); }
     let mut index = 0usize;
@@ -114,13 +142,13 @@ pub fn reserve_with_features(initial: Census, raw: &[u8], number: u32, blocks: u
             block_claims::ledger(original.roles, original.claims),
             census.view().claims == original.claims + source.take(index as int),
             block_claims::preserves_occupied(original.roles, census.view().roles),
-            reservation_admissible(original, raw@, number, blocks, ipg, seed, flex)
+            reservation_admissible_with_backup(original, raw@, number, blocks, ipg, seed, flex, backup)
                 ==> claim_admission::appendable(census.view().roles, source.skip(index as int)),
         decreases input.len() - index,
     {
         let ghost before = census.view().roles;
         proof {
-            if reservation_admissible(original, raw@, number, blocks, ipg, seed, flex) {
+            if reservation_admissible_with_backup(original, raw@, number, blocks, ipg, seed, flex, backup) {
                 assert(source.skip(index as int)[0] == input@[index as int]);
                 assert(claim_admission::available(before, input@[index as int]));
             }
@@ -130,13 +158,13 @@ pub fn reserve_with_features(initial: Census, raw: &[u8], number: u32, blocks: u
             Err(rejected) => {
                 assert(rejected.view().roles == before);
                 assert(!claim_admission::available(before, input@[index as int]));
-                assert(!reservation_admissible(original, raw@, number, blocks, ipg, seed, flex));
+                assert(!reservation_admissible_with_backup(original, raw@, number, blocks, ipg, seed, flex, backup));
                 return None;
             },
         };
         proof {
             block_claims::occupied_slot_preservation_is_transitive(original.roles, before, census.view().roles);
-            if reservation_admissible(original, raw@, number, blocks, ipg, seed, flex) {
+            if reservation_admissible_with_backup(original, raw@, number, blocks, ipg, seed, flex, backup) {
                 assert(source.skip(index as int)[0] == source[index as int]);
                 claim_admission::appending_one_claim_keeps_the_remaining_claims_appendable(before, census.view().roles, source.skip(index as int));
                 assert(source.skip(index as int).skip(1) =~= source.skip(index as int + 1));

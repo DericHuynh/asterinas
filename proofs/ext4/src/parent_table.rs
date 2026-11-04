@@ -16,7 +16,7 @@ pub open spec fn node_ok(index: IndexView, n: u32) -> bool {
     let node = allocated_inode::source_view(index.volume, n);
     if !allocated_inode::live(index.volume.index, n) { slot.references == 0 }
     else {
-        &&& slot.references == node.links as nat
+        &&& crate::link_count::matches(node.mode, node.links, slot.references, crate::feature_policy::dir_nlink(index.volume.index.source.subrange(1024, 2048)))
         &&& if model::is_directory(index.volume, n) {
             &&& slot.dots == 1 && slot.dotdots == 1
             &&& if n == 2 { slot.parent == 2 && slot.incoming == 0 }
@@ -97,6 +97,11 @@ pub fn build(index: &DirectoryIndex<'_, '_>) -> (r: Option<ParentTable>)
     if root.info().mode & 0xf000 != 0x4000 { return None; }
     proof { allocated_inode::checked_view_is_the_source_projection(root.view()); }
     assert(model::is_directory(index.view().volume, 2)) by { reveal(allocated_inode::valid); }
+    assert(volume.view().index.source.len() >= 4096) by { reveal(crate::allocation::valid); reveal(crate::group_index::valid); }
+    let primary = volume.index().source().block(0).unwrap();
+    let raw_primary = primary.range(1024, 1024).unwrap();
+    assert(raw_primary@ =~= index.view().volume.index.source.subrange(1024, 2048));
+    let nlink_feature = crate::feature_policy::has_dir_nlink(raw_primary).unwrap();
     let counts = match counts::collect(index) { Some(counts) => counts, None => { return None; } };
     let capacity = inodes as u32 + 1;
     assert(counts.view().slots.len() == capacity) by { reveal(counts::valid); }
@@ -109,6 +114,7 @@ pub fn build(index: &DirectoryIndex<'_, '_>) -> (r: Option<ParentTable>)
             capacity as nat == inodes as nat + 1, inodes <= block_claims::MAX_BLOCKS,
             number <= capacity, parents.len() == number,
             counts.wf(), counts.view().index == index.view(), counts.view().slots.len() == capacity,
+            nlink_feature == crate::feature_policy::dir_nlink(index.view().volume.index.source.subrange(1024, 2048)),
             model::is_directory(index.view().volume, 2),
             nodes_ok(index.view(), number as nat), parents_match(index.view(), parents@),
         decreases capacity - number,
@@ -122,7 +128,7 @@ pub fn build(index: &DirectoryIndex<'_, '_>) -> (r: Option<ParentTable>)
             Some(node) => {
                 proof { allocated_inode::checked_view_is_the_source_projection(node.view()); }
                 let info = node.info();
-                if slot.references != info.links as u32 { return None; }
+                if !crate::link_count::agrees(info.mode, info.links, slot.references, nlink_feature) { return None; }
                 if info.mode & 0xf000 == 0x4000 {
                     if slot.dots != 1 || slot.dotdots != 1 { return None; }
                     if number == 2 {

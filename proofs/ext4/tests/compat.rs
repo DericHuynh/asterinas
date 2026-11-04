@@ -5099,3 +5099,247 @@ mod flex_group_tests {
         }
     }
 }
+
+mod feature_coverage {
+    use core::{backup_layout, feature_policy, image_validation, snapshot::Snapshot};
+
+    use super::*;
+
+    fn primary_checksum(image: &mut [u8]) {
+        let checksum = core::crc::crc32c(0xffffffff, &image[1024..2044]);
+        image[2044..2048].copy_from_slice(&checksum.to_le_bytes());
+    }
+
+    #[test]
+    fn feature_policy_rejects_each_unknown_bit_without_accepting_missing_required_semantics() {
+        for bit in 0..32 {
+            let compat = 4 | (1u32 << bit);
+            assert_eq!(
+                feature_policy::compatible_flags(compat),
+                matches!(bit, 2 | 9 | 11),
+                "COMPAT bit {bit}"
+            );
+            let incompat = 0x42 | (1u32 << bit);
+            assert_eq!(
+                feature_policy::incompatible_flags(incompat),
+                matches!(bit, 1 | 2 | 6 | 7 | 9 | 13),
+                "INCOMPAT bit {bit}"
+            );
+            let ro = 0x443 | (1u32 << bit);
+            assert_eq!(
+                feature_policy::readonly_compatible_flags(ro),
+                matches!(bit, 0 | 1 | 2 | 3 | 5 | 6 | 10 | 12),
+                "RO_COMPAT bit {bit}"
+            );
+        }
+        assert!(!feature_policy::compatible_flags(0xa00));
+        for required in [2, 0x40, 0x400] {
+            assert!(!feature_policy::readonly_compatible_flags(
+                0x146f & !required
+            ));
+        }
+    }
+
+    #[test]
+    fn all_backup_policies_match_linux_precedence_and_ignore_out_of_range_backup_slots() {
+        let mut sb = vec![0u8; 1024];
+        for number in 0..32 {
+            assert_eq!(backup_layout::has_backup(&sb, number), Some(true));
+        }
+        sb[100..104].copy_from_slice(&1u32.to_le_bytes());
+        for number in 0..32 {
+            assert_eq!(
+                backup_layout::has_backup(&sb, number),
+                core::group_claims::backup_group(number)
+            );
+        }
+        sb[92..96].copy_from_slice(&0x204u32.to_le_bytes());
+        sb[588..592].copy_from_slice(&2u32.to_le_bytes());
+        sb[592..596].copy_from_slice(&31u32.to_le_bytes());
+        for number in 0..32 {
+            assert_eq!(
+                backup_layout::has_backup(&sb, number),
+                Some(matches!(number, 0 | 2 | 31))
+            );
+        }
+        sb[588..592].copy_from_slice(&u32::MAX.to_le_bytes());
+        sb[592..596].copy_from_slice(&u32::MAX.to_le_bytes());
+        for number in 0..32 {
+            assert_eq!(backup_layout::has_backup(&sb, number), Some(number == 0));
+        }
+        assert_eq!(backup_layout::has_backup(&sb, 32), None);
+        assert_eq!(backup_layout::has_backup(&sb[..1023], 0), None);
+    }
+
+    #[test]
+    fn readonly_and_stable_inode_markers_bind_actual_source_validation() {
+        let mut image = image();
+        let compat = le32(&image, 1116) | 0x800;
+        image[1116..1120].copy_from_slice(&compat.to_le_bytes());
+        let ro = le32(&image, 1124) | 0x1004;
+        image[1124..1128].copy_from_slice(&ro.to_le_bytes());
+        primary_checksum(&mut image);
+        assert_eq!(feature_policy::is_readonly(&image[1024..2048]), Some(true));
+        assert_eq!(
+            feature_policy::has_stable_inodes(&image[1024..2048]),
+            Some(true)
+        );
+        let source = Snapshot::from_bytes(&image);
+        assert!(image_validation::inspect(source.duplicate()).is_some());
+        let boot = core::bootstrap::locate(&source).unwrap();
+        let mut changed = image.clone();
+        changed[1128] ^= 1;
+        primary_checksum(&mut changed);
+        assert!(!core::bootstrap_identity::check(
+            &boot,
+            &Snapshot::from_bytes(&changed)
+        ));
+    }
+
+    #[test]
+    fn dir_nlink_unknown_directory_count_keeps_exact_regular_counts_and_topology_checks() {
+        let mut image = image();
+        let (_, group, seed) = metadata(&image);
+        let ro = le32(&image, 1124) | 0x20;
+        image[1124..1128].copy_from_slice(&ro.to_le_bytes());
+        primary_checksum(&mut image);
+        let root = group.inode_table as usize * 4096 + 256;
+        image[root + 26..root + 28].copy_from_slice(&1u16.to_le_bytes());
+        seal_inode_image(&mut image, group.inode_table, 2, seed);
+        assert!(image_validation::inspect(Snapshot::from_bytes(&image)).is_some());
+        let mut wrong = image.clone();
+        wrong[root + 26..root + 28].copy_from_slice(&2u16.to_le_bytes());
+        seal_inode_image(&mut wrong, group.inode_table, 2, seed);
+        assert!(image_validation::inspect(Snapshot::from_bytes(&wrong)).is_none());
+        let file = group.inode_table as usize * 4096 + 11 * 256;
+        image[file + 26..file + 28].copy_from_slice(&2u16.to_le_bytes());
+        seal_inode_image(&mut image, group.inode_table, 12, seed);
+        assert!(image_validation::inspect(Snapshot::from_bytes(&image)).is_none());
+        assert_eq!(core::link_count::increment_directory(65000, true), Some(1));
+        assert_eq!(core::link_count::increment_directory(65000, false), None);
+        assert_eq!(core::link_count::increment_directory(1, true), Some(1));
+        assert_eq!(core::link_count::decrement_directory(1), 1);
+        assert_eq!(core::link_count::decrement_directory(3), 2);
+    }
+    fn command(binary: &str, args: &[&str]) {
+        let result = std::process::Command::new(binary)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{binary} {args:?}: {}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+    }
+
+    #[test]
+    fn linux_sparse_super2_and_nonsparse_volumes_use_the_actual_backup_claims_and_lazy_bitmaps() {
+        let mkfs = std::env::var("MKE2FS_BIN").unwrap_or_else(|_| "mke2fs".into());
+        let fsck = std::env::var("E2FSCK_BIN").unwrap_or_else(|_| "e2fsck".into());
+        for (label, extra, expected) in [
+            ("all", "", [true, true, true]),
+            ("explicit", ",sparse_super2", [true, true, true]),
+            ("classic", ",sparse_super", [true, true, false]),
+            ("explicit-none", ",sparse_super2", [true, false, false]),
+            ("wide-flex-all", ",64bit,flex_bg", [true, true, true]),
+        ] {
+            let path = format!("build/feature-backups-{label}.img");
+            let _ = std::fs::remove_file(&path);
+            let features = format!(
+                "none,has_journal,extent,filetype,large_file,extra_isize,metadata_csum{extra}"
+            );
+            let extended = if label == "explicit-none" {
+                "lazy_itable_init=0,lazy_journal_init=0,num_backup_sb=0"
+            } else {
+                "lazy_itable_init=0,lazy_journal_init=0"
+            };
+            command(
+                &mkfs,
+                &[
+                    "-q", "-F", "-t", "ext4", "-b", "4096", "-I", "256", "-O", &features, "-E",
+                    extended, &path, "98304",
+                ],
+            );
+            command(&fsck, &["-fn", &path]);
+            let image = std::fs::read(&path).unwrap();
+            let sb = &image[1024..2048];
+            for group in 0..3 {
+                assert_eq!(
+                    backup_layout::has_backup(sb, group),
+                    Some(expected[group as usize]),
+                    "{label}, group {group}"
+                );
+            }
+            let source = Snapshot::from_bytes(&image);
+            let checked = image_validation::inspect(source.duplicate()).unwrap();
+            assert_eq!(checked.source().partition_bytes(), image.len() as u64);
+            let volume = core::allocation::parse(source.duplicate()).unwrap();
+            let roles = volume.census();
+            for number in 1..3 {
+                let role = roles.role_of(number * 32768).unwrap();
+                if expected[number as usize] {
+                    assert_eq!(role.kind, 1, "{label}, backup group {number}");
+                } else {
+                    assert_ne!(role.kind, 1, "{label}, non-backup group {number}");
+                }
+            }
+            if label == "explicit" {
+                let mut changed = image.clone();
+                changed[1612..1616].copy_from_slice(&u32::MAX.to_le_bytes());
+                changed[1616..1620].copy_from_slice(&u32::MAX.to_le_bytes());
+                primary_checksum(&mut changed);
+                assert!(
+                    image_validation::inspect(Snapshot::from_bytes(&changed)).is_none(),
+                    "allocated backup blocks cannot disappear from the source census"
+                );
+            }
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+    #[test]
+    fn source_selected_policy_composes_across_all_32_new_feature_combinations() {
+        let image = image();
+        let source = Snapshot::from_bytes(&image);
+        for stable in [false, true] {
+            for selected in 0..16 {
+                let mut primary = image[..4096].to_vec();
+                let compat = le32(&primary, 1116) | if stable { 0x800 } else { 0 };
+                primary[1116..1120].copy_from_slice(&compat.to_le_bytes());
+                let bits = if selected & 1 != 0 { 8 } else { 0 }
+                    | if selected & 2 != 0 { 0x20 } else { 0 }
+                    | if selected & 4 != 0 { 4 } else { 0 }
+                    | if selected & 8 != 0 { 0x1000 } else { 0 };
+                let flags = le32(&primary, 1124) | bits;
+                primary[1124..1128].copy_from_slice(&flags.to_le_bytes());
+                primary_checksum(&mut primary);
+                let patches = core::patch_set::PatchSet::new()
+                    .insert(0, &primary)
+                    .ok()
+                    .unwrap();
+                let candidate = source.overlay(&patches).unwrap();
+                assert!(
+                    image_validation::inspect(candidate.duplicate()).is_some(),
+                    "stable={stable}, flags={bits:#x}"
+                );
+                let boot = core::bootstrap::locate(&candidate).unwrap();
+                let parsed =
+                    core::superblock::parse(&boot.primary()[1024..2048], image.len() as u64)
+                        .unwrap();
+                assert_eq!(
+                    parsed.feature_flags(),
+                    (compat, flags, le32(&primary, 1120))
+                );
+                assert_eq!(parsed.read_only(), selected & 8 != 0);
+                assert_eq!(
+                    feature_policy::has_stable_inodes(&boot.primary()[1024..2048]),
+                    Some(stable)
+                );
+                assert_eq!(
+                    feature_policy::is_readonly(&boot.primary()[1024..2048]),
+                    Some(selected & 8 != 0)
+                );
+            }
+        }
+    }
+}

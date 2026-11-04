@@ -9,9 +9,9 @@ and a [concurrent block/extent/transaction protocol](CONCURRENCY.md).
 It is not a complete filesystem and is not registered with the kernel VFS.
 No mount or filesystem write path is enabled.
 
-The pinned Verus run checks **1328 obligations with zero errors**, including
-488 named proof functions and 380 named executable functions.
-120 host interoperability/regression tests pass on Linux-created metadata.
+The pinned Verus run checks **1365 obligations with zero errors**, including
+500 named proof functions and 395 named executable functions.
+128 host interoperability/regression tests pass on Linux-created metadata.
 [Proof status](proof-status.json) and [recorded evidence](verification-evidence.json)
 state the exact scope; tests do not discharge formal obligations.
 
@@ -21,6 +21,7 @@ state the exact scope; tests do not discharge formal obligations.
 | --- | --- |
 | `bytes.rs`, `crc.rs` | Total endian codecs, checked ranges, CRC32C and streaming/zero-field checksum relations. |
 | `superblock.rs`, `group.rs`, `inode.rs` | Strict profile checks, geometry/ranges, Linux metadata checksums, typed field decoding, source-selected CSUM_SEED or UUID-derived metadata seeds. [Checksum domains](CSUM_SEED.md) remain separate from the internal journal UUID and JBD2 seed. |
+| `feature_policy.rs`, `backup_layout.rs`, `link_count.rs` | Source-bound feature masks retained by parsed headers; actual SPARSE_SUPER2/classic/non-sparse backups in the census and lazy bitmaps, DIR_NLINK sentinel with exact regular counts and complete topology, READONLY exclusion in every raw/sealed fresh writer with committed recovery retained, stable-identity framing and legacy BTREE_DIR admission. See [feature policy](FEATURE_POLICY.md). Other ext4 features, operations, geometry and kernel/CortenMM refinement remain open. |
 | `claim_admission.rs`, `group_claims.rs`, `inode_claims::reserve_journal` | Exact sequence availability, necessary ledger-extension conditions, preservation of later disjoint claims and complete metadata/internal-journal reservation contracts. See [claim admission](CLAIM_ADMISSION.md). Complete inode/extent census construction and whole-image admission remain open. |
 | `group_metadata.rs`, `group_index.rs` | Unique exact source projections, complete Some/None admission contracts, initialized/canonical-lazy bitmap selection, ordered source prefixes and exact global free-counter sums. See [group admission](GROUP_ADMISSION.md). Full allocation/namespace/recovery admission completeness remains open. |
 | `group_index.rs`, `group_claims.rs`, `inode_table.rs` | Source-selected FLEX_BG global metadata placement, physical/logical group separation, retained inode group/slot reads and globally disjoint physical claims. See [flexible groups](FLEX_GROUPS.md). Allocation policy, resize and runtime refinement remain open. |

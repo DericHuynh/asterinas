@@ -45,7 +45,7 @@
       "path": "fs/ext4/ext4.h",
       "url": "https://github.com/torvalds/linux/blob/v7.0/fs/ext4/ext4.h",
       "blob_sha": "7617e2d454ea516fee9047366458c0bda568fddf",
-      "review_scope": "feature bit inventory and supported masks; block/logical limits and selected inode definitions; ext4_isize/ext4_isize_set regular versus LARGEDIR high-field interpretation; ext4_group_desc high/low address, counter and bitmap checksum field offsets and 64BIT descriptor size constants; signed base/epoch/nanosecond timestamp table, ext4_encode_extra_time/ext4_decode_extra_time, legacy clamping and EXT4_FITS_IN_INODE presence rule"
+      "review_scope": "feature bit inventory and supported masks; block/logical limits and selected inode definitions; ext4_isize/ext4_isize_set regular versus LARGEDIR high-field interpretation; ext4_group_desc high/low address, counter and bitmap checksum field offsets and 64BIT descriptor size constants; signed base/epoch/nanosecond timestamp table, ext4_encode_extra_time/ext4_decode_extra_time, legacy clamping and EXT4_FITS_IN_INODE presence rule; source feature-mask retention; supported INCOMPAT mask excludes legacy COMPRESSION and DIRDATA; BTREE_DIR is included in the Linux RO_COMPAT supported mask; current bounded feature-policy expansion is recorded in FEATURE_POLICY.md"
     },
     {
       "path": "kernel/core/comps/block/src/lib.rs",
@@ -147,7 +147,7 @@
       "path": "fs/ext4/balloc.c",
       "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/balloc.c",
       "blob_sha": "8040c731b3e45d1c54fda8bb5493604e03c969bd",
-      "review_scope": "block bitmap reserved regions and padding; sparse-super power rule and non-META_BG base superblock/GDT reservations; ext4_new_meta_blocks attributes allocated index metadata to its inode; ext4_init_block_bitmap and ext4_free_clusters_after_init synthesize reserved super/GDT/bitmap/table bits and allocated padding independently of stale physical bitmap bytes"
+      "review_scope": "block bitmap reserved regions and padding; sparse-super power rule and non-META_BG base superblock/GDT reservations; ext4_new_meta_blocks attributes allocated index metadata to its inode; ext4_init_block_bitmap and ext4_free_clusters_after_init synthesize reserved super/GDT/bitmap/table bits and allocated padding independently of stale physical bitmap bytes; ext4_bg_has_super (854-878): group-zero reservation, SPARSE_SUPER2 explicit-group precedence, all-group non-sparse backups and classic odd-power selection; source-derived policy now composes through actual census and lazy bitmaps"
     },
     {
       "path": "fs/ext4/ialloc.c",
@@ -159,13 +159,13 @@
       "path": "fs/ext4/namei.c",
       "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/namei.c",
       "blob_sha": "c4b5e252af0efbfcbaf83688a32d445327a74a02",
-      "review_scope": "selected dot/dotdot placement and target checks, directory parent lookup, link-count updates and zero-link orphan handling; independent Rust implementation"
+      "review_scope": "selected dot/dotdot placement and target checks, directory parent lookup, link-count updates and zero-link orphan handling; independent Rust implementation; ext4_inc_count/ext4_dec_count (2748-2768): indexed directory overflow at EXT4_LINK_MAX=65000 and persistent unknown-count sentinel 1; independent source-bound namespace admission retains exact regular counts and full parent/root checks"
     },
     {
       "path": "fs/ext4/super.c",
       "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/super.c",
       "blob_sha": "a34efb44e73d70d034aa2ed1b4011a6851235f22",
-      "review_scope": "journal inode discovery, nonzero links/regular type, internal-journal open and mapping; referenced behavior only; ext4_max_size extent bound and no-HUGE_FILE 32-bit sector bound, including sparse files; ext4_init_metadata_csum selects stored s_checksum_seed for CSUM_SEED, otherwise CRC32C of filesystem UUID; ext4_group_desc_csum covers selected descriptor width with checksum word zeroed; ext4_check_descriptors selects filesystem-wide bounds under FLEX_BG while ext4_fill_flex_info normalizes out-of-range s_log_groups_per_flex to zero; ext4_get_journal_inode (5878-5908) and ext4_open_inode_journal (5932-5958) derive the internal journal from the current source inode; ext4_load_journal (6072-6160) opens that journal before recovery; independent concurrent-window bootstrap proofs preserve source-derived primary/GDT/inode-8 discovery across mixed checkpoint versions"
+      "review_scope": "journal inode discovery, nonzero links/regular type, internal-journal open and mapping; referenced behavior only; ext4_max_size extent bound and no-HUGE_FILE 32-bit sector bound, including sparse files; ext4_init_metadata_csum selects stored s_checksum_seed for CSUM_SEED, otherwise CRC32C of filesystem UUID; ext4_group_desc_csum covers selected descriptor width with checksum word zeroed; ext4_check_descriptors selects filesystem-wide bounds under FLEX_BG while ext4_fill_flex_info normalizes out-of-range s_log_groups_per_flex to zero; ext4_get_journal_inode (5878-5908) and ext4_open_inode_journal (5932-5958) derive the internal journal from the current source inode; ext4_load_journal (6072-6160) opens that journal before recovery; independent concurrent-window bootstrap proofs preserve source-derived primary/GDT/inode-8 discovery across mixed checkpoint versions; ext4_feature_set_ok (3629-3647): read-only admission precedes read-write checks and READONLY forces a read-only mount; host profile excludes fresh writes without skipping committed recovery"
     },
     {
       "path": "fs/ext4/inode.c",
