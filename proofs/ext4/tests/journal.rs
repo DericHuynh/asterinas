@@ -22,6 +22,7 @@ mod borrowed_edits {
         bytes.fill(0xee);
         assert!(handle.close());
         assert!(part.handle_at(0).is_none());
+        part.release();
     }
 
     fn close_all(running: &mut Running, values: &[Option<u8>]) {
@@ -512,6 +513,186 @@ fn geometry(img: &[u8]) -> (core::layout::JournalLayout, u32, u32) {
     let file = &img[base + 11 * 256..base + 12 * 256]; // debugfs fixture allocates inode 12.
     let file_extent = core::extent::parse(file, 52, sb.blocks()).unwrap();
     (layout, seed, file_extent.physical)
+}
+
+mod content_writes {
+    use super::*;
+
+    fn owner() -> core::access::Credentials {
+        core::access::Credentials {
+            fsuid: 0,
+            in_inode_group: false,
+            dac_override: false,
+            dac_read_search: false,
+        }
+    }
+
+    fn change_inode(image: &mut [u8], update: impl FnOnce(&mut [u8])) {
+        let seed = core::superblock::metadata_checksum_seed(&image[1024..2048]).unwrap();
+        let table = core::bytes::read_le32(image, 4104).unwrap() as usize;
+        let inode = &mut image[table * 4096 + 11 * 256..table * 4096 + 12 * 256];
+        update(inode);
+        let checksum = core::inode::calculated_checksum(inode, 12, seed).unwrap();
+        inode[124..126].copy_from_slice(&(checksum as u16).to_le_bytes());
+        inode[130..132].copy_from_slice(&((checksum >> 16) as u16).to_le_bytes());
+    }
+
+    #[test]
+    fn content_candidate_clips_to_block_and_eof_and_preserves_exact_surrounding_bytes() {
+        let (image, _, _, target) = fixture();
+        let source = core::snapshot::Snapshot::from_bytes(&image);
+        let volume = core::allocation::parse(source).unwrap();
+        let node = core::allocated_inode::get(&volume, 12).unwrap();
+        for (offset, wanted, length) in [
+            (0u64, 3, 3),
+            (17, 23, 23),
+            (4090, 32, 6),
+            (4096, 8192, 4096),
+            (8191, 32, 1),
+        ] {
+            let mut data = vec![0x81; wanted];
+            let candidate =
+                core::content_write::prepare_chunk(&node, offset, &data, &owner()).unwrap();
+            assert_eq!(candidate.written_prefix(), length);
+            let block = target as usize + offset as usize / 4096;
+            assert_eq!(candidate.after_image().block(), block as u32);
+            let mut expected = image[block * 4096..(block + 1) * 4096].to_vec();
+            let within = offset as usize % 4096;
+            expected[within..within + length].fill(0x81);
+            data.fill(0xee);
+            assert_eq!(candidate.after_image().as_slice(), expected);
+        }
+        for (offset, data) in [(0, vec![]), (8192, vec![1]), (u64::MAX, vec![1])] {
+            assert!(core::content_write::prepare_chunk(&node, offset, &data, &owner()).is_none());
+        }
+    }
+
+    #[test]
+    fn content_candidate_rejects_directories_missing_write_bits_and_setid_files() {
+        let (image, _, _, _) = fixture();
+        let volume = core::allocation::parse(core::snapshot::Snapshot::from_bytes(&image)).unwrap();
+        let root = core::allocated_inode::get(&volume, 2).unwrap();
+        assert!(core::content_write::prepare_chunk(&root, 0, &[1], &owner()).is_none());
+        let file = core::allocated_inode::get(&volume, 12).unwrap();
+        let stranger = core::access::Credentials {
+            fsuid: 1234,
+            in_inode_group: false,
+            dac_override: false,
+            dac_read_search: false,
+        };
+        assert!(core::content_write::prepare_chunk(&file, 0, &[1], &stranger).is_none());
+        for mode in [0x8000 | 0o4644, 0x8000 | 0o2644, 0x8000 | 0o0420] {
+            let mut changed = image.clone();
+            change_inode(&mut changed, |inode| {
+                inode[..2].copy_from_slice(&(mode as u16).to_le_bytes());
+            });
+            let volume =
+                core::allocation::parse(core::snapshot::Snapshot::from_bytes(&changed)).unwrap();
+            let file = core::allocated_inode::get(&volume, 12).unwrap();
+            let creds = core::access::Credentials {
+                fsuid: 0,
+                in_inode_group: true,
+                dac_override: false,
+                dac_read_search: false,
+            };
+            assert!(core::content_write::prepare_chunk(&file, 0, &[1], &creds).is_none());
+        }
+    }
+
+    #[test]
+    fn content_candidate_rejects_unwritten_extents_and_holes_without_using_stale_data() {
+        for unwritten in [false, true] {
+            let (mut image, _, _, _) = fixture();
+            change_inode(&mut image, |inode| {
+                if unwritten {
+                    let length = u16::from_le_bytes(inode[56..58].try_into().unwrap());
+                    inode[56..58].copy_from_slice(&(length + 0x8000).to_le_bytes());
+                } else {
+                    inode[4..8].copy_from_slice(&16384u32.to_le_bytes());
+                }
+            });
+            let volume =
+                core::allocation::parse(core::snapshot::Snapshot::from_bytes(&image)).unwrap();
+            let file = core::allocated_inode::get(&volume, 12).unwrap();
+            let offset = if unwritten { 0 } else { 8192 };
+            assert!(
+                core::content_write::prepare_chunk(&file, offset, &[0x82; 128], &owner()).is_none()
+            );
+        }
+    }
+
+    #[test]
+    fn independent_content_candidates_compose_in_either_shadow_order() {
+        let (image, _, _, target) = fixture();
+        let volume = core::allocation::parse(core::snapshot::Snapshot::from_bytes(&image)).unwrap();
+        let file = core::allocated_inode::get(&volume, 12).unwrap();
+        let left = core::content_write::prepare_chunk(&file, 7, &[0x84; 53], &owner()).unwrap();
+        let right = core::content_write::prepare_chunk(&file, 4103, &[0x85; 61], &owner()).unwrap();
+        assert_ne!(left.after_image().block(), right.after_image().block());
+        let left = core::patch_set::PatchSet::new()
+            .insert(left.after_image().block(), left.after_image().as_slice())
+            .ok()
+            .unwrap();
+        let right = core::patch_set::PatchSet::new()
+            .insert(right.after_image().block(), right.after_image().as_slice())
+            .ok()
+            .unwrap();
+        let source = volume.index().source();
+        let first = source.overlay(&left).unwrap().overlay(&right).unwrap();
+        let second = source.overlay(&right).unwrap().overlay(&left).unwrap();
+        for block in [
+            0,
+            1,
+            target,
+            target + 1,
+            geometry(&image).0.filesystem_blocks() - 1,
+        ] {
+            assert_eq!(
+                first.block(block).unwrap().as_slice(),
+                second.block(block).unwrap().as_slice()
+            );
+        }
+    }
+
+    #[test]
+    fn content_candidate_begins_only_the_same_source_validated_writer_and_linux_accepts_the_result()
+    {
+        let (image, _, _, target) = fixture();
+        let volume = core::allocation::parse(core::snapshot::Snapshot::from_bytes(&image)).unwrap();
+        let file = core::allocated_inode::get(&volume, 12).unwrap();
+        let candidate =
+            core::content_write::prepare_chunk(&file, 37, &[0x83; 97], &owner()).unwrap();
+        let expected = candidate.after_image().as_slice().to_vec();
+        let mut writer = candidate.begin().unwrap();
+        let mut stable = image.clone();
+        loop {
+            let pending = match writer.dispatch() {
+                Ok(pending) => pending,
+                Err(done) => {
+                    writer = done;
+                    break;
+                }
+            };
+            if let core::recovery_io::Command::Write { block, image } = pending.pending_command() {
+                stable[block as usize * 4096..(block as usize + 1) * 4096].copy_from_slice(image);
+            }
+            writer = pending.finish_pending(Completion::Succeeded);
+        }
+        assert!(writer.finished());
+        assert_eq!(
+            &stable[target as usize * 4096..(target as usize + 1) * 4096],
+            expected
+        );
+        assert!(
+            core::image_validation::inspect(core::snapshot::Snapshot::from_bytes(&stable))
+                .is_some()
+        );
+        let linux = linux_recover("build/content-write-final.img", &stable);
+        assert_eq!(
+            &linux[target as usize * 4096..(target as usize + 1) * 4096],
+            expected
+        );
+    }
 }
 
 fn linux_recover(path: &str, image: &[u8]) -> Vec<u8> {

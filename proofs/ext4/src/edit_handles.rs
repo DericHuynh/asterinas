@@ -347,8 +347,15 @@ impl<'s> Part<'s> {
         self.keys.values.len()
     }
 
+    pub fn release(self)
+        ensures self.future_view() == self.part_view(),
+    {
+        let Part { keys: _, stages: _ } = self;
+    }
+
     pub fn partition(&mut self, at: usize) -> (r: Option<(Part<'_>, Part<'_>)>)
-        ensures old(self).wf() ==> final(self).wf(), match r {
+        ensures final(self).future_view() == old(self).future_view(),
+            old(self).wf() ==> final(self).wf(), match r {
             Some((left, right)) => old(self).wf() && at <= old(self).part_view().len() && left.wf() && right.wf()
                 && left.part_view() == old(self).part_view().take(at as int)
                 && right.part_view() == old(self).part_view().skip(at as int)
@@ -364,7 +371,8 @@ impl<'s> Part<'s> {
     }
 
     pub fn handle_at(&mut self, index: usize) -> (r: Option<Handle<'_>>)
-        ensures old(self).wf() ==> final(self).wf(), match r {
+        ensures final(self).future_view() == old(self).future_view(),
+            old(self).wf() ==> final(self).wf(), match r {
             Some(handle) => old(self).wf() && index < old(self).part_view().len()
                 && old(self).part_view()[index as int].stage.status == Status::Unused
                 && handle.handle_view() == (EditView { stage: StageView { status: Status::Open,
@@ -409,6 +417,7 @@ impl<'s> Handle<'s> {
 
     pub fn stage(&mut self, bytes: &[u8]) -> (r: bool)
         ensures r == (old(self).handle_view().stage.status == Status::Open && bytes.len() == 4096),
+            final(self).future_edit() == old(self).future_edit(),
             r == slot_enabled(old(self).handle_view(), Action::Stage(bytes@)),
             r ==> final(self).handle_view() == slot_next(old(self).handle_view(), Action::Stage(bytes@)),
             final(self).handle_view().target == old(self).handle_view().target,

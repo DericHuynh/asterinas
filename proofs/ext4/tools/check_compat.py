@@ -123,6 +123,16 @@ def main():
                                               "{ let _ = w.dispatch(); let _ = w.dispatch(); }\n", "E0382"),
         "replace_admitted_write_pending": ("pub fn misuse(mut p: verified_ext4::writer_admission::Pending<'_, '_>, "
                                             "raw: verified_ext4::write_io::Pending) { p.pending = raw; }\n", "E0616"),
+        "forge_content_candidate": ("pub fn misuse(p: verified_ext4::content_write::Candidate<'_, '_, '_>) "
+                                     "{ let _ = verified_ext4::content_write::Candidate { ..p }; }\n", "E0451"),
+        "redirect_content_candidate": ("pub fn misuse(mut p: verified_ext4::content_write::Candidate<'_, '_, '_>, "
+                                        "image: verified_ext4::transaction::AfterImage) { p.image = image; }\n", "E0616"),
+        "reuse_content_candidate": ("pub fn misuse(p: verified_ext4::content_write::Candidate<'_, '_, '_>) "
+                                     "{ let _ = p.begin(); let _ = p.begin(); }\n", "E0382"),
+        "replace_content_inode": ("pub fn misuse<'n, 'v, 'a>(mut p: verified_ext4::content_write::Candidate<'n, 'v, 'a>, "
+                                   "n: &'n verified_ext4::allocated_inode::AllocatedInode<'v, 'a>) { p.node = n; }\n", "E0616"),
+        "reuse_released_edit_part": ("pub fn misuse(p: verified_ext4::edit_handles::Part<'_>) "
+                                      "{ p.release(); let _ = p.part_count(); }\n", "E0382"),
     })
     for name, (source, code) in misuse.items():
         path = BUILD / (name + ".rs")

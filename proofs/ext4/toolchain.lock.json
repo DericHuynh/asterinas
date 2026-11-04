@@ -114,7 +114,8 @@
     "src/block_bitmap.rs",
     "src/edit_handles.rs",
     "src/edit_schedule.rs",
-    "src/writer_admission.rs"
+    "src/writer_admission.rs",
+    "src/content_write.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -415,7 +416,12 @@
     "edit_schedule::every_finite_edit_interleaving_preserves_invariants",
     "edit_schedule::frozen_selection_retains_only_reserved_targets",
     "edit_schedule::an_open_or_aborted_slot_blocks_freezing",
-    "edit_schedule::nonempty_two_worker_close_and_freeze_example"
+    "edit_schedule::nonempty_two_worker_close_and_freeze_example",
+    "content_write::an_initialized_content_write_cannot_touch_another_inode",
+    "content_write::bytes_outside_the_requested_content_span_are_preserved",
+    "content_write::replacement_bytes_equal_the_exact_requested_prefix",
+    "content_write::every_replaced_byte_stays_in_the_same_logical_block",
+    "content_write::candidates_for_distinct_physical_blocks_commute"
   ],
   "required_flags": [
     "--no-cheating",
@@ -749,6 +755,11 @@
     "writer_admission::finish_pending",
     "writer_admission::prepare",
     "write_io::log_record_count",
-    "write_io::log_record"
+    "write_io::log_record",
+    "content_write::written_prefix",
+    "content_write::after_image",
+    "content_write::begin",
+    "content_write::prepare_chunk",
+    "edit_handles::release"
   ]
 }
