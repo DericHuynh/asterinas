@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "license": "MPL-2.0",
-  "recorded_at": "2026-11-04T14:13:48.096130+00:00",
+  "recorded_at": "2026-11-04T14:43:43.761589+00:00",
   "scope": "Checked host core and specified abstract machines; not a complete or kernel-integrated ext4 filesystem",
   "verifier_version": {
     "verus": {
@@ -19,7 +19,7 @@
     "encountered-error": false,
     "encountered-vir-error": false,
     "success": true,
-    "verified": 1037,
+    "verified": 1058,
     "errors": 0,
     "is-verifying-entire-crate": true
   },
@@ -31,7 +31,7 @@
     "--crate-type=rlib"
   ],
   "source_sha256": {
-    "src/model.rs": "22ab18c2efaf70dbc5e175d9d39457353dddf15d20f0652bdd88c889f442deba",
+    "src/model.rs": "e3a7d99eac7609e8e6af93ecf383b87a80edab441237960748a47021c34047ed",
     "src/redo.rs": "e964baa83ca170c3cc60dbc8df4bfc470a81549ac23a5cfe4526a9cb0edb7e7f",
     "src/journal.rs": "eef5dcc269f81cbc1c7e8c6a4daf0a58cf7015423657a9cfe1f0fff186b91834",
     "src/lease.rs": "37358276a3719454ddeaf16177a2ce058b5e382c57b0609cea97031da084b1aa",
@@ -67,7 +67,7 @@
     "src/recovery_request.rs": "43d7382d4d80862503be7295bc8fb7bdb80a3b1cae9c24cdde6e1dec6b65dea6",
     "src/scan_stop.rs": "0b5e30855ff8657b12cb28134f6cb4d94d95296891784428f566ef41a9055793",
     "src/transaction.rs": "a6e88e8e97cad92524d57cb93482625966b049b3e3a56502629bbd1c9c14ac37",
-    "src/journal_view.rs": "ed3cc72e9a81e9afde7553479c8b0c3630259a1a7923f4f5a3c3b249d2642716",
+    "src/journal_view.rs": "7502a6d107cf006b28dd84ba2614c2b81d3241e9d245b4c9c1b17f943f20b163",
     "src/transaction_refinement.rs": "957d73f8a85bd2f0c74676819450b37ff261d806357694486941f4e490fc6054",
     "src/write_protocol.rs": "2d9f8aed38396354591ef2b19d91818ec30be082ee8404803d7d96a9d0aaa3c5",
     "src/write_io.rs": "8ebfc6e24c27f165d1451ce39d4f62614a1fc81c8adb6acde6c5008bf4e91353",
@@ -109,7 +109,7 @@
     "src/shadow_model.rs": "b92a3a25ff4dfb03a92843d22d1b5db983eeb396ef35cbf8aff9c8e6c8abb171",
     "src/bootstrap.rs": "9134aa490a86df9f2d85627f96384e5b8c9180a543dc1374774ed4b2562e4898",
     "src/image_validation.rs": "7323aac144673f43906b9fc26cd8759bcbd99456e347d1467056f3266eb8d8fe",
-    "src/bootstrap_identity.rs": "c1eb133f2d16576c55aeff2ef8a08a72a417c3946093e6301eb082f6db267286",
+    "src/bootstrap_identity.rs": "858578946704aab1c279d6627e30829fa6bb5cd18e8b7b8b13c98c98b32280a9",
     "src/recovery_patch.rs": "340313f189ef3ade684fdc91b6adec4e0bff09b2cb347d316c68bb009229024e",
     "src/recovery_admission.rs": "02999edfc1761994b65c549cfc96763bf4ada0cfda9c6188e6ee017046263392",
     "src/block_range.rs": "a6e3533805cb938ffd1b2677a7bfa975560f85fb9bb5429497e255ba440e1b0c",
@@ -134,15 +134,17 @@
     "src/inode_time_fields.rs": "a631c1847322c706764eecef999698f9deb4b76ba35c8132e3acacdb863d45e9",
     "src/inode_touch.rs": "5b8d4b918868b29b38cc84a5b46f745fd16190b40c00ab7b1000c6480eb83499",
     "src/writer_image.rs": "37eebefcc43b2ecaeb09eed196e2f2b6031e3c60a544cc0c76f31e71a6571264",
-    "src/disk_image.rs": "0497928880b2fc170b16f904376903dbed9c5dbfc7b30775656217b40614f87f",
+    "src/disk_image.rs": "3dd42cfc02890bde628ee4632534aab963ae80135bd057e3d659be16adfc5409",
     "src/recovery_image.rs": "a0bed69d6da4318434c7fc7c16404be420e869433a30de5b79fd9a78e5182334",
     "src/recovery_crash_image.rs": "165035cdea2508b0b1de331d85de593fdf6a19c1798dfd6e1b972bfc982d5c14",
     "src/extent_frame.rs": "515d5001afd352d2fa5abbb4725346637ef43bc30f27e49cf2ef1e8a6b27977d",
     "src/write_frame.rs": "b57da1269258856321ea6d22e56355e82e2da6c7bb87c14ab28527b5b85ed17d",
     "src/inode_projection.rs": "bc06204632edd11f2a92a5a7c52719dffc326e3400e3e752004c0406ebea1465",
-    "src/write_result.rs": "c25cbf2ca5aed1d214f337a32fd3f51fd5468c017c3f92a994875025f32133a1"
+    "src/write_result.rs": "c25cbf2ca5aed1d214f337a32fd3f51fd5468c017c3f92a994875025f32133a1",
+    "src/bootstrap_frame.rs": "d92a5ed1acf3ac54cf244e794c07db8e06a0ee334da03c2b03edf03459c5c31b",
+    "src/recovery_bootstrap.rs": "f823f569779ebc2666f28661e307d28aecba9c764babb519335ce1122eb73c53"
   },
-  "lock_sha256": "1d71baf1d537d5b50fab481e97053d421c6e8cb685d6f74263ddcd78b20aae49",
+  "lock_sha256": "19d337b09834dc1eb23a8fdbb0fedbaca0220aff5ee4758f0cfac42ca74c2a00",
   "runner_sha256": "de6b473ab50632068de9e7fc619591c7b4d5afbc0058a1fcd7f946c0198beb91",
   "named_proof_coverage": [
     "access::override_cannot_execute_a_nonexecutable_regular_file",
@@ -190,6 +192,10 @@
     "block_range::split_is_an_exact_disjoint_partition",
     "bootstrap::every_valid_bootstrap_is_the_unique_source_projection",
     "bootstrap::valid_bootstraps_of_identical_bytes_have_identical_fields",
+    "bootstrap_frame::a_bootstrap_preserving_allocation_image_has_an_admissible_journal_locator",
+    "bootstrap_frame::complete_bootstrap_block_mixtures_keep_the_same_admitted_locator",
+    "bootstrap_identity::fixed_primary_identity_keeps_bootstrap_geometry_and_checksum_domain",
+    "bootstrap_identity::preserved_group_zero_addresses_keep_the_journal_inode_coordinate",
     "bytes::little_endian_encoding_recovers_every_word",
     "bytes::splice_frame",
     "bytes::splice_word_frame",
@@ -207,6 +213,8 @@
     "directory_block::checked_block_has_canonical_records",
     "directory_block::complete_record_coverage_is_unique",
     "directory_source::checked_mapping_and_records_are_the_canonical_source",
+    "disk_image::a_flat_projection_has_the_exact_mapped_journal",
+    "disk_image::a_flat_projection_reads_every_complete_present_block",
     "disk_image::a_flat_source_has_the_exact_mapped_journal",
     "disk_image::flat_projection_preserves_partition_bytes_beyond_the_filesystem",
     "disk_image::initial_block_map_has_the_exact_source_bytes",
@@ -298,6 +306,7 @@
     "journal::replay_is_restartable",
     "journal::retirement_preserves",
     "journal_state::recovery_tail_does_not_change_journal_geometry",
+    "journal_view::a_mapped_logical_block_has_complete_physical_bytes",
     "journal_view::equal_journal_blocks_have_equal_snapshots",
     "journal_view::nonjournal_write_preserves_every_journal_byte",
     "journal_view::scanned_block_is_the_reserved_ring_image",
@@ -332,6 +341,10 @@
     "persistence::initialization",
     "persistence::public_success_is_durable_and_quiescent",
     "persistence::reuse_has_no_late_persistence_events",
+    "recovery_bootstrap::each_non_journal_cut_block_has_complete_old_or_validated_redo_bytes",
+    "recovery_bootstrap::every_admitted_recovery_cut_has_an_admissible_fresh_bootstrap",
+    "recovery_bootstrap::every_finite_admitted_recovery_trace_keeps_fresh_bootstrap_discovery",
+    "recovery_bootstrap::unchanged_tail_cuts_have_the_same_fresh_canonical_scan_source",
     "recovery_closure::a_new_scan_of_uncleared_recovery_keeps_the_same_committed_input",
     "recovery_closure::every_finite_sequence_of_recovery_crashes_preserves_admission",
     "recovery_closure::every_recovery_crash_snapshot_can_prepare_another_recovery",
@@ -851,14 +864,14 @@
     "writer_admission::prepare",
     "writer_admission::source_snapshot"
   ],
-  "host_library_sha256": "c21d0bb538d5a230cfc82794ff04ebd9c8fdbcd5b8e8b36fdb9397e23293d62d",
+  "host_library_sha256": "f656219c2923114a1130fdd99b2e21bb4bd87bb784c97356d697f0b3c1bb3e91",
   "compatibility": {
     "schema": 1,
     "status": "passed",
     "scope": "host interoperability tests, not formal proof",
     "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
-    "proof_artifact_sha256": "c21d0bb538d5a230cfc82794ff04ebd9c8fdbcd5b8e8b36fdb9397e23293d62d",
-    "image_sha256": "506218076f045502172f843c5120297221a98bb7da60e67b2280c88160a2d7b7",
+    "proof_artifact_sha256": "f656219c2923114a1130fdd99b2e21bb4bd87bb784c97356d697f0b3c1bb3e91",
+    "image_sha256": "1563c2493f127136a51244cba155863c9f766a098caad0886a501400e9d28556",
     "request_boundary_rejections": [
       "reuse_request",
       "redirect_completion",
@@ -896,7 +909,7 @@
     "compatibility_runner_sha256": "1a59ff23ba0e1291b32d7fc88098b9d2dbf71c3a3c02397badf4ed08c26e51d5",
     "test_source_sha256": {
       "compat": "7b085dd761d649337c88aaa253b3909446efecc0cdceb09cff07064abb8e4e53",
-      "journal": "30ec48a4d8a1f7526f483b377cbd9aca3e8455906ed35b8ba0d72d53df51479f"
+      "journal": "2617992cdb24d740ef9502153db57a5b7c9640a612399cbb5e4e77d17c242603"
     }
   },
   "compatibility_test_count": 98,

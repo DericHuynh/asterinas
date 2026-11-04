@@ -45,13 +45,15 @@ the source layer limit still rejects an additional overlay.
 
 | Obligation | Result | Remaining scope |
 | --- | --- | --- |
-| J-LOCATE | Exact source projection, unique fields and complete bounded discovery; zero table rejected before inode read | Discovery after every physical crash source still needs bootstrap preservation |
+| J-LOCATE | Exact source projection, unique fields and complete bounded discovery; zero table rejected before inode read | Recovery-cut preservation now composes in RECOVERY_BOOTSTRAP.md; writer cuts and actual capture remain open |
 | F-ADMIT | Locator Some/None matches its admitted predicate | Complete filesystem, recovery and mount admission remain open |
 | F-PARSE | Existing total parsers/range checks compose in both locator directions | Other block/inode/journal layouts and full ext4 features |
 | S-ENTRY | The existing private retained-source Bootstrap type keeps its exact source binding | Actual CortenMM source capture, locks, DMA and kernel entry |
 
 This is completeness of journal location for the existing bounded profile,
 not completeness of filesystem validation, recovery preparation or recovery
-admission. Fresh-process crash reconstruction, actual I/O quiescence and driver
-contracts, concurrent journal operation and full ext4 coverage remain open.
+admission. Fresh bootstrap reconstruction for admitted recovery-model cuts now composes
+in RECOVERY_BOOTSTRAP.md. Full recovery/filesystem admission, actual I/O
+quiescence and driver contracts, concurrent journal operation and full ext4
+coverage remain open.
 Kernel mount/write gates remain closed.

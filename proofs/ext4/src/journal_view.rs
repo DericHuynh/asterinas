@@ -29,6 +29,14 @@ pub open spec fn snapshot(disk: Disk, layout: LayoutView) -> Seq<u8> {
     })
 }
 
+pub proof fn a_mapped_logical_block_has_complete_physical_bytes(disk: Disk, layout: LayoutView, logical: u32)
+    requires mapped(disk, layout), logical < layout.journal_blocks,
+    ensures disk.dom().contains((layout.start + logical) as u32), disk[(layout.start + logical) as u32].len() == 4096,
+{
+    assert(disk.dom().contains((layout.start + logical) as u32));
+    assert(disk[(layout.start + logical) as u32].len() == 4096);
+}
+
 pub proof fn equal_journal_blocks_have_equal_snapshots(a: Disk, b: Disk, layout: LayoutView)
     requires mapped(a, layout), mapped(b, layout),
         forall|logical: u32| logical < layout.journal_blocks ==>
