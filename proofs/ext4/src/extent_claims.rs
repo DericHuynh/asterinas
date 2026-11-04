@@ -5,7 +5,7 @@
 //! from the eventual CortenMM, credential and device authority boundaries.
 
 use vstd::prelude::*;
-use crate::{allocated_inode, block_claims::{self, Census, Claim}, bytes, crc,
+use crate::{allocated_inode, block_claims::{self, Census, CensusView, Claim}, bytes, claim_admission, crc,
     extent, extent_node::{self, Node, NodeView, BlockChecksum}, extent_span,
     extent_tree::{self, Context, CheckedTree}, group, group_index::{self, GroupIndex, IndexView},
     group_metadata, inode::{self, Inode}, inode_claims, inode_blocks, inode_table, snapshot::Snapshot, source_block};
@@ -110,6 +110,84 @@ pub open spec fn children_claims(c: Context, node: NodeView, count: nat, depth: 
 pub open spec fn claims(index: IndexView, number: u32) -> Seq<Claim> {
     let c = context(index, number);
     node_claims(c, extent_tree::root_node(c), None, depth(index, number), owner(index, number))
+}
+
+proof fn complete_leaf_claims_have_exact_prefixes(raw: Seq<u8>, count: nat, index: nat, owner: Owner)
+    requires index <= count,
+    ensures leaf_claims(raw, count, owner).len() == count,
+        leaf_claims(raw, index, owner).len() == index,
+        leaf_claims(raw, count, owner).take(index as int) == leaf_claims(raw, index, owner),
+        index < count ==> leaf_claims(raw, count, owner)[index as int] == leaf_claim(raw, index as int, owner),
+    decreases count,
+{
+    reveal(leaf_claims);
+    if count > 0 {
+        complete_leaf_claims_have_exact_prefixes(raw, (count - 1) as nat,
+            if index < count { index } else { (index - 1) as nat }, owner);
+    }
+}
+
+spec fn child_claim_sequence(c: Context, node: NodeView, index: nat, depth: u16, owner: Owner) -> Seq<Claim> {
+    let child = extent_node::child(node.raw, index as int) as u64;
+    node_claims(c, extent_tree::external_node(c, child), Some(child), depth, owner)
+}
+
+proof fn complete_child_claims_have_exact_prefixes(c: Context, node: NodeView, count: nat, index: nat, depth: u16, owner: Owner)
+    requires index <= count,
+    ensures children_claims(c, node, index, depth, owner).len() <= children_claims(c, node, count, depth, owner).len(),
+        children_claims(c, node, count, depth, owner).take(children_claims(c, node, index, depth, owner).len() as int)
+            == children_claims(c, node, index, depth, owner),
+        index < count ==> children_claims(c, node, index, depth, owner).len() + child_claim_sequence(c, node, index, depth, owner).len()
+            <= children_claims(c, node, count, depth, owner).len()
+            && children_claims(c, node, count, depth, owner).subrange(children_claims(c, node, index, depth, owner).len() as int,
+                (children_claims(c, node, index, depth, owner).len() + child_claim_sequence(c, node, index, depth, owner).len()) as int)
+                == child_claim_sequence(c, node, index, depth, owner),
+    decreases count,
+{
+    reveal(children_claims);
+    if index < count {
+        complete_child_claims_have_exact_prefixes(c, node, (count - 1) as nat, index, depth, owner);
+    }
+}
+
+proof fn a_leaf_prefix_keeps_the_next_claim_available(before: CensusView, now: CensusView, own: Seq<Claim>, raw: Seq<u8>, count: nat, index: nat, owner: Owner)
+    requires block_claims::ledger(before.roles, before.claims), block_claims::ledger(now.roles, now.claims),
+        now.roles.len() == before.roles.len(), index < count,
+        now.claims == before.claims + own + leaf_claims(raw, index, owner),
+    ensures claim_admission::appendable(before.roles, own + leaf_claims(raw, count, owner))
+        ==> claim_admission::available(now.roles, leaf_claim(raw, index as int, owner)),
+{
+    complete_leaf_claims_have_exact_prefixes(raw, count, index, owner);
+    let full = own + leaf_claims(raw, count, owner);
+    let completed = own.len() + index;
+    assert(full.take(completed as int) =~= own + leaf_claims(raw, index, owner));
+    assert(now.claims =~= before.claims + full.take(completed as int));
+    if claim_admission::appendable(before.roles, full) {
+        claim_admission::a_valid_prefix_extension_keeps_the_remaining_claims_appendable(before, now, full, completed);
+        assert(full.skip(completed as int)[0] == leaf_claim(raw, index as int, owner));
+        assert(claim_admission::available(now.roles, full.skip(completed as int)[0]));
+    }
+}
+
+proof fn a_child_prefix_keeps_the_next_subtree_appendable(before: CensusView, now: CensusView, own: Seq<Claim>, c: Context, node: NodeView,
+    count: nat, index: nat, depth: u16, owner: Owner)
+    requires block_claims::ledger(before.roles, before.claims), block_claims::ledger(now.roles, now.claims),
+        now.roles.len() == before.roles.len(), index < count,
+        now.claims == before.claims + own + children_claims(c, node, index, depth, owner),
+    ensures claim_admission::appendable(before.roles, own + children_claims(c, node, count, depth, owner))
+        ==> claim_admission::appendable(now.roles, child_claim_sequence(c, node, index, depth, owner)),
+{
+    complete_child_claims_have_exact_prefixes(c, node, count, index, depth, owner);
+    let full = own + children_claims(c, node, count, depth, owner);
+    let prefix = own + children_claims(c, node, index, depth, owner);
+    let next = child_claim_sequence(c, node, index, depth, owner);
+    assert(full.take(prefix.len() as int) =~= prefix);
+    assert(now.claims =~= before.claims + full.take(prefix.len() as int));
+    assert(full.skip(prefix.len() as int).take(next.len() as int) =~= next);
+    if claim_admission::appendable(before.roles, full) {
+        claim_admission::a_valid_prefix_extension_keeps_the_remaining_claims_appendable(before, now, full, prefix.len());
+        claim_admission::an_appendable_sequence_has_appendable_prefixes(now.roles, full.skip(prefix.len() as int), next.len());
+    }
 }
 
 pub proof fn allocated_concatenation(a: Seq<Claim>, b: Seq<Claim>)
@@ -280,31 +358,50 @@ impl Parameters {
     spec fn context(&self, source: Seq<u8>) -> Context { Context { source, root: self.root, blocks: self.blocks as u64, size: 4096, checksum: BlockChecksum::Crc32c(self.seed) } }
 }
 
-fn collect_node(mut census: Census, source: &Snapshot<'_>, p: &Parameters, node: Node<'_>, address: Option<u64>, depth: u16, first: Option<u32>, upper: u64) -> (r: Option<(Census, u64)>)
-    requires census.wf(), census.view().roles.len() == p.blocks, 0 < p.owner.number, p.owner.kind == 4 || p.owner.kind == 5,
+fn collect_node(initial: Census, source: &Snapshot<'_>, p: &Parameters, node: Node<'_>, address: Option<u64>, depth: u16, first: Option<u32>, upper: u64) -> (r: Option<(Census, u64)>)
+    requires initial.wf(), initial.view().roles.len() == p.blocks, 0 < p.owner.number, p.owner.kind == 4 || p.owner.kind == 5,
         extent_tree::context_valid(p.context(source.view())), node.wf(), depth <= 5,
         extent_tree::subtree_valid(p.context(source.view()), node.view(), address, depth, first, upper),
     ensures match r {
-        Some((next, count)) => next.wf() && next.view().roles.len() == census.view().roles.len()
-            && block_claims::preserves_occupied(census.view().roles, next.view().roles)
-            && next.view().claims == census.view().claims + node_claims(p.context(source.view()), node.view(), address, depth, p.owner)
-            && count <= 536870911 && count as nat == inode_claims::allocated(node_claims(p.context(source.view()), node.view(), address, depth, p.owner)),
-        None => true,
+        Some((next, count)) => next.wf() && next.view().roles.len() == initial.view().roles.len()
+            && block_claims::preserves_occupied(initial.view().roles, next.view().roles)
+            && next.view().claims == initial.view().claims + node_claims(p.context(source.view()), node.view(), address, depth, p.owner)
+            && count <= p.blocks && count as nat == inode_claims::allocated(node_claims(p.context(source.view()), node.view(), address, depth, p.owner))
+            && claim_admission::appendable(initial.view().roles, node_claims(p.context(source.view()), node.view(), address, depth, p.owner)),
+        None => !claim_admission::appendable(initial.view().roles, node_claims(p.context(source.view()), node.view(), address, depth, p.owner)),
     },
     decreases depth,
 {
     hide(crc::fold);
     let ghost c = p.context(source.view());
     let ghost v = node.view();
-    let ghost before = census.view();
+    let ghost before = initial.view();
+    let ghost own = match address { Some(number) => seq![metadata_claim(number, p.owner)], None => Seq::empty() };
+    let ghost full = node_claims(c, v, address, depth, p.owner);
+    assert(full == own + if depth == 0 { leaf_claims(v.raw, bytes::le16(v.raw, 2), p.owner) }
+        else { children_claims(c, v, bytes::le16(v.raw, 2), (depth - 1) as u16, p.owner) }) by { reveal(node_claims); }
+    let mut census = initial;
     let mut total = 0u64;
     if let Some(number) = address {
         let claim = Claim { start: number as u32, length: 1, kind: 6, inode: p.owner.number,
             generation: p.owner.generation, logical: 0, initialized: false };
-        census = match census.claim(claim) { Ok(next) => next, Err(_) => { return None; } };
+        proof {
+            if claim_admission::appendable(before.roles, full) {
+                assert(full.len() > 0 && full[0] == claim);
+                assert(claim_admission::available(before.roles, full[0]));
+            }
+        }
+        census = match census.claim(claim) {
+            Ok(next) => next,
+            Err(rejected) => {
+                assert(rejected.view().roles == before.roles);
+                assert(!claim_admission::available(before.roles, claim));
+                assert(!claim_admission::appendable(before.roles, full));
+                return None;
+            },
+        };
         total = 1;
     }
-    let ghost own = match address { Some(number) => seq![metadata_claim(number, p.owner)], None => Seq::empty() };
     assert(census.view().claims == before.claims + own);
     assert(inode_claims::allocated(Seq::empty()) == 0) by { reveal(inode_claims::allocated); }
     assert(total as nat == inode_claims::allocated(own)) by {
@@ -323,9 +420,12 @@ fn collect_node(mut census: Census, source: &Snapshot<'_>, p: &Parameters, node:
             invariant node.wf(), v == node.view(), count as nat == bytes::le16(v.raw, 2), bytes::le16(v.raw, 6) == 0,
                 p.context(source.view()) == c, v.blocks == p.blocks, index <= count <= 5460,
                 census.wf(), census.view().roles.len() == p.blocks, before.roles.len() == p.blocks,
+                before == initial.view(), block_claims::ledger(before.roles, before.claims),
+                full == node_claims(c, v, address, depth, p.owner),
+                full == own + leaf_claims(v.raw, count as nat, p.owner),
                 census.view().claims == before.claims + own + leaf_claims(v.raw, index as nat, p.owner),
                 block_claims::preserves_occupied(before.roles, census.view().roles),
-                total <= 536870911, total as nat == inode_claims::allocated(own) + inode_claims::allocated(leaf_claims(v.raw, index as nat, p.owner)),
+                total <= p.blocks, total as nat == inode_claims::allocated(own) + inode_claims::allocated(leaf_claims(v.raw, index as nat, p.owner)),
             decreases count as usize - index,
         {
             let span = node.leaf_extent(index).unwrap();
@@ -334,14 +434,27 @@ fn collect_node(mut census: Census, source: &Snapshot<'_>, p: &Parameters, node:
                 generation: p.owner.generation, logical: info.logical, initialized: info.initialized };
             assert(claim == leaf_claim(v.raw, index as int, p.owner));
             let ghost prior_roles = census.view().roles;
-            census = match census.claim(claim) { Ok(next) => next, Err(_) => { return None; } };
+            proof { a_leaf_prefix_keeps_the_next_claim_available(before, census.view(), own, v.raw, count as nat, index as nat, p.owner); }
+            census = match census.claim(claim) {
+                Ok(next) => next,
+                Err(rejected) => {
+                    assert(rejected.view().roles == prior_roles);
+                    assert(!claim_admission::available(prior_roles, claim));
+                    assert(!claim_admission::appendable(before.roles, full));
+                    return None;
+                },
+            };
             proof { block_claims::occupied_slot_preservation_is_transitive(before.roles, prior_roles, census.view().roles); }
             total += info.length as u64;
-            if total > 536870911 { return None; }
             proof {
                 reveal(leaf_claims);
                 reveal(inode_claims::allocated);
                 assert(leaf_claims(v.raw, index as nat + 1, p.owner).drop_last() =~= leaf_claims(v.raw, index as nat, p.owner));
+                let added = own + leaf_claims(v.raw, index as nat + 1, p.owner);
+                assert(census.view().claims == before.claims + added);
+                allocated_concatenation(own, leaf_claims(v.raw, index as nat + 1, p.owner));
+                crate::claim_budget::an_appended_claim_sequence_fits_the_final_ledger(census.view().roles, before.claims, added);
+                assert(total <= p.blocks);
             }
             index += 1;
         }
@@ -354,9 +467,12 @@ fn collect_node(mut census: Census, source: &Snapshot<'_>, p: &Parameters, node:
                 extent_tree::context_valid(c), v.blocks == p.blocks, index <= count <= 5460,
                 0 < p.owner.number, p.owner.kind == 4 || p.owner.kind == 5,
                 census.wf(), census.view().roles.len() == p.blocks, before.roles.len() == p.blocks,
+                before == initial.view(), block_claims::ledger(before.roles, before.claims),
+                full == node_claims(c, v, address, depth, p.owner),
+                full == own + children_claims(c, v, count as nat, (depth - 1) as u16, p.owner),
                 census.view().claims == before.claims + own + children_claims(c, v, index as nat, (depth - 1) as u16, p.owner),
                 block_claims::preserves_occupied(before.roles, census.view().roles),
-                total <= 536870911, total as nat == inode_claims::allocated(own)
+                total <= p.blocks, total as nat == inode_claims::allocated(own)
                     + inode_claims::allocated(children_claims(c, v, index as nat, (depth - 1) as u16, p.owner)),
             decreases count as usize - index,
         {
@@ -369,8 +485,17 @@ fn collect_node(mut census: Census, source: &Snapshot<'_>, p: &Parameters, node:
             let block = source_block::capture(source, entry.child, 4096).unwrap();
             let child = block.parse_extent_node(p.blocks as u64, BlockChecksum::Crc32c(p.seed)).unwrap();
             let ghost prior_roles = census.view().roles;
+            proof {
+                assert(child.view() == extent_tree::external_node(c, entry.child));
+                a_child_prefix_keeps_the_next_subtree_appendable(before, census.view(), own, c, v, count as nat, index as nat, (depth - 1) as u16, p.owner);
+            }
             let (next, consumed) = match collect_node(census, source, p, child, Some(entry.child), depth - 1, Some(entry.logical), high) {
-                Some(pair) => pair, None => { return None; },
+                Some(pair) => pair,
+                None => {
+                    assert(!claim_admission::appendable(prior_roles, child_claim_sequence(c, v, index as nat, (depth - 1) as u16, p.owner)));
+                    assert(!claim_admission::appendable(before.roles, full));
+                    return None;
+                },
             };
             census = next;
             proof {
@@ -380,12 +505,30 @@ fn collect_node(mut census: Census, source: &Snapshot<'_>, p: &Parameters, node:
                 reveal(children_claims);
             }
             total += consumed;
-            if total > 536870911 { return None; }
+            proof {
+                let added = own + children_claims(c, v, index as nat + 1, (depth - 1) as u16, p.owner);
+                assert(census.view().claims == before.claims + added);
+                allocated_concatenation(own, children_claims(c, v, index as nat + 1, (depth - 1) as u16, p.owner));
+                crate::claim_budget::an_appended_claim_sequence_fits_the_final_ledger(census.view().roles, before.claims, added);
+                assert(total <= p.blocks);
+            }
             index += 1;
         }
         proof { allocated_concatenation(own, children_claims(c, v, count as nat, (depth - 1) as u16, p.owner)); }
     }
+    proof {
+        assert(census.view().claims =~= before.claims + full);
+        claim_admission::every_valid_ledger_extension_was_appendable(before, census.view(), full);
+    }
     Some((census, total))
+}
+
+pub open spec fn collection_admissible(census: CensusView, index: IndexView, number: u32) -> bool {
+    let raw = inode_table::raw(index, number);
+    &&& block_claims::ledger(census.roles, census.claims) && accepted(index, number) && census.roles.len() == index.blocks
+    &&& claim_admission::appendable(census.roles, claims(index, number))
+    &&& (!group_index::has_huge_files(index) ==> bytes::le16(raw, 116) == 0)
+    &&& inode_blocks::sectors(raw, 4096, group_index::has_huge_files(index)) == 8 * inode_claims::allocated(claims(index, number))
 }
 
 pub fn collect(census: Census, inode: &BoundInode<'_, '_>) -> (r: Option<Census>)
@@ -396,8 +539,9 @@ pub fn collect(census: Census, inode: &BoundInode<'_, '_>) -> (r: Option<Census>
             && block_claims::mapped_claims(next.view().roles, claims(inode.index_view(), inode.inode_number()))
             && (!group_index::has_huge_files(inode.index_view()) ==> bytes::le16(inode_table::raw(inode.index_view(), inode.inode_number()), 116) == 0)
             && inode_blocks::sectors(inode_table::raw(inode.index_view(), inode.inode_number()), 4096, group_index::has_huge_files(inode.index_view()))
-                == 8 * inode_claims::allocated(claims(inode.index_view(), inode.inode_number())),
-        None => true,
+                == 8 * inode_claims::allocated(claims(inode.index_view(), inode.inode_number()))
+            && collection_admissible(census.view(), inode.index_view(), inode.inode_number()),
+        None => !collection_admissible(census.view(), inode.index_view(), inode.inode_number()),
     },
 {
     hide(crc::fold);
@@ -416,6 +560,12 @@ pub fn collect(census: Census, inode: &BoundInode<'_, '_>) -> (r: Option<Census>
     let owner = Owner { number: inode.number, generation: inode.info.generation,
         kind: if inode.info.mode & 0xf000 == 0x4000 { 5u8 } else { 4u8 } };
     let p = Parameters { root: position + 40, blocks, seed: inode::inode_seed(seed, inode.number, owner.generation), owner };
+    proof {
+        assert(p.context(inode.index_view().source) == context(inode.index_view(), inode.number));
+        assert(p.owner == crate::extent_claims::owner(inode.index_view(), inode.number));
+        assert(root.view() == extent_tree::root_node(context(inode.index_view(), inode.number)));
+        assert(depth == crate::extent_claims::depth(inode.index_view(), inode.number));
+    }
     let (next, total) = match collect_node(census, inode.index.source(), &p, root, None, depth, None, extent::MAX_LOGICAL_END) {
         Some(pair) => pair, None => { return None; },
     };

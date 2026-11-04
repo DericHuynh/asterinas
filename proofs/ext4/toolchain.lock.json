@@ -516,7 +516,10 @@
     "claim_admission::appending_one_claim_keeps_the_remaining_claims_appendable",
     "extent_claims::an_inode_audit_visits_at_most_its_claimed_blocks_plus_the_inline_root",
     "claim_budget::every_disjoint_claim_ledger_fits_the_physical_volume",
-    "allocation_budget::every_live_inode_fits_the_volume_sized_audit_budget"
+    "allocation_budget::every_live_inode_fits_the_volume_sized_audit_budget",
+    "claim_admission::a_valid_prefix_extension_keeps_the_remaining_claims_appendable",
+    "claim_budget::an_appended_claim_sequence_fits_the_final_ledger",
+    "claim_admission::an_appendable_sequence_has_appendable_prefixes"
   ],
   "required_flags": [
     "--no-cheating",
