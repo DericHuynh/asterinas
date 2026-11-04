@@ -243,12 +243,17 @@ impl FrozenVersion {
 
     pub fn reservation(&self) -> (r: (u64, u32, u32))
         ensures r == (self.view().serial, self.view().first, self.view().blocks), r.0 > 0 && r.1 > 0 && 3 <= r.2 <= 252,
+            r.2 as nat == self.view().images.len() + 2, r.1 as nat + r.2 < self.view().layout.journal_blocks,
     { proof { use_type_invariant(self); } (self.serial, self.first, self.blocks) }
 
     pub fn image_count(&self) -> (r: usize) ensures r == self.view().images.len(), 0 < r <= 250 {
         proof { use_type_invariant(self); }
         self.batch.frozen_count()
     }
+
+    pub fn journal_layout(&self) -> (r: JournalLayout)
+        ensures r.wf(), r.view() == self.view().layout,
+    { self.batch.reserved_layout().duplicate() }
 
     pub fn image_at(&self, index: usize) -> (r: Option<(u32, &[u8])>)
         ensures match r {

@@ -188,3 +188,11 @@ pub mod claim_budget;
 pub mod allocation_budget;
 pub mod journal_queue;
 pub mod journal_queue_trace;
+pub mod journal_program;
+pub mod journal_window;
+
+pub mod journal_window_device;
+
+pub mod journal_window_media;
+
+pub mod journal_window_progress;
