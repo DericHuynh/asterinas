@@ -153,3 +153,7 @@ pub mod source_block;
 pub mod extent_tree;
 
 pub mod extent_tree_model;
+
+pub mod extent_claims;
+
+pub mod extent_ownership;

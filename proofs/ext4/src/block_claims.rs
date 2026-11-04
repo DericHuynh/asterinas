@@ -12,7 +12,8 @@ verus! {
 
 pub const MAX_BLOCKS: u32 = 1048576;
 
-// 0: free, 1: reserved, 2: journal, 3: metadata, 4: file data, 5: directory data.
+// 0: free, 1: reserved, 2: journal, 3: volume metadata, 4: file data,
+// 5: directory data, 6: inode-owned extent-tree metadata.
 #[derive(Clone, Copy)]
 pub struct Slot { pub kind: u8, pub inode: u32, pub generation: u32, pub logical: u32, pub initialized: bool }
 #[derive(Clone, Copy)]
@@ -25,9 +26,11 @@ pub open spec fn free_slot() -> Slot { Slot { kind: 0, inode: 0, generation: 0, 
 
 pub open spec fn valid_claim(c: Claim, blocks: nat) -> bool {
     &&& c.length > 0 && c.start as nat + c.length <= blocks
-    &&& 1 <= c.kind <= 5
-    &&& (if c.kind >= 4 {
+    &&& 1 <= c.kind <= 6
+    &&& (if c.kind == 4 || c.kind == 5 {
         c.inode > 0 && c.logical as nat + c.length <= 4294967296 && (c.kind == 5 ==> c.initialized)
+    } else if c.kind == 6 {
+        c.inode > 0 && c.length == 1 && c.logical == 0 && !c.initialized
     } else { c.inode == 0 && c.generation == 0 && c.logical == 0 && !c.initialized })
 }
 
@@ -35,7 +38,7 @@ pub open spec fn covers(c: Claim, block: int) -> bool { c.start <= block < c.sta
 
 pub open spec fn at(c: Claim, block: int) -> Slot {
     Slot { kind: c.kind, inode: c.inode, generation: c.generation,
-        logical: if c.kind >= 4 { (c.logical as int + block - c.start) as u32 } else { 0 }, initialized: c.initialized }
+        logical: if c.kind == 4 || c.kind == 5 { (c.logical as int + block - c.start) as u32 } else { 0 }, initialized: c.initialized }
 }
 
 #[verifier::opaque]
@@ -160,9 +163,11 @@ proof fn matching_prefixes_have_equal_free_counts(roles: Seq<Slot>, first: u32, 
 fn check_claim(c: &Claim, blocks: usize) -> (r: bool)
     ensures r == valid_claim(*c, blocks as nat),
 {
-    c.length > 0 && c.start as u64 + c.length as u64 <= blocks as u64 && c.kind >= 1 && c.kind <= 5
-        && if c.kind >= 4 {
+    c.length > 0 && c.start as u64 + c.length as u64 <= blocks as u64 && c.kind >= 1 && c.kind <= 6
+        && if c.kind == 4 || c.kind == 5 {
             c.inode > 0 && c.logical as u64 + c.length as u64 <= 4294967296 && (c.kind != 5 || c.initialized)
+        } else if c.kind == 6 {
+            c.inode > 0 && c.length == 1 && c.logical == 0 && !c.initialized
         } else { c.inode == 0 && c.generation == 0 && c.logical == 0 && !c.initialized }
 }
 
@@ -170,7 +175,7 @@ fn slot_at(c: &Claim, block: u32) -> (r: Slot)
     requires valid_claim(*c, MAX_BLOCKS as nat), covers(*c, block as int),
     ensures r == at(*c, block as int),
 {
-    let logical = if c.kind >= 4 { (c.logical as u64 + (block - c.start) as u64) as u32 } else { 0 };
+    let logical = if c.kind == 4 || c.kind == 5 { (c.logical as u64 + (block - c.start) as u64) as u32 } else { 0 };
     Slot { kind: c.kind, inode: c.inode, generation: c.generation, logical, initialized: c.initialized }
 }
 

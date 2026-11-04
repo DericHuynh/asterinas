@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
 //! A 256-byte Linux inode subset: regular files and linear directories,
-//! metadata checksums, no xattrs/ACL block, and an inline leaf extent root.
+//! metadata checksums and no xattrs/ACL block. Metadata parsing is separate
+//! from the legacy inline-leaf parser and wider source-bound tree validation.
 //! Link topology, allocation accounting and global ownership remain separate.
 
 use vstd::prelude::*;
@@ -29,7 +30,7 @@ pub open spec fn checksum(s: Seq<u8>, inode: u32, uuid_seed: u32) -> u32 {
         encoded_le(le32(s, 100) as u32)), checksum_input(s))
 }
 
-pub open spec fn accepted(s: Seq<u8>, inode: u32, inodes: u32, blocks: u32, uuid_seed: u32) -> bool {
+pub open spec fn metadata_accepted(s: Seq<u8>, inode: u32, inodes: u32, uuid_seed: u32) -> bool {
     &&& s.len() == 256
     &&& 0 < inode <= inodes
     &&& ((le16(s, 0) as u16 & 0xf000) == 0x8000 || (le16(s, 0) as u16 & 0xf000) == 0x4000)
@@ -37,9 +38,13 @@ pub open spec fn accepted(s: Seq<u8>, inode: u32, inodes: u32, blocks: u32, uuid
     &&& le32(s, 32) == 0x80000
     &&& le32(s, 104) == 0 && le32(s, 108) == 0 && le16(s, 118) == 0
     &&& le16(s, 128) == 32
+    &&& le16(s, 124) + 65536 * le16(s, 130) == checksum(s, inode, uuid_seed) as nat
+}
+
+pub open spec fn accepted(s: Seq<u8>, inode: u32, inodes: u32, blocks: u32, uuid_seed: u32) -> bool {
+    &&& metadata_accepted(s, inode, inodes, uuid_seed)
     &&& extent::leaf_header(s.subrange(40, 100))
     &&& extent::leaf_entries(s.subrange(40, 100), le16(s, 42), blocks)
-    &&& le16(s, 124) + 65536 * le16(s, 130) == checksum(s, inode, uuid_seed) as nat
 }
 
 pub fn inode_seed(uuid_seed: u32, number: u32, generation: u32) -> (r: u32)
@@ -76,14 +81,14 @@ pub fn calculated_checksum(s: &[u8], inode: u32, uuid_seed: u32) -> (r: Option<u
     Some(e)
 }
 
-pub fn parse(s: &[u8], number: u32, inodes: u32, blocks: u32, uuid_seed: u32) -> (r: Option<Inode>)
+pub fn parse_metadata(s: &[u8], number: u32, inodes: u32, uuid_seed: u32) -> (r: Option<Inode>)
     ensures match r {
-        Some(i) => accepted(s@, number, inodes, blocks, uuid_seed)
+        Some(i) => metadata_accepted(s@, number, inodes, uuid_seed)
             && i.mode as nat == le16(s@, 0) && i.size as nat == le32(s@, 4)
             && i.generation as nat == le32(s@, 100) && i.links as nat == le16(s@, 26)
             && i.uid as nat == le16(s@, 2) + 65536 * le16(s@, 120)
             && i.gid as nat == le16(s@, 24) + 65536 * le16(s@, 122),
-        None => !accepted(s@, number, inodes, blocks, uuid_seed),
+        None => !metadata_accepted(s@, number, inodes, uuid_seed),
     },
 {
     if s.len() != 256 || number == 0 || number > inodes { return None; }
@@ -94,14 +99,27 @@ pub fn parse(s: &[u8], number: u32, inodes: u32, blocks: u32, uuid_seed: u32) ->
         || read_le32(s, 104).unwrap() != 0 || read_le32(s, 108).unwrap() != 0
         || read_le16(s, 118).unwrap() != 0 || read_le16(s, 128).unwrap() != 32
     { return None; }
-    let root = &s[40..100];
-    if extent::validate_inline_root(root, blocks).is_none() { return None; }
     let supplied = read_le16(s, 124).unwrap() as u32 + 65536 * read_le16(s, 130).unwrap() as u32;
     if supplied != calculated_checksum(s, number, uuid_seed).unwrap() { return None; }
     let uid = read_le16(s, 2).unwrap() as u32 + 65536 * read_le16(s, 120).unwrap() as u32;
     let gid = read_le16(s, 24).unwrap() as u32 + 65536 * read_le16(s, 122).unwrap() as u32;
     Some(Inode { mode, uid, gid, links, size: read_le32(s, 4).unwrap(),
         generation: read_le32(s, 100).unwrap() })
+}
+
+pub fn parse(s: &[u8], number: u32, inodes: u32, blocks: u32, uuid_seed: u32) -> (r: Option<Inode>)
+    ensures match r {
+        Some(i) => accepted(s@, number, inodes, blocks, uuid_seed)
+            && i.mode as nat == le16(s@, 0) && i.size as nat == le32(s@, 4)
+            && i.generation as nat == le32(s@, 100) && i.links as nat == le16(s@, 26)
+            && i.uid as nat == le16(s@, 2) + 65536 * le16(s@, 120)
+            && i.gid as nat == le16(s@, 24) + 65536 * le16(s@, 122),
+        None => !accepted(s@, number, inodes, blocks, uuid_seed),
+    },
+{
+    let meta = match parse_metadata(s, number, inodes, uuid_seed) { Some(meta) => meta, None => { return None; } };
+    if extent::validate_inline_root(&s[40..100], blocks).is_none() { return None; }
+    Some(meta)
 }
 
 }

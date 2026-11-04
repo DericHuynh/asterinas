@@ -9,11 +9,36 @@ use crate::{group_index::{self, GroupIndex, IndexView}, group_metadata};
 
 verus! {
 
-pub open spec fn raw(v: IndexView, number: u32) -> Seq<u8> {
+pub open spec fn start(v: IndexView, number: u32) -> nat {
     let group = (number as int - 1) / v.ipg as int;
     let slot = (number as int - 1) % v.ipg as int;
-    let start = v.groups[group].inode_table as int * 4096 + slot * 256;
-    v.source.subrange(start, start + 256)
+    (v.groups[group].inode_table as int * 4096 + slot * 256) as nat
+}
+
+pub open spec fn raw(v: IndexView, number: u32) -> Seq<u8> {
+    v.source.subrange(start(v, number) as int, start(v, number) as int + 256)
+}
+
+pub fn position(index: &GroupIndex<'_>, number: u32) -> (r: Option<u64>)
+    ensures index.wf(), match r {
+        Some(offset) => 0 < number <= index.view().inodes && offset as nat == start(index.view(), number)
+            && offset as nat + 256 <= index.view().blocks as nat * 4096 <= index.view().source.len(),
+        None => number == 0 || number > index.view().inodes,
+    },
+{
+    let (_, inodes, ipg, _) = index.parameters();
+    if number == 0 || number > inodes { return None; }
+    proof { reveal(group_index::valid); }
+    let group = (number - 1) / ipg;
+    let slot = (number - 1) % ipg;
+    proof {
+        vstd::arithmetic::mul::lemma_mul_is_commutative(ipg as int, index.view().groups.len() as int);
+        vstd::arithmetic::div_mod::lemma_multiply_divide_lt(number as int - 1, ipg as int, index.view().groups.len() as int);
+    }
+    let meta = index.get(group).unwrap();
+    let table = meta.info().inode_table;
+    proof { reveal(group_index::records_match); reveal(group_metadata::valid); reveal(crate::group::accepted); }
+    Some(table as u64 * 4096 + slot as u64 * 256)
 }
 
 pub fn read<'a>(index: &GroupIndex<'a>, number: u32) -> (r: Option<&'a [u8]>)

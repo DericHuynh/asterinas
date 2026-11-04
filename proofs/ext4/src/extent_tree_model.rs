@@ -64,7 +64,7 @@ proof fn at_leaf(c: Context, node: NodeView, logical: u32, span: SpanView)
     reveal(stored_mapping);
 }
 
-proof fn has_child(c: Context, node: NodeView, depth: u16, logical: u32, span: SpanView)
+pub proof fn stored_mapping_has_child(c: Context, node: NodeView, depth: u16, logical: u32, span: SpanView)
     requires depth > 0, stored_mapping(c, node, depth, logical, span),
     ensures exists|i: int| 0 <= i < bytes::le16(node.raw, 2) && #[trigger] stored_mapping(c,
         external_node(c, extent_node::child(node.raw, i) as u64), (depth - 1) as u16, logical, span),
@@ -73,7 +73,7 @@ proof fn has_child(c: Context, node: NodeView, depth: u16, logical: u32, span: S
     prefix_has_child(c, node, bytes::le16(node.raw, 2), (depth - 1) as u16, logical, span);
 }
 
-proof fn from_child(c: Context, node: NodeView, depth: u16, index: usize, logical: u32, span: SpanView)
+pub proof fn stored_mapping_from_child(c: Context, node: NodeView, depth: u16, index: usize, logical: u32, span: SpanView)
     requires depth > 0, index < bytes::le16(node.raw, 2), stored_mapping(c,
         external_node(c, extent_node::child(node.raw, index as int) as u64), (depth - 1) as u16, logical, span),
     ensures stored_mapping(c, node, depth, logical, span),
@@ -85,6 +85,7 @@ proof fn from_child(c: Context, node: NodeView, depth: u16, index: usize, logica
 pub proof fn every_stored_mapping_respects_the_subtree_interval(c: Context, node: NodeView, address: Option<u64>, depth: u16, first: Option<u32>, upper: u64, logical: u32, span: SpanView)
     requires subtree_valid(c, node, address, depth, first, upper), stored_mapping(c, node, depth, logical, span),
     ensures logical < upper, match first { Some(low) => low <= logical, None => true },
+        crate::extent_span::valid(span), span.blocks == c.blocks,
     decreases depth,
 {
     valid_node(c, node, address, depth, first, upper);
@@ -94,7 +95,7 @@ pub proof fn every_stored_mapping_respects_the_subtree_interval(c: Context, node
             && crate::extent_span::represents(span, node.raw, extent_node::offset(i));
         extent_node::every_record_respects_branch_bounds(node, depth, first, upper, index);
     } else {
-        has_child(c, node, depth, logical, span);
+        stored_mapping_has_child(c, node, depth, logical, span);
         let index = choose|i: int| 0 <= i < bytes::le16(node.raw, 2) && #[trigger] stored_mapping(c,
             external_node(c, extent_node::child(node.raw, i as int) as u64), (depth - 1) as u16, logical, span);
         let link = extent_node::branch_link(node, index as usize, upper);
@@ -134,7 +135,7 @@ pub proof fn audited_route_equals_complete_tree_mapping(c: Context, path: Seq<Vi
         audited_route_equals_complete_tree_mapping(c, tail(path), logical, selected.depth, Some(selected.first), selected.upper, result);
         assert forall|span: SpanView| #[trigger] stored_mapping(c, node, depth, logical, span) == (result == Some(span)) by {
             if stored_mapping(c, node, depth, logical, span) {
-                has_child(c, node, depth, logical, span);
+                stored_mapping_has_child(c, node, depth, logical, span);
                 let index = choose|i: int| 0 <= i < bytes::le16(node.raw, 2) && #[trigger] stored_mapping(c,
                     external_node(c, extent_node::child(node.raw, i as int) as u64), (depth - 1) as u16, logical, span);
                 let other = extent_node::branch_link(node, index as usize, upper);
@@ -153,9 +154,47 @@ pub proof fn audited_route_equals_complete_tree_mapping(c: Context, path: Seq<Vi
             }
             if result == Some(span) {
                 assert(stored_mapping(c, external_node(c, selected.number), selected.depth, logical, span));
-                from_child(c, node, depth, selected.index, logical, span);
+                stored_mapping_from_child(c, node, depth, selected.index, logical, span);
             }
         }
+    }
+}
+
+pub proof fn complete_tree_has_unique_covering_extent(c: Context, node: NodeView, address: Option<u64>, depth: u16, first: Option<u32>, upper: u64, logical: u32, a: SpanView, b: SpanView)
+    requires subtree_valid(c, node, address, depth, first, upper),
+        stored_mapping(c, node, depth, logical, a), stored_mapping(c, node, depth, logical, b),
+    ensures a == b,
+    decreases depth,
+{
+    valid_node(c, node, address, depth, first, upper);
+    if depth == 0 {
+        at_leaf(c, node, logical, a);
+        at_leaf(c, node, logical, b);
+        extent_node::leaf_result_is_unique(node, logical, Some(a), Some(b));
+    } else {
+        stored_mapping_has_child(c, node, depth, logical, a);
+        stored_mapping_has_child(c, node, depth, logical, b);
+        let i = choose|i: int| 0 <= i < bytes::le16(node.raw, 2) && #[trigger] stored_mapping(c,
+            external_node(c, extent_node::child(node.raw, i) as u64), (depth - 1) as u16, logical, a);
+        let j = choose|i: int| 0 <= i < bytes::le16(node.raw, 2) && #[trigger] stored_mapping(c,
+            external_node(c, extent_node::child(node.raw, i) as u64), (depth - 1) as u16, logical, b);
+        let left = extent_node::branch_link(node, i as usize, upper);
+        let right = extent_node::branch_link(node, j as usize, upper);
+        extent_tree::complete_tree_includes_each_child(c, node, address, depth, first, upper, i as usize);
+        extent_tree::complete_tree_includes_each_child(c, node, address, depth, first, upper, j as usize);
+        extent_node::child_intervals_stay_within_parent(node, depth, first, upper, i as usize);
+        extent_node::child_intervals_stay_within_parent(node, depth, first, upper, j as usize);
+        every_stored_mapping_respects_the_subtree_interval(c, external_node(c, left.number), Some(left.number), (depth - 1) as u16, Some(left.first), left.upper, logical, a);
+        every_stored_mapping_respects_the_subtree_interval(c, external_node(c, right.number), Some(right.number), (depth - 1) as u16, Some(right.first), right.upper, logical, b);
+        if i < j {
+            if i + 1 < j { extent_node::record_keys_are_strictly_increasing(node, i + 1, j); }
+            assert(left.upper <= right.first);
+        } else if j < i {
+            if j + 1 < i { extent_node::record_keys_are_strictly_increasing(node, j + 1, i); }
+            assert(right.upper <= left.first);
+        }
+        assert(i == j);
+        complete_tree_has_unique_covering_extent(c, external_node(c, left.number), Some(left.number), (depth - 1) as u16, Some(left.first), left.upper, logical, a, b);
     }
 }
 

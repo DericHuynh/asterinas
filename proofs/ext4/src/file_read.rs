@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Structural reads from a checked immutable host image. Data results are tied
-//! to initialized ownership and the file size; holes never read storage. This
-//! is not a VFS entry point and does not confer POSIX credential/handle rights.
+//! Structural reads from a checked immutable host image. All extent-tree
+//! mappings inherit complete source-bound allocation claims. Holes and
+//! unwritten extents return zeros. VFS/credential and OSTD refinement is separate.
 
 use vstd::prelude::*;
-use crate::{allocated_inode::{self, AllocatedInode, NodeView}, allocation, block_claims, bytes, extent, group_index,
-    inode, inode_claims, inode_group, inode_table};
+use crate::{allocated_inode::{self, AllocatedInode, NodeView}, allocation, block_claims, bytes,
+    extent, extent_claims, extent_ownership, extent_span::{self, SpanView}, extent_tree::{self, Mapping},
+    extent_tree_model, group_index, inode_group};
 
 verus! {
 
@@ -15,9 +16,10 @@ pub open spec fn logical_covers(c: block_claims::Claim, logical: u32) -> bool {
 }
 
 pub open spec fn maps(v: NodeView, logical: u32, physical: u32) -> bool {
-    let claims = inode_claims::claims(inode_table::raw(v.volume.index, v.number), v.number);
-    exists|i: int| 0 <= i < claims.len() && (#[trigger] claims[i]).initialized && logical_covers(claims[i], logical)
-        && physical as int == claims[i].start as int + logical as int - claims[i].logical as int
+    let c = extent_claims::context(v.volume.index, v.number);
+    exists|span: SpanView| #[trigger] extent_tree_model::stored_mapping(c, extent_tree::root_node(c),
+        extent_claims::depth(v.volume.index, v.number), logical, span)
+        && span.initialized && extent_span::mapping(span, logical) == Some(physical as u64)
 }
 
 pub open spec fn owned(v: NodeView, logical: u32, physical: u32) -> bool {
@@ -35,11 +37,20 @@ pub proof fn an_initialized_mapping_has_exact_ownership(v: NodeView, logical: u3
 {
     reveal(allocated_inode::valid);
     reveal(inode_group::ordinary_checked);
+    reveal(extent_claims::accepted);
     reveal(block_claims::mapped_claims);
-    let claims = inode_claims::claims(inode_table::raw(v.volume.index, v.number), v.number);
-    let i = choose|i: int| 0 <= i < claims.len() && (#[trigger] claims[i]).initialized && logical_covers(claims[i], logical)
-        && physical as int == claims[i].start as int + logical as int - claims[i].logical as int;
+    let c = extent_claims::context(v.volume.index, v.number);
+    let d = extent_claims::depth(v.volume.index, v.number);
+    let owner = extent_claims::owner(v.volume.index, v.number);
+    let claims = extent_claims::claims(v.volume.index, v.number);
+    let span = choose|span: SpanView| #[trigger] extent_tree_model::stored_mapping(c, extent_tree::root_node(c), d, logical, span)
+        && span.initialized && extent_span::mapping(span, logical) == Some(physical as u64);
+    extent_tree_model::every_stored_mapping_respects_the_subtree_interval(c, extent_tree::root_node(c), None, d, None, extent::MAX_LOGICAL_END, logical, span);
+    extent_ownership::a_stored_mapping_has_its_source_bound_claim(c, extent_tree::root_node(c), None, d, None, extent::MAX_LOGICAL_END, owner, logical, span);
+    let claim = extent_ownership::span_claim(span, owner);
+    let i = choose|i: int| 0 <= i < claims.len() && claims[i] == claim;
     assert(block_claims::valid_claim(claims[i], v.volume.census.roles.len()));
+    assert(span.physical < v.volume.index.blocks);
     assert(block_claims::covers(claims[i], physical as int));
     assert(v.volume.census.roles[physical as int] == block_claims::at(claims[i], physical as int));
     reveal(allocation::valid);
@@ -50,26 +61,18 @@ pub proof fn initialized_mapping_is_unique(v: NodeView, logical: u32, a: u32, b:
     ensures a == b,
 {
     reveal(allocated_inode::valid);
-    reveal(inode::accepted);
-    let raw = inode_table::raw(v.volume.index, v.number);
-    let claims = inode_claims::claims(raw, v.number);
-    let i = choose|i: int| 0 <= i < claims.len() && (#[trigger] claims[i]).initialized && logical_covers(claims[i], logical)
-        && a as int == claims[i].start as int + logical as int - claims[i].logical as int;
-    let j = choose|j: int| 0 <= j < claims.len() && (#[trigger] claims[j]).initialized && logical_covers(claims[j], logical)
-        && b as int == claims[j].start as int + logical as int - claims[j].logical as int;
-    if i < j { extent::disjoint_logical_ranges(raw.subrange(40, 100), claims.len(), v.volume.index.blocks, i, j); }
-    if j < i { extent::disjoint_logical_ranges(raw.subrange(40, 100), claims.len(), v.volume.index.blocks, j, i); }
-    assert(i == j);
+    reveal(inode_group::ordinary_checked);
+    reveal(extent_claims::accepted);
+    let c = extent_claims::context(v.volume.index, v.number);
+    let d = extent_claims::depth(v.volume.index, v.number);
+    let x = choose|span: SpanView| #[trigger] extent_tree_model::stored_mapping(c, extent_tree::root_node(c), d, logical, span)
+        && span.initialized && extent_span::mapping(span, logical) == Some(a as u64);
+    let y = choose|span: SpanView| #[trigger] extent_tree_model::stored_mapping(c, extent_tree::root_node(c), d, logical, span)
+        && span.initialized && extent_span::mapping(span, logical) == Some(b as u64);
+    extent_tree_model::complete_tree_has_unique_covering_extent(c, extent_tree::root_node(c), None, d, None, extent::MAX_LOGICAL_END, logical, x, y);
 }
 
 pub enum Resolution { Zero, Data(u32) }
-
-proof fn checked_leaf_entry(root: Seq<u8>, count: nat, blocks: u32, index: int)
-    requires extent::leaf_entries(root, count, blocks), 0 <= index < count,
-    ensures extent::accepted(root, 12 + 12 * index, blocks),
-{
-    assert(extent::accepted(root, extent::entry_offset(index), blocks));
-}
 
 pub fn resolve(node: &AllocatedInode<'_, '_>, logical: u32) -> (r: Resolution)
     ensures node.wf(), match r {
@@ -77,39 +80,43 @@ pub fn resolve(node: &AllocatedInode<'_, '_>, logical: u32) -> (r: Resolution)
         Resolution::Zero => !exists|physical: u32| #[trigger] maps(node.view(), logical, physical),
     },
 {
-    hide(inode::accepted);
-    let raw = node.raw();
-    let index = node.volume().index();
-    let (blocks, _, _, _) = index.parameters();
-    let count = bytes::read_le16(raw, 42).unwrap();
-    let root = &raw[40..100];
-    let ghost claims = inode_claims::claims(raw@, node.view().number);
-    assert(count <= 4) by { reveal(allocated_inode::valid); reveal(inode::accepted); }
-    assert(extent::leaf_entries(root@, count as nat, blocks)) by { reveal(allocated_inode::valid); reveal(inode::accepted); }
-    let mut i = 0usize;
-    while i < count as usize
-        invariant node.wf(), raw@ == inode_table::raw(node.view().volume.index, node.view().number), raw.len() == 256,
-            root@ == raw@.subrange(40, 100), blocks == node.view().volume.index.blocks,
-            extent::leaf_entries(root@, count as nat, blocks),
-            i <= count <= 4, count as nat == bytes::le16(raw@, 42),
-            claims == inode_claims::claims(raw@, node.view().number), claims.len() == count,
-            forall|j: int| 0 <= j < i ==> !(#[trigger] claims[j]).initialized || !logical_covers(claims[j], logical),
-        decreases count as usize - i,
-    {
-        proof { checked_leaf_entry(root@, count as nat, blocks, i as int); }
-        let e = extent::parse(root, 12 + 12 * i, blocks).unwrap();
-        assert(e.logical == claims[i as int].logical && e.physical == claims[i as int].start
-            && e.length == claims[i as int].length && e.initialized == claims[i as int].initialized);
-        if e.initialized && e.logical <= logical && (logical as u64) < e.logical as u64 + e.length as u64 {
-            let physical = e.physical + (logical - e.logical);
-            assert(maps(node.view(), logical, physical)) by { assert(claims[i as int].initialized && logical_covers(claims[i as int], logical)); }
+    let path = match extent_tree::lookup_allocated(node, logical) {
+        Some(path) => path, None => { return Resolution::Zero; },
+    };
+    match path.resolved() {
+        Mapping::Written(block) => {
+            proof {
+                reveal(allocated_inode::valid); reveal(inode_group::ordinary_checked); reveal(extent_claims::accepted);
+                let span = path.result()->Some_0;
+                assert(span.initialized && extent_span::mapping(span, logical) == Some(block));
+                extent_tree_model::every_stored_mapping_respects_the_subtree_interval(path.source(), extent_tree::root_node(path.source()), None,
+                    extent_claims::depth(node.view().volume.index, node.view().number), None, extent::MAX_LOGICAL_END, logical, span);
+                assert(block < span.blocks <= 1048576) by { reveal(group_index::valid); }
+            }
+            let physical = block as u32;
+            assert(maps(node.view(), logical, physical)) by {
+                let span = path.result()->Some_0;
+                assert(exists|s: SpanView| #[trigger] extent_tree_model::stored_mapping(path.source(), extent_tree::root_node(path.source()),
+                    extent_claims::depth(node.view().volume.index, node.view().number), logical, s)
+                    && s.initialized && extent_span::mapping(s, logical) == Some(physical as u64));
+            }
             proof { an_initialized_mapping_has_exact_ownership(node.view(), logical, physical); }
-            return Resolution::Data(physical);
-        }
-        i += 1;
+            Resolution::Data(physical)
+        },
+        _ => {
+            assert(!exists|physical: u32| #[trigger] maps(node.view(), logical, physical)) by {
+                if exists|physical: u32| #[trigger] maps(node.view(), logical, physical) {
+                    let p = choose|physical: u32| #[trigger] maps(node.view(), logical, physical);
+                    let c = path.source();
+                    let d = extent_claims::depth(node.view().volume.index, node.view().number);
+                    let span = choose|span: SpanView| #[trigger] extent_tree_model::stored_mapping(c, extent_tree::root_node(c), d, logical, span)
+                        && span.initialized && extent_span::mapping(span, logical) == Some(p as u64);
+                    assert(path.result() == Some(span));
+                }
+            }
+            Resolution::Zero
+        },
     }
-    assert(!exists|physical: u32| #[trigger] maps(node.view(), logical, physical));
-    Resolution::Zero
 }
 
 pub open spec fn chunk_length(v: NodeView, offset: u64, wanted: usize) -> nat {

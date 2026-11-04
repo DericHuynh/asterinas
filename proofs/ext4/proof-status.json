@@ -9,15 +9,15 @@
   "writable_mount_enabled": false,
   "verification": {
     "status": "core_and_models_checked",
-    "verus_verified_units": 779,
+    "verus_verified_units": 797,
     "verification_errors": 0,
-    "checked_named_proof_functions": 276,
-    "checked_named_executable_functions": 261,
+    "checked_named_proof_functions": 281,
+    "checked_named_executable_functions": 268,
     "runner_validated": true,
     "negative_gate_checks_passed": 6,
-    "host_compatibility_tests_passed": 47,
+    "host_compatibility_tests_passed": 49,
     "evidence": "verification-evidence.json",
-    "request_boundary_rejections_passed": 11
+    "request_boundary_rejections_passed": 13
   },
   "claims": {
     "abstract_redo": "checked",
@@ -56,11 +56,11 @@
     "repeated_recovery_admission_and_input_closure": "checked_for_arbitrary_finite_attempts_under_declared_contract",
     "initialized_allocation_bitmaps": "checked_Linux_checksum_ranges_padding_exact_free_counts_and_bounds",
     "owned_block_claim_census": "checked_disjoint_ranges_preservation_on_failure_and_of_prior_occupied_slots_bitmap_agreement_and_free_count_refinement",
-    "inode_extent_allocation_binding": "checked_exact_source_bytes_physical_slots_owner_generation_logical_offset_initialization_and_sector_accounting",
+    "inode_extent_allocation_binding": "checked_bounded_4KiB_depth_0_to_5_source_inode_root_seed_generation_complete_metadata_role_6_and_data_claims_exact_sector_accounting_no_alias_and_global_bitmap_composition",
     "whole_volume_enumeration_and_namespace": "static_allocation_and_namespace_checked_operation_preservation_recovery_mount_and_runtime_refinement_open",
     "same_source_group_index": "checked_complete_ordered_group_enumeration_exact_descriptor_bitmap_provenance_and_global_free_counter_sums",
     "group_reserved_regions": "checked_sparse_super_power_rule_and_disjoint_metadata_claims_within_32_group_profile",
-    "whole_image_physical_allocation": "checked_complete_same_source_claim_composition_allocated_inode_traversal_reserved_regions_marker_root_high_water_directory_counts_all_bitmaps_and_global_free_count",
+    "whole_image_physical_allocation": "checked_complete_same_source_claim_composition_all_ordinary_extent_depths_0_to_5_in_bounded_4KiB_profile_inode_owned_tree_metadata_reserved_regions_journal_data_all_bitmaps_counters_and_source_bound_read_inheritance",
     "bootstrap_journal_mapping_preservation_and_shadow_admission": "checked_host_core_including_owned_IO_admission_actual_filesystem_operation_driver_and_mount_refinement_open",
     "structural_inode_reads": "checked_source_bound_live_inode_lookup_unique_initialized_mapping_exact_ownership_clipped_source_slices_and_hole_unwritten_zeros_no_VFS_authority",
     "complete_directory_blocks": "checked_contiguous_complete_unique_record_coverage_tail_checksum_bounds_and_composition_into_static_namespace_validation",
@@ -85,17 +85,19 @@
     "wide_source_blocks": "checked_owned_1_to_64_KiB_blocks_exact_64_bit_source_ranges_partition_quotient_product_bounds_and_clipped_shadow_segments_no_high_address_truncation_inode_seed_feature_CortenMM_and_full_tree_refinement_open",
     "source_block_linux_interoperability": "tested_Linux_created_external_leaf_tree_actual_UUID_inode_generation_checksum_seed_and_eh_max_checksum_domain_not_a_formal_Linux_driver_refinement",
     "extent_tree_paths": "checked_exact_same_source_root_and_external_nodes_depth_decrease_no_successful_path_cycles_parent_first_key_and_inherited_upper_bounds_unique_leaf_selection_written_unwritten_holes",
-    "complete_structural_extent_trees": "checked_all_reachable_children_exact_visit_counts_sufficient_budget_completion_sound_geometry_corruption_budget_classification_and_public_lookup_equivalence_with_every_covering_leaf_record_global_physical_ownership_inode_feature_binding_mutations_and_runtime_authority_open"
+    "complete_structural_extent_trees": "checked_all_reachable_children_exact_visit_counts_sufficient_budget_completion_sound_error_classification_and_complete_mapping_equivalence_bounded_4KiB_inode_feature_global_ownership_read_composition_checked_mutations_other_geometries_features_and_runtime_open",
+    "bound_extent_inode_certificate": "checked_actual_initialized_source_inode_bitmap_group_slot_root_checksum_generation_UUID_inode_seed_binding_sealed_index_ownership_and_negative_Rust_forgery_substitution_checks"
   },
   "production_activation_gate": "All applicable obligations in PROOF_OBLIGATIONS.md must be discharged for the admitted profile.",
   "evidence_policy": "Only successful pinned entire-crate checking plus compilation produces a valid build report; it certifies only the declared source/model scope.",
   "static_namespace_validation_present": true,
-  "implemented_profile": "initial_bounded_subset_FORMAT_PROFILE.md",
+  "implemented_profile": "bounded_initialized_groups_with_owned_extent_trees_FORMAT_PROFILE.md",
   "full_feature_support_present": false,
   "concurrent_transaction_implementation_present": false,
   "expanded_design": [
     "FEATURE_COVERAGE.md",
     "CONCURRENCY.md"
   ],
-  "concurrent_block_lifetime_model_present": true
+  "concurrent_block_lifetime_model_present": true,
+  "external_extent_tree_allocation_present": true
 }
