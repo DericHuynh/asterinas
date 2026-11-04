@@ -52,3 +52,8 @@ The reference is Linux v7.0 `fs/ext4/ext4.h`'s timestamp table,
 expand whole-image admission beyond the existing 256-byte, extra-size-32
 profile. Timestamp/metadata write closure, VFS operations and CortenMM/OSTD
 runtime integration remain separate obligations.
+
+The current-profile ctime/mtime update and checksum reseal now compose through
+`inode_touch.rs` and `Candidate::begin_timed`; see
+[WRITE_METADATA.md](WRITE_METADATA.md). General inode-format and VFS/clock
+authority obligations remain open.

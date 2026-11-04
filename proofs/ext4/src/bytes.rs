@@ -142,6 +142,16 @@ pub fn encode_be32(v: u32) -> (r: [u8; 4])
     [b[3], b[2], b[1], b[0]]
 }
 
+pub proof fn little_endian_encoding_recovers_every_word(value: u32)
+    ensures le32(encoded_le(value), 0) == value,
+{
+    vstd::arithmetic::div_mod::lemma_fundamental_div_mod(value as int, 256);
+    vstd::arithmetic::div_mod::lemma_fundamental_div_mod(value as int / 256, 256);
+    vstd::arithmetic::div_mod::lemma_fundamental_div_mod(value as int / 65536, 256);
+    vstd::arithmetic::div_mod::lemma_div_denominator(value as int, 256, 256);
+    vstd::arithmetic::div_mod::lemma_div_denominator(value as int, 65536, 256);
+}
+
 /// Copies captured bytes only after validating the complete destination span.
 pub fn write_bytes(s: &mut [u8], offset: usize, data: &[u8]) -> (r: bool)
     ensures final(s).len() == old(s).len(),

@@ -117,7 +117,8 @@
     "src/writer_admission.rs",
     "src/content_write.rs",
     "src/inode_time.rs",
-    "src/inode_time_fields.rs"
+    "src/inode_time_fields.rs",
+    "src/inode_touch.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -429,7 +430,9 @@
     "inode_time::negative_legacy_seconds_are_not_misread_as_a_future_epoch",
     "inode_time_fields::time_updates_preserve_every_unrelated_inode_byte",
     "inode_time_fields::field_presence_uses_declared_extra_size_not_buffer_capacity",
-    "inode_time_fields::updated_field_decodes_to_the_requested_time"
+    "inode_time_fields::updated_field_decodes_to_the_requested_time",
+    "bytes::little_endian_encoding_recovers_every_word",
+    "inode_touch::touching_times_preserves_inode_metadata_identity_and_validity"
   ],
   "required_flags": [
     "--no-cheating",
@@ -773,6 +776,8 @@
     "inode_time::encode_extended",
     "inode_time::encode_legacy",
     "inode_time_fields::get_time",
-    "inode_time_fields::set_time"
+    "inode_time_fields::set_time",
+    "inode_touch::touch",
+    "content_write::begin_timed"
   ]
 }
