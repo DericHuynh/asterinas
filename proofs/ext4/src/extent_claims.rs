@@ -528,7 +528,7 @@ pub open spec fn collection_admissible(census: CensusView, index: IndexView, num
     &&& block_claims::ledger(census.roles, census.claims) && accepted(index, number) && census.roles.len() == index.blocks
     &&& claim_admission::appendable(census.roles, claims(index, number))
     &&& (!group_index::has_huge_files(index) ==> bytes::le16(raw, 116) == 0)
-    &&& inode_blocks::sectors(raw, 4096, group_index::has_huge_files(index)) == 8 * inode_claims::allocated(claims(index, number))
+    &&& inode_blocks::sectors(raw, 4096, group_index::has_huge_files(index)) == 8 * (inode_claims::allocated(claims(index, number)) + crate::xattr::allocated_block_count(raw))
 }
 
 pub fn collect(census: Census, inode: &BoundInode<'_, '_>) -> (r: Option<Census>)
@@ -539,7 +539,7 @@ pub fn collect(census: Census, inode: &BoundInode<'_, '_>) -> (r: Option<Census>
             && block_claims::mapped_claims(next.view().roles, claims(inode.index_view(), inode.inode_number()))
             && (!group_index::has_huge_files(inode.index_view()) ==> bytes::le16(inode_table::raw(inode.index_view(), inode.inode_number()), 116) == 0)
             && inode_blocks::sectors(inode_table::raw(inode.index_view(), inode.inode_number()), 4096, group_index::has_huge_files(inode.index_view()))
-                == 8 * inode_claims::allocated(claims(inode.index_view(), inode.inode_number()))
+                == 8 * (inode_claims::allocated(claims(inode.index_view(), inode.inode_number())) + crate::xattr::allocated_block_count(inode_table::raw(inode.index_view(), inode.inode_number())))
             && collection_admissible(census.view(), inode.index_view(), inode.inode_number()),
         None => !collection_admissible(census.view(), inode.index_view(), inode.inode_number()),
     },
@@ -571,7 +571,8 @@ pub fn collect(census: Census, inode: &BoundInode<'_, '_>) -> (r: Option<Census>
     };
     let huge_file = inode.index.huge_files();
     let sectors = inode_blocks::decode(raw, 4096, huge_file).unwrap();
-    if (!huge_file && bytes::read_le16(raw, 116).unwrap() != 0) || sectors != total * 8 { return None; }
+    let attribute_blocks = if crate::xattr::inode_pointer(raw).unwrap() == 0 { 0u64 } else { 1u64 };
+    if (!huge_file && bytes::read_le16(raw, 116).unwrap() != 0) || sectors != (total + attribute_blocks) * 8 { return None; }
     proof { block_claims::every_appended_claim_has_its_exact_physical_slots(&next, census.view().claims, claims(inode.index_view(), inode.number)); }
     Some(next)
 }

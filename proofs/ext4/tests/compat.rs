@@ -5,6 +5,325 @@
 
 extern crate verified_ext4 as core;
 
+mod extended_attributes {
+    use core::{xattr, xattr_table::ValueRef};
+
+    use super::*;
+
+    fn entry(
+        raw: &mut [u8],
+        at: usize,
+        namespace: u8,
+        name: &[u8],
+        offset: u16,
+        size: u32,
+        inode: u32,
+    ) {
+        raw[at] = name.len() as u8;
+        raw[at + 1] = namespace;
+        raw[at + 2..at + 4].copy_from_slice(&offset.to_le_bytes());
+        raw[at + 4..at + 8].copy_from_slice(&inode.to_le_bytes());
+        raw[at + 8..at + 12].copy_from_slice(&size.to_le_bytes());
+        raw[at + 16..at + 16 + name.len()].copy_from_slice(name);
+    }
+
+    fn external() -> Vec<u8> {
+        let mut raw = vec![0u8; 4096];
+        raw[..4].copy_from_slice(&xattr::MAGIC.to_le_bytes());
+        raw[4..8].copy_from_slice(&1u32.to_le_bytes());
+        raw[8..12].copy_from_slice(&1u32.to_le_bytes());
+        raw
+    }
+
+    fn seal(raw: &mut [u8], block: u64, seed: u32) {
+        let checksum = xattr::checksum(raw, block, seed).unwrap();
+        raw[16..20].copy_from_slice(&checksum.to_le_bytes());
+    }
+
+    #[test]
+    fn inline_offsets_are_relative_to_first_entry_and_lookup_uses_the_full_key() {
+        let mut raw = vec![0u8; 256];
+        raw[128..130].copy_from_slice(&32u16.to_le_bytes());
+        raw[160..164].copy_from_slice(&xattr::MAGIC.to_le_bytes());
+        // Linux permits unsorted entries in the inode body, including empty ACL names.
+        entry(&mut raw, 164, 6, b"tiny", 84, 5, 0);
+        entry(&mut raw, 184, 1, b"tiny", 80, 3, 0);
+        entry(&mut raw, 204, 2, b"", 0, 0, 0);
+        raw[244..247].copy_from_slice(b"usr");
+        raw[248..253].copy_from_slice(b"hello");
+        let body = xattr::parse_body(&raw, false, 100).unwrap();
+        let table = body.entry_table().unwrap();
+        assert_eq!(table.len(), 3);
+        assert_eq!(table.find(1, b"tiny"), Some(1));
+        assert_eq!(table.find(6, b"tiny"), Some(0));
+        assert_eq!(table.find(2, b""), Some(2));
+        assert_eq!(table.find(1, b"tin"), None);
+        assert!(matches!(table.value(0), Some(ValueRef::Bytes(b"hello"))));
+        assert!(matches!(table.value(1), Some(ValueRef::Bytes(b"usr"))));
+        assert!(matches!(table.value(2), Some(ValueRef::Bytes(b""))));
+        let mut duplicate = raw.clone();
+        duplicate[185] = 6;
+        assert!(xattr::parse_body(&duplicate, false, 100).is_none());
+        let mut nul = raw.clone();
+        nul[181] = 0;
+        assert!(xattr::parse_body(&nul, false, 100).is_none());
+        for offset in [0u16, 4, 56, 92, 65535] {
+            let mut invalid = raw.clone();
+            invalid[166..168].copy_from_slice(&offset.to_le_bytes());
+            assert!(
+                xattr::parse_body(&invalid, false, 100).is_none(),
+                "offset {offset}"
+            );
+        }
+    }
+
+    #[test]
+    fn external_order_bounds_terminator_checksum_and_reference_limits_are_checked() {
+        let mut raw = external();
+        entry(&mut raw, 32, 1, b"a", 4088, 5, 0);
+        entry(&mut raw, 52, 1, b"bb", 0, 0, 0);
+        raw[4088..4093].copy_from_slice(b"value");
+        seal(&mut raw, 2061, 0x12345678);
+        let block = xattr::parse_block(&raw, 2061, 0x12345678, true, false, 100).unwrap();
+        assert_eq!(block.refcount(), 1);
+        assert_eq!(block.entries().find(1, b"a"), Some(0));
+        assert!(matches!(
+            block.entries().value(0),
+            Some(ValueRef::Bytes(b"value"))
+        ));
+        assert!(xattr::parse_block(&raw, 2062, 0x12345678, true, false, 100).is_none());
+        assert!(xattr::parse_block(&raw, 2061, 0x12345679, true, false, 100).is_none());
+        for references in [0u32, 1025, u32::MAX] {
+            let mut invalid = raw.clone();
+            invalid[4..8].copy_from_slice(&references.to_le_bytes());
+            seal(&mut invalid, 2061, 0x12345678);
+            assert!(xattr::parse_block(&invalid, 2061, 0x12345678, true, false, 100).is_none());
+        }
+        for offset in [32u16, 72, 4092, 65535] {
+            let mut invalid = raw.clone();
+            invalid[34..36].copy_from_slice(&offset.to_le_bytes());
+            seal(&mut invalid, 2061, 0x12345678);
+            assert!(xattr::parse_block(&invalid, 2061, 0x12345678, true, false, 100).is_none());
+        }
+        let mut unsorted = raw.clone();
+        unsorted[53] = 0;
+        assert!(xattr::parse_block(&unsorted, 0, 0, false, false, 100).is_none());
+        let mut duplicate = raw.clone();
+        duplicate[52] = 1;
+        duplicate[68] = b'a';
+        assert!(xattr::parse_block(&duplicate, 0, 0, false, false, 100).is_none());
+        let mut no_terminator = raw.clone();
+        no_terminator[72..].fill(0xff);
+        assert!(xattr::parse_block(&no_terminator, 0, 0, false, false, 100).is_none());
+    }
+
+    #[test]
+    fn value_inode_descriptors_require_the_feature_and_do_not_become_local_slices() {
+        let mut raw = external();
+        entry(&mut raw, 32, 1, b"large", 65535, 1 << 20, 12);
+        assert!(xattr::parse_block(&raw, 1, 0, false, false, 100).is_none());
+        let block = xattr::parse_block(&raw, 1, 0, false, true, 100).unwrap();
+        assert!(matches!(
+            block.entries().value(0),
+            Some(ValueRef::Inode {
+                number: 12,
+                bytes: 1048576,
+                hash: 0
+            })
+        ));
+        for number in [1u32, 2, 5, 8, 101] {
+            raw[36..40].copy_from_slice(&number.to_le_bytes());
+            assert!(xattr::parse_block(&raw, 1, 0, false, true, 100).is_none());
+        }
+        raw[36..40].copy_from_slice(&12u32.to_le_bytes());
+        raw[40..44].copy_from_slice(&((1u32 << 24) + 1).to_le_bytes());
+        assert!(xattr::parse_block(&raw, 1, 0, false, true, 100).is_none());
+    }
+
+    fn command(binary: &str, args: &[&str]) {
+        let result = std::process::Command::new(binary)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+    }
+
+    #[test]
+    fn linux_inline_external_and_shared_attributes_bind_source_checksums_and_allocation() {
+        use core::{allocation, image_validation, snapshot::Snapshot, xattr_inode};
+        let mkfs = std::env::var("MKE2FS_BIN").unwrap_or_else(|_| "mke2fs".into());
+        let debugfs = std::env::var("DEBUGFS_BIN").unwrap_or_else(|_| "debugfs".into());
+        let fsck = std::env::var("E2FSCK_BIN").unwrap_or_else(|_| "e2fsck".into());
+        let path = "build/xattr-linux-storage.img";
+        let _ = std::fs::remove_file(path);
+        command(
+            &mkfs,
+            &[
+                "-q",
+                "-F",
+                "-t",
+                "ext4",
+                "-b",
+                "4096",
+                "-I",
+                "256",
+                "-O",
+                "none,has_journal,extent,filetype,sparse_super,large_file,extra_isize,metadata_csum,ext_attr",
+                "-E",
+                "lazy_itable_init=0,lazy_journal_init=0",
+                path,
+                "16384",
+            ],
+        );
+        let large: Vec<u8> = (0..1000).map(|i| (i % 250) as u8).collect();
+        std::fs::write("build/xattr-linux-large.bin", &large).unwrap();
+        for instruction in [
+            "write build/fixture-file.bin /payload",
+            "write build/fixture-file.bin /second",
+            "ea_set /payload user.tiny hello",
+            "ea_set -f build/xattr-linux-large.bin /payload user.large",
+            "ea_set -f build/xattr-linux-large.bin /second user.large",
+        ] {
+            command(&debugfs, &["-w", "-R", instruction, path]);
+        }
+        command(&fsck, &["-fn", path]);
+        let img = std::fs::read(path).unwrap();
+        let (_, group, seed) = metadata(&img);
+        let first = xattr::inode_pointer(inode_bytes(&img, group.inode_table, 12)).unwrap() as u32;
+        let second = xattr::inode_pointer(inode_bytes(&img, group.inode_table, 13)).unwrap() as u32;
+        assert_ne!(first, second);
+        let source = Snapshot::from_bytes(&img);
+        let volume =
+            allocation::parse(source.duplicate()).expect("complete xattr allocation census");
+        assert!(image_validation::inspect(source.duplicate()).is_some());
+        for block in [first, second] {
+            assert_eq!(volume.census().role_of(block).unwrap().kind, 7);
+        }
+        let attributes = xattr_inode::inspect(volume.index(), 12).unwrap();
+        assert!(matches!(
+            attributes.get(1, b"tiny"),
+            Some(ValueRef::Bytes(b"hello"))
+        ));
+        match attributes.get(1, b"large").unwrap() {
+            ValueRef::Bytes(bytes) => assert_eq!(bytes, large),
+            _ => panic!("local block value"),
+        }
+        assert!(attributes.get(6, b"tiny").is_none());
+
+        let mut shared = img.clone();
+        let second_inode = group.inode_table as usize * 4096 + 12 * 256;
+        shared[second_inode + 104..second_inode + 108].copy_from_slice(&first.to_le_bytes());
+        seal_inode_image(&mut shared, group.inode_table, 13, seed);
+        let first_offset = first as usize * 4096;
+        shared[first_offset + 4..first_offset + 8].copy_from_slice(&2u32.to_le_bytes());
+        seal(
+            &mut shared[first_offset..first_offset + 4096],
+            first as u64,
+            seed,
+        );
+        let bitmap = group.block_bitmap as usize * 4096;
+        shared[bitmap + second as usize / 8] &= !(1 << (second % 8));
+        seal_single_group_allocation(&mut shared);
+        let shared_path = "build/xattr-linux-shared.img";
+        std::fs::write(shared_path, &shared).unwrap();
+        command(&fsck, &["-fn", shared_path]);
+        let source = Snapshot::from_bytes(&shared);
+        let volume = allocation::parse(source.duplicate()).expect("one claim for shared storage");
+        assert_eq!(volume.census().role_of(first).unwrap().kind, 7);
+        assert_eq!(volume.census().role_of(second).unwrap().kind, 0);
+        assert!(image_validation::inspect(source).is_some());
+        for number in [12, 13] {
+            assert!(
+                matches!(xattr_inode::inspect(volume.index(), number).unwrap().get(1, b"large"), Some(ValueRef::Bytes(bytes)) if bytes == large)
+            );
+        }
+        let mut wrong_count = shared.clone();
+        wrong_count[first_offset + 4..first_offset + 8].copy_from_slice(&1u32.to_le_bytes());
+        seal(
+            &mut wrong_count[first_offset..first_offset + 4096],
+            first as u64,
+            seed,
+        );
+        assert!(allocation::parse(Snapshot::from_bytes(&wrong_count)).is_none());
+        let mut duplicate = img.clone();
+        duplicate[first_offset + 32] = 4;
+        duplicate[first_offset + 48..first_offset + 52].copy_from_slice(b"tiny");
+        duplicate[first_offset + 52..first_offset + 56].fill(0);
+        seal(
+            &mut duplicate[first_offset..first_offset + 4096],
+            first as u64,
+            seed,
+        );
+        assert!(
+            allocation::parse(Snapshot::from_bytes(&duplicate)).is_none(),
+            "the same key cannot appear in both locations"
+        );
+        let mut wrong_accounting = img.clone();
+        let first_inode = group.inode_table as usize * 4096 + 11 * 256;
+        wrong_accounting[first_inode + 28..first_inode + 32].copy_from_slice(&16u32.to_le_bytes());
+        seal_inode_image(&mut wrong_accounting, group.inode_table, 12, seed);
+        assert!(allocation::parse(Snapshot::from_bytes(&wrong_accounting)).is_none());
+        let mut alias = img.clone();
+        let data = le32(&img, first_inode + 60);
+        let data_offset = data as usize * 4096;
+        alias[data_offset..data_offset + 4096]
+            .copy_from_slice(&img[first_offset..first_offset + 4096]);
+        seal(
+            &mut alias[data_offset..data_offset + 4096],
+            data as u64,
+            seed,
+        );
+        alias[first_inode + 104..first_inode + 108].copy_from_slice(&data.to_le_bytes());
+        seal_inode_image(&mut alias, group.inode_table, 12, seed);
+        alias[bitmap + first as usize / 8] &= !(1 << (first % 8));
+        seal_single_group_allocation(&mut alias);
+        assert!(
+            allocation::parse(Snapshot::from_bytes(&alias)).is_none(),
+            "valid xattr bytes cannot alias file data"
+        );
+
+        let mut with_acl = img.clone();
+        let raw = &mut with_acl[first_inode..first_inode + 256];
+        // A storage-level ACL value is opaque until the ACL evaluator checks it.
+        entry(raw, 184, 2, b"", 0, 0, 0);
+        seal_inode_image(&mut with_acl, group.inode_table, 12, seed);
+        let volume = allocation::parse(Snapshot::from_bytes(&with_acl)).unwrap();
+        let node = core::allocated_inode::get(&volume, 12).unwrap();
+        let credentials = core::access::Credentials {
+            fsuid: 0,
+            in_inode_group: true,
+            dac_override: true,
+            dac_read_search: true,
+        };
+        assert!(
+            core::content_write::prepare_chunk(&node, 0, b"x", &credentials).is_none(),
+            "mode-only authorization must not bypass an access ACL"
+        );
+        let mut moved = img.clone();
+        let available = img.len() / 4096 - 1;
+        moved[available * 4096..(available + 1) * 4096]
+            .copy_from_slice(&img[first_offset..first_offset + 4096]);
+        assert!(
+            xattr::parse_block(
+                &moved[available * 4096..(available + 1) * 4096],
+                available as u64,
+                seed,
+                true,
+                false,
+                4096
+            )
+            .is_none()
+        );
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_file(shared_path);
+        let _ = std::fs::remove_file("build/xattr-linux-large.bin");
+    }
+}
+
 fn image() -> Vec<u8> {
     std::fs::read(std::env::var("EXT4_TEST_IMAGE").expect("test image path")).unwrap()
 }
@@ -5116,7 +5435,7 @@ mod feature_coverage {
             let compat = 4 | (1u32 << bit);
             assert_eq!(
                 feature_policy::compatible_flags(compat),
-                matches!(bit, 2 | 9 | 11),
+                matches!(bit, 2 | 3 | 9 | 11),
                 "COMPAT bit {bit}"
             );
             let incompat = 0x42 | (1u32 << bit);

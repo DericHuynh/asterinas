@@ -238,6 +238,18 @@
       "url": "https://github.com/verus-lang/verus/blob/8bf68ee741df833ea5d0fe6a2255126fdea87e47/source/vstd/set_lib.rs",
       "blob_sha": "eb078cf700c7d501b3c285c091b1ec0593a92e75",
       "review_scope": "pinned finite-set subset cardinality used to bound claimed blocks by the physical volume"
+    },
+    {
+      "path": "fs/ext4/xattr.c",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/xattr.c",
+      "blob_sha": "7bf9ba19a89db2cd9e9536191eb904afe4c5f5d8",
+      "review_scope": "Header/refcount and checksum domain; entry bounds and inline/external value bases; exact namespace/name ordering and shared block reference semantics. Independently implemented immutable storage/census; mutation and EA_INODE lifetime remain open."
+    },
+    {
+      "path": "fs/ext4/xattr.h",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/xattr.h",
+      "blob_sha": "1fedf44d4fb65ec89093016401bfc9aa07adf8ce",
+      "review_scope": "Linux xattr magic, 32-byte external header, 16-byte entry, four-byte padding, value limit and namespace indices."
     }
   ]
 }

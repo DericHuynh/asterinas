@@ -36,7 +36,6 @@ pub open spec fn metadata_accepted_with_features(s: Seq<u8>, inode: u32, inodes:
     &&& ((le16(s, 0) as u16 & 0xf000) == 0x8000 || (le16(s, 0) as u16 & 0xf000) == 0x4000)
     &&& le32(s, 20) == 0 && le16(s, 26) > 0
     &&& (le32(s, 32) == 0x80000 || huge_file && le32(s, 32) == 0xc0000)
-    &&& le32(s, 104) == 0 && le16(s, 118) == 0
     &&& ((le16(s, 0) as u16 & 0xf000) == 0x4000 ==> le32(s, 108) == 0)
     &&& inode_size::accepted(s, 4096, huge_file, false)
     &&& le16(s, 128) == 32
@@ -102,8 +101,8 @@ pub fn parse_metadata_with_features(s: &[u8], number: u32, inodes: u32, uuid_see
     let links = read_le16(s, 26).unwrap();
     if (mode & 0xf000 != 0x8000 && mode & 0xf000 != 0x4000)
         || read_le32(s, 20).unwrap() != 0 || links == 0 || (read_le32(s, 32).unwrap() != 0x80000 && (!huge_file || read_le32(s, 32).unwrap() != 0xc0000))
-        || read_le32(s, 104).unwrap() != 0 || (mode & 0xf000 == 0x4000 && read_le32(s, 108).unwrap() != 0)
-        || read_le16(s, 118).unwrap() != 0 || read_le16(s, 128).unwrap() != 32
+        || (mode & 0xf000 == 0x4000 && read_le32(s, 108).unwrap() != 0)
+        || read_le16(s, 128).unwrap() != 32
     { return None; }
     let size = match inode_size::decode(s, 4096, huge_file, false) { Some(size) => size, None => { return None; } };
     let supplied = read_le16(s, 124).unwrap() as u32 + 65536 * read_le16(s, 130).unwrap() as u32;

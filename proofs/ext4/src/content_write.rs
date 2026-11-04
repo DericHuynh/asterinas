@@ -15,10 +15,16 @@ pub struct WriteView {
     pub node: NodeView, pub offset: u64, pub data: Seq<u8>, pub image: ImageView, pub credentials: Credentials,
 }
 
+pub open spec fn mode_only_safe(v: crate::group_index::IndexView, n: u32) -> bool {
+    exists|attributes: crate::xattr_inode::AttributesView| #[trigger] crate::xattr_inode::valid(attributes)
+        && attributes.index == v && attributes.number == n && crate::xattr_inode::absent(attributes, 2, Seq::empty())
+}
+
 #[verifier::opaque]
 pub open spec fn valid(v: WriteView) -> bool {
     &&& allocated_inode::valid(v.node) && v.node.mode & 0xf000 == 0x8000 && v.node.mode & 0o6000 == 0
     &&& access::permitted(v.node.mode, v.node.uid, &v.credentials, 2, false)
+    &&& mode_only_safe(v.node.volume.index, v.node.number)
     &&& 0 < v.data.len() <= 4096 && v.offset < v.node.size && v.offset as nat + v.data.len() <= v.node.size
     &&& v.offset as nat % 4096 + v.data.len() <= 4096
     &&& v.image.image.len() == 4096 && (v.image.block as nat + 1) * 4096 <= v.node.volume.index.source.len()
@@ -185,6 +191,16 @@ pub fn prepare_chunk<'n, 'v, 'a>(node: &'n AllocatedInode<'v, 'a>, offset: u64, 
     hide(file_read::maps);
     hide(file_read::owned);
     let info = node.info();
+    let attributes = match crate::xattr_inode::inspect(node.volume().index(), node.number()) {
+        Some(attributes) => attributes, None => { return None; }
+    };
+    let acl_name: &[u8] = &[];
+    assert(acl_name@ =~= Seq::<u8>::empty());
+    match attributes.get(2, acl_name) { Some(_) => { return None; }, None => { } }
+    assert(mode_only_safe(node.view().volume.index, node.view().number)) by {
+        assert(crate::xattr_inode::valid(attributes.view()));
+        assert(crate::xattr_inode::absent(attributes.view(), 2, Seq::empty()));
+    }
     if info.mode & 0xf000 != 0x8000 || info.mode & 0o6000 != 0
         || !access::allowed(info.mode, info.uid, credentials, 2, false)
         || input.len() == 0 || offset >= info.size { return None; }
