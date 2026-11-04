@@ -9,9 +9,9 @@ and a [concurrent block/extent/transaction protocol](CONCURRENCY.md).
 It is not a complete filesystem and is not registered with the kernel VFS.
 No mount or filesystem write path is enabled.
 
-The pinned Verus run checks **722 obligations with zero errors**, including
-263 named proof functions and 245 named executable functions.
-40 host interoperability/regression tests pass on Linux-created metadata.
+The pinned Verus run checks **734 obligations with zero errors**, including
+265 named proof functions and 250 named executable functions.
+42 host interoperability/regression tests pass on Linux-created metadata.
 [Proof status](proof-status.json) and [recorded evidence](verification-evidence.json)
 state the exact scope; tests do not discharge formal obligations.
 
@@ -24,6 +24,7 @@ state the exact scope; tests do not discharge formal obligations.
 | `block_range.rs`, `extent_span.rs` | 64-bit block interval bounds, disjointness and exact split partition; Linux 48-bit physical-start codec, reserved terminal logical block and pointwise logical/physical mapping preservation under splitting and merging. Descriptors do not establish allocation, read initialization, concurrency or full-tree admission. |
 | `block_lifetime.rs` | Abstract per-block shared read pins, exclusive volume/block/epoch-bound writer leases, initialization/publication and reuse. All finite enabled interleavings preserve the invariant; retired pin IDs stay retired, stale requests/leases are rejected, disjoint writes commute, and nonempty reader/writer examples cover modeled block sizes 1 through 64 KiB. No runtime thread, extent-map, DMA or concurrent journal refinement is claimed. |
 | `block_size.rs`, `extent_node.rs` | Shared geometry checks and total local extent-node validation: inline roots, external 1–64 KiB nodes, depth 0–5, 48-bit index children, bounded entries/capacity, ordered nonoverlapping records, legacy/checksummed blocks and the Linux eh_max checksum domain. Seed/node-address binding, cross-node ownership and complete tree traversal remain open. |
+| `source_block.rs`, `snapshot.rs`, `shadow_model.rs` | Exact bounded byte capture across shadow-page boundaries and owned 64-bit-addressed 1–64 KiB filesystem blocks. Checked multiplication/division binds each block and extent-node buffer to its exact source range and partition bounds, without truncating high page addresses. Inode seed/feature binding, CortenMM/device origin and whole-tree ownership remain open. |
 | `extent.rs` | Leaf extent codec, initialized/unwritten lengths, logical ordering and disjointness, bounded block resolution. |
 | `directory.rs` | Bounded linear dirent parsing, filename validation, directory checksum tails. |
 | `jbd2.rs`, `journal_superblock.rs` | Header/tag codecs, UUID binding, checksum primitives, counter bounds and superblock parsing. |

@@ -533,6 +533,195 @@ fn extent_nodes_check_full_capacity_checksums_depth_and_48_bit_children() {
 }
 
 #[test]
+fn source_blocks_capture_exact_shadow_ranges_across_filesystem_block_sizes() {
+    use core::{extent_node::BlockChecksum, patch_set::PatchSet, snapshot::Snapshot, source_block};
+    fn empty_node(size: usize, seed: u32) -> Vec<u8> {
+        let mut bytes = vec![0; size];
+        let maximum = ((size - 12) / 12) as u16;
+        bytes[..2].copy_from_slice(&0xf30au16.to_le_bytes());
+        bytes[4..6].copy_from_slice(&maximum.to_le_bytes());
+        let tail = 12 + maximum as usize * 12;
+        let checksum = core::crc::crc32c(seed, &bytes[..tail]);
+        bytes[tail..tail + 4].copy_from_slice(&checksum.to_le_bytes());
+        bytes
+    }
+    let mut base = (0..131405).map(|i| (i % 251) as u8).collect::<Vec<_>>();
+    let mut expected = base.clone();
+    let seed = 0x12345678;
+    let small_node = empty_node(1024, seed);
+    let wide_node = empty_node(65536, seed);
+    let mut first = vec![0x55; 4096];
+    first[1024..2048].copy_from_slice(&small_node);
+    let mut patches = PatchSet::new().insert(0, &first).ok().unwrap();
+    expected[..4096].copy_from_slice(&first);
+    patches = patches.insert(2, &[0xa7; 4096]).ok().unwrap();
+    expected[8192..12288].fill(0xa7);
+    for index in 0..16 {
+        let bytes = &wide_node[index * 4096..(index + 1) * 4096];
+        patches = patches.insert(16 + index as u32, bytes).ok().unwrap();
+    }
+    expected[65536..131072].copy_from_slice(&wide_node);
+    let owned = {
+        let source = Snapshot::from_bytes(&base);
+        let shadow = source.overlay(&patches).unwrap();
+        for start in [
+            0usize,
+            1,
+            1024,
+            4095,
+            4096,
+            8191,
+            65535,
+            131072,
+            expected.len(),
+        ] {
+            for length in [0usize, 1, 256, 1024, 2048, 4096, 8192, 65536] {
+                let actual = shadow.capture_bytes(start as u64, length);
+                if start + length <= expected.len() {
+                    assert_eq!(actual.unwrap(), &expected[start..start + length]);
+                } else {
+                    assert!(actual.is_none());
+                }
+            }
+        }
+        assert!(shadow.capture_bytes(0, 65537).is_none());
+        assert!(shadow.capture_bytes(u64::MAX, 0).is_none());
+        assert!(shadow.capture_bytes(u64::MAX, 1).is_none());
+        for size in [1024u32, 2048, 4096, 8192, 16384, 32768, 65536] {
+            let count = expected.len() as u64 / size as u64;
+            for number in [0, 1, count - 1] {
+                let block = source_block::capture(&shadow, number, size).unwrap();
+                assert_eq!(block.identity(), (number, size));
+                let start = number as usize * size as usize;
+                assert_eq!(block.raw(), &expected[start..start + size as usize]);
+            }
+            assert!(source_block::capture(&shadow, count, size).is_none());
+            assert!(source_block::capture(&shadow, u64::MAX, size).is_none());
+        }
+        for size in [0u32, 60, 512, 4097, 131072, u32::MAX] {
+            assert!(source_block::capture(&shadow, 0, size).is_none());
+        }
+        for size in [1024u32, 65536] {
+            let block = source_block::capture(&shadow, 1, size).unwrap();
+            let count = expected.len() as u64 / size as u64;
+            assert!(
+                block
+                    .parse_extent_node(count, BlockChecksum::Crc32c(seed))
+                    .is_some()
+            );
+            assert!(
+                block
+                    .parse_extent_node(count, BlockChecksum::Crc32c(seed ^ 1))
+                    .is_none()
+            );
+            assert!(
+                block
+                    .parse_extent_node(count + 1, BlockChecksum::Crc32c(seed))
+                    .is_none()
+            );
+            assert!(
+                block
+                    .parse_extent_node(0, BlockChecksum::Crc32c(seed))
+                    .is_none()
+            );
+        }
+        source_block::capture(&shadow, 1, 65536).unwrap()
+    };
+    base.fill(0);
+    assert_eq!(
+        owned.raw(),
+        wide_node,
+        "the returned source block owns its frozen bytes"
+    );
+}
+
+#[test]
+fn linux_created_external_extent_nodes_match_source_capture_and_inode_checksum_seed() {
+    use core::{
+        extent_node::{self, BlockChecksum},
+        snapshot::Snapshot,
+        source_block,
+    };
+    struct ScratchFiles(Vec<String>);
+    impl Drop for ScratchFiles {
+        fn drop(&mut self) {
+            for path in &self.0 {
+                let _ = std::fs::remove_file(path);
+            }
+        }
+    }
+    let prefix = format!("build/native-extents-{}", std::process::id());
+    let image_path = format!("{prefix}.img");
+    let commands_path = format!("{prefix}.commands");
+    let _cleanup = ScratchFiles(vec![image_path.clone(), commands_path.clone()]);
+    std::fs::write(&image_path, image()).unwrap();
+    let mut commands = String::from("write /dev/null /extent-native\n");
+    for logical in (0..16).step_by(2) {
+        commands.push_str(&format!("fallocate /extent-native {logical} {logical}\n"));
+    }
+    commands.push_str("set_inode_field /extent-native size 65536\nstat /extent-native\n");
+    std::fs::write(&commands_path, commands).unwrap();
+    let debugfs = std::env::var("DEBUGFS_BIN").unwrap_or_else(|_| "debugfs".into());
+    let output = std::process::Command::new(debugfs)
+        .args(["-w", "-f", &commands_path, &image_path])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stat = String::from_utf8_lossy(&output.stdout);
+    let number = stat
+        .lines()
+        .find_map(|line| {
+            line.strip_prefix("Inode:")?
+                .split_whitespace()
+                .next()?
+                .parse::<u32>()
+                .ok()
+        })
+        .expect("debugfs inode number");
+    let img = std::fs::read(&image_path).unwrap();
+    let (sb, group, uuid_seed) = metadata(&img);
+    let raw = inode_bytes(&img, group.inode_table, number);
+    let inode_seed = core::inode::inode_seed(uuid_seed, number, le32(raw, 100));
+    let root = extent_node::parse_inline_root(&raw[40..100], sb.blocks() as u64).unwrap();
+    let (entries, _, depth) = root.header_fields();
+    assert_eq!(
+        depth, 1,
+        "eight separated logical extents require an external leaf"
+    );
+    assert!(entries > 0);
+    let source = Snapshot::from_bytes(&img);
+    let mut logicals = Vec::new();
+    for index in 0..entries as usize {
+        let entry = root.index_entry(index).unwrap();
+        let block = source_block::capture(&source, entry.child, 4096).unwrap();
+        let node = block
+            .parse_extent_node(sb.blocks() as u64, BlockChecksum::Crc32c(inode_seed))
+            .expect(
+                "Linux extent-block checksum uses the UUID/inode/generation seed and eh_max domain",
+            );
+        let (count, _, child_depth) = node.header_fields();
+        assert_eq!(child_depth, depth - 1);
+        assert_eq!(node.leaf_extent(0).unwrap().info().logical, entry.logical);
+        for ordinal in 0..count as usize {
+            let span = node.leaf_extent(ordinal).unwrap();
+            assert!(!span.info().initialized);
+            for logical in span.info().logical..span.info().logical + span.info().length {
+                logicals.push(logical);
+            }
+        }
+    }
+    assert_eq!(logicals, (0..16).step_by(2).collect::<Vec<u32>>());
+    assert!(
+        core::allocation::parse(source).is_none(),
+        "local wide-node support must not silently widen the initial whole-image admission profile"
+    );
+}
+
+#[test]
 fn codecs_handle_extremes_and_crc_streaming() {
     for v in [0, 1, 255, 256, 65535, 65536, 0x89abcdef, u32::MAX] {
         assert_eq!(

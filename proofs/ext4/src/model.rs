@@ -148,3 +148,4 @@ pub mod extent_span;
 mod block_lifetime;
 pub mod block_size;
 pub mod extent_node;
+pub mod source_block;

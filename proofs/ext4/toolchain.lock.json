@@ -102,7 +102,8 @@
     "src/extent_span.rs",
     "src/block_lifetime.rs",
     "src/block_size.rs",
-    "src/extent_node.rs"
+    "src/extent_node.rs",
+    "src/source_block.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -367,7 +368,9 @@
     "block_lifetime::nonempty_concurrent_write_example",
     "extent_span::merging_preserves_every_mapping",
     "block_lifetime::a_foreign_volume_request_cannot_pin",
-    "block_lifetime::a_writer_lease_cannot_authorize_another_block_or_volume"
+    "block_lifetime::a_writer_lease_cannot_authorize_another_block_or_volume",
+    "shadow_model::a_segment_has_exact_selected_bytes",
+    "source_block::whole_blocks_fit_exactly_below_the_partition_quotient"
   ],
   "required_flags": [
     "--no-cheating",
@@ -620,6 +623,11 @@
     "extent_node::leaf_extent",
     "extent_node::index_entry",
     "extent_node::parse_inline_root",
-    "extent_node::parse_block"
+    "extent_node::parse_block",
+    "snapshot::capture_bytes",
+    "source_block::raw",
+    "source_block::identity",
+    "source_block::parse_extent_node",
+    "source_block::capture"
   ]
 }

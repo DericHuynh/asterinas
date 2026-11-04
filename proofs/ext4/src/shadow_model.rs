@@ -75,4 +75,32 @@ pub proof fn a_block_has_exact_selected_bytes(base: Seq<u8>, layers: Seq<Seq<Ima
     }
 }
 
+pub proof fn a_segment_has_exact_selected_bytes(base: Seq<u8>, layers: Seq<Seq<ImageView>>, start: nat, length: nat)
+    requires start + length <= base.len(), length <= 4096 - start % 4096,
+        forall|i: int| 0 <= i < layers.len() ==> patch_set::valid(#[trigger] layers[i]),
+    ensures match selected(layers, start as int / 4096) {
+        Some(image) => apply(base, layers).subrange(start as int, (start + length) as int)
+            == image.subrange((start % 4096) as int, (start % 4096 + length) as int),
+        None => apply(base, layers).subrange(start as int, (start + length) as int)
+            == base.subrange(start as int, (start + length) as int),
+    },
+{
+    selected_image_has_size(layers, start as int / 4096);
+    vstd::arithmetic::div_mod::lemma_fundamental_div_mod(start as int, 4096);
+    if let Some(image) = selected(layers, start as int / 4096) {
+        assert(apply(base, layers).subrange(start as int, (start + length) as int)
+            =~= image.subrange((start % 4096) as int, (start % 4096 + length) as int)) by {
+            assert forall|j: int| 0 <= j < length implies #[trigger] apply(base, layers)[start as int + j] == image[start as int % 4096 + j] by {
+                vstd::arithmetic::div_mod::lemma_fundamental_div_mod_converse(start as int + j, 4096, start as int / 4096, start as int % 4096 + j);
+            }
+        }
+    } else {
+        assert(apply(base, layers).subrange(start as int, (start + length) as int) =~= base.subrange(start as int, (start + length) as int)) by {
+            assert forall|j: int| 0 <= j < length implies #[trigger] apply(base, layers)[start as int + j] == base[start as int + j] by {
+                vstd::arithmetic::div_mod::lemma_fundamental_div_mod_converse(start as int + j, 4096, start as int / 4096, start as int % 4096 + j);
+            }
+        }
+    }
+}
+
 }

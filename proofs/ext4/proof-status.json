@@ -9,13 +9,13 @@
   "writable_mount_enabled": false,
   "verification": {
     "status": "core_and_models_checked",
-    "verus_verified_units": 722,
+    "verus_verified_units": 734,
     "verification_errors": 0,
-    "checked_named_proof_functions": 263,
-    "checked_named_executable_functions": 245,
+    "checked_named_proof_functions": 265,
+    "checked_named_executable_functions": 250,
     "runner_validated": true,
     "negative_gate_checks_passed": 6,
-    "host_compatibility_tests_passed": 40,
+    "host_compatibility_tests_passed": 42,
     "evidence": "verification-evidence.json",
     "request_boundary_rejections_passed": 9
   },
@@ -81,7 +81,9 @@
     "wide_block_intervals": "checked_64_bit_overflow_safe_bounds_membership_disjointness_and_exact_split_partition_descriptions_not_capabilities",
     "wide_extent_intervals": "checked_Linux_48_bit_start_codec_64_bit_physical_arithmetic_written_unwritten_lengths_reserved_terminal_logical_block_and_pointwise_mapping_preservation_on_split_and_merge_no_tree_or_allocation_authority",
     "concurrent_block_lifetime_model": "checked_all_finite_enabled_interleavings_shared_read_pins_per_block_writer_leases_volume_and_allocation_epochs_retired_IDs_stale_reacquisition_zeroing_publication_reuse_disjoint_write_commutation_nonempty_examples_1_to_64_KiB_runtime_extent_DMA_journal_refinement_open",
-    "local_extent_nodes": "checked_total_inline_and_external_1_to_64_KiB_depth_0_to_5_48_bit_children_header_capacity_ordering_leaf_intervals_and_eh_max_checksum_domain_legacy_mode_source_seed_and_complete_tree_ownership_refinement_open"
+    "local_extent_nodes": "checked_total_inline_and_external_1_to_64_KiB_depth_0_to_5_48_bit_children_header_capacity_ordering_leaf_intervals_and_eh_max_checksum_domain_legacy_mode_source_seed_and_complete_tree_ownership_refinement_open",
+    "wide_source_blocks": "checked_owned_1_to_64_KiB_blocks_exact_64_bit_source_ranges_partition_quotient_product_bounds_and_clipped_shadow_segments_no_high_address_truncation_inode_seed_feature_CortenMM_and_full_tree_refinement_open",
+    "source_block_linux_interoperability": "tested_Linux_created_external_leaf_tree_actual_UUID_inode_generation_checksum_seed_and_eh_max_checksum_domain_not_a_formal_Linux_driver_refinement"
   },
   "production_activation_gate": "All applicable obligations in PROOF_OBLIGATIONS.md must be discharged for the admitted profile.",
   "evidence_policy": "Only successful pinned entire-crate checking plus compilation produces a valid build report; it certifies only the declared source/model scope.",

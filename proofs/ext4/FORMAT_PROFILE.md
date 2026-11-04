@@ -39,6 +39,7 @@ The accepted byte structures do not certify the whole volume.
 | Bootstrap journal discovery | Same-source primary superblock, group-zero descriptor and exact reserved inode 8; bounded journal capture before global allocation validation. Static layout preservation and recovered-shadow admission remain separate. |
 | Standalone wide interval helpers | Overflow-safe 64-bit block intervals and 48-bit extent-start codec with exact split mapping. These helpers do not widen whole-volume feature admission or implement extent trees. |
 | Standalone extent-node helpers | Local inline-root and external-node parsing for 1–64 KiB blocks and depth 0–5, ordered leaf/index records, 48-bit child addresses and legacy/metadata-csum tails covering eh_max. Local validation does not establish source/seed binding, graph correctness or global physical ownership. |
+| Standalone source-block helpers | Owned immutable 1–64 KiB filesystem-block bytes at checked 64-bit addresses; exact source provenance across 4 KiB shadow pages and bounded byte capture. Extent-node helpers additionally bound the declared filesystem size to that snapshot. These are host buffer/source checks, not inode/feature authority, a CortenMM adapter or full mount admission. |
 | Recovery bounds | One initialized journal extent of 1024..32768 blocks; at most 4096 staged payload/revoke entries, with whole-record preflight; no transaction-ID wrap; a fully occupied ring without a proved stopping boundary is rejected. |
 
 Superblock reserved-GDT blocks and high block-count fields must be zero.

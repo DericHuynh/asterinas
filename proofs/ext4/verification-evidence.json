@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "license": "MPL-2.0",
-  "recorded_at": "2026-11-04T02:36:06.912191+00:00",
+  "recorded_at": "2026-11-04T02:58:08.424344+00:00",
   "scope": "Checked host core and specified abstract machines; not a complete or kernel-integrated ext4 filesystem",
   "verifier_version": {
     "verus": {
@@ -19,7 +19,7 @@
     "encountered-error": false,
     "encountered-vir-error": false,
     "success": true,
-    "verified": 722,
+    "verified": 734,
     "errors": 0,
     "is-verifying-entire-crate": true
   },
@@ -31,7 +31,7 @@
     "--crate-type=rlib"
   ],
   "source_sha256": {
-    "src/model.rs": "b17662ec860799969f2ea27c3c8d26a0456d61c4903cd4f8b5cb3900a43a2746",
+    "src/model.rs": "95a62583ddb0abd4c56dde1959b282ae986221e711b90bc00dba4c8c8781b479",
     "src/redo.rs": "e964baa83ca170c3cc60dbc8df4bfc470a81549ac23a5cfe4526a9cb0edb7e7f",
     "src/journal.rs": "eef5dcc269f81cbc1c7e8c6a4daf0a58cf7015423657a9cfe1f0fff186b91834",
     "src/lease.rs": "37358276a3719454ddeaf16177a2ce058b5e382c57b0609cea97031da084b1aa",
@@ -85,7 +85,7 @@
     "src/block_claims.rs": "1862b1c3cc9c3512c86ca20c20ce39cf1d7be34d298cb8698f9cf4aeedf7dd43",
     "src/inode_claims.rs": "bc3d8fd72ad758ae719b5d1a019493382b773a8dce0e01e71d8a98cd404c0439",
     "src/group_claims.rs": "db95c81b48e9d8c56e4682d30208fb5908dc48224f46e0512c85ef66c8731ad3",
-    "src/snapshot.rs": "8f0646f1dfd67b108b8fc1a57381c9cc4d5842fbadc137967b0a1b6e1b716bf5",
+    "src/snapshot.rs": "f98b3147751845846894da9c7fabe178c1957b071bddd99549ce8c25e95a80f9",
     "src/group_metadata.rs": "7dfb35dc3b021b9749ad22d4322d2e7aabb26a9ad4593e08d1e298a6f5e9f18d",
     "src/group_index.rs": "6735f537dd656a047a5c1c743e808b1a876d2a0d5d27c2533221f610ac5902b1",
     "src/inode_table.rs": "a6bcaa884a0160fbbb9cdbc37ac4663d2e2741701e64d6b2adaffa66ffccf24b",
@@ -106,7 +106,7 @@
     "src/namespace_tree.rs": "c0783345cd7e71bc17a397f20dbe76d9ce62d6576662dc6e0ab786bc1598666b",
     "src/namespace.rs": "5efc10614982088277e12eceb150b87b7e4e367b2fab2fc2b93ae29bff9b55ce",
     "src/patch_set.rs": "5cc2702075a03ba59413d58fbb5b5c105b0bfbabdafdaaf999c82c9ff51afc68",
-    "src/shadow_model.rs": "cad69cea5b78e3059fa177096d1ab2fd25b7b920678fba8ea4c695b5bf11a014",
+    "src/shadow_model.rs": "b92a3a25ff4dfb03a92843d22d1b5db983eeb396ef35cbf8aff9c8e6c8abb171",
     "src/bootstrap.rs": "8bb47b23ca3cf1b0baad05f8dbe54716758b6190a44bdadd6b30c0cbde429fe9",
     "src/image_validation.rs": "7323aac144673f43906b9fc26cd8759bcbd99456e347d1467056f3266eb8d8fe",
     "src/bootstrap_identity.rs": "d07f034becb57a654d7b5866975095ff884cddf846d24a60409eb999f487a706",
@@ -116,9 +116,10 @@
     "src/extent_span.rs": "c5be075b23c101c6566e74f8fa6d277fb50ab7e1ff4d6a1cf6c169b2b4b5dadf",
     "src/block_lifetime.rs": "c6c9dbee3dbc2ee81867f0906704d2ee799c7a56db157df5b60b54b800cb1a15",
     "src/block_size.rs": "83f09fc12aeca41e19756e35e2fe4893acdd63a5d3fef297ae90fb066b200cb6",
-    "src/extent_node.rs": "4944f6b585798d4926334948af583bec44481e83b1f67ee4f2e335e954bcf43f"
+    "src/extent_node.rs": "4944f6b585798d4926334948af583bec44481e83b1f67ee4f2e335e954bcf43f",
+    "src/source_block.rs": "9edb498e7806a76f266bf6fecdda553ff002a5c83419fac445a7ba26f07b5cfa"
   },
-  "lock_sha256": "13efb0f4287f11b9964439929d788702aafe8a9d50dbccbcd5058f962e1b2869",
+  "lock_sha256": "45c6939b8a1546467422601ace652429df0ced3f3786c98cf23e8349991f8dea",
   "runner_sha256": "de6b473ab50632068de9e7fc619591c7b4d5afbc0058a1fcd7f946c0198beb91",
   "named_proof_coverage": [
     "access::override_cannot_execute_a_nonexecutable_regular_file",
@@ -294,7 +295,9 @@
     "scan_trace::prefix_preserves_well_formedness",
     "scan_trace::well_formed_prefixes_agree_at_every_common_position",
     "shadow_model::a_block_has_exact_selected_bytes",
+    "shadow_model::a_segment_has_exact_selected_bytes",
     "shadow_model::layering_matches_patch_application",
+    "source_block::whole_blocks_fit_exactly_below_the_partition_quotient",
     "super_state::recovery_flag_image_preserves_uuid_and_boot_bytes",
     "super_state::replay_policy_is_stable_under_another_valid_replay",
     "super_state::replay_preserves_geometry_and_keeps_recovery",
@@ -599,12 +602,17 @@
     "snapshot::as_slice",
     "snapshot::block",
     "snapshot::capture",
+    "snapshot::capture_bytes",
     "snapshot::duplicate",
     "snapshot::from_bytes",
     "snapshot::overlay",
     "snapshot::partition_bytes",
     "snapshot::range",
     "snapshot::shadow_depth",
+    "source_block::capture",
+    "source_block::identity",
+    "source_block::parse_extent_node",
+    "source_block::raw",
     "super_state::recovery_image",
     "super_state::valid_replay",
     "superblock::blocks",
@@ -632,14 +640,14 @@
     "write_io::pending_command",
     "write_io::prepare"
   ],
-  "host_library_sha256": "6716a6e84ff276cb3687ae2a9ee293cf1559e0813fd6f76fd94f92be5245b5cd",
+  "host_library_sha256": "eede578975e67d652a4d4c32c7ebaebdb181c9619f59e95751518bb2fb918b2f",
   "compatibility": {
     "schema": 1,
     "status": "passed",
     "scope": "host interoperability tests, not formal proof",
     "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
-    "proof_artifact_sha256": "6716a6e84ff276cb3687ae2a9ee293cf1559e0813fd6f76fd94f92be5245b5cd",
-    "image_sha256": "f8cf86da785cfd6f0261e9dd51c36b7436f947ef1c0631aef62286f72898b7fd",
+    "proof_artifact_sha256": "eede578975e67d652a4d4c32c7ebaebdb181c9619f59e95751518bb2fb918b2f",
+    "image_sha256": "03e02e279d10cea4dc3fe94cd8b0d1cd01e9d6350e0ecc1810403732746ffe8d",
     "request_boundary_rejections": [
       "reuse_request",
       "redirect_completion",
@@ -653,11 +661,11 @@
     ],
     "compatibility_runner_sha256": "2f6f5b5a4aec23fb701df2be9f42ce64a9c8a9cbea23a212ea44ac36fd39e866",
     "test_source_sha256": {
-      "compat": "6dbffb40c261f0c52472ef83d83353784e1ebffbe42f254eaddb0b8e233315bf",
+      "compat": "f7e43b9b6327614a39d53b181dfc2cf5226569589b96d2922164f3b1f1f40649",
       "journal": "249e839c4d5197df757c39066cf518cfa98c2695dc5396e03688138d9b9cec9e"
     }
   },
-  "compatibility_test_count": 40,
+  "compatibility_test_count": 42,
   "e2fsprogs_version": "1.47.0",
   "negative_gate_checks": {
     "status": "passed",
@@ -716,5 +724,7 @@
   "wide_block_intervals": "checked_64_bit_overflow_safe_bounds_membership_disjointness_and_exact_split_partition_descriptions_not_capabilities",
   "wide_extent_intervals": "checked_Linux_48_bit_start_codec_64_bit_physical_arithmetic_written_unwritten_lengths_reserved_terminal_logical_block_and_pointwise_mapping_preservation_on_split_and_merge_no_tree_or_allocation_authority",
   "concurrent_block_lifetime_model": "checked_all_finite_enabled_interleavings_shared_read_pins_per_block_writer_leases_volume_and_allocation_epochs_retired_IDs_stale_reacquisition_zeroing_publication_reuse_disjoint_write_commutation_nonempty_examples_1_to_64_KiB_runtime_extent_DMA_journal_refinement_open",
-  "local_extent_nodes": "checked_total_inline_and_external_1_to_64_KiB_depth_0_to_5_48_bit_children_header_capacity_ordering_leaf_intervals_and_eh_max_checksum_domain_legacy_mode_source_seed_and_complete_tree_ownership_refinement_open"
+  "local_extent_nodes": "checked_total_inline_and_external_1_to_64_KiB_depth_0_to_5_48_bit_children_header_capacity_ordering_leaf_intervals_and_eh_max_checksum_domain_legacy_mode_source_seed_and_complete_tree_ownership_refinement_open",
+  "wide_source_blocks": "checked_owned_1_to_64_KiB_blocks_exact_64_bit_source_ranges_partition_quotient_product_bounds_and_clipped_shadow_segments_no_high_address_truncation_inode_seed_feature_CortenMM_and_full_tree_refinement_open",
+  "source_block_linux_interoperability": "tested_Linux_created_external_leaf_tree_actual_UUID_inode_generation_checksum_seed_and_eh_max_checksum_domain_not_a_formal_Linux_driver_refinement"
 }
