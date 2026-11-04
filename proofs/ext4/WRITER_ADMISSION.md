@@ -48,9 +48,10 @@ The complete pinned Verus run checks construction and preservation of the
 certificate, including all public executable bodies. The existing serialized
 writer's local admission, command ordering, byte/persistence ledger and crash
 proofs remain under their declared atomicity, flush and quiescent-start
-contract. Retaining this new static result certificate does not itself prove
-that a real device executes the commands, or discharge the remaining full-image
-refinement between that ledger and filesystem operations. No device report is
+contract. The successful serialized durable map now equals this complete validated result
+through writer_image.rs; see [WRITER_IMAGE.md](WRITER_IMAGE.md). Retaining a
+certificate does not prove that a real device executes the commands. Full
+filesystem crash/recovery closure and operation/runtime refinement remain open. No device report is
 treated as an authority to mutate an unrelated filesystem.
 
 Native tests materialize the candidate result from the writer's actual getters,
