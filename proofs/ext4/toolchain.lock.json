@@ -506,7 +506,9 @@
     "recovery_bootstrap::every_admitted_recovery_cut_has_an_admissible_fresh_bootstrap",
     "recovery_bootstrap::every_finite_admitted_recovery_trace_keeps_fresh_bootstrap_discovery",
     "recovery_bootstrap::unchanged_tail_cuts_have_the_same_fresh_canonical_scan_source",
-    "journal_view::a_mapped_logical_block_has_complete_physical_bytes"
+    "journal_view::a_mapped_logical_block_has_complete_physical_bytes",
+    "group_metadata::every_valid_group_is_the_unique_source_projection",
+    "group_index::every_valid_index_is_the_unique_source_projection"
   ],
   "required_flags": [
     "--no-cheating",
