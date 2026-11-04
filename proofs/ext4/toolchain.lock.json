@@ -168,7 +168,10 @@
     "src/htree_range.rs",
     "src/htree_names.rs",
     "src/directory_piece.rs",
-    "src/directory_htree.rs"
+    "src/directory_htree.rs",
+    "src/xattr_table_edit.rs",
+    "src/xattr_replace.rs",
+    "src/xattr_update.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -707,7 +710,20 @@
     "directory_htree::the_source_largedir_feature_controls_admitted_index_depth",
     "directory_htree::distinct_logical_tree_blocks_have_distinct_physical_ownership",
     "feature_policy::changing_only_recover_preserves_incompatible_feature_admission",
-    "htree_names::every_live_record_follows_linux_probe_and_first_entry_continuation_descent"
+    "htree_names::every_live_record_follows_linux_probe_and_first_entry_continuation_descent",
+    "xattr_table_edit::two_complete_tables_from_the_same_bytes_have_identical_records",
+    "xattr_table_edit::every_entry_precedes_the_complete_table_terminator",
+    "xattr_table_edit::preserving_entry_and_terminator_bytes_preserves_the_complete_table",
+    "xattr_table_edit::an_isolated_value_edit_preserves_every_other_value",
+    "xattr_replace::replacement_changes_only_its_value_ctime_version_and_checksum",
+    "xattr_replace::replacement_retains_inode_and_table_validity_and_every_other_attribute",
+    "xattr_update::every_candidate_has_the_exact_source_write_grant",
+    "xattr_update::no_candidate_changes_another_inline_attribute",
+    "xattr_update::neighboring_inode_bytes_in_the_same_table_block_are_unchanged",
+    "xattr_update::admitted_updates_preserve_every_data_directory_extent_and_external_xattr_block",
+    "xattr_update::an_admitted_update_has_the_exact_replaced_inode_home",
+    "xattr_update::a_successful_journalled_update_has_the_exact_durable_inode",
+    "xattr_update::every_successful_recovery_after_a_writer_cut_has_the_complete_old_or_new_inode"
   ],
   "required_flags": [
     "--no-cheating",
@@ -1168,6 +1184,12 @@
     "directory_piece::get",
     "directory_piece::name",
     "directory_piece::parse",
-    "directory_htree::validate"
+    "directory_htree::validate",
+    "xattr_table_edit::has_isolated_local_value",
+    "xattr::parameters",
+    "xattr_replace::encode",
+    "xattr_update::after_image",
+    "xattr_update::begin",
+    "xattr_update::prepare"
   ]
 }

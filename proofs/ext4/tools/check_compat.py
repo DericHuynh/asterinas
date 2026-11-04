@@ -239,6 +239,19 @@ def main():
         "forge_directory_piece": ("pub fn misuse(p: verified_ext4::directory_piece::Piece<'_>) "
                                     "{ let _ = verified_ext4::directory_piece::Piece { ..p }; }\n", "E0451"),
     })
+    misuse.update({
+        "forge_xattr_update_candidate": ("pub fn misuse(c: verified_ext4::xattr_update::Candidate<'_, '_, '_>) "
+                                           "{ let _ = verified_ext4::xattr_update::Candidate { ..c }; }\n", "E0451"),
+        "redirect_xattr_update_source": ("pub fn misuse<'n, 'v, 'a>(mut c: verified_ext4::xattr_update::Candidate<'n, 'v, 'a>, "
+                                         "n: &'n verified_ext4::allocated_inode::AllocatedInode<'v, 'a>) { c.node = n; }\n", "E0616"),
+        "reuse_xattr_update_authorization": ("pub fn misuse(a: verified_ext4::acl_access::Authorization<'_, '_, '_>) "
+                                              "{ let _ = verified_ext4::xattr_update::prepare(a, b\"note\", b\"changed\", 123, 0); "
+                                              "let _ = a.requested_bits(); }\n", "E0382"),
+        "reuse_started_xattr_update": ("pub fn misuse(c: verified_ext4::xattr_update::Candidate<'_, '_, '_>) "
+                                        "{ let _ = c.begin(); let _ = c.begin(); }\n", "E0382"),
+        "mutate_xattr_update_image": ("pub fn misuse(c: verified_ext4::xattr_update::Candidate<'_, '_, '_>) "
+                                       "{ c.after_image().as_slice()[0] = 1; }\n", "E0594"),
+    })
     for name, (source, code) in misuse.items():
         path = BUILD / (name + ".rs")
         path.write_text(source)

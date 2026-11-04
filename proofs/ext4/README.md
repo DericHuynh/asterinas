@@ -9,9 +9,9 @@ and a [concurrent block/extent/transaction protocol](CONCURRENCY.md).
 It is not a complete filesystem and is not registered with the kernel VFS.
 No mount or filesystem write path is enabled.
 
-The pinned Verus run checks **1593 obligations with zero errors**, including
-537 named proof functions and 453 named executable functions.
-145 host interoperability/regression tests pass on Linux-created metadata.
+The pinned Verus run checks **1623 obligations with zero errors**, including
+550 named proof functions and 459 named executable functions.
+147 host interoperability/regression tests pass on Linux-created metadata.
 [Proof status](proof-status.json) and [recorded evidence](verification-evidence.json)
 state the exact scope; tests do not discharge formal obligations.
 
@@ -24,7 +24,8 @@ state the exact scope; tests do not discharge formal obligations.
 | `htree_topology.rs` | Complete supplied logical-tree traversal, exact root/child claim projection, parsed leaf records, no logical reuse and no orphan blocks. See [HTree topology](HTREE_TOPOLOGY.md). Source/hash/full-name/namespace composition is checked by [HTree admission](HTREE_ADMISSION.md); structural mutations and runtime authority remain open. |
 | `htree.rs` | Standalone Linux HTree root/internal table codecs, exact used-prefix/tail CRC domain, logical child bounds and collision-aware binary search. See [HTree routing](HTREE_ROUTING.md). Composes with complete tree/name/source admission; operations and runtime authority remain open. |
 | `acl.rs`, `acl_access.rs`, `content_write::prepare_authorized` | Compact Linux ACL codec, permission precedence/masks, exact source value and mode binding, consumed ACL-aware content/time candidate, xattr byte framing. See [POSIX ACLs](POSIX_ACL.md). Authentication/idmaps/LSM, inheritance/mutation and kernel runtime remain open. |
-| `xattr_entry.rs`, `xattr_table.rs`, `xattr.rs`, `xattr_inode.rs`, `xattr_source.rs` | Source-bound inode/external/shared xattr storage, full-key lookup and uniqueness, physical CRCs, exact reference census and complete allocation accounting; mode-only writes reject access ACLs. See [xattr storage](XATTR_STORAGE.md). Mutations, ACL/LSM policy and EA_INODE lifetime remain open. |
+| `xattr_table_edit.rs`, `xattr_replace.rs`, `xattr_update.rs` | Source-bound ACL-authorized existing inline user-value replacement, complete-table uniqueness, alias rejection, other-attribute and neighbor-inode framing, ctime/version/checksum closure and exact durable/crash-recovered inode composition. See [xattr updates](XATTR_UPDATES.md). Other mutations and runtime authority remain open. |
+| `xattr_entry.rs`, `xattr_table.rs`, `xattr.rs`, `xattr_inode.rs`, `xattr_source.rs` | Source-bound inode/external/shared xattr storage, full-key lookup and uniqueness, physical CRCs, exact reference census and complete allocation accounting; mode-only writes reject access ACLs. See [xattr storage](XATTR_STORAGE.md). Existing inline user-value replacement is checked separately; other mutations, ACL/LSM policy and EA_INODE lifetime remain open. |
 | `bytes.rs`, `crc.rs` | Total endian codecs, checked ranges, CRC32C and streaming/zero-field checksum relations. |
 | `superblock.rs`, `group.rs`, `inode.rs` | Strict profile checks, geometry/ranges, Linux metadata checksums, typed field decoding, source-selected CSUM_SEED or UUID-derived metadata seeds. [Checksum domains](CSUM_SEED.md) remain separate from the internal journal UUID and JBD2 seed. |
 | `feature_policy.rs`, `backup_layout.rs`, `link_count.rs` | Source-bound feature masks retained by parsed headers; actual SPARSE_SUPER2/classic/non-sparse backups in the census and lazy bitmaps, DIR_NLINK sentinel with exact regular counts and complete topology, READONLY exclusion in every raw/sealed fresh writer with committed recovery retained, stable-identity framing and legacy BTREE_DIR admission. See [feature policy](FEATURE_POLICY.md). Other ext4 features, operations, geometry and kernel/CortenMM refinement remain open. |

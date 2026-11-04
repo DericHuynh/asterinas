@@ -4,7 +4,8 @@
 
 The host profile decodes Linux ext4 compact version-1 ACL values, evaluates
 permission requests and connects successful source-bound decisions to the
-initialized-file content/time writer. This remains a host implementation;
+initialized-file content/time writer and the isolated inode-body user-value
+replacement in [XATTR_UPDATES.md](XATTR_UPDATES.md). This remains a host implementation;
 VFS authentication, idmap translation, LSM decisions and CortenMM/OSTD runtime
 locking, capture and device refinement are not supplied by an ACL object.
 

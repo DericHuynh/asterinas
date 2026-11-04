@@ -2,10 +2,12 @@
 
 # Source-bound extended attributes
 
-The bounded host profile admits EXT_ATTR with immutable inode-body values and
-single external blocks, including shared external blocks. This is structural
-storage and lookup support. It does not implement setxattr/removexattr, authenticated
-VFS authorization, LSM policy, EA_INODE lifetime, or a mounted filesystem.
+The bounded host profile admits EXT_ATTR with inode-body values and single
+external blocks, including shared external blocks. The storage/lookup API is
+immutable. [XATTR_UPDATES.md](XATTR_UPDATES.md) adds source-bound journalled
+replacement of existing isolated inline user values. Full setxattr/removexattr,
+authenticated VFS authorization, LSM policy, EA_INODE lifetime and a mounted
+filesystem remain open.
 
 The independent Rust implementation references Linux v7.0 commit
 `028ef9c96e96197026887c0f092424679298aae8`, `fs/ext4/xattr.c`, `xattr.h`, and
