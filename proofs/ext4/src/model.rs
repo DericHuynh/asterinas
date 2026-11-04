@@ -135,3 +135,5 @@ mod tree_model;
 mod namespace_tree;
 
 pub mod namespace;
+
+pub mod patch_set;

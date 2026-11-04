@@ -90,7 +90,8 @@
     "src/parent_table.rs",
     "src/tree_model.rs",
     "src/namespace_tree.rs",
-    "src/namespace.rs"
+    "src/namespace.rs",
+    "src/patch_set.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -328,7 +329,9 @@
     "tree_model::path_successor",
     "tree_model::gathered_path_starts_resolution",
     "namespace_tree::every_directory_reaches_root",
-    "namespace::every_directory_is_rooted"
+    "namespace::every_directory_is_rooted",
+    "patch_set::one_target_has_one_image",
+    "patch_set::applying_a_patch_replaces_exactly_its_block"
   ],
   "required_flags": [
     "--no-cheating",
@@ -518,6 +521,14 @@
     "namespace::parent",
     "namespace::depth",
     "namespace::validate",
-    "directory_index::location"
+    "directory_index::location",
+    "transaction::block",
+    "transaction::as_slice",
+    "patch_set::new",
+    "patch_set::len",
+    "patch_set::at",
+    "patch_set::get",
+    "patch_set::insert",
+    "patch_set::into_images"
   ]
 }

@@ -40,6 +40,55 @@ fn first_data_block(raw: &[u8], blocks: u32) -> u32 {
 }
 
 #[test]
+fn shadow_patches_are_sorted_owned_and_reject_duplicates_without_changes() {
+    use core::patch_set::{MAX_PATCHES, PatchSet};
+    let mut patches = PatchSet::new();
+    let mut payload = vec![0x5a; 4096];
+    for block in [u32::MAX, 7, 0, 1, 1024, u32::MAX - 1] {
+        payload[0..4].copy_from_slice(&block.to_le_bytes());
+        patches = patches.insert(block, &payload).ok().unwrap();
+    }
+    payload.fill(0);
+    let sorted = [0, 1, 7, 1024, u32::MAX - 1, u32::MAX];
+    for (index, block) in sorted.into_iter().enumerate() {
+        let patch = patches.at(index).unwrap();
+        assert_eq!(patch.block(), block);
+        assert_eq!(&patch.as_slice()[..4], &block.to_le_bytes());
+        assert_eq!(&patch.as_slice()[4..], &[0x5a; 4092]);
+        assert_eq!(patches.get(block).unwrap().as_slice(), patch.as_slice());
+    }
+    assert!(patches.at(sorted.len()).is_none());
+    assert!(patches.at(usize::MAX).is_none());
+    for block in [2, 6, 8, u32::MAX - 2] {
+        assert!(patches.get(block).is_none());
+    }
+    for (block, input) in [(7, &payload[..]), (2, &payload[..4095]), (2, &[][..])] {
+        patches = patches.insert(block, input).err().expect("rejected patch");
+        assert_eq!(patches.len(), sorted.len());
+        for (index, expected) in sorted.into_iter().enumerate() {
+            assert_eq!(patches.at(index).unwrap().block(), expected);
+        }
+    }
+    let images = patches.into_images();
+    assert_eq!(images.len(), sorted.len());
+    let mut bounded = PatchSet::new();
+    for block in (0..MAX_PATCHES as u32).rev() {
+        bounded = bounded.insert(block, &payload).ok().unwrap();
+    }
+    bounded = bounded
+        .insert(u32::MAX, &payload)
+        .err()
+        .expect("patch credit limit");
+    assert_eq!(bounded.len(), MAX_PATCHES);
+    assert!(bounded.get(u32::MAX).is_none());
+    assert_eq!(bounded.at(0).unwrap().block(), 0);
+    assert_eq!(
+        bounded.at(MAX_PATCHES - 1).unwrap().block(),
+        MAX_PATCHES as u32 - 1
+    );
+}
+
+#[test]
 fn codecs_handle_extremes_and_crc_streaming() {
     for v in [0, 1, 255, 256, 65535, 65536, 0x89abcdef, u32::MAX] {
         assert_eq!(

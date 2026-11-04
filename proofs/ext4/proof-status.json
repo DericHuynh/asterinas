@@ -9,13 +9,13 @@
   "writable_mount_enabled": false,
   "verification": {
     "status": "core_and_models_checked",
-    "verus_verified_units": 597,
+    "verus_verified_units": 611,
     "verification_errors": 0,
-    "checked_named_proof_functions": 236,
-    "checked_named_executable_functions": 182,
+    "checked_named_proof_functions": 238,
+    "checked_named_executable_functions": 190,
     "runner_validated": true,
     "negative_gate_checks_passed": 6,
-    "host_compatibility_tests_passed": 32,
+    "host_compatibility_tests_passed": 33,
     "evidence": "verification-evidence.json",
     "request_boundary_rejections_passed": 6
   },
@@ -69,7 +69,8 @@
     "directory_index": "checked_complete_canonical_directory_block_and_live_entry_enumeration_source_target_typing_generations_unique_names_and_exact_lookup_parent_topology_and_link_counts_open",
     "name_index_positions": "checked_ordinal_identifies_the_exact_source_key_insertion_position",
     "static_namespace": "checked_exact_reference_and_inode_link_counts_Linux_dot_dotdot_placement_and_targets_unique_matching_directory_parents_root_rules_and_every_directory_reaches_root_by_bounded_depth_rank",
-    "namespace_cycle_checks": "checked_nonrecursive_color_depth_cursor_walks_with_ghost_path_certificates_no_runtime_path_stack_depth_bound_65536"
+    "namespace_cycle_checks": "checked_nonrecursive_color_depth_cursor_walks_with_ghost_path_certificates_no_runtime_path_stack_depth_bound_65536",
+    "bounded_shadow_patches": "checked_owned_exact_images_sorted_unique_targets_binary_lookup_4096_credit_and_unchanged_rejection"
   },
   "production_activation_gate": "All applicable obligations in PROOF_OBLIGATIONS.md must be discharged for the admitted profile.",
   "evidence_policy": "Only successful pinned entire-crate checking plus compilation produces a valid build report; it certifies only the declared source/model scope.",

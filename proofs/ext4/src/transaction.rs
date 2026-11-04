@@ -16,6 +16,21 @@ pub struct ImageView { pub block: u32, pub image: Seq<u8> }
 impl AfterImage {
     pub closed spec fn view(&self) -> ImageView { ImageView { block: self.block, image: self.image.view() } }
 
+    pub open spec fn wf(&self) -> bool { self.view().image.len() == 4096 }
+
+    #[verifier::type_invariant]
+    spec fn invariant(self) -> bool { self.wf() }
+
+    pub fn block(&self) -> (r: u32) ensures self.wf(), r == self.view().block {
+        proof { use_type_invariant(self); }
+        self.block
+    }
+
+    pub fn as_slice(&self) -> (r: &[u8]) ensures self.wf(), r@ == self.view().image, r.len() == 4096 {
+        proof { use_type_invariant(self); }
+        self.image.as_slice()
+    }
+
     pub fn capture(block: u32, image: &[u8]) -> (r: Option<Self>)
         ensures match r {
             Some(a) => image.len() == 4096 && a.view() == (ImageView { block, image: image@ }),

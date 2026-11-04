@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "license": "MPL-2.0",
-  "recorded_at": "2026-11-04T00:56:31.486813+00:00",
+  "recorded_at": "2026-11-04T01:08:24.490492+00:00",
   "scope": "Checked host core and specified abstract machines; not a complete or kernel-integrated ext4 filesystem",
   "verifier_version": {
     "verus": {
@@ -19,7 +19,7 @@
     "encountered-error": false,
     "encountered-vir-error": false,
     "success": true,
-    "verified": 597,
+    "verified": 611,
     "errors": 0,
     "is-verifying-entire-crate": true
   },
@@ -31,7 +31,7 @@
     "--crate-type=rlib"
   ],
   "source_sha256": {
-    "src/model.rs": "524d65c49b3e6ae6b6a49d18243a3a9a4484f4c1eba6d913dce7ea7f74ed35a4",
+    "src/model.rs": "ab94c3bc5b2954a9d2fc4eab7f8abe088922401623a0ea724dfd363a956dfbca",
     "src/redo.rs": "e964baa83ca170c3cc60dbc8df4bfc470a81549ac23a5cfe4526a9cb0edb7e7f",
     "src/journal.rs": "eef5dcc269f81cbc1c7e8c6a4daf0a58cf7015423657a9cfe1f0fff186b91834",
     "src/lease.rs": "37358276a3719454ddeaf16177a2ce058b5e382c57b0609cea97031da084b1aa",
@@ -66,7 +66,7 @@
     "src/scan_trace.rs": "2090e06fdf14b27ce61baa7d502d2fe3a2135dfbf0ff43f19d87d95e6424d6c7",
     "src/recovery_request.rs": "43d7382d4d80862503be7295bc8fb7bdb80a3b1cae9c24cdde6e1dec6b65dea6",
     "src/scan_stop.rs": "0b5e30855ff8657b12cb28134f6cb4d94d95296891784428f566ef41a9055793",
-    "src/transaction.rs": "c4c5076960b8be710c3eda3261241fc57188c8d2a10657c8c4dacbca37a8b57d",
+    "src/transaction.rs": "a6e88e8e97cad92524d57cb93482625966b049b3e3a56502629bbd1c9c14ac37",
     "src/journal_view.rs": "ed3cc72e9a81e9afde7553479c8b0c3630259a1a7923f4f5a3c3b249d2642716",
     "src/transaction_refinement.rs": "957d73f8a85bd2f0c74676819450b37ff261d806357694486941f4e490fc6054",
     "src/write_protocol.rs": "2d9f8aed38396354591ef2b19d91818ec30be082ee8404803d7d96a9d0aaa3c5",
@@ -104,9 +104,10 @@
     "src/parent_table.rs": "1f3c6c7094309aea87f66145274298a79950a863783988ad64dde0c8b160de3b",
     "src/tree_model.rs": "05731005fd59882f1351f1e2cf28ce1268b83771ae03e57163311660bf183e50",
     "src/namespace_tree.rs": "c0783345cd7e71bc17a397f20dbe76d9ce62d6576662dc6e0ab786bc1598666b",
-    "src/namespace.rs": "5efc10614982088277e12eceb150b87b7e4e367b2fab2fc2b93ae29bff9b55ce"
+    "src/namespace.rs": "5efc10614982088277e12eceb150b87b7e4e367b2fab2fc2b93ae29bff9b55ce",
+    "src/patch_set.rs": "5cc2702075a03ba59413d58fbb5b5c105b0bfbabdafdaaf999c82c9ff51afc68"
   },
-  "lock_sha256": "f11c7dfd855edf944441b011c811ba313c31512c72d8fe03bfd48bfd8e01480f",
+  "lock_sha256": "6e87fe347c424e77a41c4a2d589c400a5d221205d4e27e48e8eb747c44d5ef81",
   "runner_sha256": "de6b473ab50632068de9e7fc619591c7b4d5afbc0058a1fcd7f946c0198beb91",
   "named_proof_coverage": [
     "access::override_cannot_execute_a_nonexecutable_regular_file",
@@ -195,6 +196,8 @@
     "ownership::reserved_and_journal_blocks_are_not_readable_as_file_data",
     "ownership::stale_inode_generation_does_not_authorize_read",
     "ownership::write_preserves_ownership_and_other_contents",
+    "patch_set::applying_a_patch_replaces_exactly_its_block",
+    "patch_set::one_target_has_one_image",
     "persistence::a_nonempty_transaction_reaches_public_success",
     "persistence::abort_does_not_cancel_an_issued_commit",
     "persistence::completion_is_not_persistence",
@@ -473,6 +476,12 @@
     "parent_table::build",
     "parent_table::len",
     "parent_table::parent",
+    "patch_set::at",
+    "patch_set::get",
+    "patch_set::insert",
+    "patch_set::into_images",
+    "patch_set::len",
+    "patch_set::new",
     "recovery_io::abort",
     "recovery_io::failed",
     "recovery_io::finished",
@@ -514,6 +523,8 @@
     "superblock::needs_recovery",
     "superblock::offset",
     "superblock::parse",
+    "transaction::as_slice",
+    "transaction::block",
     "transaction::capture",
     "transaction::commit_bytes",
     "transaction::descriptor_bytes",
@@ -530,14 +541,14 @@
     "write_io::pending_command",
     "write_io::prepare"
   ],
-  "host_library_sha256": "8898e1a659635570bafab7c780be777c6d2d582ee8305aa6c3cd8dc0dc72b17f",
+  "host_library_sha256": "776e92120c186e2611974c6a34e1259f5804191d1fac92a3585d799596646a41",
   "compatibility": {
     "schema": 1,
     "status": "passed",
     "scope": "host interoperability tests, not formal proof",
     "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
-    "proof_artifact_sha256": "8898e1a659635570bafab7c780be777c6d2d582ee8305aa6c3cd8dc0dc72b17f",
-    "image_sha256": "94eeda60c06d4b44136119976aefe209c51a9329ead12abcc39c3c149eefc8d8",
+    "proof_artifact_sha256": "776e92120c186e2611974c6a34e1259f5804191d1fac92a3585d799596646a41",
+    "image_sha256": "1310e6efdab2b0c3250dd28d55504549cf4f6676e3aa0ad891ff2b8a00a58ffd",
     "request_boundary_rejections": [
       "reuse_request",
       "redirect_completion",
@@ -548,11 +559,11 @@
     ],
     "compatibility_runner_sha256": "9164eb940e75a089f0b051c4ad7fee16592ca6c0423c640ae70bce36f33159f6",
     "test_source_sha256": {
-      "compat": "132b5815c5ddbb6c75e3bb793e72b79cc088516e6eb5f12c2d8abb87a8c7d502",
+      "compat": "3f194e5c7579bacc8acc0a45c4817b440c4357fe8bd0d5bfde3c252cdf4d2e0d",
       "journal": "d5299e37f6dc76f39c0c2c88722638f5947c2f18b753aff0bdd181eba28aca8f"
     }
   },
-  "compatibility_test_count": 32,
+  "compatibility_test_count": 33,
   "e2fsprogs_version": "1.47.0",
   "negative_gate_checks": {
     "status": "passed",
@@ -599,5 +610,6 @@
   "directory_index": "checked_complete_canonical_directory_block_and_live_entry_enumeration_source_target_typing_generations_unique_names_and_exact_lookup_parent_topology_and_link_counts_open",
   "name_index_positions": "checked_ordinal_identifies_the_exact_source_key_insertion_position",
   "static_namespace": "checked_exact_reference_and_inode_link_counts_Linux_dot_dotdot_placement_and_targets_unique_matching_directory_parents_root_rules_and_every_directory_reaches_root_by_bounded_depth_rank",
-  "namespace_cycle_checks": "checked_nonrecursive_color_depth_cursor_walks_with_ghost_path_certificates_no_runtime_path_stack_depth_bound_65536"
+  "namespace_cycle_checks": "checked_nonrecursive_color_depth_cursor_walks_with_ghost_path_certificates_no_runtime_path_stack_depth_bound_65536",
+  "bounded_shadow_patches": "checked_owned_exact_images_sorted_unique_targets_binary_lookup_4096_credit_and_unchanged_rejection"
 }
