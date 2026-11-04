@@ -96,7 +96,8 @@
     "src/bootstrap.rs",
     "src/image_validation.rs",
     "src/bootstrap_identity.rs",
-    "src/recovery_patch.rs"
+    "src/recovery_patch.rs",
+    "src/recovery_admission.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -559,6 +560,19 @@
     "bootstrap::prepare_recovery",
     "recovery_io::replay_plan",
     "recovery_io::retirement_image",
-    "recovery_patch::collect"
+    "recovery_patch::collect",
+    "layout::duplicate",
+    "image_validation::journal",
+    "recovery_admission::source_snapshot",
+    "recovery_admission::home_patches",
+    "recovery_admission::engine_ref",
+    "recovery_admission::finished",
+    "recovery_admission::failed",
+    "recovery_admission::abort",
+    "recovery_admission::dispatch",
+    "recovery_admission::pending_command",
+    "recovery_admission::abort_pending",
+    "recovery_admission::finish_pending",
+    "recovery_admission::prepare"
   ]
 }

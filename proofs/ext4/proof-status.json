@@ -9,15 +9,15 @@
   "writable_mount_enabled": false,
   "verification": {
     "status": "core_and_models_checked",
-    "verus_verified_units": 652,
+    "verus_verified_units": 666,
     "verification_errors": 0,
     "checked_named_proof_functions": 242,
-    "checked_named_executable_functions": 211,
+    "checked_named_executable_functions": 224,
     "runner_validated": true,
     "negative_gate_checks_passed": 6,
-    "host_compatibility_tests_passed": 36,
+    "host_compatibility_tests_passed": 37,
     "evidence": "verification-evidence.json",
-    "request_boundary_rejections_passed": 6
+    "request_boundary_rejections_passed": 9
   },
   "claims": {
     "abstract_redo": "checked",
@@ -61,7 +61,7 @@
     "same_source_group_index": "checked_complete_ordered_group_enumeration_exact_descriptor_bitmap_provenance_and_global_free_counter_sums",
     "group_reserved_regions": "checked_sparse_super_power_rule_and_disjoint_metadata_claims_within_32_group_profile",
     "whole_image_physical_allocation": "checked_complete_same_source_claim_composition_allocated_inode_traversal_reserved_regions_marker_root_high_water_directory_counts_all_bitmaps_and_global_free_count",
-    "bootstrap_journal_mapping_preservation_and_shadow_admission": "checked_bootstrap_and_identity_policy_and_exact_replay_patches_recovered_image_and_IO_admission_composition_open",
+    "bootstrap_journal_mapping_preservation_and_shadow_admission": "checked_host_core_including_owned_IO_admission_actual_filesystem_operation_driver_and_mount_refinement_open",
     "structural_inode_reads": "checked_source_bound_live_inode_lookup_unique_initialized_mapping_exact_ownership_clipped_source_slices_and_hole_unwritten_zeros_no_VFS_authority",
     "complete_directory_blocks": "checked_contiguous_complete_unique_record_coverage_tail_checksum_bounds_and_composition_into_static_namespace_validation",
     "directory_source": "checked_actual_initialized_mapping_and_UUID_inode_generation_seed_bound_to_unique_canonical_source_records",
@@ -76,7 +76,8 @@
     "bootstrap_static_identity_policy": "checked_exact_primary_immutable_bytes_all_group_bitmap_table_addresses_and_entire_inode_8_ordinary_inodes_sharing_the_block_remain_editable",
     "bootstrap_bound_recovery_preparation": "checked_exact_same_source_journal_uuid_primary_layout_and_canonical_maximal_scan_certificate",
     "recovery_shadow_patch_selection": "checked_owned_sorted_patch_bijective_with_selected_latest_unrevoked_images_exact_targets_bytes_and_unselected_frame",
-    "retained_static_image_certificate": "checked_actual_allocation_directory_namespace_validation_retained_immutable_source_not_mount_or_IO_authority"
+    "retained_static_image_certificate": "checked_actual_allocation_directory_namespace_validation_retained_immutable_source_not_mount_or_IO_authority",
+    "recovery_image_admission": "checked_same_source_bootstrap_selected_homes_and_retired_tail_shadow_complete_allocation_namespace_validation_exact_bootstrap_identity_and_journal_mapping_preserved_through_owned_dispatch_abort_completion_no_kernel_mount_or_driver_claim"
   },
   "production_activation_gate": "All applicable obligations in PROOF_OBLIGATIONS.md must be discharged for the admitted profile.",
   "evidence_policy": "Only successful pinned entire-crate checking plus compilation produces a valid build report; it certifies only the declared source/model scope.",

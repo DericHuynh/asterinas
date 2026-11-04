@@ -465,6 +465,39 @@ fn linux_recovery_accepts_emitted_records_wrap_revoke_and_incomplete_tail() {
         assert!(engine.finished());
         assert!(!engine.failed());
         assert!(cache.is_empty());
+        let mut admitted =
+            core::recovery_admission::prepare(&source).expect("validated final recovered image");
+        assert_eq!(admitted.home_patches().len(), plan.len());
+        let mut admitted_image = image.clone();
+        let mut admitted_cache = Vec::new();
+        loop {
+            let pending = match admitted.dispatch() {
+                Ok(pending) => pending,
+                Err(done) => {
+                    admitted = done;
+                    break;
+                }
+            };
+            match pending.pending_command() {
+                core::recovery_io::Command::Write { block, image } => {
+                    admitted_cache.push((block, image.to_vec()))
+                }
+                core::recovery_io::Command::Flush => {
+                    for (block, bytes) in admitted_cache.drain(..) {
+                        admitted_image[block as usize * 4096..(block as usize + 1) * 4096]
+                            .copy_from_slice(&bytes);
+                    }
+                }
+            }
+            admitted = pending.finish_pending(Completion::Succeeded);
+        }
+        assert!(admitted.finished());
+        assert!(admitted_cache.is_empty());
+        assert_eq!(admitted_image, protocol_image);
+        assert!(
+            core::image_validation::inspect(core::snapshot::Snapshot::from_bytes(&admitted_image))
+                .is_some()
+        );
         assert_eq!(
             &protocol_image[target as usize * 4096..(target as usize + 1) * 4096],
             &shadow[target as usize * 4096..(target as usize + 1) * 4096]
@@ -502,6 +535,117 @@ fn linux_recovery_accepts_emitted_records_wrap_revoke_and_incomplete_tail() {
             data
         );
     }
+}
+
+#[test]
+fn recovery_admission_rejects_invalid_semantics_and_accepts_repaired_home_metadata() {
+    fn logged_patch(image: &[u8], target: u32, payload: &[u8]) -> Vec<u8> {
+        let mut result = image.to_vec();
+        let (layout, seed, _) = geometry(image);
+        let uuid = image[1128..1144].to_vec();
+        let base = layout.physical_start() as usize * 4096;
+        let journal =
+            core::journal_state::encode(&image[base..base + 4096], &uuid, layout.blocks(), 9, 1)
+                .unwrap();
+        result[base..base + 4096].copy_from_slice(journal.as_slice());
+        let dirty =
+            core::super_state::recovery_image(&image[..4096], image.len() as u64, true).unwrap();
+        result[..4096].copy_from_slice(dirty.as_slice());
+        let tx = core::transaction::encode(
+            vec![core::transaction::AfterImage::capture(target, payload).unwrap()],
+            &uuid,
+            9,
+            &layout,
+            &result[..4096],
+            result.len() as u64,
+        )
+        .unwrap();
+        let mut ordinal = 0;
+        append_record(&mut result, &layout, 1, &mut ordinal, tx.descriptor_bytes());
+        append_record(
+            &mut result,
+            &layout,
+            1,
+            &mut ordinal,
+            tx.payload_at(0).unwrap(),
+        );
+        append_record(&mut result, &layout, 1, &mut ordinal, tx.commit_bytes());
+        assert!(core::jbd2::valid_commit(tx.commit_bytes(), 9, seed));
+        result
+    }
+    let (image, _, seed, target) = fixture();
+    let bitmap = core::bytes::read_le32(&image, 4096).unwrap();
+    let table = core::bytes::read_le32(&image, 4104).unwrap();
+    let mut bad_bitmap = image[bitmap as usize * 4096..(bitmap as usize + 1) * 4096].to_vec();
+    bad_bitmap[0] ^= 1;
+    let bad = logged_patch(&image, bitmap, &bad_bitmap);
+    let source = core::snapshot::Snapshot::from_bytes(&bad);
+    assert!(
+        core::bootstrap::locate(&source)
+            .unwrap()
+            .prepare_recovery()
+            .is_some(),
+        "JBD2 checksums alone admit this payload"
+    );
+    assert!(
+        core::recovery_admission::prepare(&source).is_none(),
+        "whole-image checks must reject the invalid allocation bitmap"
+    );
+    for number in [2u32, 8] {
+        let mut payload = image[table as usize * 4096..(table as usize + 1) * 4096].to_vec();
+        let offset = (number as usize - 1) * 256;
+        let inode = &mut payload[offset..offset + 256];
+        if number == 2 {
+            inode[26..28].copy_from_slice(&1u16.to_le_bytes());
+        } else {
+            inode[2] ^= 1;
+        }
+        let checksum = core::inode::calculated_checksum(inode, number, seed).unwrap();
+        inode[124..126].copy_from_slice(&(checksum as u16).to_le_bytes());
+        inode[130..132].copy_from_slice(&((checksum >> 16) as u16).to_le_bytes());
+        let changed = logged_patch(&image, table, &payload);
+        let source = core::snapshot::Snapshot::from_bytes(&changed);
+        assert!(
+            core::bootstrap::locate(&source)
+                .unwrap()
+                .prepare_recovery()
+                .is_some()
+        );
+        assert!(
+            core::recovery_admission::prepare(&source).is_none(),
+            "reject inode {number} namespace or journal identity violation"
+        );
+    }
+    let mut cut = image.clone();
+    cut[bitmap as usize * 4096] ^= 1;
+    let repair = logged_patch(
+        &cut,
+        bitmap,
+        &image[bitmap as usize * 4096..(bitmap as usize + 1) * 4096],
+    );
+    let source = core::snapshot::Snapshot::from_bytes(&repair);
+    assert!(core::allocation::parse(source.duplicate()).is_none());
+    let admitted = core::recovery_admission::prepare(&source)
+        .expect("validate repaired shadow, not inconsistent home metadata");
+    assert_eq!(
+        admitted.home_patches().get(bitmap).unwrap().as_slice(),
+        &image[bitmap as usize * 4096..(bitmap as usize + 1) * 4096]
+    );
+    let good = logged_patch(&image, target, &[0x6a; 4096]);
+    let source = core::snapshot::Snapshot::from_bytes(&good);
+    let pending = core::recovery_admission::prepare(&source)
+        .unwrap()
+        .dispatch()
+        .ok()
+        .unwrap();
+    let aborted = pending
+        .abort_pending()
+        .finish_pending(Completion::Succeeded);
+    assert!(aborted.failed() && !aborted.finished());
+    assert!(
+        aborted.dispatch().is_err(),
+        "abort retains completion ownership but cannot start further I/O"
+    );
 }
 
 #[test]

@@ -76,6 +76,13 @@ def main():
                                 "{ let _ = verified_ext4::write_io::Pending { writer }; }\n", "E0451"),
         "replace_write_state": ("pub fn misuse(mut w: verified_ext4::write_io::Writer, s: verified_ext4::write_protocol::State) "
                                 "{ w.state = s; }\n", "E0616"),
+        "reuse_admitted_request": ("use verified_ext4::{recovery_admission::Pending, recovery_request::Completion};\n"
+                                   "pub fn misuse(p: Pending<'_, '_>) { let _ = p.finish_pending(Completion::Succeeded); "
+                                   "let _ = p.finish_pending(Completion::Succeeded); }\n", "E0382"),
+        "forge_admitted_recovery": ("pub fn misuse(r: verified_ext4::recovery_admission::CheckedRecovery<'_, '_>) "
+                                    "{ let _ = verified_ext4::recovery_admission::CheckedRecovery { ..r }; }\n", "E0451"),
+        "replace_admitted_engine": ("pub fn misuse(mut r: verified_ext4::recovery_admission::CheckedRecovery<'_, '_>, "
+                                    "e: verified_ext4::recovery_io::Recovery) { r.engine = e; }\n", "E0616"),
     }
     for name, (source, code) in misuse.items():
         path = BUILD / (name + ".rs")

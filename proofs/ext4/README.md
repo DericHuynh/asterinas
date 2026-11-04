@@ -7,9 +7,9 @@ implementation of a **Linux-compatible ext4 subset**.
 It is not a complete filesystem and is not registered with the kernel VFS.
 No mount or filesystem write path is enabled.
 
-The pinned Verus run checks **652 obligations with zero errors**, including
-242 named proof functions and 211 named executable functions.
-36 host interoperability/regression tests pass on Linux-created metadata.
+The pinned Verus run checks **666 obligations with zero errors**, including
+242 named proof functions and 224 named executable functions.
+37 host interoperability/regression tests pass on Linux-created metadata.
 [Proof status](proof-status.json) and [recorded evidence](verification-evidence.json)
 state the exact scope; tests do not discharge formal obligations.
 
@@ -34,10 +34,11 @@ state the exact scope; tests do not discharge formal obligations.
 | `name_set.rs` | Owned directory/name keys; exact membership, duplicate rejection and unchanged failed insertion; full byte comparison across CRC bucket collisions. At most 65536 keys, 64/bucket and 255 bytes/name. This is a bounded namespace-admission helper, not a complete namespace certificate. |
 | `namespace_model.rs`, `directory_index.rs` | Complete canonical enumeration of every allocated directory/block and live record, including empty preallocation; source/target inode types and target generations, global unique names, exact source entries and complete lookup via proved name-index positions. Bounded to 4096 directory blocks. Link counts and rooted parent topology are composed by namespace.rs. |
 | `namespace_counts.rs`, `parent_table.rs`, `tree_model.rs`, `namespace_tree.rs`, `namespace.rs` | Exact source-reference accounting, inode link counts, canonical first-block dot/dotdot placement and targets, unique ordinary directory parents and matching dotdot, root rules, bounded nonrecursive traversal and a theorem that every accepted directory reaches root. Regular file hard links are admitted; disconnected cycles and directory hard links are rejected. This is a static image certificate, not recovery/mount/VFS authority. |
-| `patch_set.rs`, `shadow_model.rs`, `snapshot.rs` | Owned exact after-images in a sorted unique target set, binary lookup, 4096-block credit and unchanged rejection. Immutable shadow sources share the original bytes and at most 32 bounded patch layers; later patches take precedence with exact block and byte provenance. The existing allocation/namespace validators read the shadow directly. Recovery admission integration remains open. |
+| `patch_set.rs`, `shadow_model.rs`, `snapshot.rs` | Owned exact after-images in a sorted unique target set, binary lookup, 4096-block credit and unchanged rejection. Immutable shadow sources share the original bytes and at most 32 bounded patch layers; later patches take precedence with exact block and byte provenance. The existing allocation/namespace validators read the shadow directly. Recovery admission is composed by recovery_admission.rs. |
 | `bootstrap.rs`, `snapshot.rs` | Locate journal inode 8 through the same primary superblock and group-zero descriptor before global bitmap validation; exact reserved-inode byte range and bounded complete journal capture. Discovery alone gives no recovery, mount or write authority. |
-| `bootstrap_identity.rs`, `image_validation.rs` | Exact immutable primary bytes, all group bitmap/table addresses and entire journal inode remain fixed; other inodes sharing the block may change. Retained-source static-image inspection runs actual allocation/directory/namespace validation; identity alone does not establish filesystem validity. Recovery I/O admission remains separate. |
+| `bootstrap_identity.rs`, `image_validation.rs` | Exact immutable primary bytes, all group bitmap/table addresses and entire journal inode remain fixed; other inodes sharing the block may change. Retained-source static-image inspection runs actual allocation/directory/namespace validation; identity alone does not establish filesystem validity. Recovery I/O admission is composed by recovery_admission.rs. |
 | `recovery_patch.rs` | Owned sorted shadow patches contain exactly the replay plan's selected latest unrevoked images, with the same target identities and bytes; unselected targets have no patch. Bootstrap recovery preparation binds the maximal scan certificate to the exact retained source journal, UUID, primary and layout. |
+| `recovery_admission.rs` | Before issuing any wrapped request, build the selected-home and retired-tail shadow, validate the complete static filesystem, enforce bootstrap identity and the same journal mapping, then retain that exact certificate through owned dispatch, completion and abort. Inconsistent home metadata may be repaired by committed redo; a valid journal containing an invalid filesystem patch is rejected. This host-core wrapper does not establish actual device state or mount authority. |
 | `layout.rs` | Checked mapping of a single initialized journal extent; journal blocks excluded from replay targets. |
 | `replay.rs`, `replay_refinement.rs` | Linux same/later revoke suppression and reallocation, latest-image selection, exact chronological redo equivalence, arbitrary partial replay restart. |
 | `scan.rs`, `scan_trace.rs`, `scan_stop.rs`, `scan_budget.rs` | Bounded ring scan, contiguous exact record coverage, complete descriptor payloads, committed cut, actual source/commit provenance, checked stopping witnesses, unique canonical maximal prefix and recovered input. Clean snapshots and active snapshots satisfying the declared resource profile are admitted. Every writer crash snapshot satisfies that scan profile. |
@@ -128,8 +129,8 @@ It rejects local proof escapes, extra flags, omitted modules and source-inventor
 requires named proof and executable coverage; invalidates stale artifacts on failure;
 and records source, runner, manifest, verifier and emitted-library hashes.
 The negative checks include an actual failing Verus assertion in a disposable copy.
-Six additional negative Rust compilation checks reject recovery/writer request
-reuse and forgery, external completion redirection and writer-state replacement.
+Nine additional negative Rust compilation checks reject recovery/writer request
+reuse and forgery, external completion redirection, writer-state replacement and admitted-recovery request/engine substitution.
 [CI](../../.github/workflows/verify_ext4.yml) runs the same checks.
 
 The emitted host library exercises proof erasure and Linux byte compatibility.

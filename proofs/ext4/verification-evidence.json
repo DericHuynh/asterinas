@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "license": "MPL-2.0",
-  "recorded_at": "2026-11-04T01:32:14.134795+00:00",
+  "recorded_at": "2026-11-04T01:40:56.075197+00:00",
   "scope": "Checked host core and specified abstract machines; not a complete or kernel-integrated ext4 filesystem",
   "verifier_version": {
     "verus": {
@@ -19,7 +19,7 @@
     "encountered-error": false,
     "encountered-vir-error": false,
     "success": true,
-    "verified": 652,
+    "verified": 666,
     "errors": 0,
     "is-verifying-entire-crate": true
   },
@@ -31,7 +31,7 @@
     "--crate-type=rlib"
   ],
   "source_sha256": {
-    "src/model.rs": "22a3ef6c6c7d87c9f726ffc2accf167014b155d123752c7838d61fb7c1135056",
+    "src/model.rs": "17b1ae6162f322a6577d6cab12c9d5ca426c923ea80b53d533eb16a732949d00",
     "src/redo.rs": "e964baa83ca170c3cc60dbc8df4bfc470a81549ac23a5cfe4526a9cb0edb7e7f",
     "src/journal.rs": "eef5dcc269f81cbc1c7e8c6a4daf0a58cf7015423657a9cfe1f0fff186b91834",
     "src/lease.rs": "37358276a3719454ddeaf16177a2ce058b5e382c57b0609cea97031da084b1aa",
@@ -54,7 +54,7 @@
     "src/system.rs": "9fee18a8ce457db065dec5c09f13ef17e939c36c073cb604ff4838612e22208b",
     "src/descriptor.rs": "334aa73df2e0a9e9ecc9e0e8561f9157615fa9bcc99ac2bfd5cf4e5846568f06",
     "src/revoke.rs": "affe750a3c54dc7194eccf122a95ee37385e759f1228ad97af8971c405cc7a1c",
-    "src/layout.rs": "20e6e0cca5006604e35cef05375e90dbd06089bdcd1d66511b6314899f06467b",
+    "src/layout.rs": "6ef0e826d22f36b11a16f84075274a5740f9e3620e36d11f05c7dfece5f7c01e",
     "src/replay.rs": "a4685db5477354a7257ae54d30aa6a4486b576c5819b03fe6b313a76e9ccae43",
     "src/replay_refinement.rs": "ce5d691099276600446de7dc6d0002281e6d85a1499a7c34513d51b568c1bc7d",
     "src/scan.rs": "405ddc4893f7e7b3fed4d3f0902324183601b5a6219a010e560822c44ac04b87",
@@ -108,11 +108,12 @@
     "src/patch_set.rs": "5cc2702075a03ba59413d58fbb5b5c105b0bfbabdafdaaf999c82c9ff51afc68",
     "src/shadow_model.rs": "cad69cea5b78e3059fa177096d1ab2fd25b7b920678fba8ea4c695b5bf11a014",
     "src/bootstrap.rs": "8bb47b23ca3cf1b0baad05f8dbe54716758b6190a44bdadd6b30c0cbde429fe9",
-    "src/image_validation.rs": "ad666de4a15decbe63db5d53a4c946d84477e14e06fc3932707b3c3ebd4b1f2a",
+    "src/image_validation.rs": "7323aac144673f43906b9fc26cd8759bcbd99456e347d1467056f3266eb8d8fe",
     "src/bootstrap_identity.rs": "d07f034becb57a654d7b5866975095ff884cddf846d24a60409eb999f487a706",
-    "src/recovery_patch.rs": "340313f189ef3ade684fdc91b6adec4e0bff09b2cb347d316c68bb009229024e"
+    "src/recovery_patch.rs": "340313f189ef3ade684fdc91b6adec4e0bff09b2cb347d316c68bb009229024e",
+    "src/recovery_admission.rs": "02999edfc1761994b65c549cfc96763bf4ada0cfda9c6188e6ee017046263392"
   },
-  "lock_sha256": "5d77c9bb37ccbdf7ce5c560311f0a7254153e22960ad8a3f6d3e938983cee928",
+  "lock_sha256": "338ad240a83778344b11cdcfdfc824e5aad0f47e26312596bfe5c78860caa534",
   "runner_sha256": "de6b473ab50632068de9e7fc619591c7b4d5afbc0058a1fcd7f946c0198beb91",
   "named_proof_coverage": [
     "access::override_cannot_execute_a_nonexecutable_regular_file",
@@ -454,6 +455,7 @@
     "group_metadata::parameters",
     "group_metadata::parse",
     "image_validation::inspect",
+    "image_validation::journal",
     "image_validation::source",
     "inode::calculated_checksum",
     "inode::inode_seed",
@@ -476,6 +478,7 @@
     "journal_superblock::parse",
     "layout::allows_target",
     "layout::blocks",
+    "layout::duplicate",
     "layout::filesystem_blocks",
     "layout::from_inode",
     "layout::offset",
@@ -505,6 +508,17 @@
     "patch_set::into_images",
     "patch_set::len",
     "patch_set::new",
+    "recovery_admission::abort",
+    "recovery_admission::abort_pending",
+    "recovery_admission::dispatch",
+    "recovery_admission::engine_ref",
+    "recovery_admission::failed",
+    "recovery_admission::finish_pending",
+    "recovery_admission::finished",
+    "recovery_admission::home_patches",
+    "recovery_admission::pending_command",
+    "recovery_admission::prepare",
+    "recovery_admission::source_snapshot",
     "recovery_io::abort",
     "recovery_io::failed",
     "recovery_io::finished",
@@ -571,29 +585,32 @@
     "write_io::pending_command",
     "write_io::prepare"
   ],
-  "host_library_sha256": "69a04d0016134d15677899148a0c431ed61ce62c0a26789a4b108be71f7bd2b9",
+  "host_library_sha256": "ff285e3ca0109d0c6dd00172c91b0f2ecf32a9d0fecd8e92c51fd9e8abb9bb5f",
   "compatibility": {
     "schema": 1,
     "status": "passed",
     "scope": "host interoperability tests, not formal proof",
     "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
-    "proof_artifact_sha256": "69a04d0016134d15677899148a0c431ed61ce62c0a26789a4b108be71f7bd2b9",
-    "image_sha256": "7204721ff1ed3772323fec08acec8568b9802003ba713b44f037a38b345a203a",
+    "proof_artifact_sha256": "ff285e3ca0109d0c6dd00172c91b0f2ecf32a9d0fecd8e92c51fd9e8abb9bb5f",
+    "image_sha256": "5fa3204966f1a55a7d29ee9bceff8eb1572b455302b3dd5d6beb1f849b6a45c4",
     "request_boundary_rejections": [
       "reuse_request",
       "redirect_completion",
       "forge_request",
       "reuse_write_request",
       "forge_write_request",
-      "replace_write_state"
+      "replace_write_state",
+      "reuse_admitted_request",
+      "forge_admitted_recovery",
+      "replace_admitted_engine"
     ],
-    "compatibility_runner_sha256": "9164eb940e75a089f0b051c4ad7fee16592ca6c0423c640ae70bce36f33159f6",
+    "compatibility_runner_sha256": "2f6f5b5a4aec23fb701df2be9f42ce64a9c8a9cbea23a212ea44ac36fd39e866",
     "test_source_sha256": {
       "compat": "4915e789f139bda2dd90842811912d6286554f24929d51cdecddfd9afb20eaeb",
-      "journal": "9b4f7542a63809c58ea8973191a42cf95fcc155c62c1910f5344d9cd1fb63a1f"
+      "journal": "249e839c4d5197df757c39066cf518cfa98c2695dc5396e03688138d9b9cec9e"
     }
   },
-  "compatibility_test_count": 36,
+  "compatibility_test_count": 37,
   "e2fsprogs_version": "1.47.0",
   "negative_gate_checks": {
     "status": "passed",
@@ -647,5 +664,6 @@
   "bootstrap_static_identity_policy": "checked_exact_primary_immutable_bytes_all_group_bitmap_table_addresses_and_entire_inode_8_ordinary_inodes_sharing_the_block_remain_editable",
   "bootstrap_bound_recovery_preparation": "checked_exact_same_source_journal_uuid_primary_layout_and_canonical_maximal_scan_certificate",
   "recovery_shadow_patch_selection": "checked_owned_sorted_patch_bijective_with_selected_latest_unrevoked_images_exact_targets_bytes_and_unselected_frame",
-  "retained_static_image_certificate": "checked_actual_allocation_directory_namespace_validation_retained_immutable_source_not_mount_or_IO_authority"
+  "retained_static_image_certificate": "checked_actual_allocation_directory_namespace_validation_retained_immutable_source_not_mount_or_IO_authority",
+  "recovery_image_admission": "checked_same_source_bootstrap_selected_homes_and_retired_tail_shadow_complete_allocation_namespace_validation_exact_bootstrap_identity_and_journal_mapping_preserved_through_owned_dispatch_abort_completion_no_kernel_mount_or_driver_claim"
 }
