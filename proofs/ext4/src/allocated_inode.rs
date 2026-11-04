@@ -141,4 +141,20 @@ pub fn get<'v, 'a>(volume: &'v Allocation<'a>, n: u32) -> (r: Option<AllocatedIn
     Some(AllocatedInode { volume, number: n, info })
 }
 
+pub proof fn a_lazy_group_cannot_make_an_inode_live(index: IndexView, number: u32)
+    requires group_index::valid(index), 0 < number <= index.inodes,
+        crate::group::inode_uninitialized(index.groups[(number as int - 1) / index.ipg as int].descriptor),
+    ensures !live(index, number),
+{
+    reveal(group_index::valid);
+    reveal(group_index::records_match);
+    vstd::arithmetic::mul::lemma_mul_is_commutative(index.ipg as int, index.groups.len() as int);
+    vstd::arithmetic::div_mod::lemma_multiply_divide_lt(number as int - 1, index.ipg as int, index.groups.len() as int);
+    vstd::arithmetic::div_mod::lemma_fundamental_div_mod(number as int - 1, index.ipg as int);
+    let g = (number as int - 1) / index.ipg as int;
+    let slot = (number as int - 1) % index.ipg as int;
+    assert(0 <= g < index.groups.len());
+    crate::group_metadata::an_uninitialized_group_has_no_allocated_inode(index.groups[g], slot as u32);
+}
+
 }

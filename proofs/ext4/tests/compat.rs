@@ -3741,7 +3741,7 @@ mod group64_tests {
         }
     }
 
-    fn command(name: &str, arguments: &[&str], repair: bool) {
+    pub(super) fn command(name: &str, arguments: &[&str], repair: bool) {
         let executable =
             std::env::var(format!("{name}_BIN")).unwrap_or_else(|_| name.to_lowercase());
         let result = std::process::Command::new(executable)
@@ -3756,7 +3756,7 @@ mod group64_tests {
         );
     }
 
-    fn seal_descriptor(raw: &mut [u8], number: u32, seed: u32) {
+    pub(super) fn seal_descriptor(raw: &mut [u8], number: u32, seed: u32) {
         let seed = core::crc::crc32c(seed, &number.to_le_bytes());
         let prefix = core::crc::crc32c(seed, &raw[..30]);
         let zeros = core::crc::crc32c(prefix, &[0, 0]);
@@ -4075,6 +4075,245 @@ mod group64_tests {
                 !core::bootstrap_identity::check(&boot, &source.overlay(&patch).unwrap()),
                 "second-group high address {offset} must be immutable independently of checksum validation"
             );
+        }
+    }
+}
+
+mod lazy_inode_tests {
+    use core::{bitmap, snapshot::Snapshot};
+
+    use super::{
+        core,
+        group64_tests::{command, seal_descriptor},
+        image, inode_bytes, le32, metadata,
+    };
+
+    #[test]
+    fn synthesized_inode_bitmaps_are_empty_with_allocated_padding_and_total_input_checks() {
+        for meaningful in [8u32, 16, 128, 4096, 32768] {
+            for seed in [0, 0x12345678, u32::MAX] {
+                let bitmap = bitmap::synthesize_free_inodes(meaningful, seed).unwrap();
+                assert_eq!(bitmap.free_count(), meaningful);
+                assert_eq!(bitmap.entry_count(), meaningful);
+                assert_eq!(
+                    &bitmap.raw_image()[..meaningful as usize / 8],
+                    vec![0; meaningful as usize / 8]
+                );
+                assert!(
+                    bitmap.raw_image()[meaningful as usize / 8..]
+                        .iter()
+                        .all(|&byte| byte == 255)
+                );
+                for slot in 0..32768 {
+                    assert_eq!(
+                        bitmap.is_set(slot),
+                        if slot < meaningful { Some(false) } else { None }
+                    );
+                    assert_eq!(
+                        bitmap::read_bit(bitmap.raw_image(), slot),
+                        Some(slot >= meaningful)
+                    );
+                }
+            }
+        }
+        for meaningful in [0, 1, 7, 9, 32767, 32769, u32::MAX] {
+            assert!(bitmap::synthesize_free_inodes(meaningful, 0).is_none());
+        }
+    }
+
+    #[test]
+    fn group_zero_cannot_hide_reserved_inodes_as_uninitialized() {
+        let image = image();
+        let (sb, _, seed) = metadata(&image);
+        let ipg = le32(&image, 1064);
+        for flags in [1u16, 5] {
+            let mut descriptor = image[4096..4128].to_vec();
+            descriptor[18..20].copy_from_slice(&flags.to_le_bytes());
+            descriptor[14..16].copy_from_slice(&(ipg as u16).to_le_bytes());
+            descriptor[16..18].fill(0);
+            descriptor[28..30].copy_from_slice(&(ipg as u16).to_le_bytes());
+            seal_descriptor(&mut descriptor, 0, seed);
+            assert!(core::group::parse(&descriptor, 0, sb.blocks(), ipg, seed).is_none());
+        }
+        for flags in [0u16, 4] {
+            let mut descriptor = image[4096..4128].to_vec();
+            descriptor[18..20].copy_from_slice(&flags.to_le_bytes());
+            seal_descriptor(&mut descriptor, 0, seed);
+            assert!(
+                core::group::parse(&descriptor, 0, sb.blocks(), ipg, seed).is_some(),
+                "the INODE_ZEROED bookkeeping flag alone does not change live inode semantics"
+            );
+        }
+    }
+
+    #[test]
+    fn native_lazy_groups_ignore_stale_bitmaps_and_inodes_without_granting_access() {
+        struct ImageFile(String);
+        impl Drop for ImageFile {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_file(&self.0);
+            }
+        }
+        for wide in [false, true] {
+            for huge in [false, true] {
+                for csum_seed in [false, true] {
+                    let path = ImageFile(format!(
+                        "build/native-lazy-inodes-{}-{wide}-{huge}-{csum_seed}.img",
+                        std::process::id()
+                    ));
+                    let features = format!(
+                        "none,has_journal,extent,filetype,sparse_super,large_file,extra_isize,metadata_csum{}{}{}",
+                        if wide { ",64bit" } else { "" },
+                        if huge { ",huge_file" } else { "" },
+                        if csum_seed { ",metadata_csum_seed" } else { "" }
+                    );
+                    command(
+                        "MKE2FS",
+                        &[
+                            "-q",
+                            "-F",
+                            "-t",
+                            "ext4",
+                            "-b",
+                            "4096",
+                            "-I",
+                            "256",
+                            "-N",
+                            "8192",
+                            "-O",
+                            &features,
+                            "-E",
+                            "lazy_itable_init=0,lazy_journal_init=0",
+                            &path.0,
+                            "40960",
+                        ],
+                        false,
+                    );
+                    command(
+                        "DEBUGFS",
+                        &["-w", "-R", "write build/fixture-file.bin /payload", &path.0],
+                        false,
+                    );
+                    command("E2FSCK", &["-fn", &path.0], false);
+                    let image = std::fs::read(&path.0).unwrap();
+                    let (sb, first, seed) = metadata(&image);
+                    let ipg = le32(&image, 1064);
+                    let width = if wide { 64 } else { 32 };
+                    let descriptor_start = 4096 + width;
+                    let descriptor = &image[descriptor_start..descriptor_start + width];
+                    assert_ne!(core::bytes::read_le16(descriptor, 18).unwrap() & 1, 0);
+                    let stale_number = ipg + 1;
+                    let inode_bitmap = le32(descriptor, 4) as usize * 4096;
+                    let inode_table = le32(descriptor, 8) as usize * 4096;
+                    let source = Snapshot::from_bytes(&image);
+                    let volume = core::allocation::parse(source.duplicate()).unwrap();
+                    let (_, logical) = volume.index().get(1).unwrap().bitmaps();
+                    assert_eq!(logical.free_count(), ipg);
+                    assert!(!logical.is_set(0).unwrap());
+                    assert!(core::allocated_inode::get(&volume, stale_number).is_none());
+                    assert!(core::extent_claims::bind(volume.index(), stale_number, 16).is_none());
+                    assert!(core::image_validation::inspect(source.duplicate()).is_some());
+                    assert!(core::recovery_admission::prepare(&source).is_some());
+                    for flags in [1u16, 5] {
+                        let mut stale = image.clone();
+                        stale[inode_bitmap..inode_bitmap + 4096].fill(255);
+                        // Even a correctly checksummed old inode and a fully
+                        // set physical bitmap cannot make this inode live.
+                        stale[inode_table..inode_table + 256].copy_from_slice(inode_bytes(
+                            &image,
+                            first.inode_table,
+                            12,
+                        ));
+                        let raw = &mut stale[inode_table..inode_table + 256];
+                        let checksum =
+                            core::inode::calculated_checksum(raw, stale_number, seed).unwrap();
+                        raw[124..126].copy_from_slice(&(checksum as u16).to_le_bytes());
+                        raw[130..132].copy_from_slice(&((checksum >> 16) as u16).to_le_bytes());
+                        assert!(
+                            core::inode::parse_metadata_with_features(
+                                raw,
+                                stale_number,
+                                sb.inodes(),
+                                seed,
+                                huge
+                            )
+                            .is_some()
+                        );
+                        let descriptor = &mut stale[descriptor_start..descriptor_start + width];
+                        descriptor[18..20].copy_from_slice(&flags.to_le_bytes());
+                        descriptor[26..28].fill(0x79);
+                        if wide {
+                            descriptor[58..60].fill(0x31);
+                        }
+                        seal_descriptor(descriptor, 1, seed);
+                        let volume = core::allocation::parse(Snapshot::from_bytes(&stale)).unwrap();
+                        assert!(core::allocated_inode::get(&volume, stale_number).is_none());
+                        assert!(
+                            core::extent_claims::bind(volume.index(), stale_number, 16).is_none()
+                        );
+                        assert!(
+                            core::image_validation::inspect(Snapshot::from_bytes(&stale)).is_some()
+                        );
+                        let root_raw = inode_bytes(&stale, first.inode_table, 2);
+                        let root = super::first_data_block(root_raw, sb.blocks()) as usize * 4096;
+                        let root_seed = core::inode::inode_seed(seed, 2, le32(root_raw, 100));
+                        let mut bad_target = stale.clone();
+                        let mut offset = 0;
+                        loop {
+                            let entry = core::directory::parse(
+                                &bad_target[root..root + 4096],
+                                offset,
+                                sb.inodes(),
+                            )
+                            .unwrap();
+                            let name = &bad_target[root + entry.name_offset
+                                ..root + entry.name_offset + entry.name_length as usize];
+                            if name == b"payload" {
+                                bad_target[root + offset..root + offset + 4]
+                                    .copy_from_slice(&stale_number.to_le_bytes());
+                                break;
+                            }
+                            offset = entry.next;
+                            assert!(offset < 4084);
+                        }
+                        let checksum = core::crc::crc32c(root_seed, &bad_target[root..root + 4084]);
+                        bad_target[root + 4092..root + 4096]
+                            .copy_from_slice(&checksum.to_le_bytes());
+                        let allocation =
+                            core::allocation::parse(Snapshot::from_bytes(&bad_target)).unwrap();
+                        assert!(
+                            core::directory_index::build(&allocation).is_none(),
+                            "a directory cannot authorize the stale inode"
+                        );
+                        drop(volume);
+                        let descriptor = &mut stale[descriptor_start..descriptor_start + width];
+                        descriptor[18..20].copy_from_slice(&4u16.to_le_bytes());
+                        seal_descriptor(descriptor, 1, seed);
+                        assert!(
+                            core::group_metadata::parse(&Snapshot::from_bytes(&stale), 1).is_none(),
+                            "clearing UNINIT restores physical bitmap checksum/count validation"
+                        );
+                    }
+                    for (offset, value) in [
+                        (14usize, ipg as u16 - 1),
+                        (16, 1),
+                        (28, ipg as u16 - 1),
+                        (18, 2),
+                        (18, 3),
+                        (18, 6),
+                        (18, 7),
+                        (18, 0x8000),
+                    ] {
+                        let mut bad = descriptor.to_vec();
+                        bad[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+                        seal_descriptor(&mut bad, 1, seed);
+                        assert!(
+                            core::group::parse(&bad, 1, sb.blocks(), ipg, seed).is_none(),
+                            "lazy counters and unsupported BLOCK_UNINIT/unknown flags must fail closed"
+                        );
+                    }
+                }
+            }
         }
     }
 }

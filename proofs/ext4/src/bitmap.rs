@@ -122,4 +122,78 @@ pub fn parse(raw: &[u8], valid: u32, meaningful: u32, free: u32, checksum: u16, 
     Some(Bitmap { raw: image, valid, meaningful, free, checksum, seed })
 }
 
+/// Linux's logical bitmap for an INODE_UNINIT group: every real inode is
+/// free, and every padding bit is allocated. Physical stale bytes are unused.
+pub open spec fn empty_inode_bytes(meaningful: nat) -> Seq<u8> {
+    Seq::new(4096, |i: int| if i < meaningful / 8 { 0u8 } else { 255u8 })
+}
+
+pub proof fn empty_inode_bitmap_has_only_allocated_padding(meaningful: u32, index: int)
+    requires 0 < meaningful <= 32768, meaningful % 8 == 0, 0 <= index < 32768,
+    ensures set(empty_inode_bytes(meaningful as nat), index) == (meaningful <= index),
+{
+    let shift = (index % 8) as u8;
+    vstd::arithmetic::div_mod::lemma_fundamental_div_mod(index, 8);
+    vstd::arithmetic::div_mod::lemma_fundamental_div_mod(meaningful as int, 8);
+    if index < meaningful {
+        assert(index / 8 < meaningful as int / 8);
+        assert((0u8 >> shift) & 1u8 == 0u8) by (bit_vector);
+    } else {
+        assert(index / 8 >= meaningful as int / 8);
+        assert((255u8 >> shift) & 1u8 == 1u8) by (bit_vector) requires shift < 8;
+    }
+}
+
+proof fn empty_bitmap_free_count(meaningful: u32, count: nat)
+    requires 0 < meaningful <= 32768, meaningful % 8 == 0, count <= meaningful,
+    ensures free_bits(empty_inode_bytes(meaningful as nat), count) == count,
+    decreases count,
+{
+    if count > 0 {
+        empty_bitmap_free_count(meaningful, (count - 1) as nat);
+        empty_inode_bitmap_has_only_allocated_padding(meaningful, count as int - 1);
+    }
+    reveal(free_bits);
+}
+
+pub fn synthesize_free_inodes(meaningful: u32, seed: u32) -> (r: Option<Bitmap>)
+    ensures match r {
+        Some(bitmap) => 0 < meaningful <= 32768 && meaningful % 8 == 0
+            && accepted(bitmap.view().raw, meaningful, meaningful, meaningful, bitmap.view().checksum, seed)
+            && bitmap.view() == (BitmapView { raw: empty_inode_bytes(meaningful as nat), valid: meaningful,
+                meaningful, free: meaningful, seed, checksum: (crc::fold(seed,
+                    empty_inode_bytes(meaningful as nat).take(meaningful as int / 8)) & 0xffffu32) as u16 }),
+        None => meaningful == 0 || meaningful > 32768 || meaningful % 8 != 0,
+    },
+{
+    hide(crc::fold);
+    if meaningful == 0 || meaningful > 32768 || meaningful % 8 != 0 { return None; }
+    let mut raw = crate::bytes::zero_block();
+    let mut index = (meaningful / 8) as usize;
+    while index < 4096
+        invariant meaningful > 0, meaningful <= 32768, meaningful % 8 == 0,
+            meaningful / 8 <= index <= 4096, raw.len() == 4096,
+            forall|i: int| 0 <= i < meaningful as int / 8 ==> #[trigger] raw@[i] == 0,
+            forall|i: int| meaningful as int / 8 <= i < index ==> #[trigger] raw@[i] == 255,
+        decreases 4096 - index,
+    {
+        raw.set(index, 255u8);
+        index += 1;
+    }
+    assert(raw@ =~= empty_inode_bytes(meaningful as nat));
+    assert(raw@.take(meaningful as int / 8) =~= raw@.subrange(0, meaningful as int / 8));
+    let calculated = crc::crc32c(seed, &raw[..(meaningful / 8) as usize]);
+    let masked = calculated & 0xffffu32;
+    proof { assert(calculated & 0xffffu32 <= 65535) by (bit_vector); }
+    let checksum = masked as u16;
+    proof {
+        empty_bitmap_free_count(meaningful, meaningful as nat);
+        assert forall|i: int| meaningful <= i < 32768 implies #[trigger] set(raw@, i) by {
+            empty_inode_bitmap_has_only_allocated_padding(meaningful, i);
+        }
+    }
+    let frozen = FrozenBlock::from_vec(raw).unwrap();
+    Some(Bitmap { raw: frozen, valid: meaningful, meaningful, free: meaningful, checksum, seed })
+}
+
 }
