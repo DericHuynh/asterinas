@@ -237,6 +237,273 @@ mod borrowed_edits {
     }
 }
 
+mod journal_reservations {
+    use core::{
+        edit_handles::Part,
+        journal_queue::{MAX_VERSIONS, Queue, Seal},
+    };
+
+    use super::*;
+
+    fn close_slots(queue: &mut Queue, values: &[Option<u8>]) {
+        let (_, mut part, empty) = queue.borrow_work(values.len()).unwrap();
+        assert_eq!(empty.part_count(), 0);
+        for (index, value) in values.iter().enumerate() {
+            let mut handle = part.handle_at(index).unwrap();
+            if let Some(value) = value {
+                assert!(handle.stage(&vec![*value; 4096]));
+            }
+            assert!(handle.close());
+        }
+        part.release();
+        empty.release();
+    }
+
+    fn stage_worker(mut part: Part<'_>, value: u8) {
+        assert_eq!(part.part_count(), 1);
+        let mut handle = part.handle_at(0).unwrap();
+        assert!(!handle.stage(&[0; 4095]));
+        let mut bytes = vec![value; 4096];
+        assert!(handle.stage(&bytes));
+        bytes.fill(0xef);
+        assert!(handle.close());
+        part.release();
+    }
+
+    #[test]
+    fn reservation_rejection_is_unchanged_and_cancellation_never_reuses_a_serial() {
+        let (_, layout, _, target) = fixture();
+        let mut queue = Queue::new(layout).unwrap();
+        let empty = queue.accounting();
+        for targets in [&[][..], &[target, target][..], &[target + 1, target][..]] {
+            assert!(!queue.reserve(targets));
+            assert_eq!(queue.accounting(), empty);
+        }
+        assert!(queue.reserve(&[target]));
+        let active = queue.accounting();
+        assert_eq!(active.0, 3);
+        assert!(!queue.reserve(&[target + 1]));
+        assert!(matches!(queue.seal(), Seal::NotReady));
+        assert_eq!(queue.accounting(), active);
+        assert_eq!(queue.cancel(), Some(1));
+        assert_eq!(queue.accounting(), empty);
+        assert_eq!(queue.cancel(), None);
+        assert!(queue.reserve(&[target]));
+        assert_eq!(queue.cancel(), Some(2));
+    }
+
+    #[test]
+    fn sealing_refunds_unused_credits_and_empty_batches_leave_no_log_gap() {
+        let (_, layout, _, target) = fixture();
+        let mut queue = Queue::new(layout).unwrap();
+        assert!(queue.reserve(&[target, target + 1, target + 2]));
+        assert_eq!(queue.accounting().0, 5);
+        close_slots(&mut queue, &[Some(0x31), None, None]);
+        assert!(matches!(queue.seal(), Seal::Frozen(1)));
+        assert_eq!(queue.accounting().0, 3);
+        assert_eq!(queue.frozen_versions()[0].reservation(), (1, 1, 3));
+        assert!(queue.reserve(&[target, target + 1]));
+        close_slots(&mut queue, &[None, None]);
+        assert!(matches!(queue.seal(), Seal::Empty(2)));
+        assert_eq!(queue.accounting().0, 3);
+        assert_eq!(queue.frozen_versions().len(), 1);
+        assert!(queue.reserve(&[target]));
+        close_slots(&mut queue, &[Some(0x32)]);
+        assert!(matches!(queue.seal(), Seal::Frozen(3)));
+        assert_eq!(queue.frozen_versions()[1].reservation(), (3, 4, 3));
+        assert_eq!(queue.accounting().0, 6);
+    }
+
+    #[test]
+    fn newer_workers_edit_the_same_targets_while_older_frozen_bytes_are_read() {
+        let (_, layout, _, target) = fixture();
+        let mut queue = Queue::new(layout).unwrap();
+        assert!(queue.reserve(&[target, target + 1]));
+        close_slots(&mut queue, &[Some(0x51), Some(0x52)]);
+        assert!(matches!(queue.seal(), Seal::Frozen(1)));
+        assert!(queue.reserve(&[target, target + 1]));
+        {
+            let (frozen, left, right) = queue.borrow_work(1).unwrap();
+            let barrier = std::sync::Barrier::new(3);
+            std::thread::scope(|scope| {
+                let barrier = &barrier;
+                let older = scope.spawn(move || {
+                    barrier.wait();
+                    for _ in 0..1000 {
+                        assert_eq!(frozen[0].image_at(0).unwrap(), (target, &[0x51; 4096][..]));
+                        assert_eq!(
+                            frozen[0].image_at(1).unwrap(),
+                            (target + 1, &[0x52; 4096][..])
+                        );
+                    }
+                });
+                let a = scope.spawn(move || {
+                    barrier.wait();
+                    stage_worker(left, 0x61);
+                });
+                let b = scope.spawn(move || {
+                    barrier.wait();
+                    stage_worker(right, 0x62);
+                });
+                older.join().unwrap();
+                a.join().unwrap();
+                b.join().unwrap();
+            });
+        }
+        assert!(matches!(queue.seal(), Seal::Frozen(2)));
+        let versions = queue.frozen_versions();
+        assert_eq!(versions[0].image_at(0).unwrap().1, &[0x51; 4096]);
+        assert_eq!(versions[1].image_at(0).unwrap().1, &[0x61; 4096]);
+        assert_eq!(versions[0].reservation(), (1, 1, 4));
+        assert_eq!(versions[1].reservation(), (2, 5, 4));
+        assert_eq!(queue.accounting().0, 8);
+    }
+
+    #[test]
+    fn dropped_or_aborted_handles_pin_only_the_running_reservation() {
+        let (_, layout, _, target) = fixture();
+        let mut queue = Queue::new(layout).unwrap();
+        assert!(queue.reserve(&[target]));
+        close_slots(&mut queue, &[Some(0x81)]);
+        assert!(matches!(queue.seal(), Seal::Frozen(1)));
+        for abort in [false, true] {
+            assert!(queue.reserve(&[target]));
+            {
+                let (_, mut part, empty) = queue.borrow_work(1).unwrap();
+                let mut handle = part.handle_at(0).unwrap();
+                assert!(handle.stage(&[0x82; 4096]));
+                if abort {
+                    assert!(handle.abort());
+                } else {
+                    drop(handle);
+                }
+                part.release();
+                empty.release();
+            }
+            assert!(matches!(queue.seal(), Seal::NotReady));
+            assert_eq!(queue.accounting().0, 6);
+            assert!(queue.cancel().is_some());
+            assert_eq!(queue.accounting().0, 3);
+            assert_eq!(
+                queue.frozen_versions()[0].image_at(0).unwrap().1,
+                &[0x81; 4096]
+            );
+        }
+    }
+
+    #[test]
+    fn shared_capacity_and_version_limits_keep_all_sealed_log_slots_reserved() {
+        let (_, layout, _, target) = fixture();
+        let targets: Vec<_> = (0..layout.filesystem_blocks())
+            .filter(|b| layout.allows_target(*b))
+            .take(250)
+            .collect();
+        let capacity = layout.blocks() - 2;
+        let start = layout.physical_start();
+        let end = start + layout.blocks();
+        let mut queue = Queue::new(layout.duplicate()).unwrap();
+        while queue.reserve(&targets) {
+            close_slots(&mut queue, &vec![Some(0x91); 250]);
+            assert!(matches!(queue.seal(), Seal::Frozen(_)));
+        }
+        assert_eq!(
+            queue.accounting().0,
+            (capacity / 252).min(MAX_VERSIONS as u32) * 252
+        );
+        let before = queue.accounting();
+        assert!(!queue.reserve(&targets));
+        assert_eq!(queue.accounting(), before);
+        let mut slots = std::collections::HashSet::new();
+        for version in queue.frozen_versions() {
+            let (_, _, blocks) = version.reservation();
+            for index in 0..blocks {
+                let block = version.log_slot(index).unwrap();
+                assert!(start < block && block < end - 1);
+                assert!(slots.insert(block));
+            }
+            assert!(version.log_slot(blocks).is_none());
+            assert!(version.log_slot(u32::MAX).is_none());
+        }
+        let mut small = Queue::new(layout).unwrap();
+        for _ in 0..MAX_VERSIONS {
+            assert!(small.reserve(&[target]));
+            close_slots(&mut small, &[Some(0x92)]);
+            assert!(matches!(small.seal(), Seal::Frozen(_)));
+        }
+        assert!(!small.reserve(&[target]));
+        assert_eq!(small.accounting().2, MAX_VERSIONS);
+        assert_eq!(small.cancel(), None);
+    }
+
+    #[test]
+    fn compacted_shared_reservations_encode_two_linux_recoverable_versions() {
+        let (mut image, layout, _, target) = fixture();
+        let mut queue = Queue::new(layout.duplicate()).unwrap();
+        for value in [0xa1, 0xa2] {
+            assert!(queue.reserve(&[target, target + 1, target + 2]));
+            close_slots(&mut queue, &[Some(value), None, None]);
+            assert!(matches!(queue.seal(), Seal::Frozen(_)));
+        }
+        let journal_base = layout.physical_start() as usize * 4096;
+        let uuid = image[journal_base + 48..journal_base + 64].to_vec();
+        for (index, version) in queue.frozen_versions().iter().enumerate() {
+            let input: Vec<_> = (0..version.image_count())
+                .map(|i| {
+                    let (target, bytes) = version.image_at(i).unwrap();
+                    core::transaction::AfterImage::capture(target, bytes).unwrap()
+                })
+                .collect();
+            let tx = core::transaction::encode(
+                input,
+                &uuid,
+                77 + index as u32,
+                &layout,
+                &image[..4096],
+                image.len() as u64,
+            )
+            .unwrap();
+            assert_eq!(version.reservation().2 as usize, tx.payload_count() + 2);
+            for (ordinal, bytes) in [
+                tx.descriptor_bytes(),
+                tx.payload_at(0).unwrap(),
+                tx.commit_bytes(),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let block = version.log_slot(ordinal as u32).unwrap() as usize;
+                image[block * 4096..(block + 1) * 4096].copy_from_slice(bytes);
+            }
+        }
+        let header = core::journal_state::encode(
+            &image[journal_base..journal_base + 4096],
+            &uuid,
+            layout.blocks(),
+            77,
+            1,
+        )
+        .unwrap();
+        image[journal_base..journal_base + 4096].copy_from_slice(header.as_slice());
+        image[1120] |= 4;
+        let checksum = core::crc::crc32c(0xffffffff, &image[1024..2044]);
+        image[2044..2048].copy_from_slice(&checksum.to_le_bytes());
+        let scan = core::scan::recover(
+            &image[journal_base..journal_base + layout.blocks() as usize * 4096],
+            &uuid,
+            layout,
+        )
+        .unwrap();
+        assert_eq!(scan.committed_transactions(), 2);
+        assert_eq!(scan.replay_plan().len(), 1);
+        assert_eq!(scan.replay_plan().get(0).unwrap().image(), &[0xa2; 4096]);
+        let recovered = linux_recover("build/shared-journal-versions.img", &image);
+        assert_eq!(
+            &recovered[target as usize * 4096..(target as usize + 1) * 4096],
+            &[0xa2; 4096]
+        );
+    }
+}
+
 fn fixture() -> (Vec<u8>, core::layout::JournalLayout, u32, u32) {
     let img = std::fs::read(std::env::var("EXT4_TEST_IMAGE").unwrap()).unwrap();
     let (layout, seed, target) = geometry(&img);

@@ -87,3 +87,8 @@ ownership. An owned host vector models immutable bytes; cloning an OSTD frame
 would not establish that immutability. Mount activation, VFS authorization,
 deadlock freedom, device persistence and concurrent filesystem durability
 remain open. The production activation gates stay closed.
+
+The shared bounded reservation queue now composes these actual borrowed slots
+with credit accounting and older immutable versions. See
+[JOURNAL_RESERVATIONS.md](JOURNAL_RESERVATIONS.md). Physical commit/checkpoint
+and kernel ownership/persistence integration remain open.

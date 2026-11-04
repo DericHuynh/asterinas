@@ -133,6 +133,21 @@ def main():
                                    "n: &'n verified_ext4::allocated_inode::AllocatedInode<'v, 'a>) { p.node = n; }\n", "E0616"),
         "reuse_released_edit_part": ("pub fn misuse(p: verified_ext4::edit_handles::Part<'_>) "
                                       "{ p.release(); let _ = p.part_count(); }\n", "E0382"),
+        "alter_journal_queue_credits": ("pub fn misuse(mut q: verified_ext4::journal_queue::Queue) "
+                                         "{ q.used = 0; }\n", "E0616"),
+        "forge_frozen_journal_version": ("pub fn misuse(batch: verified_ext4::edit_handles::FrozenBatch) "
+                                          "{ let _ = verified_ext4::journal_queue::FrozenVersion "
+                                          "{ serial: 1, first: 1, blocks: 3, batch }; }\n", "E0451"),
+        "replace_frozen_journal_batch": ("pub fn misuse(mut v: verified_ext4::journal_queue::FrozenVersion, "
+                                          "batch: verified_ext4::edit_handles::FrozenBatch) { v.batch = batch; }\n", "E0616"),
+        "cancel_borrowed_journal_work": ("pub fn misuse(q: &mut verified_ext4::journal_queue::Queue) "
+                                          "{ let (_, part, _) = q.borrow_work(0).unwrap(); "
+                                          "q.cancel(); let _ = part.part_count(); }\n", "E0499"),
+        "overwrite_frozen_journal_version": ("pub fn misuse(q: &verified_ext4::journal_queue::Queue, "
+                                              "v: verified_ext4::journal_queue::FrozenVersion) "
+                                              "{ q.frozen_versions()[0] = v; }\n", "E0594"),
+        "mutate_frozen_journal_bytes": ("pub fn misuse(v: &verified_ext4::journal_queue::FrozenVersion) "
+                                         "{ v.image_at(0).unwrap().1[0] = 1; }\n", "E0594"),
     })
     for name, (source, code) in misuse.items():
         path = BUILD / (name + ".rs")

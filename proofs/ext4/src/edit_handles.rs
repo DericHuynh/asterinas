@@ -199,6 +199,9 @@ impl Running {
                 && final(self).edit_view() == left.future_view() + right.future_view(),
             None => (!old(self).wf() || at > old(self).credits()) && final(self).edit_view() == old(self).edit_view(),
         },
+        old(self).wf() ==> final(self).edit_view().len() == old(self).edit_view().len()
+            && forall|i: int| 0 <= i < old(self).edit_view().len() ==>
+                (#[trigger] final(self).edit_view()[i]).target == old(self).edit_view()[i].target,
     {
         proof { use_type_invariant(&self.plan); }
         if self.plan.targets.len() != self.stages.len() || at > self.plan.targets.len() { return None; }
@@ -215,9 +218,11 @@ impl Running {
     pub fn freeze(mut self) -> (r: Result<FrozenBatch, Self>)
         ensures match r {
             Ok(frozen) => self.can_freeze() && frozen.wf() && frozen.frozen_view() == selected(self.edit_view())
-                && frozen.frozen_layout() == self.layout_view(),
+                && frozen.frozen_layout() == self.layout_view() && frozen.frozen_view().len() <= self.credits()
+                && ready(self.edit_view()),
             Err(running) => !self.can_freeze() && running.edit_view() == self.edit_view()
-                && running.layout_view() == self.layout_view() && running.credits() == self.credits(),
+                && running.layout_view() == self.layout_view() && running.credits() == self.credits()
+                && (self.wf() ==> running.wf() && !ready(self.edit_view())),
         },
     {
         proof { use_type_invariant(&self.plan); }
@@ -319,10 +324,22 @@ impl FrozenBatch {
     }
 
     pub fn reserved_layout(&self) -> (r: &JournalLayout)
-        ensures self.wf(), r.wf(), r.view() == self.frozen_layout(),
+        ensures self.wf(), r.wf(), r.view() == self.frozen_layout(), batch_valid(self.frozen_view(), r),
     {
         proof { use_type_invariant(self); }
         &self.layout
+    }
+
+    pub fn image_at(&self, index: usize) -> (r: Option<(u32, &[u8])>)
+        ensures self.wf(), match r {
+            Some((target, bytes)) => index < self.frozen_view().len()
+                && target == self.frozen_view()[index as int].block && bytes@ == self.frozen_view()[index as int].image,
+            None => index >= self.frozen_view().len(),
+        },
+    {
+        proof { use_type_invariant(self); }
+        if index >= self.images.len() { None }
+        else { let image = &self.images[index]; Some((image.block(), image.as_slice())) }
     }
 
     pub fn encode(self, uuid: &[u8], sequence: u32, primary: &[u8], partition_bytes: u64) -> (r: Option<Encoded>)

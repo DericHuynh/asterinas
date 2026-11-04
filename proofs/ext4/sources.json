@@ -13,15 +13,15 @@
     },
     {
       "path": "fs/jbd2/commit.c",
-      "url": "https://github.com/torvalds/linux/blob/v7.0/fs/jbd2/commit.c",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/jbd2/commit.c",
       "blob_sha": "7203d2d2624d7afd0d7a3fe7f830845665dd4c14",
-      "review_scope": "selected relevant ranges"
+      "review_scope": "jbd2_journal_commit_transaction waits for live updates before T_SWITCH, separates running/committing transactions and preserves b_frozen_data/b_committed_data versions; ordering/persistence integration remains open"
     },
     {
       "path": "fs/jbd2/checkpoint.c",
-      "url": "https://github.com/torvalds/linux/blob/v7.0/fs/jbd2/checkpoint.c",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/jbd2/checkpoint.c",
       "blob_sha": "1508e2f544621120f4ce212fa5b73360dc46c711",
-      "review_scope": "selected relevant ranges"
+      "review_scope": "checkpoint transaction lists, conflicting committing transactions, buffer locks/writeback waits and dropping checkpoint_mutex around commit waits; actual overlapping checkpoint/tail/quiescence proof remains open"
     },
     {
       "path": "fs/jbd2/recovery.c",
@@ -213,7 +213,7 @@
       "path": "fs/jbd2/transaction.c",
       "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/jbd2/transaction.c",
       "blob_sha": "dca4b5d8aaaa3e1505b09fab42eb45bb201a8db8",
-      "review_scope": "handle start/stop, T_RUNNING admission, credits and live-update accounting; reference for bounded borrowed edit batches, not an imported implementation"
+      "review_scope": "start_this_handle reserves outstanding credits and checks shared log space before dirtying buffers; live t_updates protect switching and reserved-credit release wakes waiters; kernel locks/waits remain separate from the host borrowed queue"
     },
     {
       "path": "source/vstd/std_specs/slice.rs",

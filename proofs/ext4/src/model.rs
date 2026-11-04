@@ -186,3 +186,5 @@ pub mod recovery_bootstrap;
 pub mod claim_admission;
 pub mod claim_budget;
 pub mod allocation_budget;
+pub mod journal_queue;
+pub mod journal_queue_trace;
