@@ -44,3 +44,7 @@ source/identity/admission closure and resource-completeness proofs. It also does
 not establish writer-crash filesystem closure, concurrent commit/checkpoint,
 actual CortenMM/BIO/driver behavior or complete ext4 feature support. Kernel
 mount/write gates remain closed.
+
+[Bootstrap completeness](BOOTSTRAP_COMPLETENESS.md) now ensures that every source
+satisfying the locator predicate is actually located. Proving that every physical
+crash source satisfies that predicate is a separate remaining obligation.

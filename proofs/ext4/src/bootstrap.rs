@@ -32,6 +32,22 @@ pub open spec fn scan_source(v: BootstrapView) -> Source {
         first: bytes::be32(journal, 24) as u32, uuid: journal_identity(v), seed: v.seed, layout: v.layout }
 }
 
+/// All locator fields are source projections. This is total as a spec; only
+/// `admissible` sources give the projected ranges their admitted meaning.
+pub open spec fn projection(source: Seq<u8>) -> BootstrapView {
+    let table = bytes::le32(source, 4104) as u32;
+    let inode = source.subrange(table as int * 4096 + 1792, table as int * 4096 + 2048);
+    let blocks = bytes::le32(source, 1028) as u32;
+    let candidate = BootstrapView { source, table, blocks,
+        inodes: bytes::le32(source, 1024) as u32, ipg: bytes::le32(source, 1064) as u32,
+        metadata_seed: superblock::metadata_seed(source.subrange(1024, 2048)), seed: 0,
+        layout: LayoutView { start: bytes::le32(inode, 60) as u32,
+            journal_blocks: (bytes::le32(inode, 4) / 4096) as u32, fs_blocks: blocks } };
+    BootstrapView { seed: crc::fold(0xffffffff, journal_identity(candidate)), ..candidate }
+}
+
+pub open spec fn admissible(source: Seq<u8>) -> bool { valid(projection(source)) }
+
 #[verifier::opaque]
 pub open spec fn valid(v: BootstrapView) -> bool {
     &&& 8192 <= v.source.len() <= 18446744073709551615
@@ -42,12 +58,44 @@ pub open spec fn valid(v: BootstrapView) -> bool {
     &&& v.seed == crc::fold(0xffffffff, journal_identity(v))
     &&& v.metadata_seed == superblock::metadata_seed(v.source.subrange(1024, 2048))
     &&& group::accepted_with_features(v.source.subrange(4096, 4096 + superblock::descriptor_bytes(v.source.subrange(1024, 2048)) as int), 0, v.blocks, v.ipg, v.metadata_seed, superblock::flex_bg(v.source.subrange(1024, 2048)))
-    &&& v.table as nat == bytes::le32(v.source, 4104) && v.table < v.blocks
+    &&& v.table as nat == bytes::le32(v.source, 4104) && 0 < v.table < v.blocks
     &&& layout::admitted(journal_inode(v), v.inodes, v.blocks, v.metadata_seed)
     &&& v.layout.start > 1 && 1024 <= v.layout.journal_blocks <= 32768
     &&& v.layout.start as nat + v.layout.journal_blocks <= v.blocks && v.layout.fs_blocks == v.blocks
     &&& v.layout.start as nat == bytes::le32(journal_inode(v), 60)
     &&& v.layout.journal_blocks as nat == bytes::le32(journal_inode(v), 4) / 4096
+}
+
+pub proof fn every_valid_bootstrap_is_the_unique_source_projection(v: BootstrapView)
+    requires valid(v),
+    ensures v == projection(v.source), admissible(v.source),
+{
+    hide(crc::fold);
+    reveal(valid);
+}
+
+pub proof fn valid_bootstraps_of_identical_bytes_have_identical_fields(before: BootstrapView, after: BootstrapView)
+    requires valid(before), valid(after), before.source == after.source,
+    ensures before == after,
+{
+    every_valid_bootstrap_is_the_unique_source_projection(before);
+    every_valid_bootstrap_is_the_unique_source_projection(after);
+}
+
+proof fn an_admitted_source_supplies_the_locator_inputs(source: Seq<u8>)
+    ensures admissible(source) ==> 8192 <= source.len() <= 18446744073709551615
+        && superblock::accepted(source.subrange(1024, 2048), source.len() as u64)
+        && 2 < bytes::le32(source, 1028) <= block_claims::MAX_BLOCKS
+        && bytes::le32(source, 1028) * 4096 <= source.len()
+        && 0 < bytes::le32(source, 4104) < bytes::le32(source, 1028)
+        && group::accepted_with_features(source.subrange(4096, 4096 + superblock::descriptor_bytes(source.subrange(1024, 2048)) as int),
+            0, bytes::le32(source, 1028) as u32, bytes::le32(source, 1064) as u32,
+            superblock::metadata_seed(source.subrange(1024, 2048)), superblock::flex_bg(source.subrange(1024, 2048)))
+        && layout::admitted(source.subrange(bytes::le32(source, 4104) as int * 4096 + 1792, bytes::le32(source, 4104) as int * 4096 + 2048),
+            bytes::le32(source, 1024) as u32, bytes::le32(source, 1028) as u32, superblock::metadata_seed(source.subrange(1024, 2048))),
+{
+    hide(crc::fold);
+    if admissible(source) { reveal(valid); }
 }
 
 pub struct Bootstrap<'s, 'a> {
@@ -162,14 +210,20 @@ impl<'s, 'a> Bootstrap<'s, 'a> {
     }
 }
 
+#[verifier::rlimit(30)]
 pub fn locate<'s, 'a>(source: &'s Snapshot<'a>) -> (r: Option<Bootstrap<'s, 'a>>)
-    ensures match r { Some(found) => found.wf() && found.view().source == source.view(), None => true },
+    ensures match r {
+        Some(found) => found.wf() && found.view().source == source.view() && found.view() == projection(source.view())
+            && admissible(source.view()),
+        None => !admissible(source.view()),
+    },
 {
     hide(crc::fold);
     hide(superblock::accepted);
     hide(group::accepted_with_features);
     hide(layout::admitted);
     hide(crate::inode::accepted);
+    proof { an_admitted_source_supplies_the_locator_inputs(source.view()); }
     let primary = match source.block(0) { Some(block) => block, None => { return None; } };
     let raw = primary.range(1024, 1024).unwrap();
     let sb = match superblock::parse(raw, source.partition_bytes()) { Some(sb) => sb, None => { return None; } };
@@ -184,6 +238,7 @@ pub fn locate<'s, 'a>(source: &'s Snapshot<'a>) -> (r: Option<Bootstrap<'s, 'a>>
     let flex = superblock::flex_enabled(raw).unwrap();
     let group = match group::parse_with_features(desc, 0, blocks, ipg, metadata_seed, flex) { Some(group) => group, None => { return None; } };
     let table = group.inode_table;
+    if table == 0 { return None; }
     let itable = match source.block(table) { Some(block) => block, None => { return None; } };
     let journal = itable.range(1792, 256).unwrap();
     let layout = match layout::from_inode(journal, inodes, blocks, metadata_seed) { Some(layout) => layout, None => { return None; } };
@@ -195,6 +250,7 @@ pub fn locate<'s, 'a>(source: &'s Snapshot<'a>) -> (r: Option<Bootstrap<'s, 'a>>
     let ghost assembled = BootstrapView { source: source.view(), layout: layout.view(), table, blocks, inodes, ipg, seed, metadata_seed };
     assert(journal_identity(assembled) =~= uuid_bytes@);
     assert(valid(assembled)) by { reveal(valid); }
+    proof { every_valid_bootstrap_is_the_unique_source_projection(assembled); }
     Some(Bootstrap { source, layout, table, blocks, inodes, ipg, seed, metadata_seed })
 }
 

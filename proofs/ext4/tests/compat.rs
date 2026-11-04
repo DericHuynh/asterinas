@@ -384,6 +384,137 @@ fn journal_bootstrap_uses_declared_inode_bytes_before_allocation_validation() {
 }
 
 #[test]
+fn bootstrap_rejects_an_inode_table_in_the_primary_block_even_with_valid_checksums() {
+    use core::{bootstrap, snapshot::Snapshot};
+    let mut bad = image();
+    let (sb, original_group, seed) = metadata(&bad);
+    let journal_inode = inode_bytes(&bad, original_group.inode_table, 8).to_vec();
+    // Keep the descriptor locally valid while moving inode 8 into block zero.
+    // Global allocation is intentionally invalid; bootstrap precedes that check.
+    bad[4096..4100].copy_from_slice(&(sb.blocks() - 2).to_le_bytes());
+    bad[4100..4104].copy_from_slice(&(sb.blocks() - 1).to_le_bytes());
+    bad[4104..4108].fill(0);
+    bad[4126..4128].fill(0);
+    let width = core::superblock::descriptor_length(&bad[1024..2048]).unwrap();
+    let group_seed = core::crc::crc32c(seed, &0u32.to_le_bytes());
+    let group_checksum = core::crc::crc32c(group_seed, &bad[4096..4096 + width]) as u16;
+    bad[4126..4128].copy_from_slice(&group_checksum.to_le_bytes());
+    bad[1792..2048].copy_from_slice(&journal_inode);
+
+    fn flip_variable(bytes: &mut [u8], bit: usize) {
+        let (start, within) = if bit < 16 {
+            (1792 + 124, bit)
+        } else if bit < 32 {
+            (1792 + 130, bit - 16)
+        } else if bit < 64 {
+            (2044, bit - 32)
+        } else {
+            (1024 + 700, bit - 64)
+        };
+        bytes[start + within / 8] ^= 1 << (within % 8);
+    }
+    fn checksum_syndrome(bytes: &[u8], seed: u32) -> u64 {
+        let raw = &bytes[1792..2048];
+        let inode_crc = core::inode::calculated_checksum(raw, 8, seed).unwrap();
+        let stored_inode = core::bytes::read_le16(raw, 124).unwrap() as u32
+            | (core::bytes::read_le16(raw, 130).unwrap() as u32) << 16;
+        let super_crc = core::crc::crc32c(0xffffffff, &bytes[1024..2044]);
+        let stored_super = core::bytes::read_le32(bytes, 2044).unwrap();
+        (inode_crc ^ stored_inode) as u64 | ((super_crc ^ stored_super) as u64) << 32
+    }
+    for (start, length) in [(1792 + 124, 2), (1792 + 130, 2), (2044, 4), (1024 + 700, 4)] {
+        bad[start..start + length].fill(0);
+    }
+    // The inode contains the superblock checksum; the superblock contains the
+    // inode checksum. Solve their affine CRC constraints together, with one
+    // unused superblock word supplying free variables. Corrupting a checksum would
+    // otherwise reject the fixture before the table-address check is reached.
+    let constant = checksum_syndrome(&bad, seed);
+    let mut columns = [0u64; 96];
+    for bit in 0..96 {
+        flip_variable(&mut bad, bit);
+        columns[bit] = checksum_syndrome(&bad, seed) ^ constant;
+        flip_variable(&mut bad, bit);
+    }
+    let mut rows = [0u128; 64];
+    for equation in 0..64 {
+        for bit in 0..96 {
+            rows[equation] |= (((columns[bit] >> equation) & 1) as u128) << bit;
+        }
+        rows[equation] |= (((constant >> equation) & 1) as u128) << 96;
+    }
+    let mut pivots = Vec::new();
+    let mut rank = 0usize;
+    for column in 0..96 {
+        let Some(pivot) = (rank..64).find(|&row| (rows[row] >> column) & 1 != 0) else {
+            continue;
+        };
+        rows.swap(rank, pivot);
+        let pivot_row = rows[rank];
+        for row in 0..64 {
+            if row != rank && (rows[row] >> column) & 1 != 0 {
+                rows[row] ^= pivot_row;
+            }
+        }
+        pivots.push(column);
+        rank += 1;
+        if rank == 64 {
+            break;
+        }
+    }
+    assert!(
+        rows[rank..].iter().all(|&row| row == 0),
+        "CRC fixture must be solvable"
+    );
+    for (row, &column) in pivots.iter().enumerate() {
+        if (rows[row] >> 96) & 1 != 0 {
+            flip_variable(&mut bad, column);
+        }
+    }
+    assert_eq!(checksum_syndrome(&bad, seed), 0);
+    let (_, descriptor, _) = metadata(&bad);
+    assert_eq!(descriptor.inode_table, 0);
+    assert!(core::layout::from_inode(&bad[1792..2048], sb.inodes(), sb.blocks(), seed).is_some());
+    assert!(bootstrap::locate(&Snapshot::from_bytes(&bad)).is_none());
+}
+
+#[test]
+fn bootstrap_locates_the_same_journal_through_every_admitted_shadow_depth() {
+    use core::{bootstrap, patch_set::PatchSet, snapshot::Snapshot};
+    let mut img = image();
+    let (_, group, _) = metadata(&img);
+    let baseline = Snapshot::from_bytes(&img);
+    let found = bootstrap::locate(&baseline).unwrap();
+    let journal = found.layout().physical_start();
+    let expected = found.capture_journal();
+    // A partial checkpoint need not have a valid home allocation bitmap.
+    img[group.block_bitmap as usize * 4096] ^= 0x80;
+    let targets = [0u32, 1, group.inode_table, journal];
+    let patches: Vec<_> = (0..core::snapshot::MAX_SHADOW_LAYERS)
+        .map(|depth| {
+            let target = targets[depth % targets.len()];
+            PatchSet::new()
+                .insert(
+                    target,
+                    &img[target as usize * 4096..(target as usize + 1) * 4096],
+                )
+                .ok()
+                .unwrap()
+        })
+        .collect();
+    let mut source = Snapshot::from_bytes(&img);
+    for (depth, patch) in patches.iter().enumerate() {
+        source = source.overlay(patch).unwrap();
+        assert_eq!(source.shadow_depth(), depth + 1);
+        let located = bootstrap::locate(&source).unwrap();
+        assert_eq!(located.journal_inode_block(), group.inode_table);
+        assert_eq!(located.layout().physical_start(), journal);
+        assert_eq!(located.capture_journal(), expected);
+    }
+    assert!(source.overlay(&patches[0]).is_none());
+}
+
+#[test]
 fn static_image_certificates_and_bootstrap_identity_check_different_boundaries() {
     use core::{
         bootstrap, bootstrap_identity, image_validation, patch_set::PatchSet, snapshot::Snapshot,

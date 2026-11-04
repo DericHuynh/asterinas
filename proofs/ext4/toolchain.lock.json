@@ -491,7 +491,9 @@
     "writer_image::a_selected_home_outside_the_journal_has_the_exact_final_bytes",
     "write_result::a_timed_write_preserves_the_actual_inode_mappings",
     "write_result::a_timed_write_has_the_exact_logical_file_byte_result",
-    "write_result::a_successful_timed_writer_has_exact_durable_logical_file_bytes"
+    "write_result::a_successful_timed_writer_has_exact_durable_logical_file_bytes",
+    "bootstrap::every_valid_bootstrap_is_the_unique_source_projection",
+    "bootstrap::valid_bootstraps_of_identical_bytes_have_identical_fields"
   ],
   "required_flags": [
     "--no-cheating",

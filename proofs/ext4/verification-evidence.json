@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "license": "MPL-2.0",
-  "recorded_at": "2026-11-04T12:36:25.144795+00:00",
+  "recorded_at": "2026-11-04T14:13:48.096130+00:00",
   "scope": "Checked host core and specified abstract machines; not a complete or kernel-integrated ext4 filesystem",
   "verifier_version": {
     "verus": {
@@ -19,7 +19,7 @@
     "encountered-error": false,
     "encountered-vir-error": false,
     "success": true,
-    "verified": 1034,
+    "verified": 1037,
     "errors": 0,
     "is-verifying-entire-crate": true
   },
@@ -107,7 +107,7 @@
     "src/namespace.rs": "5efc10614982088277e12eceb150b87b7e4e367b2fab2fc2b93ae29bff9b55ce",
     "src/patch_set.rs": "0e112bc01bb3e03828ab3111725de0e5a2963472b0e6d9e561aac896349d4524",
     "src/shadow_model.rs": "b92a3a25ff4dfb03a92843d22d1b5db983eeb396ef35cbf8aff9c8e6c8abb171",
-    "src/bootstrap.rs": "e095ba42d42919f7dc599f419db7271352ab36c76dac4c8d48e0b2f540612aa4",
+    "src/bootstrap.rs": "9134aa490a86df9f2d85627f96384e5b8c9180a543dc1374774ed4b2562e4898",
     "src/image_validation.rs": "7323aac144673f43906b9fc26cd8759bcbd99456e347d1467056f3266eb8d8fe",
     "src/bootstrap_identity.rs": "c1eb133f2d16576c55aeff2ef8a08a72a417c3946093e6301eb082f6db267286",
     "src/recovery_patch.rs": "340313f189ef3ade684fdc91b6adec4e0bff09b2cb347d316c68bb009229024e",
@@ -142,7 +142,7 @@
     "src/inode_projection.rs": "bc06204632edd11f2a92a5a7c52719dffc326e3400e3e752004c0406ebea1465",
     "src/write_result.rs": "c25cbf2ca5aed1d214f337a32fd3f51fd5468c017c3f92a994875025f32133a1"
   },
-  "lock_sha256": "cca36a205d7c1e3afb75e8f8a925ded69302206b2c71f94a5e51a2c066cafdaf",
+  "lock_sha256": "1d71baf1d537d5b50fab481e97053d421c6e8cb685d6f74263ddcd78b20aae49",
   "runner_sha256": "de6b473ab50632068de9e7fc619591c7b4d5afbc0058a1fcd7f946c0198beb91",
   "named_proof_coverage": [
     "access::override_cannot_execute_a_nonexecutable_regular_file",
@@ -188,6 +188,8 @@
     "block_lifetime::unwritten_and_private_blocks_do_not_grant_a_read_pin",
     "block_lifetime::writer_leases_for_one_block_are_identical",
     "block_range::split_is_an_exact_disjoint_partition",
+    "bootstrap::every_valid_bootstrap_is_the_unique_source_projection",
+    "bootstrap::valid_bootstraps_of_identical_bytes_have_identical_fields",
     "bytes::little_endian_encoding_recovers_every_word",
     "bytes::splice_frame",
     "bytes::splice_word_frame",
@@ -849,14 +851,14 @@
     "writer_admission::prepare",
     "writer_admission::source_snapshot"
   ],
-  "host_library_sha256": "df8f43e81e445ee0df8d315146f53fa94e0de9e7d437507b291b2876bf80d70e",
+  "host_library_sha256": "c21d0bb538d5a230cfc82794ff04ebd9c8fdbcd5b8e8b36fdb9397e23293d62d",
   "compatibility": {
     "schema": 1,
     "status": "passed",
     "scope": "host interoperability tests, not formal proof",
     "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
-    "proof_artifact_sha256": "df8f43e81e445ee0df8d315146f53fa94e0de9e7d437507b291b2876bf80d70e",
-    "image_sha256": "b7379574408bb0464fc4c2246bbdc926f0542c89986be4d66e5b51badc8196d1",
+    "proof_artifact_sha256": "c21d0bb538d5a230cfc82794ff04ebd9c8fdbcd5b8e8b36fdb9397e23293d62d",
+    "image_sha256": "506218076f045502172f843c5120297221a98bb7da60e67b2280c88160a2d7b7",
     "request_boundary_rejections": [
       "reuse_request",
       "redirect_completion",
@@ -893,11 +895,11 @@
     ],
     "compatibility_runner_sha256": "1a59ff23ba0e1291b32d7fc88098b9d2dbf71c3a3c02397badf4ed08c26e51d5",
     "test_source_sha256": {
-      "compat": "4c0cf45049a25f8a07cd205532527dd4cc4018ef9aecfc325bd8d7b0645e227f",
+      "compat": "7b085dd761d649337c88aaa253b3909446efecc0cdceb09cff07064abb8e4e53",
       "journal": "30ec48a4d8a1f7526f483b377cbd9aca3e8455906ed35b8ba0d72d53df51479f"
     }
   },
-  "compatibility_test_count": 96,
+  "compatibility_test_count": 98,
   "e2fsprogs_version": "1.47.0",
   "negative_gate_checks": {
     "status": "passed",
@@ -958,5 +960,16 @@
   "concurrent_block_lifetime_model": "checked_all_finite_enabled_interleavings_shared_read_pins_per_block_writer_leases_volume_and_allocation_epochs_retired_IDs_stale_reacquisition_zeroing_publication_reuse_disjoint_write_commutation_nonempty_examples_1_to_64_KiB_runtime_extent_DMA_journal_refinement_open",
   "local_extent_nodes": "checked_total_inline_and_external_1_to_64_KiB_depth_0_to_5_48_bit_children_header_capacity_ordering_leaf_intervals_and_eh_max_checksum_domain_legacy_mode_source_seed_and_complete_tree_ownership_refinement_open",
   "wide_source_blocks": "checked_owned_1_to_64_KiB_blocks_exact_64_bit_source_ranges_partition_quotient_product_bounds_and_clipped_shadow_segments_no_high_address_truncation_inode_seed_feature_CortenMM_and_full_tree_refinement_open",
-  "source_block_linux_interoperability": "tested_Linux_created_external_leaf_tree_actual_UUID_inode_generation_checksum_seed_and_eh_max_checksum_domain_not_a_formal_Linux_driver_refinement"
+  "source_block_linux_interoperability": "tested_Linux_created_external_leaf_tree_actual_UUID_inode_generation_checksum_seed_and_eh_max_checksum_domain_not_a_formal_Linux_driver_refinement",
+  "bootstrap_zero_table_regression": {
+    "scope": "host_regression_not_a_formal_theorem",
+    "baseline_commit": "7994b6c99bf0d6116746b3bf147a2e3acd73ac5e",
+    "baseline_verus_units": 1034,
+    "baseline_library_sha256": "8c91ec17b3c0a3b279ab6fc39dedccc5fa4de91da915ad8e85d96c2500901053",
+    "test": "bootstrap_rejects_an_inode_table_in_the_primary_block_even_with_valid_checksums",
+    "test_source_sha256": "7b085dd761d649337c88aaa253b3909446efecc0cdceb09cff07064abb8e4e53",
+    "pre_fix_result": "accepts_checksum_valid_zero_table_fixture_expected_test_failure_confirmed",
+    "post_fix_result": "rejects_fixture_in_full_host_suite",
+    "baseline_diagnostic_sha256": "85d88d073db1026df1e95dd71ecd1558190eb12e9b19c149e6b8e542bc7d1fa2"
+  }
 }
