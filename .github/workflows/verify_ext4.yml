@@ -7,7 +7,7 @@ on:
       - proofs/ext4/**
       - .github/workflows/verify_ext4.yml
   push:
-    branches: [main, design/verus-ext4, feat/verus-ext4-core, feat/verus-ext4-concurrency, feat/verus-ext4-tree-ownership, feat/verus-ext4-large-file, feat/verus-ext4-huge-file, feat/verus-ext4-csum-seed]
+    branches: [main, design/verus-ext4, feat/verus-ext4-core, feat/verus-ext4-concurrency, feat/verus-ext4-tree-ownership, feat/verus-ext4-large-file, feat/verus-ext4-huge-file, feat/verus-ext4-csum-seed, feat/verus-ext4-64bit-descriptors]
     paths:
       - proofs/ext4/**
       - .github/workflows/verify_ext4.yml

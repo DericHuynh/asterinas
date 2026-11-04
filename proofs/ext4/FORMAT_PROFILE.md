@@ -14,18 +14,18 @@ The accepted byte structures do not certify the whole volume.
 | Structure | Accepted representation |
 | --- | --- |
 | ext4 superblock | 1024 bytes, Linux creator OS, revision 1, 4 KiB blocks/clusters, 256-byte inodes, first data block 0, first ordinary inode 11, internal journal inode 8. |
-| Geometry | 32-bit block count, 32768 blocks/group, positive inodes/group <=32768 and divisible by 16, checked group/count/partition relationships. |
+| Geometry | Bounded block count with zero high fields, 32768 blocks/group, positive inodes/group <=32768 and divisible by 16, checked group/count/partition relationships. |
 | Feature COMPAT | Exactly HAS_JOURNAL (`0x0004`). |
-| Feature INCOMPAT | FILETYPE + EXTENTS (`0x0042`), optionally RECOVER (`0x4`) and CSUM_SEED (`0x2000`), admitting `0x42`, `0x46`, `0x2042` or `0x2046`. Raw parsing surfaces RECOVER; recovery preparation requires it when the journal has a nonzero start. |
+| Feature INCOMPAT | FILETYPE + EXTENTS (`0x0042`), optionally RECOVER (`0x4`), 64BIT (`0x80`) and CSUM_SEED (`0x2000`); all eight combinations admitted. Raw parsing surfaces RECOVER; recovery preparation requires it when the journal has a nonzero start. |
 | Feature RO_COMPAT | SPARSE_SUPER + LARGE_FILE + EXTRA_ISIZE + METADATA_CSUM (`0x0443`), optionally HUGE_FILE (`0x044b`). |
-| Group descriptor | 32 bytes, bitmaps and inode table inside the group and locally disjoint, initialized bitmaps/table (`bg_flags=4`), bounded counters and metadata CRC32C truncation. |
+| Group descriptor | 32 bytes without 64BIT, 64 bytes with it; bitmaps and inode table inside the group and locally disjoint, initialized bitmaps/table (`bg_flags=4`), bounded counters with zero high address/counter fields, and CRC32C over the complete descriptor with 16-bit checksum storage. |
 | Inode | 256 bytes, extra_isize 32, live regular file/directory, EXTENTS flag, optionally HUGE_FILE when the filesystem feature is present, no ACL/xattr block, 64-bit regular-file i_size up to Linux's 2 TiB-minus-4 KiB bound without HUGE_FILE or 16 TiB-minus-4 KiB with it, low-only directory size with zero high field, Linux UID/GID high halves and inode CRC32C. |
 | Ordinary inode extent tree | Inline root with up to four entries, external 4 KiB nodes at depth 0–5, exact parent/depth/key bounds and checksums; complete same-source metadata/data ownership census. Physical addresses must fit the bounded volume, despite the 48-bit codec. Written length up to 32768; unwritten length up to 32767; zero length rejected. |
 | Directory | Linear 4 KiB records with FILETYPE and metadata checksum tail; live entries limited to regular files/directories; no NUL or slash in a name. |
 | JBD2 superblock | Version 2, 4 KiB journal blocks, first log position 1, >=1024 journal blocks, one user, the internal journal's own UUID, no stored error/dynamic copy/fast-commit blocks. |
 | Journal features | No feature bits for a clean mke2fs journal, or CSUM_V3 with optional REVOKE. A dirty journal without v3 is rejected. Unknown bits, 64-bit tags and async commit rejected. |
 | JBD2 records | Canonical v3 descriptors with 1..250 16-byte tags, first-tag UUID and later SAME_UUID, one terminator and checksum tail; 32-bit revoke blocks with 0..1019 records; checked full commit images and escaped payload CRCs. |
-| Allocation bitmap | Initialized 4 KiB block/inode bitmaps, LSB bit numbering, allocated padding, exact free counts; block checksum covers 4096 bytes, inode checksum covers `inodes_per_group / 8`, with the low 16 bits in 32-byte descriptors. |
+| Allocation bitmap | Initialized 4 KiB block/inode bitmaps, LSB bit numbering, allocated padding, exact free counts; block checksum covers 4096 bytes, inode checksum covers `inodes_per_group / 8`, with low 16-bit checks in 32-byte descriptors and complete 32-bit low/high checks in 64-byte descriptors. |
 | Ownership census | Candidate census for 3..1,048,576 filesystem blocks (up to 4 GiB of 4 KiB blocks), disjoint physical claims, exact bitmap agreement and free counts. This resource bound applies to the new census component; no mount profile is enabled. |
 | Inode allocation binding | Root inode 2 and ordinary inodes >=11 use complete source-bound trees, inode generation and exact 512-byte `i_blocks` accounting for both data and external extent metadata, normalizing the source 32/48-bit sector or HUGE_FILE block units; without the filesystem feature the high field stays zero. Directory extents must be initialized. Journal inode 8 is reserved separately from file data. |
 | Group source index | One immutable borrowed source; all groups in order, exact descriptor and bitmap byte provenance, aggregate free counters equal the superblock. Bounded to 32 groups; sparse-super backups reserve one superblock and one GDT block. Not a whole-volume certificate. |
@@ -37,16 +37,17 @@ The accepted byte structures do not certify the whole volume.
 | Directory index | Complete canonical live-entry enumeration for all allocated directories, positive block-aligned sizes, initialized blocks, source and target inode types/generations, globally unique (directory,name) keys and exact complete lookup. At most 4096 directory blocks and the name-index limits above. Dot/parent rules, link counts and rooted topology are checked separately by the namespace certificate. |
 | Namespace certificate | Exact live-inode reference counts equal i_links_count; one dot at block 0/record 0 targets self, one dotdot at block 0/record 1 targets the live parent; root parent is self with no ordinary incoming directory link, every other directory has one ordinary incoming link matching dotdot. Finite depth ranks prove every directory reaches root. Regular file hard links allowed; directory hard links, orphaned live files and disconnected cycles rejected. Bounded nonrecursive graph traversal, depth at most 65536; no mount/VFS/recovery authority. |
 | Bootstrap journal discovery | Same-source primary superblock, group-zero descriptor and exact reserved inode 8; bounded journal capture before global allocation validation. Static layout preservation and recovered-shadow admission remain separate. |
+| Wide group-field codecs | Exact full 64-bit low/high addresses and superblock counts, 32-bit low/high counters and bitmap checksums; total offset checks and encoding without truncation. See [group descriptors](GROUP_DESCRIPTORS.md). Whole-image admission remains bounded. |
 | Standalone wide interval helpers | Overflow-safe 64-bit block intervals and 48-bit extent-start codec with exact split mapping. These descriptors alone do not establish whole-volume or mutation authority. |
 | Standalone extent-node helpers | Local inline-root and external-node parsing for 1–64 KiB blocks and depth 0–5, ordered leaf/index records, 48-bit child addresses and legacy/metadata-csum tails covering eh_max. Local validation does not establish source/seed binding, graph correctness or global physical ownership. |
 | Standalone source-block helpers | Owned immutable 1–64 KiB filesystem-block bytes at checked 64-bit addresses; exact source provenance across 4 KiB shadow pages and bounded byte capture. Extent-node helpers additionally bound the declared filesystem size to that snapshot. These are host buffer/source checks, not inode/feature authority, a CortenMM adapter or full mount admission. |
 | Recovery bounds | One initialized journal extent of 1024..32768 blocks; at most 4096 staged payload/revoke entries, with whole-record preflight; no transaction-ID wrap; a fully occupied ring without a proved stopping boundary is rejected. |
 
 Superblock reserved-GDT blocks and high block-count fields must be zero.
-The descriptor size is zero or 32; minimum/desired inode extra sizes are 32.
+The descriptor size is 64 with 64BIT, or zero/32 without it; minimum/desired inode extra sizes are 32.
 Unknown feature masks are rejected even when Linux could ignore them.
 Indexed directories, legacy indirect block maps, inline data,
-64BIT, FLEX_BG, META_BG, BIGALLOC, encryption, verity,
+larger 64-bit geometry, FLEX_BG, META_BG, BIGALLOC, encryption, verity,
 external/async/fast journals and ORPHAN_FILE are outside the implemented subset.
 The target design may expand these restrictions only with corresponding proofs.
 

@@ -9,13 +9,13 @@
   "writable_mount_enabled": false,
   "verification": {
     "status": "core_and_models_checked",
-    "verus_verified_units": 820,
+    "verus_verified_units": 832,
     "verification_errors": 0,
-    "checked_named_proof_functions": 283,
-    "checked_named_executable_functions": 277,
+    "checked_named_proof_functions": 285,
+    "checked_named_executable_functions": 285,
     "runner_validated": true,
     "negative_gate_checks_passed": 6,
-    "host_compatibility_tests_passed": 60,
+    "host_compatibility_tests_passed": 64,
     "evidence": "verification-evidence.json",
     "request_boundary_rejections_passed": 13
   },
@@ -89,7 +89,8 @@
     "bound_extent_inode_certificate": "checked_actual_initialized_source_inode_bitmap_group_slot_root_checksum_generation_feature_selected_metadata_inode_seed_binding_sealed_index_ownership_and_negative_Rust_forgery_substitution_checks",
     "large_regular_inode_sizes": "checked_Linux_high_low_size_decoding_feature_parameterized_limits_exact_encoding_and_current_4KiB_no_HUGE_FILE_source_binding_2TiB_minus_4KiB_cap_sparse_reads_EOF_and_no_logical_offset_truncation_directory_and_journal_policy_separate",
     "huge_file_accounting": "checked_source_superblock_feature_and_inode_flag_binding_32_48_bit_counts_sector_and_filesystem_block_units_exact_encoding_alignment_and_overflow_bounded_global_data_tree_accounting_and_16TiB_minus_4KiB_sparse_reads_runtime_and_mutations_open",
-    "ext4_metadata_and_jbd2_checksum_domains": "checked_source_bound_CSUM_SEED_selection_group_inode_directory_extent_composition_independent_internal_journal_UUID_and_seed_writer_recovery_volume_identity_and_non_RECOVER_feature_flag_preservation_bounded_profile_other_metadata_runtime_mutations_open"
+    "ext4_metadata_and_jbd2_checksum_domains": "checked_source_bound_CSUM_SEED_selection_group_inode_directory_extent_composition_independent_internal_journal_UUID_and_seed_writer_recovery_volume_identity_and_non_RECOVER_feature_flag_preservation_bounded_profile_other_metadata_runtime_mutations_open",
+    "wide_group_fields_and_extended_descriptors": "checked_total_64_bit_address_and_super_count_32_bit_counter_codecs_nontruncating_encoding_source_selected_32_64_byte_descriptor_stride_complete_descriptor_and_bitmap_CRCs_bounded_high_field_rejection_all_group_low_high_bootstrap_identity_static_allocation_namespace_and_recovery_composition_high_address_volumes_other_widths_runtime_and_mutations_open"
   },
   "production_activation_gate": "All applicable obligations in PROOF_OBLIGATIONS.md must be discharged for the admitted profile.",
   "evidence_policy": "Only successful pinned entire-crate checking plus compilation produces a valid build report; it certifies only the declared source/model scope.",

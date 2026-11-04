@@ -5,7 +5,7 @@
 //! Other inodes sharing inode 8's physical block may still be updated.
 
 use vstd::prelude::*;
-use crate::{bootstrap::{self, Bootstrap, BootstrapView}, bytes, snapshot::Snapshot, super_state};
+use crate::{bootstrap::{self, Bootstrap, BootstrapView}, bytes, snapshot::Snapshot, super_state, superblock};
 
 verus! {
 
@@ -15,16 +15,17 @@ pub open spec fn primary_fixed(before: Seq<u8>, after: Seq<u8>) -> bool {
     &&& forall|i: int| 0 <= i < 4096 && !super_state::replay_mutable(i) ==> #[trigger] after[i] == before[i]
 }
 
-pub open spec fn addresses_fixed(before: Seq<u8>, after: Seq<u8>, groups: nat) -> bool {
-    &&& before.len() == 4096 && after.len() == 4096 && 0 < groups <= 32
+pub open spec fn addresses_fixed(before: Seq<u8>, after: Seq<u8>, groups: nat, width: nat) -> bool {
+    &&& before.len() == 4096 && after.len() == 4096 && 0 < groups <= 32 && (width == 32 || width == 64)
     &&& forall|g: int| 0 <= g < groups ==>
-        #[trigger] after.subrange(g * 32, g * 32 + 12) == before.subrange(g * 32, g * 32 + 12)
+        #[trigger] after.subrange(g * width, g * width + 12) == before.subrange(g * width, g * width + 12)
+        && (width == 64 ==> after.subrange(g * width + 32, g * width + 44) == before.subrange(g * width + 32, g * width + 44))
 }
 
 pub open spec fn preserved(before: BootstrapView, after: Seq<u8>) -> bool {
     &&& after.len() == before.source.len()
     &&& primary_fixed(before.source.subrange(0, 4096), after.subrange(0, 4096))
-    &&& addresses_fixed(before.source.subrange(4096, 8192), after.subrange(4096, 8192), (before.blocks as nat + 32767) / 32768)
+    &&& addresses_fixed(before.source.subrange(4096, 8192), after.subrange(4096, 8192), (before.blocks as nat + 32767) / 32768, superblock::descriptor_bytes(before.source.subrange(1024, 2048)))
     &&& after.subrange(before.table as int * 4096 + 1792, before.table as int * 4096 + 2048)
         == bootstrap::journal_inode(before)
 }
@@ -50,23 +51,26 @@ fn check_primary(before: &[u8], after: &[u8]) -> (r: bool)
     true
 }
 
-fn check_addresses(before: &[u8], after: &[u8], groups: u32) -> (r: bool)
-    ensures r == addresses_fixed(before@, after@, groups as nat),
+fn check_addresses(before: &[u8], after: &[u8], groups: u32, width: usize) -> (r: bool)
+    ensures r == addresses_fixed(before@, after@, groups as nat, width as nat),
 {
-    if before.len() != 4096 || after.len() != 4096 || groups == 0 || groups > 32 { return false; }
+    if before.len() != 4096 || after.len() != 4096 || groups == 0 || groups > 32 || (width != 32 && width != 64) { return false; }
     let mut group = 0u32;
     while group < groups
-        invariant group <= groups <= 32, groups > 0, before.len() == 4096, after.len() == 4096,
+        invariant group <= groups <= 32, groups > 0, before.len() == 4096, after.len() == 4096, width == 32 || width == 64,
             forall|g: int| 0 <= g < group ==>
-                #[trigger] after@.subrange(g * 32, g * 32 + 12) == before@.subrange(g * 32, g * 32 + 12),
+                #[trigger] after@.subrange(g * width, g * width + 12) == before@.subrange(g * width, g * width + 12)
+                && (width == 64 ==> after@.subrange(g * width + 32, g * width + 44) == before@.subrange(g * width + 32, g * width + 44)),
         decreases groups - group,
     {
-        let old = &before[group as usize * 32..group as usize * 32 + 12];
-        let new = &after[group as usize * 32..group as usize * 32 + 12];
+        let old = &before[group as usize * width..group as usize * width + 12];
+        let new = &after[group as usize * width..group as usize * width + 12];
         if !bytes::equal(old, new) {
-            assert(!addresses_fixed(before@, after@, groups as nat));
+            assert(!addresses_fixed(before@, after@, groups as nat, width as nat));
             return false;
         }
+        if width == 64 && !bytes::equal(&before[group as usize * width + 32..group as usize * width + 44],
+            &after[group as usize * width + 32..group as usize * width + 44]) { return false; }
         group += 1;
     }
     true
@@ -79,7 +83,7 @@ pub fn check(before: &Bootstrap<'_, '_>, after: &Snapshot<'_>) -> (r: bool)
     if source.partition_bytes() != after.partition_bytes() { return false; }
     assert(after.view().len() >= 8192) by { reveal(bootstrap::valid); }
     if !check_primary(before.primary(), after.block(0).unwrap().as_slice()) { return false; }
-    if !check_addresses(source.block(1).unwrap().as_slice(), after.block(1).unwrap().as_slice(), before.group_count()) { return false; }
+    if !check_addresses(source.block(1).unwrap().as_slice(), after.block(1).unwrap().as_slice(), before.group_count(), before.descriptor_size()) { return false; }
     let table = before.journal_inode_block();
     assert((table as nat + 1) * 4096 <= after.view().len()) by { reveal(bootstrap::valid); }
     let new_inode = after.block(table).unwrap().range(1792, 256).unwrap();

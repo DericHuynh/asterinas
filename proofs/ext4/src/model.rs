@@ -161,3 +161,5 @@ pub mod extent_ownership;
 pub mod inode_size;
 
 pub mod inode_blocks;
+
+pub mod group_fields;
