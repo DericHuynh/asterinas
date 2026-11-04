@@ -67,6 +67,19 @@ impl Recovery {
     pub closed spec fn primary(&self) -> Seq<u8> { self.primary@ }
     pub closed spec fn partition_bytes(&self) -> u64 { self.partition_bytes }
 
+    pub fn replay_plan(&self) -> (r: &replay::ReplayPlan) ensures r == self.plan(), r.refines() {
+        proof { use_type_invariant(self); }
+        self.scan.replay_plan()
+    }
+
+    pub fn retirement_image(&self) -> (r: (u32, &[u8]))
+        ensures r.0 == self.journal_block(), r.0 == self.plan().layout().view().start,
+            r.1@ == self.tail(), r.1.len() == 4096,
+    {
+        proof { use_type_invariant(self); }
+        (self.journal_block, self.tail.as_slice())
+    }
+
     #[verifier::type_invariant]
     spec fn valid(self) -> bool {
         &&& self.plan().refines() && wf(self.state(), self.plan().selection().len())

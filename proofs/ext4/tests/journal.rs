@@ -378,14 +378,48 @@ fn linux_recovery_accepts_emitted_records_wrap_revoke_and_incomplete_tail() {
             let offset = write.block() as usize * 4096;
             shadow[offset..offset + 4096].copy_from_slice(write.image());
         }
-        let mut engine = core::recovery_io::prepare(
-            snapshot,
-            &uuid,
-            geometry(&image).0,
-            &image[..4096],
-            image.len() as u64,
-        )
-        .unwrap();
+        let patches = core::recovery_patch::collect(plan);
+        assert_eq!(patches.len(), plan.len());
+        for ordinal in 0..plan.len() {
+            let write = plan.get(ordinal).unwrap();
+            assert_eq!(
+                patches.get(write.block()).unwrap().as_slice(),
+                write.image()
+            );
+        }
+        for ordinal in 1..patches.len() {
+            assert!(
+                patches.at(ordinal - 1).unwrap().block() < patches.at(ordinal).unwrap().block()
+            );
+        }
+        let source = core::snapshot::Snapshot::from_bytes(&image);
+        let checked_shadow = source.overlay(&patches).unwrap();
+        for block in [
+            0,
+            1,
+            target,
+            layout.physical_start(),
+            layout.filesystem_blocks() - 1,
+        ] {
+            assert_eq!(
+                checked_shadow.block(block).unwrap().as_slice(),
+                &shadow[block as usize * 4096..(block as usize + 1) * 4096]
+            );
+        }
+        let boot = core::bootstrap::locate(&source).unwrap();
+        let mut engine = boot
+            .prepare_recovery()
+            .expect("same-source recovery preparation");
+        assert_eq!(engine.replay_plan().len(), plan.len());
+        for ordinal in 0..plan.len() {
+            let write = plan.get(ordinal).unwrap();
+            let actual = engine.replay_plan().get(ordinal).unwrap();
+            assert_eq!(actual.block(), write.block());
+            assert_eq!(actual.image(), write.image());
+        }
+        let (tail_target, tail) = engine.retirement_image();
+        assert_eq!(tail_target, layout.physical_start());
+        assert_eq!(core::bytes::read_be32(tail, 28), Some(0));
         let mut protocol_image = image.clone();
         let mut cache: Vec<(u32, Vec<u8>)> = Vec::new();
         let mut operations = 0;

@@ -139,3 +139,6 @@ pub mod namespace;
 pub mod patch_set;
 mod shadow_model;
 pub mod bootstrap;
+pub mod bootstrap_identity;
+pub mod image_validation;
+pub mod recovery_patch;

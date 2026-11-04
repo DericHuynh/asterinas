@@ -219,6 +219,80 @@ fn journal_bootstrap_uses_declared_inode_bytes_before_allocation_validation() {
 }
 
 #[test]
+fn static_image_certificates_and_bootstrap_identity_check_different_boundaries() {
+    use core::{
+        bootstrap, bootstrap_identity, image_validation, patch_set::PatchSet, snapshot::Snapshot,
+    };
+    let img = image();
+    let (_, group, seed) = metadata(&img);
+    let source = Snapshot::from_bytes(&img);
+    let boot = bootstrap::locate(&source).unwrap();
+    let checked = image_validation::inspect(source.duplicate()).unwrap();
+    assert_eq!(checked.source().block(0).unwrap().as_slice(), &img[..4096]);
+    assert!(bootstrap_identity::check(&boot, checked.source()));
+    for (number, permitted) in [(2u32, true), (8, false)] {
+        let mut table = source.block(group.inode_table).unwrap().as_slice().to_vec();
+        let slot = (number as usize - 1) * 256;
+        let inode = &mut table[slot..slot + 256];
+        inode[2] ^= 1; // Change the owner, retaining a valid inode and layout.
+        let checksum = core::inode::calculated_checksum(inode, number, seed).unwrap();
+        inode[124..126].copy_from_slice(&(checksum as u16).to_le_bytes());
+        inode[130..132].copy_from_slice(&((checksum >> 16) as u16).to_le_bytes());
+        let patch = PatchSet::new()
+            .insert(group.inode_table, &table)
+            .ok()
+            .unwrap();
+        let shadow = source.overlay(&patch).unwrap();
+        assert!(
+            image_validation::inspect(shadow.duplicate()).is_some(),
+            "the static filesystem remains valid"
+        );
+        assert_eq!(
+            bootstrap_identity::check(&boot, &shadow),
+            permitted,
+            "inode {number}: ordinary inodes sharing inode 8's block may change; inode 8 must remain exact"
+        );
+    }
+    let mut primary = img[..4096].to_vec();
+    primary[1144] ^= 1; // The volume label is mutable under replay.
+    let checksum = core::crc::crc32c(0xffffffff, &primary[1024..2044]);
+    primary[2044..2048].copy_from_slice(&checksum.to_le_bytes());
+    let label = PatchSet::new().insert(0, &primary).ok().unwrap();
+    let shadow = source.overlay(&label).unwrap();
+    assert!(bootstrap_identity::check(&boot, &shadow));
+    assert!(image_validation::inspect(shadow).is_some());
+    for offset in [1128, 1028] {
+        let mut bad = img[..4096].to_vec();
+        bad[offset] ^= 1;
+        let patch = PatchSet::new().insert(0, &bad).ok().unwrap();
+        assert!(!bootstrap_identity::check(
+            &boot,
+            &source.overlay(&patch).unwrap()
+        ));
+    }
+    let mut descriptor = img[4096..8192].to_vec();
+    descriptor[8] ^= 1;
+    let patch = PatchSet::new().insert(1, &descriptor).ok().unwrap();
+    assert!(!bootstrap_identity::check(
+        &boot,
+        &source.overlay(&patch).unwrap()
+    ));
+    descriptor = img[4096..8192].to_vec();
+    descriptor[30] ^= 1;
+    let patch = PatchSet::new().insert(1, &descriptor).ok().unwrap();
+    let shadow = source.overlay(&patch).unwrap();
+    assert!(
+        bootstrap_identity::check(&boot, &shadow),
+        "checksum validation is a separate obligation"
+    );
+    assert!(image_validation::inspect(shadow).is_none());
+    assert!(!bootstrap_identity::check(
+        &boot,
+        &Snapshot::from_bytes(&img[..img.len() - 1])
+    ));
+}
+
+#[test]
 fn codecs_handle_extremes_and_crc_streaming() {
     for v in [0, 1, 255, 256, 65535, 65536, 0x89abcdef, u32::MAX] {
         assert_eq!(

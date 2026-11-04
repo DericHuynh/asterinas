@@ -277,7 +277,10 @@ impl ReplayPlan {
             exists|p: int| 0 <= p < self.selection().len() && self.selection()[p] == j)
     }
 
-    pub fn len(&self) -> (r: usize) ensures r == self.selection().len() { self.selected.len() }
+    pub fn len(&self) -> (r: usize) ensures self.refines(), r == self.selection().len() {
+        proof { use_type_invariant(self); }
+        self.selected.len()
+    }
 
     pub fn get(&self, index: usize) -> (r: Option<&RecoveredWrite>)
         ensures match r {

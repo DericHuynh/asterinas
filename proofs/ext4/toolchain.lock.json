@@ -93,7 +93,10 @@
     "src/namespace.rs",
     "src/patch_set.rs",
     "src/shadow_model.rs",
-    "src/bootstrap.rs"
+    "src/bootstrap.rs",
+    "src/image_validation.rs",
+    "src/bootstrap_identity.rs",
+    "src/recovery_patch.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -335,7 +338,9 @@
     "patch_set::one_target_has_one_image",
     "patch_set::applying_a_patch_replaces_exactly_its_block",
     "shadow_model::layering_matches_patch_application",
-    "shadow_model::a_block_has_exact_selected_bytes"
+    "shadow_model::a_block_has_exact_selected_bytes",
+    "recovery_patch::each_selected_image_is_the_exact_shadow_patch",
+    "recovery_patch::unselected_targets_have_no_shadow_patch"
   ],
   "required_flags": [
     "--no-cheating",
@@ -544,6 +549,16 @@
     "bootstrap::capture_journal",
     "bootstrap::locate",
     "snapshot::capture",
-    "layout::physical_start"
+    "layout::physical_start",
+    "bootstrap::group_count",
+    "bootstrap::journal_inode_block",
+    "snapshot::duplicate",
+    "image_validation::source",
+    "image_validation::inspect",
+    "bootstrap_identity::check",
+    "bootstrap::prepare_recovery",
+    "recovery_io::replay_plan",
+    "recovery_io::retirement_image",
+    "recovery_patch::collect"
   ]
 }

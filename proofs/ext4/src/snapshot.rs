@@ -84,7 +84,24 @@ impl<'a> Snapshot<'a> {
         self.layers.len()
     }
 
-    pub fn overlay(&self, patches: &'a PatchSet) -> (r: Option<Self>)
+    pub fn duplicate(&self) -> (r: Self) ensures r.wf(), r.view() == self.view(), r.depth() == self.depth() {
+        proof { use_type_invariant(self); }
+        let mut layers = Vec::new();
+        let mut index = 0usize;
+        while index < self.layers.len()
+            invariant index <= self.layers.len() <= MAX_SHADOW_LAYERS,
+                layers@ == self.layers@.subrange(0, index as int),
+            decreases self.layers.len() - index,
+        {
+            layers.push(self.layers[index]);
+            index += 1;
+        }
+        assert(layers@ == self.layers@);
+        Snapshot { bytes: self.bytes, layers }
+    }
+
+    pub fn overlay<'b>(&self, patches: &'b PatchSet) -> (r: Option<Snapshot<'b>>)
+        where 'a: 'b,
         ensures match r {
             Some(next) => next.wf() && next.depth() == self.depth() + 1
                 && next.view() == patch_set::apply(self.view(), patches.view()),

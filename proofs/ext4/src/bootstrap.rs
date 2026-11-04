@@ -6,7 +6,8 @@
 //! See Linux ext4_get_journal_inode and __ext4_get_inode_loc at sources.json.
 
 use vstd::prelude::*;
-use crate::{block_claims, bytes, crc, group, layout::{self, JournalLayout, LayoutView}, snapshot::Snapshot, superblock};
+use crate::{block_claims, bytes, crc, group, layout::{self, JournalLayout, LayoutView}, recovery_io::{self, Recovery},
+    scan_trace::Source, snapshot::Snapshot, superblock};
 
 verus! {
 
@@ -17,6 +18,16 @@ pub struct BootstrapView {
 
 pub open spec fn journal_inode(v: BootstrapView) -> Seq<u8> {
     v.source.subrange(v.table as int * 4096 + 1792, v.table as int * 4096 + 2048)
+}
+
+pub open spec fn journal_bytes(v: BootstrapView) -> Seq<u8> {
+    v.source.subrange(v.layout.start as int * 4096, (v.layout.start as int + v.layout.journal_blocks) * 4096)
+}
+
+pub open spec fn scan_source(v: BootstrapView) -> Source {
+    let journal = journal_bytes(v);
+    Source { journal, blocks: v.layout.journal_blocks, start: bytes::be32(journal, 28) as u32,
+        first: bytes::be32(journal, 24) as u32, uuid: v.source.subrange(1128, 1144), seed: v.seed, layout: v.layout }
 }
 
 #[verifier::opaque]
@@ -61,6 +72,18 @@ impl<'s, 'a> Bootstrap<'s, 'a> {
         &self.layout
     }
 
+    pub fn group_count(&self) -> (r: u32)
+        ensures self.wf(), 0 < r <= 32, r as nat == (self.view().blocks as nat + 32767) / 32768,
+    {
+        proof { use_type_invariant(self); reveal(valid); }
+        (self.blocks + 32767) / 32768
+    }
+
+    pub fn journal_inode_block(&self) -> (r: u32) ensures self.wf(), r == self.view().table {
+        proof { use_type_invariant(self); }
+        self.table
+    }
+
     pub fn primary(&self) -> (r: &'a [u8])
         ensures self.wf(), r@ == self.view().source.subrange(0, 4096), r.len() == 4096,
     {
@@ -88,6 +111,32 @@ impl<'s, 'a> Bootstrap<'s, 'a> {
     {
         proof { use_type_invariant(self); reveal(valid); }
         self.source.capture(self.layout.physical_start(), self.layout.blocks()).unwrap()
+    }
+
+    pub fn prepare_recovery(&self) -> (r: Option<Recovery>)
+        ensures self.wf(), match r {
+            Some(engine) => engine.plan().refines() && engine.plan().layout().view() == self.view().layout
+                && engine.primary() == self.view().source.subrange(0, 4096)
+                && engine.partition_bytes() as nat == self.view().source.len()
+                && engine.scan_result().certificate(scan_source(self.view()))
+                && engine.scan_result().maximal(scan_source(self.view()))
+                && engine.state().cursor == 0 && engine.state().request == 0
+                && !engine.state().pending && !engine.state().faulted,
+            None => true,
+        },
+    {
+        hide(crc::fold);
+        hide(layout::admitted);
+        hide(crate::inode::accepted);
+        hide(superblock::accepted);
+        let _ = self.layout();
+        let raw = self.raw_journal_inode();
+        assert(layout::admitted(raw@, self.inodes, self.blocks, self.seed)) by { reveal(valid); }
+        let layout = layout::from_inode(raw, self.inodes, self.blocks, self.seed).unwrap();
+        assert(layout.view() == self.view().layout) by { reveal(valid); }
+        assert(self.seed == crc::fold(0xffffffff, self.view().source.subrange(1128, 1144))) by { reveal(valid); }
+        let journal = self.capture_journal();
+        recovery_io::prepare(journal.as_slice(), self.uuid(), layout, self.primary(), self.source.partition_bytes())
     }
 }
 
