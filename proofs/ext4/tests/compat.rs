@@ -17,8 +17,14 @@ fn metadata(img: &[u8]) -> (core::superblock::Superblock, core::group::Group, u3
     let sb = core::superblock::parse(&img[1024..2048], img.len() as u64).expect("Linux superblock");
     let seed = core::superblock::metadata_checksum_seed(&img[1024..2048]).unwrap();
     let ipg = le32(&img[1024..2048], 40);
-    let g =
-        core::group::parse(&img[4096..4128], 0, sb.blocks(), ipg, seed).expect("Linux descriptor");
+    let g = core::group::parse(
+        &img[4096..4096 + core::superblock::descriptor_length(&img[1024..2048]).unwrap()],
+        0,
+        sb.blocks(),
+        ipg,
+        seed,
+    )
+    .expect("Linux descriptor");
     (sb, g, seed)
 }
 
@@ -44,13 +50,18 @@ fn seal_single_group_allocation(img: &mut [u8]) {
     let free = (0..blocks)
         .filter(|&b| bitmap[b as usize / 8] & (1 << (b % 8)) == 0)
         .count() as u32;
-    let bitmap_checksum = core::crc::crc32c(seed, bitmap) as u16;
+    let bitmap_checksum = core::crc::crc32c(seed, bitmap);
     img[1036..1040].copy_from_slice(&free.to_le_bytes());
     img[4108..4110].copy_from_slice(&(free as u16).to_le_bytes());
-    img[4120..4122].copy_from_slice(&bitmap_checksum.to_le_bytes());
+    img[4120..4122].copy_from_slice(&(bitmap_checksum as u16).to_le_bytes());
+    let width = core::superblock::descriptor_length(&img[1024..2048]).unwrap();
+    if width == 64 {
+        img[4152..4154].copy_from_slice(&((bitmap_checksum >> 16) as u16).to_le_bytes());
+    }
     let group_seed = core::crc::crc32c(seed, &0u32.to_le_bytes());
     let partial = core::crc::crc32c(group_seed, &img[4096..4126]);
-    let checksum = core::crc::crc32c(partial, &[0, 0]) as u16;
+    let with_zero = core::crc::crc32c(partial, &[0, 0]);
+    let checksum = core::crc::crc32c(with_zero, &img[4128..4096 + width]) as u16;
     img[4126..4128].copy_from_slice(&checksum.to_le_bytes());
     let checksum = core::crc::crc32c(0xffffffff, &img[1024..2044]);
     img[2044..2048].copy_from_slice(&checksum.to_le_bytes());
@@ -3712,6 +3723,358 @@ mod checksum_seed_tests {
             assert_eq!(le32(&linux, 1120), 0x2042);
             assert_eq!(le32(&linux, 1648), stored);
             assert!(core::image_validation::inspect(Snapshot::from_bytes(&linux)).is_some());
+        }
+    }
+}
+
+mod group64_tests {
+    use core::{group_fields, snapshot::Snapshot};
+
+    use super::{core, image, le32, metadata};
+
+    struct ScratchFiles(Vec<String>);
+    impl Drop for ScratchFiles {
+        fn drop(&mut self) {
+            for path in &self.0 {
+                let _ = std::fs::remove_file(path);
+            }
+        }
+    }
+
+    fn command(name: &str, arguments: &[&str], repair: bool) {
+        let executable =
+            std::env::var(format!("{name}_BIN")).unwrap_or_else(|_| name.to_lowercase());
+        let result = std::process::Command::new(executable)
+            .args(arguments)
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success() || repair && result.status.code() == Some(1),
+            "{name} {arguments:?}: {}\n{}",
+            String::from_utf8_lossy(&result.stdout),
+            String::from_utf8_lossy(&result.stderr)
+        );
+    }
+
+    fn seal_descriptor(raw: &mut [u8], number: u32, seed: u32) {
+        let seed = core::crc::crc32c(seed, &number.to_le_bytes());
+        let prefix = core::crc::crc32c(seed, &raw[..30]);
+        let zeros = core::crc::crc32c(prefix, &[0, 0]);
+        let checksum = core::crc::crc32c(zeros, &raw[32..]) as u16;
+        raw[30..32].copy_from_slice(&checksum.to_le_bytes());
+    }
+
+    #[test]
+    fn high_low_codecs_preserve_all_address_counter_and_superblock_bits() {
+        for wide in [false, true] {
+            for value in [
+                0,
+                1,
+                u32::MAX as u64,
+                1u64 << 32,
+                (1u64 << 48) - 1,
+                u64::MAX,
+            ] {
+                let mut raw = vec![0; if wide { 64 } else { 32 }];
+                let encoded = group_fields::encode_address(value, wide);
+                assert_eq!(encoded.is_some(), wide || value <= u32::MAX as u64);
+                if let Some((low, high)) = encoded {
+                    for (low_offset, high_offset) in [(0, 32), (4, 36), (8, 40)] {
+                        raw[low_offset..low_offset + 4].copy_from_slice(&low);
+                        if wide {
+                            raw[high_offset..high_offset + 4].copy_from_slice(&high);
+                        }
+                    }
+                    let fields = group_fields::decode(&raw, wide).unwrap();
+                    assert_eq!(
+                        (fields.block_bitmap, fields.inode_bitmap, fields.inode_table),
+                        (value, value, value)
+                    );
+                    if wide && value > u32::MAX as u64 {
+                        assert_ne!(fields.block_bitmap, value as u32 as u64);
+                    }
+                }
+            }
+            for value in [0, 1, u16::MAX as u32, 65536, u32::MAX] {
+                let encoded = group_fields::encode_counter(value, wide);
+                assert_eq!(encoded.is_some(), wide || value <= u16::MAX as u32);
+                if let Some((low, high)) = encoded {
+                    let mut raw = vec![0; if wide { 64 } else { 32 }];
+                    for (low_offset, high_offset) in
+                        [(12, 44), (14, 46), (16, 48), (28, 50), (24, 56), (26, 58)]
+                    {
+                        raw[low_offset..low_offset + 2].copy_from_slice(&low);
+                        if wide {
+                            raw[high_offset..high_offset + 2].copy_from_slice(&high);
+                        }
+                    }
+                    let f = group_fields::decode(&raw, wide).unwrap();
+                    assert_eq!(
+                        [
+                            f.free_blocks,
+                            f.free_inodes,
+                            f.directories,
+                            f.unused,
+                            f.block_checksum,
+                            f.inode_checksum
+                        ],
+                        [value; 6]
+                    );
+                }
+            }
+        }
+        for length in [0, 1, 31, 33, 63, 65, 1024] {
+            for wide in [false, true] {
+                assert!(group_fields::decode(&vec![0; length], wide).is_none());
+            }
+        }
+        assert!(group_fields::decode(&[0; 32], true).is_none());
+        assert!(group_fields::decode(&[0; 64], false).is_none());
+        for offset in [usize::MAX, usize::MAX - 1, 63, 64] {
+            assert!(group_fields::read_address(&[0; 64], offset, 0, true).is_none());
+            assert!(group_fields::read_counter(&[0; 64], 0, offset, true).is_none());
+        }
+        assert_eq!(
+            group_fields::read_address(&[1; 4], 0, usize::MAX, false),
+            Some(0x01010101)
+        );
+        let mut raw = [0; 1024];
+        for (low, high) in [(4, 336), (8, 340), (12, 344)] {
+            raw[low..low + 4].copy_from_slice(&u32::MAX.to_le_bytes());
+            raw[high..high + 4].copy_from_slice(&u32::MAX.to_le_bytes());
+        }
+        assert_eq!(
+            group_fields::super_counts(&raw, true),
+            Some((u64::MAX, u64::MAX, u64::MAX))
+        );
+        assert_eq!(
+            group_fields::super_counts(&raw, false),
+            Some((u32::MAX as u64, u32::MAX as u64, u32::MAX as u64))
+        );
+        assert!(group_fields::super_counts(&raw[..1023], true).is_none());
+    }
+
+    #[test]
+    fn bounded_group_admission_checks_extended_crc_and_rejects_valid_high_fields() {
+        let image = image();
+        let (sb, _, seed) = metadata(&image);
+        let ipg = le32(&image, 1064);
+        let mut raw = image[4096..4128].to_vec();
+        raw.resize(64, 0);
+        seal_descriptor(&mut raw, 0, seed);
+        assert!(core::group::parse(&raw, 0, sb.blocks(), ipg, seed).is_some());
+        let mut corrupt = raw.clone();
+        corrupt[63] ^= 1;
+        assert!(core::group::parse(&corrupt, 0, sb.blocks(), ipg, seed).is_none());
+        seal_descriptor(&mut corrupt, 0, seed);
+        assert!(
+            core::group::parse(&corrupt, 0, sb.blocks(), ipg, seed).is_some(),
+            "unused bytes remain covered by CRC"
+        );
+        for offset in [32, 36, 40, 44, 46, 48, 50] {
+            let mut high = raw.clone();
+            high[offset] = 1;
+            seal_descriptor(&mut high, 0, seed);
+            let fields = group_fields::decode(&high, true).unwrap();
+            assert!(
+                fields.block_bitmap > u32::MAX as u64
+                    || fields.inode_bitmap > u32::MAX as u64
+                    || fields.inode_table > u32::MAX as u64
+                    || fields.free_blocks >= 65536
+                    || fields.free_inodes >= 65536
+                    || fields.directories >= 65536
+                    || fields.unused >= 65536
+            );
+            assert!(
+                core::group::parse(&high, 0, sb.blocks(), ipg, seed).is_none(),
+                "high field at {offset} must not disappear"
+            );
+        }
+    }
+
+    #[test]
+    fn native_64bit_descriptors_compose_with_huge_file_checksum_seeds_and_owned_trees() {
+        for huge in [false, true] {
+            for csum_seed in [false, true] {
+                let prefix = format!(
+                    "build/native-group64-{}-{huge}-{csum_seed}",
+                    std::process::id()
+                );
+                let path = format!("{prefix}.img");
+                let script = format!("{prefix}.commands");
+                let _cleanup = ScratchFiles(vec![path.clone(), script.clone()]);
+                let features = format!(
+                    "none,has_journal,extent,filetype,sparse_super,large_file,extra_isize,metadata_csum,64bit{}{}",
+                    if huge { ",huge_file" } else { "" },
+                    if csum_seed { ",metadata_csum_seed" } else { "" }
+                );
+                command(
+                    "MKE2FS",
+                    &[
+                        "-q",
+                        "-F",
+                        "-t",
+                        "ext4",
+                        "-b",
+                        "4096",
+                        "-I",
+                        "256",
+                        "-O",
+                        &features,
+                        "-E",
+                        "lazy_itable_init=0,lazy_journal_init=0",
+                        &path,
+                        "16384",
+                    ],
+                    false,
+                );
+                let mut requests = String::from(
+                    "write build/fixture-file.bin /payload\nwrite /dev/null /fragmented\n",
+                );
+                for logical in (0..16).step_by(2) {
+                    requests.push_str(&format!("fallocate /fragmented {logical} {logical}\n"));
+                }
+                requests.push_str("set_inode_field /fragmented size 65536\n");
+                std::fs::write(&script, requests).unwrap();
+                command("DEBUGFS", &["-w", "-f", &script, &path], false);
+                if csum_seed {
+                    command(
+                        "TUNE2FS",
+                        &["-U", "113cda45-32ad-40db-981a-2c3c8baadf21", &path],
+                        false,
+                    );
+                }
+                let image = std::fs::read(&path).unwrap();
+                let (sb, group, seed) = metadata(&image);
+                assert_eq!(
+                    core::superblock::descriptor_length(&image[1024..2048]),
+                    Some(64)
+                );
+                let source = Snapshot::from_bytes(&image);
+                let volume = core::allocation::parse(source.duplicate()).unwrap();
+                assert_eq!(volume.index().get(0).unwrap().descriptor().len(), 64);
+                assert!(core::image_validation::inspect(source.duplicate()).is_some());
+                let boot = core::bootstrap::locate(&source).unwrap();
+                assert_eq!(boot.descriptor_size(), 64);
+                assert!(boot.prepare_recovery().is_some());
+                assert!(core::recovery_admission::prepare(&source).is_some());
+                super::exercise_complete_owned_tree_depths(&image, 13);
+                let node = core::allocated_inode::get(&volume, 12).unwrap();
+                assert!(matches!(
+                    core::file_read::chunk(&node, 0, 8192),
+                    core::file_read::Chunk::Data(_)
+                ));
+                for dirty in [true, false] {
+                    let marked = core::super_state::recovery_image(
+                        &image[..4096],
+                        image.len() as u64,
+                        dirty,
+                    )
+                    .unwrap();
+                    assert_eq!(
+                        le32(marked.as_slice(), 1120),
+                        le32(&image, 1120) | if dirty { 4 } else { 0 }
+                    );
+                }
+                for offset in [56usize, 58] {
+                    let mut bad = image.clone();
+                    bad[4096 + offset] ^= 1;
+                    seal_descriptor(&mut bad[4096..4160], 0, seed);
+                    assert!(
+                        core::group::parse(
+                            &bad[4096..4160],
+                            0,
+                            sb.blocks(),
+                            le32(&image, 1064),
+                            seed
+                        )
+                        .is_some()
+                    );
+                    assert!(
+                        core::group_metadata::parse(&Snapshot::from_bytes(&bad), 0).is_none(),
+                        "full bitmap checksum high half at {offset} must be checked"
+                    );
+                }
+                for descriptor_size in [0u16, 32, 63, 128] {
+                    let mut raw = image[1024..2048].to_vec();
+                    raw[254..256].copy_from_slice(&descriptor_size.to_le_bytes());
+                    let checksum = core::crc::crc32c(0xffffffff, &raw[..1020]);
+                    raw[1020..].copy_from_slice(&checksum.to_le_bytes());
+                    assert!(core::superblock::parse(&raw, image.len() as u64).is_none());
+                }
+                let mut high = image[1024..2048].to_vec();
+                high[336..340].copy_from_slice(&1u32.to_le_bytes());
+                let checksum = core::crc::crc32c(0xffffffff, &high[..1020]);
+                high[1020..].copy_from_slice(&checksum.to_le_bytes());
+                assert!(group_fields::super_counts(&high, true).unwrap().0 > u32::MAX as u64);
+                assert!(
+                    core::superblock::parse(&high, u64::MAX).is_none(),
+                    "bounded geometry rejects the full count"
+                );
+                assert_eq!(group.inode_table, le32(&image, 4104));
+                command("E2FSCK", &["-fn", &path], false);
+            }
+        }
+    }
+
+    #[test]
+    fn two_group_64bit_images_use_the_source_stride_and_preserve_high_bootstrap_addresses() {
+        let prefix = format!("build/native-group64-multiple-{}", std::process::id());
+        let path = format!("{prefix}.img");
+        let script = format!("{prefix}.commands");
+        let _cleanup = ScratchFiles(vec![path.clone(), script.clone()]);
+        command(
+            "MKE2FS",
+            &[
+                "-q",
+                "-F",
+                "-t",
+                "ext4",
+                "-b",
+                "4096",
+                "-I",
+                "256",
+                "-N",
+                "16384",
+                "-O",
+                "none,has_journal,extent,filetype,sparse_super,large_file,extra_isize,metadata_csum,64bit,huge_file,metadata_csum_seed",
+                "-E",
+                "lazy_itable_init=0,lazy_journal_init=0",
+                &path,
+                "65536",
+            ],
+            false,
+        );
+        // Force an ordinary inode into the second group; e2fsck initializes
+        // its bitmap and reconciles native allocation/high-water counters.
+        std::fs::write(&script, "write /dev/null /second-group\ncopy_inode /second-group <8193>\nseti <8193>\nunlink /second-group\nlink <8193> /second-group\nfreei <12>\nclri <12>\nset_bg 1 flags 4\n").unwrap();
+        command("DEBUGFS", &["-w", "-f", &script, &path], false);
+        command("E2FSCK", &["-fy", &path], true);
+        command("E2FSCK", &["-fn", &path], false);
+        let image = std::fs::read(&path).unwrap();
+        let source = Snapshot::from_bytes(&image);
+        let volume = core::allocation::parse(source.duplicate()).unwrap();
+        assert_eq!(volume.index().group_count(), 2);
+        let second = volume.index().get(1).unwrap();
+        assert_eq!(second.descriptor(), &image[4160..4224]);
+        assert_eq!(second.info().inode_table, le32(&image, 4168));
+        assert!(core::allocated_inode::get(&volume, 8193).is_some());
+        assert!(core::allocated_inode::get(&volume, 12).is_none());
+        assert!(core::image_validation::inspect(source.duplicate()).is_some());
+        let boot = core::bootstrap::locate(&source).unwrap();
+        assert!(boot.prepare_recovery().is_some());
+        assert!(core::bootstrap_identity::check(&boot, &source));
+        for offset in [64 + 32, 64 + 36, 64 + 40] {
+            let mut gdt = image[4096..8192].to_vec();
+            gdt[offset] ^= 1;
+            let patch = core::patch_set::PatchSet::new()
+                .insert(1, &gdt)
+                .ok()
+                .unwrap();
+            assert!(
+                !core::bootstrap_identity::check(&boot, &source.overlay(&patch).unwrap()),
+                "second-group high address {offset} must be immutable independently of checksum validation"
+            );
         }
     }
 }

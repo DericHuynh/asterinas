@@ -3,7 +3,7 @@
 # ext4 and JBD2 checksum domains
 
 The bounded profile admits INCOMPAT_CSUM_SEED (`0x2000`) in combination with
-its existing feature set, including optional HUGE_FILE. This is partial ext4
+its existing feature set, including optional HUGE_FILE and bounded 64BIT descriptors. This is partial ext4
 format coverage; the filesystem, runtime and mount obligations remain open.
 
 | Domain | Source and checked relation |

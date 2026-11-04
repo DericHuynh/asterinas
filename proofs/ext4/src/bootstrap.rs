@@ -41,7 +41,7 @@ pub open spec fn valid(v: BootstrapView) -> bool {
     &&& v.ipg as nat == bytes::le32(v.source, 1064) && 0 < v.ipg <= 32768 && v.ipg % 16 == 0 && v.inodes >= 11
     &&& v.seed == crc::fold(0xffffffff, journal_identity(v))
     &&& v.metadata_seed == superblock::metadata_seed(v.source.subrange(1024, 2048))
-    &&& group::accepted(v.source.subrange(4096, 4128), 0, v.blocks, v.ipg, v.metadata_seed)
+    &&& group::accepted(v.source.subrange(4096, 4096 + superblock::descriptor_bytes(v.source.subrange(1024, 2048)) as int), 0, v.blocks, v.ipg, v.metadata_seed)
     &&& v.table as nat == bytes::le32(v.source, 4104) && v.table < v.blocks
     &&& layout::admitted(journal_inode(v), v.inodes, v.blocks, v.metadata_seed)
     &&& v.layout.start > 1 && 1024 <= v.layout.journal_blocks <= 32768
@@ -80,6 +80,18 @@ impl<'s, 'a> Bootstrap<'s, 'a> {
     {
         proof { use_type_invariant(self); reveal(valid); }
         (self.blocks + 32767) / 32768
+    }
+
+    pub fn descriptor_size(&self) -> (r: usize)
+        ensures self.wf(), r as nat == superblock::descriptor_bytes(self.view().source.subrange(1024, 2048)),
+            r == 32 || r == 64,
+    {
+        let primary = self.primary();
+        proof {
+            reveal(valid);
+            assert(primary@.subrange(1024, 2048) =~= self.view().source.subrange(1024, 2048));
+        }
+        superblock::descriptor_length(&primary[1024..2048]).unwrap()
     }
 
     pub fn journal_inode_block(&self) -> (r: u32) ensures self.wf(), r == self.view().table {
@@ -167,7 +179,8 @@ pub fn locate<'s, 'a>(source: &'s Snapshot<'a>) -> (r: Option<Bootstrap<'s, 'a>>
     let ipg = bytes::read_le32(raw, 40).unwrap();
     let metadata_seed = superblock::metadata_checksum_seed(raw).unwrap();
     let descriptor = match source.block(1) { Some(block) => block, None => { return None; } };
-    let desc = descriptor.range(0, 32).unwrap();
+    let length = superblock::descriptor_length(raw).unwrap();
+    let desc = descriptor.range(0, length).unwrap();
     let group = match group::parse(desc, 0, blocks, ipg, metadata_seed) { Some(group) => group, None => { return None; } };
     let table = group.inode_table;
     let itable = match source.block(table) { Some(block) => block, None => { return None; } };

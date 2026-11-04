@@ -109,7 +109,8 @@
     "src/extent_claims.rs",
     "src/extent_ownership.rs",
     "src/inode_size.rs",
-    "src/inode_blocks.rs"
+    "src/inode_blocks.rs",
+    "src/group_fields.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -394,7 +395,9 @@
     "extent_tree_model::complete_tree_has_unique_covering_extent",
     "extent_ownership::a_stored_mapping_has_its_source_bound_claim",
     "inode_size::offsets_never_truncate_to_a_different_logical_block",
-    "super_state::recovery_preserves_the_metadata_checksum_domain"
+    "super_state::recovery_preserves_the_metadata_checksum_domain",
+    "group_fields::a_nonzero_high_address_cannot_alias_its_low_half",
+    "group::bounded_groups_do_not_truncate_high_address_or_counter_fields"
   ],
   "required_flags": [
     "--no-cheating",
@@ -679,6 +682,14 @@
     "group_index::huge_files",
     "inode::parse_metadata_with_features",
     "superblock::metadata_checksum_seed",
-    "bootstrap::journal_uuid"
+    "bootstrap::journal_uuid",
+    "superblock::descriptor_length",
+    "bootstrap::descriptor_size",
+    "group_fields::read_address",
+    "group_fields::read_counter",
+    "group_fields::encode_address",
+    "group_fields::encode_counter",
+    "group_fields::decode",
+    "group_fields::super_counts"
   ]
 }

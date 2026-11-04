@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Initialized ext4 allocation bitmaps for the 4 KiB, 32-byte-descriptor
-//! metadata-checksum profile. Parsing is not an allocation capability.
+//! Initialized ext4 allocation bitmaps with the truncated 16-bit checksum.
+//! Group metadata separately checks all 32 checksum bits for 64-byte
+//! descriptors. Parsing is not an allocation capability.
 
 use vstd::prelude::*;
 use crate::{crc, frozen::FrozenBlock};

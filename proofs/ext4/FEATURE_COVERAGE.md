@@ -47,7 +47,7 @@ unsupported markers need Linux-compatible handling, not invented encodings.
 | INCOMPAT | `0x0008` | `JOURNAL_DEV` | Not implemented | External journal device identity, bounds, exclusion and exclusivity |
 | INCOMPAT | `0x0010` | `META_BG` | Not implemented | Distributed descriptor locations and reserved regions across resize |
 | INCOMPAT | `0x0040` | `EXTENTS` | Partial: owned read-only trees in bounded profile | 48-bit addresses, depth-0..5 trees, insert/split/merge/truncate and conversion |
-| INCOMPAT | `0x0080` | `64BIT` | Not implemented | 64-bit block counts/addresses and extended descriptors/bitmaps |
+| INCOMPAT | `0x0080` | `64BIT` | Partial: wide field codecs and bounded 64-byte descriptors | Exact high/low addresses/counters, complete descriptor/full bitmap checksums, source stride and recovery identity checked; high-address volumes, other widths and mutations remain |
 | INCOMPAT | `0x0100` | `MMP` | Not implemented | Multiple-mount protection, leases, failure assumptions and heartbeat ordering |
 | INCOMPAT | `0x0200` | `FLEX_BG` | Not implemented | Cross-group bitmap/table placement and globally disjoint ownership |
 | INCOMPAT | `0x0400` | `EA_INODE` | Not implemented | Value inode lifetime, references, deduplication and quota coupling |

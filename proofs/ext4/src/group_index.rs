@@ -41,6 +41,7 @@ proof fn append_checked_group(groups: Seq<GroupView>, source: Seq<u8>, blocks: u
         next.source == source, next.number as nat == groups.len(), next.blocks == blocks, next.ipg == ipg, next.seed == seed,
     ensures records_match(groups.push(next), source, blocks, ipg, seed),
 {
+    hide(group_metadata::valid);
     reveal(records_match);
     assert forall|i: int| 0 <= i < groups.push(next).len() implies #[trigger] group_metadata::valid(groups.push(next)[i])
         && groups.push(next)[i].source == source && groups.push(next)[i].number as int == i

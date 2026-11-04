@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 //! Source-bound reserved regions for the bounded census profile. With at most
-//! 32 groups and 32-byte descriptors, each sparse-super group has one superblock
+//! 32 groups and 32/64-byte descriptors, each sparse-super group has one superblock
 //! and one descriptor block. META_BG and reserved-GDT growth are not admitted.
 
 use vstd::prelude::*;

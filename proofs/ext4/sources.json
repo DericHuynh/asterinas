@@ -45,7 +45,7 @@
       "path": "fs/ext4/ext4.h",
       "url": "https://github.com/torvalds/linux/blob/v7.0/fs/ext4/ext4.h",
       "blob_sha": "7617e2d454ea516fee9047366458c0bda568fddf",
-      "review_scope": "feature bit inventory and supported masks; block/logical limits and selected inode definitions; ext4_isize/ext4_isize_set regular versus LARGEDIR high-field interpretation"
+      "review_scope": "feature bit inventory and supported masks; block/logical limits and selected inode definitions; ext4_isize/ext4_isize_set regular versus LARGEDIR high-field interpretation; ext4_group_desc high/low address, counter and bitmap checksum field offsets and 64BIT descriptor size constants"
     },
     {
       "path": "kernel/core/comps/block/src/lib.rs",
@@ -141,7 +141,7 @@
       "path": "fs/ext4/bitmap.c",
       "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/bitmap.c",
       "blob_sha": "87760fabdd2eba8a59673de6258fdb7ef6c340ed",
-      "review_scope": "bitmap checksum inputs and truncated checksum fields"
+      "review_scope": "bitmap checksum inputs and truncated checksum fields; ext4_inode_bitmap_csum_verify and ext4_block_bitmap_csum_verify use both checksum halves for extended descriptors"
     },
     {
       "path": "fs/ext4/balloc.c",
@@ -165,7 +165,7 @@
       "path": "fs/ext4/super.c",
       "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/super.c",
       "blob_sha": "a34efb44e73d70d034aa2ed1b4011a6851235f22",
-      "review_scope": "journal inode discovery, nonzero links/regular type, internal-journal open and mapping; referenced behavior only; ext4_max_size extent bound and no-HUGE_FILE 32-bit sector bound, including sparse files; ext4_init_metadata_csum selects stored s_checksum_seed for CSUM_SEED, otherwise CRC32C of filesystem UUID"
+      "review_scope": "journal inode discovery, nonzero links/regular type, internal-journal open and mapping; referenced behavior only; ext4_max_size extent bound and no-HUGE_FILE 32-bit sector bound, including sparse files; ext4_init_metadata_csum selects stored s_checksum_seed for CSUM_SEED, otherwise CRC32C of filesystem UUID; ext4_group_desc_csum covers selected descriptor width with checksum word zeroed"
     },
     {
       "path": "fs/ext4/inode.c",
