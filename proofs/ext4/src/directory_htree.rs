@@ -132,4 +132,23 @@ pub proof fn every_bound_tree_block_has_initialized_physical_source_ownership(v:
     file_read::an_initialized_mapping_has_exact_ownership(allocated_inode::source_view(v, number), logical, source::physical(v, number, logical));
 }
 
+pub proof fn the_source_largedir_feature_controls_admitted_index_depth(v: AllocationView, number: u32, tree: DirectoryView)
+    requires bound(v, number, tree),
+    ensures tree.graph.depth <= if source::large(v) { 2u8 } else { 1u8 },
+        tree.graph.context.large == source::large(v),
+{
+    reveal(bound); reveal(htree_names::valid); reveal(htree_topology::valid);
+    htree_topology::a_checked_subtree_retains_its_source_header(tree.graph.context, 0, tree.graph.depth);
+    reveal(htree_topology::local);
+}
+
+pub proof fn distinct_logical_tree_blocks_have_distinct_physical_ownership(v: AllocationView, number: u32, tree: DirectoryView, a: u32, b: u32)
+    requires crate::allocation::valid(v), allocated_inode::live(v.index, number), bound(v, number, tree),
+        a < blocks(v, number).len(), b < blocks(v, number).len(), a != b,
+    ensures source::physical(v, number, a) != source::physical(v, number, b),
+{
+    every_bound_tree_block_has_initialized_physical_source_ownership(v, number, tree, a);
+    every_bound_tree_block_has_initialized_physical_source_ownership(v, number, tree, b);
+}
+
 }

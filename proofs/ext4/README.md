@@ -9,9 +9,9 @@ and a [concurrent block/extent/transaction protocol](CONCURRENCY.md).
 It is not a complete filesystem and is not registered with the kernel VFS.
 No mount or filesystem write path is enabled.
 
-The pinned Verus run checks **1580 obligations with zero errors**, including
-532 named proof functions and 453 named executable functions.
-144 host interoperability/regression tests pass on Linux-created metadata.
+The pinned Verus run checks **1593 obligations with zero errors**, including
+537 named proof functions and 453 named executable functions.
+145 host interoperability/regression tests pass on Linux-created metadata.
 [Proof status](proof-status.json) and [recorded evidence](verification-evidence.json)
 state the exact scope; tests do not discharge formal obligations.
 
@@ -20,7 +20,7 @@ state the exact scope; tests do not discharge formal obligations.
 | Component | Checked behavior |
 | --- | --- |
 | `dir_hash.rs` | All six Linux unkeyed filename hashes with exact modular word operations, byte packing, seed selection, half-MD4/TEA rounds and result normalization. See [directory hashes](DIRECTORY_HASHES.md). These compose with bounded source-bound DIR_INDEX admission in [HTree admission](HTREE_ADMISSION.md). Keyed encryption and Unicode casefold remain open. |
-| `htree_names.rs`, `htree_range.rs`, `directory_htree.rs`, `directory_piece.rs` | Complete source-bound DIR_INDEX admission: inherited/collision intervals, Linux candidate-path closure, full-name uniqueness and source absence, initialized physical ownership, canonical dot/index/leaf records and whole-image namespace composition. See [HTree admission](HTREE_ADMISSION.md). Mutations, other formats and runtime integration remain open. |
+| `htree_names.rs`, `htree_range.rs`, `directory_htree.rs`, `directory_piece.rs` | Complete source-bound DIR_INDEX and bounded LARGEDIR admission: inherited/collision intervals, Linux candidate-path closure, full-name uniqueness and source absence, initialized physical ownership, canonical dot/index/leaf records and whole-image namespace composition. See [HTree admission](HTREE_ADMISSION.md). Mutations, other formats and runtime integration remain open. |
 | `htree_topology.rs` | Complete supplied logical-tree traversal, exact root/child claim projection, parsed leaf records, no logical reuse and no orphan blocks. See [HTree topology](HTREE_TOPOLOGY.md). Source/hash/full-name/namespace composition is checked by [HTree admission](HTREE_ADMISSION.md); structural mutations and runtime authority remain open. |
 | `htree.rs` | Standalone Linux HTree root/internal table codecs, exact used-prefix/tail CRC domain, logical child bounds and collision-aware binary search. See [HTree routing](HTREE_ROUTING.md). Composes with complete tree/name/source admission; operations and runtime authority remain open. |
 | `acl.rs`, `acl_access.rs`, `content_write::prepare_authorized` | Compact Linux ACL codec, permission precedence/masks, exact source value and mode binding, consumed ACL-aware content/time candidate, xattr byte framing. See [POSIX ACLs](POSIX_ACL.md). Authentication/idmaps/LSM, inheritance/mutation and kernel runtime remain open. |

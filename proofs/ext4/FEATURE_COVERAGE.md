@@ -53,7 +53,7 @@ unsupported markers need Linux-compatible handling, not invented encodings.
 | INCOMPAT | `0x0400` | `EA_INODE` | Not implemented | Value inode lifetime, references, deduplication and quota coupling |
 | INCOMPAT | `0x1000` | `DIRDATA` | Implemented pinned Linux rejection policy | Named bit-vector proof and structural admission reject this unsupported INCOMPAT marker |
 | INCOMPAT | `0x2000` | `CSUM_SEED` | Partial: bounded metadata and journal domain composition | Stored or UUID-derived ext4 seed, independent internal-journal UUID, exact recovery flag preservation and native UUID-change interoperability checked; remaining metadata types, mutation and runtime refinement remain |
-| INCOMPAT | `0x4000` | `LARGEDIR` | Not implemented | Large directories, additional HTree depth and record/size bounds |
+| INCOMPAT | `0x4000` | `LARGEDIR` | Partial: source-selected additional HTree depth in bounded immutable profile | Full source/name/namespace admission through two internal index levels, explicit source-feature depth bound and physical no-alias theorem; Linux e2fsck validates a deep fixture and existing timed regular-file writes preserve admission. Large-size geometries, index growth/split/merge, directory mutations and runtime remain open (HTREE_ADMISSION.md) |
 | INCOMPAT | `0x8000` | `INLINE_DATA` | Not implemented | Inline file/directory storage, xattr coupling and crash-safe conversion |
 | INCOMPAT | `0x10000` | `ENCRYPT` | Not implemented | Key/credential boundary, encrypted names/data, nonce lifetime and explicit crypto assumptions |
 | INCOMPAT | `0x20000` | `CASEFOLD` | Not implemented | Pinned Unicode normalization, encrypted/casefold lookup and HTree equivalence |

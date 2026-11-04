@@ -17,7 +17,7 @@ pub const READONLY: u32 = 0x1000;
 
 pub open spec fn compat_allowed(flags: u32) -> bool { flags & !0xa2cu32 == 0 && flags & HAS_JOURNAL != 0 }
 pub open spec fn ro_allowed(flags: u32) -> bool { flags & !0x146fu32 == 0 && flags & 0x442u32 == 0x442u32 }
-pub open spec fn incompat_allowed(flags: u32) -> bool { flags & 0xffffdd7bu32 == 0x42u32 }
+pub open spec fn incompat_allowed(flags: u32) -> bool { flags & 0xffff9d7bu32 == 0x42u32 }
 pub open spec fn readonly(s: Seq<u8>) -> bool { bytes::le32(s, 100) as u32 & READONLY != 0 }
 pub open spec fn stable_inodes(s: Seq<u8>) -> bool { bytes::le32(s, 92) as u32 & STABLE_INODES != 0 }
 pub open spec fn dir_nlink(s: Seq<u8>) -> bool { bytes::le32(s, 100) as u32 & DIR_NLINK != 0 }
@@ -29,7 +29,7 @@ pub fn readonly_compatible_flags(flags: u32) -> (r: bool) ensures r == ro_allowe
     flags & !0x146fu32 == 0 && flags & 0x442u32 == 0x442u32
 }
 pub fn incompatible_flags(flags: u32) -> (r: bool) ensures r == incompat_allowed(flags) {
-    flags & 0xffffdd7bu32 == 0x42u32
+    flags & 0xffff9d7bu32 == 0x42u32
 }
 pub fn is_readonly(s: &[u8]) -> (r: Option<bool>)
     ensures match r { Some(value) => s.len() == 1024 && value == readonly(s@), None => s.len() != 1024 },
@@ -57,7 +57,15 @@ pub proof fn every_admitted_mask_keeps_required_features_and_rejects_unimplement
 pub proof fn linux_unsupported_compression_and_dirdata_markers_are_always_rejected(flags: u32)
     requires flags & 0x1001u32 != 0,
     ensures !incompat_allowed(flags),
-{ assert(flags & 0x1001u32 != 0 ==> flags & 0xffffdd7bu32 != 0x42u32) by (bit_vector); }
+{ assert(flags & 0x1001u32 != 0 ==> flags & 0xffff9d7bu32 != 0x42u32) by (bit_vector); }
+
+pub proof fn changing_only_recover_preserves_incompatible_feature_admission(before: u32, after: u32)
+    requires before & !4u32 == after & !4u32,
+    ensures incompat_allowed(before) == incompat_allowed(after),
+{
+    assert(before & 0xffff9d7bu32 == after & 0xffff9d7bu32) by (bit_vector)
+        requires before & !4u32 == after & !4u32;
+}
 
 pub proof fn bootstrap_identity_preserves_source_feature_policy(before: Seq<u8>, after: Seq<u8>)
     requires crate::bootstrap_identity::primary_fixed(before, after),

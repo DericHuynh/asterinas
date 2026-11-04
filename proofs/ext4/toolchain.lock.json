@@ -702,7 +702,12 @@
     "htree_names::every_live_source_leaf_record_appears_in_lookup",
     "htree_names::every_live_source_record_is_reachable_by_linux_hash_probe_and_continuations",
     "directory_htree::a_namespace_indexed_directory_has_a_complete_source_tree",
-    "directory_htree::every_bound_tree_block_has_initialized_physical_source_ownership"
+    "directory_htree::every_bound_tree_block_has_initialized_physical_source_ownership",
+    "htree_topology::a_checked_subtree_retains_its_source_header",
+    "directory_htree::the_source_largedir_feature_controls_admitted_index_depth",
+    "directory_htree::distinct_logical_tree_blocks_have_distinct_physical_ownership",
+    "feature_policy::changing_only_recover_preserves_incompatible_feature_admission",
+    "htree_names::every_live_record_follows_linux_probe_and_first_entry_continuation_descent"
   ],
   "required_flags": [
     "--no-cheating",

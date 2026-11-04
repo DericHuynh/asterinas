@@ -475,4 +475,126 @@ pub proof fn every_live_source_record_is_reachable_by_linux_hash_probe_and_conti
         topology::count(p.tree, 0), i as nat, logical, record, dir_hash::value(entry(p, logical, record).name, p.hash_seed, p.version).major);
 }
 
+// dx_probe descends by binary search. dx_next_block descends from the first
+// entry after moving to a continued subtree; it does not probe that subtree.
+pub open spec fn edge_candidate(v: htree::IndexView, hash: u32, first: bool, i: nat) -> bool {
+    if first { i < htree::count(v) && (forall|j: nat| 0 < j <= i ==> #[trigger] htree::continuation(v, hash, j)) }
+    else { range::possible(v, hash, i) }
+}
+#[verifier::opaque]
+pub open spec fn linux_routed(p: Parameters, number: u32, depth: u8, hash: u32, logical: u32, first: bool, length: nat) -> bool
+    decreases depth, length,
+{
+    if length == 0 { false } else {
+        let i = (length - 1) as nat;
+        let target = topology::child(p.tree, number, i);
+        let index = topology::index_view(p.tree, number);
+        linux_routed(p, number, depth, hash, logical, first, i) || edge_candidate(index, hash, first, i)
+            && if depth == 0 { target == logical } else {
+                linux_routed(p, target, (depth - 1) as u8, hash, logical, first || !htree::selected(index, hash, i), topology::count(p.tree, target))
+            }
+    }
+}
+proof fn every_checked_prefix_child_has_fitting_bounds(p: Parameters, number: u32, depth: u8, bounds: Bounds, length: nat, i: nat)
+    requires ranges(p, number, depth, bounds, length), i < length,
+    ensures range::fits(bounds, range::child(topology::index_view(p.tree, number), bounds, i)),
+    decreases length,
+{
+    reveal(ranges);
+    if i < length - 1 { every_checked_prefix_child_has_fitting_bounds(p, number, depth, bounds, (length - 1) as nat, i); }
+    else { assert(i == length - 1); }
+}
+proof fn monotone_boundary_bases_stay_at_the_inherited_query(left: u32, right: u32, hash: u32)
+    requires left <= right, left & !1u32 >= hash, right & !1u32 <= hash,
+    ensures left & !1u32 == hash,
+{
+    assert(left <= right && left & !1u32 >= hash && right & !1u32 <= hash ==> left & !1u32 == hash) by (bit_vector);
+}
+proof fn a_continued_probe_edge_starts_at_the_query_hash(index: htree::IndexView, bounds: Bounds, i: nat, hash: u32)
+    requires range::possible(index, hash, i), !htree::selected(index, hash, i), range::contains(range::child(index, bounds, i), hash),
+    ensures range::child(index, bounds, i).lower == hash,
+{
+    let start = choose|start: nat| #[trigger] range::candidate(index, hash, start, i);
+    assert(start < i);
+    let boundary = htree::edge(index.raw, index.first as nat, i).hash;
+    assert(boundary > hash && boundary & !1u32 <= hash);
+    assert(boundary > hash && boundary & !1u32 <= hash ==> boundary & !1u32 == hash) by (bit_vector);
+}
+proof fn checked_intervals_support_both_linux_entry_modes(p: Parameters, number: u32, depth: u8, bounds: Bounds, length: nat, i: nat, hash: u32, first: bool)
+    requires ranges(p, number, depth, bounds, length), length <= topology::count(p.tree, number), i < length,
+        range::contains(range::child(topology::index_view(p.tree, number), bounds, i), hash), hash & 1u32 == 0,
+        first ==> hash == bounds.lower,
+    ensures edge_candidate(topology::index_view(p.tree, number), hash, first, i),
+        first || !htree::selected(topology::index_view(p.tree, number), hash, i) ==> range::child(topology::index_view(p.tree, number), bounds, i).lower == hash,
+{
+    ranges_retain_the_checked_header_and_parent_bounds(p, number, depth, bounds, length);
+    every_checked_prefix_child_has_fitting_bounds(p, number, depth, bounds, length, i);
+    an_even_contained_hash_has_a_candidate_edge(p, number, depth, bounds, i, hash);
+    let index = topology::index_view(p.tree, number);
+    topology::a_checked_node_retains_its_header_and_every_source_child(p.tree, number, depth, i);
+    reveal(topology::local);
+    if first {
+        assert forall|j: nat| 0 < j <= i implies #[trigger] htree::continuation(index, hash, j) by {
+            every_checked_prefix_child_has_fitting_bounds(p, number, depth, bounds, length, j);
+            htree::monotone(index, j, i);
+            monotone_boundary_bases_stay_at_the_inherited_query(htree::edge(index.raw, index.first as nat, j).hash,
+                htree::edge(index.raw, index.first as nat, i).hash, hash);
+        }
+    } else if !htree::selected(index, hash, i) { a_continued_probe_edge_starts_at_the_query_hash(index, bounds, i, hash); }
+}
+proof fn a_checked_leaf_claim_follows_both_linux_entry_modes(p: Parameters, number: u32, depth: u8, bounds: Bounds, length: nat,
+    claim: nat, logical: u32, record: int, hash: u32, first: bool)
+    requires ranges(p, number, depth, bounds, length), length <= topology::count(p.tree, number),
+        claim < topology::claims(p.tree, number, depth, length).len(), topology::claims(p.tree, number, depth, length)[claim as int] == topology::owned(logical, 3),
+        0 <= record < records(p, logical).len(), records(p, logical)[record].inode != 0,
+        hash == dir_hash::value(entry(p, logical, record).name, p.hash_seed, p.version).major, hash & 1u32 == 0,
+        first ==> hash == bounds.lower,
+    ensures linux_routed(p, number, depth, hash, logical, first, length),
+    decreases depth, length,
+{
+    reveal(ranges); reveal(topology::claims); reveal(linux_routed);
+    if length > 0 {
+        let i = (length - 1) as nat;
+        let target = topology::child(p.tree, number, i);
+        let before = topology::claims(p.tree, number, depth, i);
+        let next = range::child(topology::index_view(p.tree, number), bounds, i);
+        if claim < before.len() {
+            a_checked_leaf_claim_follows_both_linux_entry_modes(p, number, depth, bounds, i, claim, logical, record, hash, first);
+        } else {
+            if depth == 0 {
+                assert(target == logical);
+                checked_leaf_hashes_include_each_live_record(p, logical, next, records(p, logical).len(), record);
+            } else {
+                a_checked_leaf_claim_is_on_a_linux_candidate_path(p, target, (depth - 1) as u8, next,
+                    topology::count(p.tree, target), (claim - before.len()) as nat, logical, record, hash);
+            }
+            checked_intervals_support_both_linux_entry_modes(p, number, depth, bounds, length, i, hash, first);
+            if depth > 0 {
+                a_checked_leaf_claim_follows_both_linux_entry_modes(p, target, (depth - 1) as u8, next, topology::count(p.tree, target),
+                    (claim - before.len()) as nat, logical, record, hash, first || !htree::selected(topology::index_view(p.tree, number), hash, i));
+            }
+        }
+    }
+}
+
+pub proof fn every_live_record_follows_linux_probe_and_first_entry_continuation_descent(v: DirectoryView, logical: u32, record: int)
+    requires valid(v), logical < v.graph.context.source.len(), v.graph.census.roles[logical as int].kind == 3,
+        0 <= record < records(parameters(v), logical).len(), records(parameters(v), logical)[record].inode != 0,
+    ensures linux_routed(parameters(v), 0, v.graph.depth, dir_hash::value(entry(parameters(v), logical, record).name, v.hash_seed, v.version).major,
+        logical, false, topology::count(v.graph.context, 0)),
+{
+    hide(dir_hash::value);
+    reveal(valid);
+    let p = parameters(v);
+    topology::every_leaf_role_has_a_checked_source_leaf_claim(v.graph, logical);
+    reveal(topology::leaf); reveal(directory_block::valid); reveal(directory_block::chain);
+    assert(directory_block::record(p.tree.source[logical as int], p.tree.inodes, records(p, logical)[record]));
+    assert(entry(p, logical, record).name.len() <= 255);
+    dir_hash::every_unkeyed_hash_reserves_the_collision_bit_and_eof_value(entry(p, logical, record).name, p.hash_seed, p.version);
+    let i = choose|i: int| 0 <= i < topology::claims(p.tree, 0, v.graph.depth, topology::count(p.tree, 0)).len()
+        && (#[trigger] topology::claims(p.tree, 0, v.graph.depth, topology::count(p.tree, 0))[i]) == topology::owned(logical, 3);
+    a_checked_leaf_claim_follows_both_linux_entry_modes(p, 0, v.graph.depth, Bounds { lower: 0, upper: 4294967296, inclusive: false },
+        topology::count(p.tree, 0), i as nat, logical, record, dir_hash::value(entry(p, logical, record).name, p.hash_seed, p.version).major, false);
+}
+
 }
