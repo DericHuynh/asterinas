@@ -97,6 +97,19 @@ def main():
                                  "{ let _ = verified_ext4::group_metadata::GroupMetadata { ..m }; }\n", "E0451"),
         "replace_group_index_source": ("pub fn misuse<'a>(mut i: verified_ext4::group_index::GroupIndex<'a>, "
                                       "s: verified_ext4::snapshot::Snapshot<'a>) { i.source = s; }\n", "E0616"),
+        "forge_edit_handle": ("pub fn misuse(h: verified_ext4::edit_handles::Handle<'_>) "
+                              "{ let _ = verified_ext4::edit_handles::Handle { ..h }; }\n", "E0451"),
+        "redirect_edit_handle": ("pub fn misuse(mut h: verified_ext4::edit_handles::Handle<'_>) "
+                                 "{ h.key = 42; }\n", "E0616"),
+        "reuse_closed_edit_handle": ("pub fn misuse(h: verified_ext4::edit_handles::Handle<'_>) "
+                                     "{ let _ = h.close(); let _ = h.target(); }\n", "E0382"),
+        "freeze_borrowed_edit_batch": ("pub fn misuse(mut r: verified_ext4::edit_handles::Running) { "
+                                      "let (mut p, _) = r.borrow_parts(1).unwrap(); "
+                                      "let h = p.handle_at(0).unwrap(); let _ = r.freeze(); let _ = h.close(); }\n", "E0505"),
+        "alias_edit_handle": ("pub fn misuse(mut p: verified_ext4::edit_handles::Part<'_>) { "
+                               "let h = p.handle_at(0).unwrap(); let _ = p.handle_at(0); let _ = h.close(); }\n", "E0499"),
+        "forge_frozen_edit_batch": ("pub fn misuse(f: verified_ext4::edit_handles::FrozenBatch) "
+                                    "{ let _ = verified_ext4::edit_handles::FrozenBatch { ..f }; }\n", "E0451"),
     })
     for name, (source, code) in misuse.items():
         path = BUILD / (name + ".rs")

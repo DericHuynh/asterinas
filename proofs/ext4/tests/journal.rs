@@ -7,6 +7,235 @@ extern crate verified_ext4 as core;
 
 use core::recovery_request::Completion;
 
+mod borrowed_edits {
+    use core::edit_handles::{self, Part, Running};
+
+    use super::*;
+
+    fn stage_part(mut part: Part<'_>, value: u8) {
+        assert_eq!(part.part_count(), 1);
+        let mut handle = part.handle_at(0).unwrap();
+        assert!(!handle.stage(&[0; 4095]));
+        assert!(handle.stage(&[0x19; 4096]));
+        let mut bytes = vec![value; 4096];
+        assert!(handle.stage(&bytes));
+        bytes.fill(0xee);
+        assert!(handle.close());
+        assert!(part.handle_at(0).is_none());
+    }
+
+    fn close_all(running: &mut Running, values: &[Option<u8>]) {
+        let (mut part, empty) = running.borrow_parts(values.len()).unwrap();
+        assert_eq!(empty.part_count(), 0);
+        for (index, value) in values.iter().enumerate() {
+            let mut handle = part.handle_at(index).unwrap();
+            if let Some(value) = value {
+                assert!(handle.stage(&vec![*value; 4096]));
+            }
+            assert!(handle.close());
+        }
+    }
+
+    #[test]
+    fn scoped_workers_own_disjoint_reserved_slots_and_freeze_exact_latest_bytes() {
+        let (_, layout, _, _) = fixture();
+        let targets: Vec<_> = (0..layout.filesystem_blocks())
+            .filter(|block| layout.allows_target(*block))
+            .take(4)
+            .collect();
+        let mut running = edit_handles::reserve(&targets, layout).unwrap();
+        assert_eq!(running.reserved_count(), 4);
+        {
+            let (mut left, mut right) = running.borrow_parts(2).unwrap();
+            let (a, b) = left.partition(1).unwrap();
+            let (c, d) = right.partition(1).unwrap();
+            std::thread::scope(|scope| {
+                let workers: Vec<_> = [a, b, c, d]
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, part)| scope.spawn(move || stage_part(part, 0x31 + index as u8)))
+                    .collect();
+                for worker in workers {
+                    worker.join().unwrap();
+                }
+            });
+        }
+        let frozen = running.freeze().ok().unwrap();
+        assert_eq!(frozen.frozen_count(), 4);
+        let images = frozen.into_images();
+        for (index, image) in images.iter().enumerate() {
+            assert_eq!(image.block(), targets[index]);
+            assert_eq!(image.as_slice(), &[0x31 + index as u8; 4096]);
+        }
+    }
+
+    #[test]
+    fn freeze_rejects_unused_dropped_and_aborted_handles_including_worker_panic() {
+        for failure in 0..4 {
+            let (_, layout, _, target) = fixture();
+            let mut running = edit_handles::reserve(&[target], layout).unwrap();
+            {
+                let (mut part, _) = running.borrow_parts(1).unwrap();
+                match failure {
+                    0 => {}
+                    1 => {
+                        let mut handle = part.handle_at(0).unwrap();
+                        assert!(handle.stage(&[0x11; 4096]));
+                    }
+                    2 => {
+                        let mut handle = part.handle_at(0).unwrap();
+                        assert!(handle.stage(&[0x22; 4096]));
+                        assert!(handle.abort());
+                        assert!(part.handle_at(0).is_none());
+                    }
+                    _ => std::thread::scope(|scope| {
+                        let worker = scope.spawn(move || {
+                            let mut handle = part.handle_at(0).unwrap();
+                            assert!(handle.stage(&[0x33; 4096]));
+                            panic!("simulated worker failure before close");
+                        });
+                        assert!(worker.join().is_err());
+                    }),
+                }
+            }
+            let mut running = running
+                .freeze()
+                .err()
+                .expect("failed slot must block freeze");
+            let (mut part, _) = running.borrow_parts(1).unwrap();
+            if failure == 0 {
+                assert!(part.handle_at(0).unwrap().close());
+            } else {
+                assert!(
+                    part.handle_at(0).is_none(),
+                    "open and aborted slots cannot reopen"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn closed_unused_credits_are_omitted_and_empty_batches_cannot_encode() {
+        let (image, layout, _, target) = fixture();
+        let mut running = edit_handles::reserve(&[target, target + 1], layout.duplicate()).unwrap();
+        close_all(&mut running, &[None, Some(0x41)]);
+        let frozen = running.freeze().ok().unwrap();
+        assert_eq!(frozen.frozen_count(), 1);
+        let images = frozen.into_images();
+        assert_eq!(images[0].block(), target + 1);
+        assert_eq!(images[0].as_slice(), &[0x41; 4096]);
+        let mut empty = edit_handles::reserve(&[target], layout).unwrap();
+        close_all(&mut empty, &[None]);
+        let empty = empty.freeze().ok().unwrap();
+        assert_eq!(empty.frozen_count(), 0);
+        assert!(
+            empty
+                .encode(&image[1128..1144], 9, &image[..4096], image.len() as u64)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn reservation_checks_credit_bounds_targets_and_partition_boundaries() {
+        let (_, layout, _, target) = fixture();
+        for targets in [
+            vec![],
+            vec![target, target],
+            vec![target + 1, target],
+            vec![layout.physical_start()],
+            vec![layout.filesystem_blocks()],
+        ] {
+            assert!(edit_handles::reserve(&targets, layout.duplicate()).is_none());
+        }
+        let targets: Vec<_> = (0..layout.filesystem_blocks())
+            .filter(|block| layout.allows_target(*block))
+            .take(251)
+            .collect();
+        assert!(edit_handles::reserve(&targets, layout.duplicate()).is_none());
+        let mut running = edit_handles::reserve(&targets[..250], layout).unwrap();
+        assert_eq!(running.reserved_count(), 250);
+        assert!(running.borrow_parts(251).is_none());
+        {
+            let (mut empty, mut all) = running.borrow_parts(0).unwrap();
+            assert_eq!(empty.part_count(), 0);
+            assert!(empty.handle_at(0).is_none());
+            assert!(all.handle_at(250).is_none());
+            assert!(all.partition(251).is_none());
+            let (all, empty) = all.partition(250).unwrap();
+            assert_eq!(all.part_count(), 250);
+            assert_eq!(empty.part_count(), 0);
+        }
+        close_all(&mut running, &vec![Some(0x51); 250]);
+        assert_eq!(running.freeze().ok().unwrap().frozen_count(), 250);
+    }
+
+    #[test]
+    fn threaded_frozen_batch_encodes_a_linux_recoverable_jbd2_transaction() {
+        let (mut image, layout, _, target) = fixture();
+        let uuid = image[1128..1144].to_vec();
+        let journal_base = layout.offset(0, image.len() as u64).unwrap() as usize;
+        let mut running = edit_handles::reserve(&[target, target + 1], layout.duplicate()).unwrap();
+        {
+            let (left, right) = running.borrow_parts(1).unwrap();
+            std::thread::scope(|scope| {
+                let left = scope.spawn(move || stage_part(left, 0x61));
+                let right = scope.spawn(move || stage_part(right, 0x62));
+                left.join().unwrap();
+                right.join().unwrap();
+            });
+        }
+        let tx = running
+            .freeze()
+            .ok()
+            .unwrap()
+            .encode(&uuid, 9, &image[..4096], image.len() as u64)
+            .unwrap();
+        assert_eq!(tx.payload_count(), 2);
+        let header = core::journal_state::encode(
+            &image[journal_base..journal_base + 4096],
+            &uuid,
+            layout.blocks(),
+            9,
+            1,
+        )
+        .unwrap();
+        image[journal_base..journal_base + 4096].copy_from_slice(header.as_slice());
+        let mut ordinal = 0;
+        append_record(&mut image, &layout, 1, &mut ordinal, tx.descriptor_bytes());
+        for index in 0..tx.payload_count() {
+            append_record(
+                &mut image,
+                &layout,
+                1,
+                &mut ordinal,
+                tx.payload_at(index).unwrap(),
+            );
+        }
+        append_record(&mut image, &layout, 1, &mut ordinal, tx.commit_bytes());
+        image[1024 + 96] |= 4;
+        let checksum = core::crc::crc32c(0xffffffff, &image[1024..2044]);
+        image[2044..2048].copy_from_slice(&checksum.to_le_bytes());
+        let scan = core::scan::recover(
+            &image[journal_base..journal_base + layout.blocks() as usize * 4096],
+            &uuid,
+            layout.duplicate(),
+        )
+        .unwrap();
+        assert_eq!(scan.committed_transactions(), 1);
+        assert_eq!(scan.replay_plan().len(), 2);
+        let recovered = linux_recover("build/borrowed-handles-recovery.img", &image);
+        for (index, value) in [0x61, 0x62].into_iter().enumerate() {
+            let block = target as usize + index;
+            assert_eq!(&recovered[block * 4096..(block + 1) * 4096], &[value; 4096]);
+            let selected = (0..scan.replay_plan().len())
+                .map(|at| scan.replay_plan().get(at).unwrap())
+                .find(|write| write.block() == block as u32)
+                .unwrap();
+            assert_eq!(selected.image(), &[value; 4096]);
+        }
+    }
+}
+
 fn fixture() -> (Vec<u8>, core::layout::JournalLayout, u32, u32) {
     let img = std::fs::read(std::env::var("EXT4_TEST_IMAGE").unwrap()).unwrap();
     let (layout, seed, target) = geometry(&img);
