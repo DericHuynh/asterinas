@@ -114,3 +114,7 @@ Complete binding admission and the physical volume audit-budget proof now
 compose through the total audit_allocated API. See
 [EXTENT_BINDING.md](EXTENT_BINDING.md). The broader allocation, namespace and
 recovery parser-completeness obligations remain open.
+
+Recursive claim-collection admission and exact ordered prefix/subtree
+availability now compose in [EXTENT_COLLECTION.md](EXTENT_COLLECTION.md).
+Partial and complete claim counts are bounded by the actual physical volume.

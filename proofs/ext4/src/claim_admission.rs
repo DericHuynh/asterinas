@@ -18,6 +18,21 @@ pub open spec fn appendable(roles: Seq<Slot>, claims: Seq<Claim>) -> bool {
     &&& forall|i: int, j: int| 0 <= i < j < claims.len() ==> #[trigger] block_claims::disjoint(claims[i], claims[j])
 }
 
+pub proof fn an_appendable_sequence_has_appendable_prefixes(roles: Seq<Slot>, claims: Seq<Claim>, count: nat)
+    requires appendable(roles, claims), count <= claims.len(),
+    ensures appendable(roles, claims.take(count as int)),
+{
+    assert forall|i: int| 0 <= i < claims.take(count as int).len() implies #[trigger] available(roles, claims.take(count as int)[i]) by {
+        assert(claims.take(count as int)[i] == claims[i]);
+        assert(available(roles, claims[i]));
+    }
+    assert forall|i: int, j: int| 0 <= i < j < claims.take(count as int).len() implies
+        #[trigger] block_claims::disjoint(claims.take(count as int)[i], claims.take(count as int)[j]) by {
+        assert(claims.take(count as int)[i] == claims[i] && claims.take(count as int)[j] == claims[j]);
+        assert(block_claims::disjoint(claims[i], claims[j]));
+    }
+}
+
 proof fn claims_disjoint_from_a_range_have_a_free_lookup(claims: Seq<Claim>, next: Claim, block: int)
     requires block_claims::covers(next, block),
         forall|i: int| 0 <= i < claims.len() ==> #[trigger] block_claims::disjoint(claims[i], next),
@@ -89,6 +104,54 @@ pub proof fn appending_one_claim_keeps_the_remaining_claims_appendable(before: S
         #[trigger] block_claims::disjoint(claims.skip(1)[i], claims.skip(1)[j]) by {
         assert(claims.skip(1)[i] == claims[i + 1] && claims.skip(1)[j] == claims[j + 1]);
         assert(block_claims::disjoint(claims[i + 1], claims[j + 1]));
+    }
+}
+
+proof fn a_noncovering_suffix_keeps_the_previous_lookup(previous: Seq<Claim>, added: Seq<Claim>, block: int)
+    requires forall|i: int| 0 <= i < added.len() ==> !#[trigger] block_claims::covers(added[i], block),
+    ensures block_claims::lookup(previous + added, block) == block_claims::lookup(previous, block),
+    decreases added.len(),
+{
+    if added.len() > 0 {
+        assert((previous + added).last() == added[added.len() as int - 1]);
+        assert(!block_claims::covers(added[added.len() as int - 1], block));
+        assert((previous + added).drop_last() =~= previous + added.drop_last());
+        assert forall|i: int| 0 <= i < added.drop_last().len() implies !#[trigger] block_claims::covers(added.drop_last()[i], block) by {
+            assert(added.drop_last()[i] == added[i]);
+        }
+        a_noncovering_suffix_keeps_the_previous_lookup(previous, added.drop_last(), block);
+        reveal(block_claims::lookup);
+    } else { assert(previous + added =~= previous); }
+}
+
+/// A completed recursive subtree may append several claims at once. Its
+/// exact ledger prefix still cannot consume any remaining disjoint claim.
+pub proof fn a_valid_prefix_extension_keeps_the_remaining_claims_appendable(before: CensusView, after: CensusView, claims: Seq<Claim>, count: nat)
+    requires block_claims::ledger(before.roles, before.claims), block_claims::ledger(after.roles, after.claims),
+        after.roles.len() == before.roles.len(), count <= claims.len(), appendable(before.roles, claims),
+        after.claims == before.claims + claims.take(count as int),
+    ensures appendable(after.roles, claims.skip(count as int)),
+{
+    reveal(block_claims::ledger);
+    let added = claims.take(count as int);
+    let remaining = claims.skip(count as int);
+    assert forall|i: int| 0 <= i < remaining.len() implies #[trigger] available(after.roles, remaining[i]) by {
+        assert(remaining[i] == claims[count as int + i]);
+        assert(available(before.roles, claims[count as int + i]));
+        assert forall|block: int| block_claims::covers(remaining[i], block) implies (#[trigger] after.roles[block]).kind == 0 by {
+            assert(before.roles[block].kind == 0);
+            assert forall|j: int| 0 <= j < added.len() implies !#[trigger] block_claims::covers(added[j], block) by {
+                assert(added[j] == claims[j]);
+                assert(block_claims::disjoint(claims[j], claims[count as int + i]));
+            }
+            a_noncovering_suffix_keeps_the_previous_lookup(before.claims, added, block);
+            assert(before.roles[block] == block_claims::lookup(before.claims, block));
+            assert(after.roles[block] == block_claims::lookup(before.claims + added, block));
+        }
+    }
+    assert forall|i: int, j: int| 0 <= i < j < remaining.len() implies #[trigger] block_claims::disjoint(remaining[i], remaining[j]) by {
+        assert(remaining[i] == claims[count as int + i] && remaining[j] == claims[count as int + j]);
+        assert(block_claims::disjoint(claims[count as int + i], claims[count as int + j]));
     }
 }
 

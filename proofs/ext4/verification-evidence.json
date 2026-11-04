@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "license": "MPL-2.0",
-  "recorded_at": "2026-11-04T15:34:27.092426+00:00",
+  "recorded_at": "2026-11-04T15:53:25.457568+00:00",
   "scope": "Checked host core and specified abstract machines; not a complete or kernel-integrated ext4 filesystem",
   "verifier_version": {
     "verus": {
@@ -19,7 +19,7 @@
     "encountered-error": false,
     "encountered-vir-error": false,
     "success": true,
-    "verified": 1078,
+    "verified": 1086,
     "errors": 0,
     "is-verifying-entire-crate": true
   },
@@ -120,7 +120,7 @@
     "src/source_block.rs": "9edb498e7806a76f266bf6fecdda553ff002a5c83419fac445a7ba26f07b5cfa",
     "src/extent_tree.rs": "c18079ac6b75c80092cdb5d7168ca8b52f73a13fb6a938ad60f02c325828463e",
     "src/extent_tree_model.rs": "b87b5afcec7fb42ed2b1dbc3da1365b8d64a14c55dc8fa0f902dab317ebe9c25",
-    "src/extent_claims.rs": "f1bfb0f0093bd908b74ad333b111ad8544ad6cd2ff567886bc9ec7594daee0a2",
+    "src/extent_claims.rs": "14ff462e7357647788e4f88bee156cf2b7856341fcb498824bb42ebf99d44952",
     "src/extent_ownership.rs": "c0d636390b2d2c62e84ee378143742881f18e215a4179aa31da78165a9ae82e4",
     "src/inode_size.rs": "b6dd7611df74db2850884c9150b1aaaf45f95b3612b462087b3ebf14b803ea6c",
     "src/inode_blocks.rs": "f79664689eef5fb9e82bfbabbffd5a0ae654d09dbda2839517144c5727d01185",
@@ -143,11 +143,11 @@
     "src/write_result.rs": "c25cbf2ca5aed1d214f337a32fd3f51fd5468c017c3f92a994875025f32133a1",
     "src/bootstrap_frame.rs": "d92a5ed1acf3ac54cf244e794c07db8e06a0ee334da03c2b03edf03459c5c31b",
     "src/recovery_bootstrap.rs": "f823f569779ebc2666f28661e307d28aecba9c764babb519335ce1122eb73c53",
-    "src/claim_admission.rs": "bfad6ad6a29a768c425ecd67f5df0b20a6dda99811756dd18c1b02d97e487857",
-    "src/claim_budget.rs": "e7d89d5d5309a90e36da2b85cc2a2b4997b4c41f6b549b3a48b06750c0bab54a",
+    "src/claim_admission.rs": "86d85b7e7b68c6c78b34f821b441ac99dbc4769710a0a7c767dc9b9a4b4dbd69",
+    "src/claim_budget.rs": "14f5ceca58e6b3f9d1836399f5a006580845124b731ec58e911b65647a228d12",
     "src/allocation_budget.rs": "d5b1418e40a6f10b834807eae1958f1b695513e2641b25b59f2f9198a9cfa670"
   },
-  "lock_sha256": "b1a817086d52967b03ec556b40600f1fac27c2078153600823cbefd5b318198a",
+  "lock_sha256": "e3f47097607db5ee1338f70a21b8bf98488c12f58892fc2a383e28b27da3e63b",
   "runner_sha256": "de6b473ab50632068de9e7fc619591c7b4d5afbc0058a1fcd7f946c0198beb91",
   "named_proof_coverage": [
     "access::override_cannot_execute_a_nonexecutable_regular_file",
@@ -203,8 +203,11 @@
     "bytes::little_endian_encoding_recovers_every_word",
     "bytes::splice_frame",
     "bytes::splice_word_frame",
+    "claim_admission::a_valid_prefix_extension_keeps_the_remaining_claims_appendable",
+    "claim_admission::an_appendable_sequence_has_appendable_prefixes",
     "claim_admission::appending_one_claim_keeps_the_remaining_claims_appendable",
     "claim_admission::every_valid_ledger_extension_was_appendable",
+    "claim_budget::an_appended_claim_sequence_fits_the_final_ledger",
     "claim_budget::every_disjoint_claim_ledger_fits_the_physical_volume",
     "content_write::an_initialized_content_write_cannot_touch_another_inode",
     "content_write::bytes_outside_the_requested_content_span_are_preserved",
@@ -875,14 +878,14 @@
     "writer_admission::prepare",
     "writer_admission::source_snapshot"
   ],
-  "host_library_sha256": "c0222560f313135c78f66acc7e1028788f613009bdb65e2608e5eb134d9297f2",
+  "host_library_sha256": "6487a910e2dbed8e4c944c3ce05bf9eb7ca2f8712f6bf8c8ba6773802fb0c549",
   "compatibility": {
     "schema": 1,
     "status": "passed",
     "scope": "host interoperability tests, not formal proof",
     "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
-    "proof_artifact_sha256": "c0222560f313135c78f66acc7e1028788f613009bdb65e2608e5eb134d9297f2",
-    "image_sha256": "52b39cdc83c5ef85e10344481271c3a0eb102d83ce90adbe9a344cec7a15dae5",
+    "proof_artifact_sha256": "6487a910e2dbed8e4c944c3ce05bf9eb7ca2f8712f6bf8c8ba6773802fb0c549",
+    "image_sha256": "9bd9a887df88c2314af7301129d4da1bd8ffacafdb7f41605d115edd5c7211df",
     "request_boundary_rejections": [
       "reuse_request",
       "redirect_completion",

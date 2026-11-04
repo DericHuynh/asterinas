@@ -3,7 +3,7 @@
 //! Physical resource bounds from valid disjoint filesystem block claims.
 
 use vstd::prelude::*;
-use crate::{block_claims::{self, Claim, Slot}, inode_claims};
+use crate::{block_claims::{self, Claim, Slot}, extent_claims, inode_claims};
 
 verus! {
 
@@ -92,6 +92,14 @@ pub proof fn every_disjoint_claim_ledger_fits_the_physical_volume(roles: Seq<Slo
         }
     }
     vstd::set_lib::lemma_len_subset(actual.to_set(), volume.to_set());
+}
+
+pub proof fn an_appended_claim_sequence_fits_the_final_ledger(roles: Seq<Slot>, previous: Seq<Claim>, added: Seq<Claim>)
+    requires block_claims::ledger(roles, previous + added),
+    ensures inode_claims::allocated(added) <= roles.len(),
+{
+    every_disjoint_claim_ledger_fits_the_physical_volume(roles, previous + added);
+    extent_claims::allocated_concatenation(previous, added);
 }
 
 }
