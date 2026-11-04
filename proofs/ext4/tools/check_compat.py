@@ -92,6 +92,12 @@ def main():
         "replace_bound_extent_index": ("pub fn misuse<'v, 'image>(mut t: verified_ext4::extent_claims::BoundInode<'v, 'image>, "
                                       "i: &'v verified_ext4::group_index::GroupIndex<'image>) { t.index = i; }\n", "E0616"),
     }
+    misuse.update({
+        "forge_group_metadata": ("pub fn misuse(m: verified_ext4::group_metadata::GroupMetadata) "
+                                 "{ let _ = verified_ext4::group_metadata::GroupMetadata { ..m }; }\n", "E0451"),
+        "replace_group_index_source": ("pub fn misuse<'a>(mut i: verified_ext4::group_index::GroupIndex<'a>, "
+                                      "s: verified_ext4::snapshot::Snapshot<'a>) { i.source = s; }\n", "E0616"),
+    })
     for name, (source, code) in misuse.items():
         path = BUILD / (name + ".rs")
         path.write_text(source)

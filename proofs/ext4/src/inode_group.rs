@@ -161,11 +161,11 @@ pub fn collect(index: &GroupIndex<'_>, mut census: Census, g: u32) -> (r: Option
     let _ = meta.parameters();
     if census.block_count() != blocks { return None; }
     let descriptor = meta.descriptor();
-    assert(descriptor.len() == 32 || descriptor.len() == 64) by { reveal(group_metadata::valid); reveal(group::accepted); }
+    assert(descriptor.len() == 32 || descriptor.len() == 64) by { reveal(group_metadata::valid); reveal(group::accepted_with_features); }
     let unused = bytes::read_le16(descriptor, 28).unwrap() as u32;
     let used_dirs = bytes::read_le16(descriptor, 16).unwrap() as u32;
     assert(unused <= ipg && ipg <= 32768) by {
-        reveal(group_index::valid); reveal(group_index::records_match); reveal(group_metadata::valid); reveal(group::accepted);
+        reveal(group_index::valid); reveal(group_index::records_match); reveal(group_metadata::valid); reveal(group::accepted_with_features);
     }
     let (_, bitmap) = meta.bitmaps();
     assert(bitmap.view().valid == ipg) by {

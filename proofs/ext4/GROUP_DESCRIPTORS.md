@@ -4,7 +4,7 @@
 
 The checked core admits ext4's 64BIT feature with 64-byte group descriptors in
 its bounded 4 KiB profile. Exact wide field codecs are also available. Full
-64-bit-volume allocation, other descriptor sizes, FLEX_BG, META_BG and allocation/initialization transitions remain
+64-bit-volume allocation, other descriptor sizes, META_BG and allocation/initialization transitions remain
 unfinished. [Lazy inode](LAZY_INODES.md) and [block](LAZY_BLOCKS.md) groups have checked static interpretations.
 
 | Component | Checked representation and boundary |
@@ -15,7 +15,7 @@ unfinished. [Lazy inode](LAZY_INODES.md) and [block](LAZY_BLOCKS.md) groups have
 | Descriptor width | The source 64BIT flag selects 64 bytes; other admitted images use 32. Superblock admission requires `s_desc_size=64` when 64BIT is present and 0 or 32 otherwise. |
 | Descriptor checksum | Seed with the selected ext4 metadata seed and little-endian group number, then CRC every descriptor byte with the two-byte checksum field replaced by zeros. The low 16 bits are stored, for both widths. |
 | Bitmap checksum | A 32-byte descriptor checks the low 16 bits. A 64-byte descriptor checks all 32 bits from the actual low/high fields for initialized bitmaps. INODE_UNINIT groups synthesize the logical inode bitmap and ignore its unused physical checksum. Block coverage is 4096 bytes; inode coverage is `inodes_per_group/8`. The standalone Bitmap retains its 16-bit relation, and same-source GroupMetadata additionally proves the full checksum. |
-| Bounded group admission | Metadata addresses stay within the declared non-flex group, and counters fit group/inode bounds. All admitted high address/count fields are zero in this profile. A checked theorem connects the bounded values to complete wide decoding; the full-width codec remains distinct from this admission policy. |
+| Bounded group admission | Metadata addresses stay within the declared non-flex group or the filesystem under source-selected FLEX_BG; counters retain group/inode bounds. All admitted high address/count fields are zero in this profile. A checked theorem connects the bounded values to complete wide decoding; the full-width codec remains distinct from this admission policy. |
 | Source index | Descriptor `g` occupies the exact source range `4096 + g*width .. 4096 + (g+1)*width`. Width and checksum seed come from the same primary superblock. |
 | Bootstrap identity | Recovery preserves the descriptor width feature, every group's low address fields, and all three high address fields for 64-byte descriptors. Journal inode 8 and its complete mapping stay fixed. |
 | Composition | Complete allocation, initialized bitmaps, inode-owned extent metadata, structural reads, static namespace/image inspection and checked recovery admission compose with optional HUGE_FILE and CSUM_SEED. |

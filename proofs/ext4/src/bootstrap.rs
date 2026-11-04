@@ -41,7 +41,7 @@ pub open spec fn valid(v: BootstrapView) -> bool {
     &&& v.ipg as nat == bytes::le32(v.source, 1064) && 0 < v.ipg <= 32768 && v.ipg % 16 == 0 && v.inodes >= 11
     &&& v.seed == crc::fold(0xffffffff, journal_identity(v))
     &&& v.metadata_seed == superblock::metadata_seed(v.source.subrange(1024, 2048))
-    &&& group::accepted(v.source.subrange(4096, 4096 + superblock::descriptor_bytes(v.source.subrange(1024, 2048)) as int), 0, v.blocks, v.ipg, v.metadata_seed)
+    &&& group::accepted_with_features(v.source.subrange(4096, 4096 + superblock::descriptor_bytes(v.source.subrange(1024, 2048)) as int), 0, v.blocks, v.ipg, v.metadata_seed, superblock::flex_bg(v.source.subrange(1024, 2048)))
     &&& v.table as nat == bytes::le32(v.source, 4104) && v.table < v.blocks
     &&& layout::admitted(journal_inode(v), v.inodes, v.blocks, v.metadata_seed)
     &&& v.layout.start > 1 && 1024 <= v.layout.journal_blocks <= 32768
@@ -167,7 +167,7 @@ pub fn locate<'s, 'a>(source: &'s Snapshot<'a>) -> (r: Option<Bootstrap<'s, 'a>>
 {
     hide(crc::fold);
     hide(superblock::accepted);
-    hide(group::accepted);
+    hide(group::accepted_with_features);
     hide(layout::admitted);
     hide(crate::inode::accepted);
     let primary = match source.block(0) { Some(block) => block, None => { return None; } };
@@ -181,13 +181,14 @@ pub fn locate<'s, 'a>(source: &'s Snapshot<'a>) -> (r: Option<Bootstrap<'s, 'a>>
     let descriptor = match source.block(1) { Some(block) => block, None => { return None; } };
     let length = superblock::descriptor_length(raw).unwrap();
     let desc = descriptor.range(0, length).unwrap();
-    let group = match group::parse(desc, 0, blocks, ipg, metadata_seed) { Some(group) => group, None => { return None; } };
+    let flex = superblock::flex_enabled(raw).unwrap();
+    let group = match group::parse_with_features(desc, 0, blocks, ipg, metadata_seed, flex) { Some(group) => group, None => { return None; } };
     let table = group.inode_table;
     let itable = match source.block(table) { Some(block) => block, None => { return None; } };
     let journal = itable.range(1792, 256).unwrap();
     let layout = match layout::from_inode(journal, inodes, blocks, metadata_seed) { Some(layout) => layout, None => { return None; } };
     assert(blocks as nat * 4096 <= source.view().len()) by { reveal(superblock::accepted); }
-    assert(table < blocks) by { reveal(group::accepted); }
+    assert(table < blocks) by { reveal(group::accepted_with_features); }
     let journal_header = source.block(layout.physical_start()).unwrap();
     let uuid_bytes = journal_header.range(48, 16).unwrap();
     let seed = crc::crc32c(0xffffffff, uuid_bytes);

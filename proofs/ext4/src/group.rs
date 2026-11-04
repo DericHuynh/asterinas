@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! 32/64-byte descriptors for the non-flex_bg, non-meta_bg, metadata_csum profile.
+//! 32/64-byte descriptors with source-selected FLEX_BG placement.
+//! META_BG and non-metadata-csum formats remain outside the profile.
 //! Local range checks do not replace global allocation/extent validation.
 
 use vstd::prelude::*;
@@ -41,13 +42,19 @@ pub open spec fn inode_uninitialized(raw: Seq<u8>) -> bool { le16(raw, 18) as u1
 pub open spec fn block_uninitialized(raw: Seq<u8>) -> bool { le16(raw, 18) as u16 & 2 != 0 }
 
 pub open spec fn accepted(s: Seq<u8>, group: u32, blocks: u32, ipg: u32, uuid_seed: u32) -> bool {
+    accepted_with_features(s, group, blocks, ipg, uuid_seed, false)
+}
+
+pub open spec fn accepted_with_features(s: Seq<u8>, group: u32, blocks: u32, ipg: u32, uuid_seed: u32, flex: bool) -> bool {
+    let first = if flex { 0nat } else { group as nat * 32768 };
+    let limit = if flex { blocks as nat } else { end(blocks, group) };
     &&& bounded_high_fields(s)
     &&& blocks > 2 && 0 < ipg <= 32768 && ipg % 16 == 0
     &&& (group as nat) < (blocks as nat + 32767) / 32768
-    &&& group as nat * 32768 <= le32(s, 0) < end(blocks, group)
-    &&& group as nat * 32768 <= le32(s, 4) < end(blocks, group)
-    &&& group as nat * 32768 <= le32(s, 8)
-    &&& le32(s, 8) + ipg as nat / 16 <= end(blocks, group)
+    &&& first <= le32(s, 0) < limit
+    &&& first <= le32(s, 4) < limit
+    &&& first <= le32(s, 8)
+    &&& le32(s, 8) + ipg as nat / 16 <= limit
     &&& le32(s, 0) != le32(s, 4)
     &&& !(le32(s, 8) <= le32(s, 0) < le32(s, 8) + ipg as nat / 16)
     &&& !(le32(s, 8) <= le32(s, 4) < le32(s, 8) + ipg as nat / 16)
@@ -66,6 +73,15 @@ pub fn parse(s: &[u8], group: u32, blocks: u32, ipg: u32, uuid_seed: u32) -> (r:
             && g.inode_table as nat == le32(s@, 8) && g.inode_table_blocks == ipg / 16,
         None => !accepted(s@, group, blocks, ipg, uuid_seed),
     },
+{ parse_with_features(s, group, blocks, ipg, uuid_seed, false) }
+
+pub fn parse_with_features(s: &[u8], group: u32, blocks: u32, ipg: u32, uuid_seed: u32, flex: bool) -> (r: Option<Group>)
+    ensures match r {
+        Some(g) => accepted_with_features(s@, group, blocks, ipg, uuid_seed, flex) && g.number == group
+            && g.block_bitmap as nat == le32(s@, 0) && g.inode_bitmap as nat == le32(s@, 4)
+            && g.inode_table as nat == le32(s@, 8) && g.inode_table_blocks == ipg / 16,
+        None => !accepted_with_features(s@, group, blocks, ipg, uuid_seed, flex),
+    },
 {
     if (s.len() != 32 && s.len() != 64) || blocks <= 2 || ipg == 0 || ipg > 32768 || ipg % 16 != 0
         || group as u64 >= (blocks as u64 + 32767) / 32768 { return None; }
@@ -73,9 +89,11 @@ pub fn parse(s: &[u8], group: u32, blocks: u32, ipg: u32, uuid_seed: u32) -> (r:
         || read_le32(s, 40).unwrap() != 0 || read_le16(s, 44).unwrap() != 0
         || read_le16(s, 46).unwrap() != 0 || read_le16(s, 48).unwrap() != 0
         || read_le16(s, 50).unwrap() != 0) { return None; }
-    let first = group as u64 * 32768;
+    let group_first = group as u64 * 32768;
     let next = (group as u64 + 1) * 32768;
-    let limit = if next < blocks as u64 { next } else { blocks as u64 };
+    let group_limit = if next < blocks as u64 { next } else { blocks as u64 };
+    let first = if flex { 0u64 } else { group_first };
+    let limit = if flex { blocks as u64 } else { group_limit };
     let block_bitmap = read_le32(s, 0).unwrap();
     let inode_bitmap = read_le32(s, 4).unwrap();
     let inode_table = read_le32(s, 8).unwrap();
@@ -85,7 +103,7 @@ pub fn parse(s: &[u8], group: u32, blocks: u32, ipg: u32, uuid_seed: u32) -> (r:
         || (inode_table as u64) < first || table_end > limit || block_bitmap == inode_bitmap
         || (inode_table <= block_bitmap && (block_bitmap as u64) < table_end)
         || (inode_table <= inode_bitmap && (inode_bitmap as u64) < table_end)
-        || read_le16(s, 12).unwrap() as u64 > limit - first
+        || read_le16(s, 12).unwrap() as u64 > group_limit - group_first
         || read_le16(s, 14).unwrap() as u32 > ipg || read_le16(s, 16).unwrap() as u32 > ipg
         || read_le16(s, 28).unwrap() as u32 > ipg
     { return None; }
@@ -109,9 +127,9 @@ pub fn parse(s: &[u8], group: u32, blocks: u32, ipg: u32, uuid_seed: u32) -> (r:
 }
 
 /// Within the bounded geometry, every admitted high address/counter field
-/// is zero because the complete value must fit the declared group bounds.
+/// is zero; metadata addresses and per-group counts retain their full values.
 pub proof fn bounded_groups_do_not_truncate_high_address_or_counter_fields(raw: Seq<u8>, number: u32, blocks: u32, ipg: u32, seed: u32)
-    requires accepted(raw, number, blocks, ipg, seed),
+    requires accepted(raw, number, blocks, ipg, seed) || accepted_with_features(raw, number, blocks, ipg, seed, true),
     ensures group_fields::address(raw, 0, 32, raw.len() == 64) == le32(raw, 0),
         group_fields::address(raw, 4, 36, raw.len() == 64) == le32(raw, 4),
         group_fields::address(raw, 8, 40, raw.len() == 64) == le32(raw, 8),

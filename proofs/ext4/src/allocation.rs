@@ -110,6 +110,7 @@ pub fn parse<'a>(source: Snapshot<'a>) -> (r: Option<Allocation<'a>>)
     let index = match group_index::parse(source) { Some(index) => index, None => { return None; } };
     let (blocks, inodes, ipg, seed) = index.parameters();
     let count = index.group_count() as u32;
+    let flex = index.flex_groups();
     assert(2 < blocks <= block_claims::MAX_BLOCKS && inodes >= 11) by { reveal(group_index::valid); }
     let mut census = Census::new(blocks).unwrap();
     let mut g = 0u32;
@@ -118,10 +119,11 @@ pub fn parse<'a>(source: Snapshot<'a>) -> (r: Option<Allocation<'a>>)
         invariant index.wf(), count == index.view().groups.len(), count <= 32, g <= count,
             (blocks, inodes, ipg, seed) == (index.view().blocks, index.view().inodes, index.view().ipg, index.view().seed),
             census.wf(), census.view().roles.len() == blocks, census.view().claims == reserved(index.view(), g as nat),
+            flex == group_index::has_flex_groups(index.view()),
         decreases count - g,
     {
         let meta = index.get(g).unwrap();
-        census = match group_claims::reserve(census, meta.descriptor(), g, blocks, ipg, seed) {
+        census = match group_claims::reserve_with_features(census, meta.descriptor(), g, blocks, ipg, seed, flex) {
             Some(next) => next, None => { return None; }
         };
         assert(reserved(index.view(), g as nat + 1) == reserved(index.view(), g as nat)

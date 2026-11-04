@@ -29,7 +29,7 @@ pub open spec fn valid(v: GroupView) -> bool {
     &&& v.blocks as nat == bytes::le32(v.source, 1028) && v.ipg as nat == bytes::le32(v.source, 1064)
     &&& v.seed == superblock::metadata_seed(v.source.subrange(1024, 2048))
     &&& v.descriptor == v.source.subrange(4096 + v.number as int * superblock::descriptor_bytes(v.source.subrange(1024, 2048)), 4096 + (v.number as int + 1) * superblock::descriptor_bytes(v.source.subrange(1024, 2048)))
-    &&& group::accepted(v.descriptor, v.number, v.blocks, v.ipg, v.seed)
+    &&& group::accepted_with_features(v.descriptor, v.number, v.blocks, v.ipg, v.seed, superblock::flex_bg(v.source.subrange(1024, 2048)))
     &&& v.block_bitmap as nat == bytes::le32(v.descriptor, 0) && v.inode_bitmap as nat == bytes::le32(v.descriptor, 4)
     &&& v.inode_table as nat == bytes::le32(v.descriptor, 8) && v.table_blocks == v.ipg / 16
     &&& v.allocation.raw == if group::block_uninitialized(v.descriptor) {
@@ -127,7 +127,7 @@ pub fn parse(source: &Snapshot<'_>, number: u32) -> (r: Option<GroupMetadata>)
 {
     hide(crc::fold);
     hide(superblock::accepted);
-    hide(group::accepted);
+    hide(group::accepted_with_features);
     if number >= 32 { return None; }
     let primary = match source.block(0) { Some(block) => block, None => { return None; } };
     let boot = primary.range(1024, 1024).unwrap();
@@ -139,7 +139,8 @@ pub fn parse(source: &Snapshot<'_>, number: u32) -> (r: Option<GroupMetadata>)
     let gdt = match source.block(1) { Some(block) => block, None => { return None; } };
     let length = superblock::descriptor_length(boot).unwrap();
     let raw = gdt.range(number as usize * length, length).unwrap();
-    let group = match group::parse(raw, number, blocks, ipg, seed) { Some(g) => g, None => { return None; } };
+    let flex = superblock::flex_enabled(boot).unwrap();
+    let group = match group::parse_with_features(raw, number, blocks, ipg, seed, flex) { Some(g) => g, None => { return None; } };
     let block_bitmap = match source.block(group.block_bitmap) { Some(block) => block, None => { return None; } };
     let inode_bitmap = match source.block(group.inode_bitmap) { Some(block) => block, None => { return None; } };
     let available = blocks - number * 32768;
@@ -153,7 +154,7 @@ pub fn parse(source: &Snapshot<'_>, number: u32) -> (r: Option<GroupMetadata>)
             || (!lazy && crc::crc32c(seed, &inode_bitmap.as_slice()[..(ipg / 8) as usize]) != inode_checksum) { return None; }
     }
     let allocation = if lazy_blocks {
-        match block_bitmap::synthesize(raw, number, blocks, ipg, seed) { Some(bitmap) => bitmap, None => { return None; } }
+        match block_bitmap::synthesize_with_features(raw, number, blocks, ipg, seed, flex) { Some(bitmap) => bitmap, None => { return None; } }
     } else {
         match bitmap::parse(block_bitmap.as_slice(), valid_blocks, 32768,
             bytes::read_le16(raw, 12).unwrap() as u32, bytes::read_le16(raw, 24).unwrap(), seed) {
@@ -161,7 +162,7 @@ pub fn parse(source: &Snapshot<'_>, number: u32) -> (r: Option<GroupMetadata>)
         }
     };
     let inodes = if lazy {
-        assert(bytes::le16(raw@, 14) == ipg) by { reveal(group::accepted); }
+        assert(bytes::le16(raw@, 14) == ipg) by { reveal(group::accepted_with_features); }
         bitmap::synthesize_free_inodes(ipg, seed).unwrap()
     } else {
         match bitmap::parse(inode_bitmap.as_slice(), ipg, ipg,

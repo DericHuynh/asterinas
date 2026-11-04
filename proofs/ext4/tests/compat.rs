@@ -17,12 +17,13 @@ fn metadata(img: &[u8]) -> (core::superblock::Superblock, core::group::Group, u3
     let sb = core::superblock::parse(&img[1024..2048], img.len() as u64).expect("Linux superblock");
     let seed = core::superblock::metadata_checksum_seed(&img[1024..2048]).unwrap();
     let ipg = le32(&img[1024..2048], 40);
-    let g = core::group::parse(
+    let g = core::group::parse_with_features(
         &img[4096..4096 + core::superblock::descriptor_length(&img[1024..2048]).unwrap()],
         0,
         sb.blocks(),
         ipg,
         seed,
+        core::superblock::flex_enabled(&img[1024..2048]).unwrap(),
     )
     .expect("Linux descriptor");
     (sb, g, seed)
@@ -4604,6 +4605,264 @@ mod lazy_block_tests {
                             "an uninitialized logical bitmap cannot hide allocated internal journal storage"
                         );
                     }
+                }
+            }
+        }
+    }
+}
+
+mod flex_group_tests {
+    use core::{snapshot::Snapshot, superblock};
+
+    use super::{
+        core,
+        group64_tests::{command, seal_descriptor},
+        image, le32, metadata,
+    };
+
+    fn seal_primary(image: &mut [u8]) {
+        let checksum = core::crc::crc32c(0xffffffff, &image[1024..2044]);
+        image[2044..2048].copy_from_slice(&checksum.to_le_bytes());
+    }
+
+    #[test]
+    fn flex_size_bookkeeping_is_total_and_normalized_independently_of_placement() {
+        let image = image();
+        for enabled in [false, true] {
+            for raw_shift in 0..=u8::MAX {
+                let mut raw = image[1024..2048].to_vec();
+                raw[96..100]
+                    .copy_from_slice(&(0x42u32 | if enabled { 0x200 } else { 0 }).to_le_bytes());
+                raw[372] = raw_shift;
+                assert_eq!(superblock::flex_enabled(&raw), Some(enabled));
+                assert_eq!(
+                    superblock::normalized_flex_shift(&raw),
+                    Some(if enabled && (1..=31).contains(&raw_shift) {
+                        raw_shift
+                    } else {
+                        0
+                    })
+                );
+                let checksum = core::crc::crc32c(0xffffffff, &raw[..1020]);
+                raw[1020..1024].copy_from_slice(&checksum.to_le_bytes());
+                assert!(superblock::parse(&raw, image.len() as u64).is_some());
+            }
+        }
+        for length in [0, 1, 372, 1023, 1025] {
+            assert!(superblock::flex_enabled(&vec![0; length]).is_none());
+            assert!(superblock::normalized_flex_shift(&vec![0; length]).is_none());
+        }
+    }
+
+    #[test]
+    fn native_flex_metadata_and_live_inode_tables_are_source_bound_and_globally_disjoint() {
+        struct ScratchFiles(Vec<String>);
+        impl Drop for ScratchFiles {
+            fn drop(&mut self) {
+                for path in &self.0 {
+                    let _ = std::fs::remove_file(path);
+                }
+            }
+        }
+        for wide in [false, true] {
+            for huge in [false, true] {
+                for csum_seed in [false, true] {
+                    let prefix = format!(
+                        "build/native-flex-{}-{wide}-{huge}-{csum_seed}",
+                        std::process::id()
+                    );
+                    let path = format!("{prefix}.img");
+                    let script = format!("{prefix}.commands");
+                    let _cleanup = ScratchFiles(vec![path.clone(), script.clone()]);
+                    let features = format!(
+                        "none,has_journal,extent,filetype,sparse_super,large_file,extra_isize,metadata_csum,flex_bg{}{}{}",
+                        if wide { ",64bit" } else { "" },
+                        if huge { ",huge_file" } else { "" },
+                        if csum_seed { ",metadata_csum_seed" } else { "" }
+                    );
+                    command(
+                        "MKE2FS",
+                        &[
+                            "-q",
+                            "-F",
+                            "-t",
+                            "ext4",
+                            "-b",
+                            "4096",
+                            "-I",
+                            "256",
+                            "-N",
+                            "16384",
+                            "-O",
+                            &features,
+                            "-E",
+                            "lazy_itable_init=0,lazy_journal_init=0",
+                            &path,
+                            "106496",
+                        ],
+                        false,
+                    );
+                    let mut requests = String::from(
+                        "write build/fixture-file.bin /payload\nwrite /dev/null /fragmented\n",
+                    );
+                    for logical in (0..16).step_by(2) {
+                        requests.push_str(&format!("fallocate /fragmented {logical} {logical}\n"));
+                    }
+                    requests.push_str("set_inode_field /fragmented size 65536\ncopy_inode /payload <4097>\nseti <4097>\nunlink /payload\nlink <4097> /payload\nfreei <12>\nclri <12>\nset_bg 1 flags 6\n");
+                    std::fs::write(&script, requests).unwrap();
+                    command("DEBUGFS", &["-w", "-f", &script, &path], false);
+                    command("E2FSCK", &["-fy", &path], true);
+                    command("E2FSCK", &["-fn", &path], false);
+                    if csum_seed {
+                        command(
+                            "TUNE2FS",
+                            &["-U", "82d6883f-825a-42b8-827e-e0c77923c60e", &path],
+                            false,
+                        );
+                    }
+                    let image = std::fs::read(&path).unwrap();
+                    let (sb, _, seed) = metadata(&image);
+                    let width = superblock::descriptor_length(&image[1024..2048]).unwrap();
+                    let ipg = le32(&image, 1064);
+                    assert_eq!(ipg, 4096);
+                    assert_eq!(superblock::flex_enabled(&image[1024..2048]), Some(true));
+                    assert_eq!(
+                        superblock::normalized_flex_shift(&image[1024..2048]),
+                        Some(4)
+                    );
+                    let source = Snapshot::from_bytes(&image);
+                    let volume = core::allocation::parse(source.duplicate()).unwrap();
+                    assert!(volume.index().flex_groups());
+                    let second = volume.index().get(1).unwrap();
+                    let fields = second.info();
+                    for address in [fields.block_bitmap, fields.inode_bitmap, fields.inode_table] {
+                        assert!(address < 32768, "group 1 metadata is physically in group 0");
+                        assert_eq!(volume.census().role_of(address).unwrap().kind, 3);
+                    }
+                    assert!(
+                        core::group::parse(second.descriptor(), 1, sb.blocks(), ipg, seed)
+                            .is_none()
+                    );
+                    assert!(
+                        core::group::parse_with_features(
+                            second.descriptor(),
+                            1,
+                            sb.blocks(),
+                            ipg,
+                            seed,
+                            true
+                        )
+                        .is_some()
+                    );
+                    assert!(core::allocated_inode::get(&volume, 12).is_none());
+                    let node = core::allocated_inode::get(&volume, 4097).unwrap();
+                    assert_eq!(node.info().size, 8192);
+                    let first = match core::file_read::resolve(&node, 0) {
+                        core::file_read::Resolution::Data(block) => block,
+                        _ => panic!("relocated inode must retain its initialized payload"),
+                    };
+                    assert_eq!(volume.census().role_of(first).unwrap().inode, 4097);
+                    match core::file_read::chunk(&node, 0, 8192) {
+                        core::file_read::Chunk::Data(bytes) => assert_eq!(
+                            bytes,
+                            &std::fs::read("build/fixture-file.bin").unwrap()[..4096]
+                        ),
+                        _ => panic!("source-bound payload read"),
+                    }
+                    let tree = core::extent_claims::bind(volume.index(), 13, 16).unwrap();
+                    assert!(tree.tree().checked_nodes() > 1);
+                    assert!(core::image_validation::inspect(source.duplicate()).is_some());
+                    assert!(core::recovery_admission::prepare(&source).is_some());
+                    let boot = core::bootstrap::locate(&source).unwrap();
+                    assert!(boot.prepare_recovery().is_some());
+                    for dirty in [false, true] {
+                        let updated = core::super_state::recovery_image(
+                            &image[..4096],
+                            image.len() as u64,
+                            dirty,
+                        )
+                        .unwrap();
+                        assert_eq!(le32(updated.as_slice(), 1120) & !4, le32(&image, 1120) & !4);
+                    }
+                    let offset = 4096 + width;
+                    for address_offset in [0usize, 4, 8] {
+                        let mut bad = second.descriptor().to_vec();
+                        bad[address_offset..address_offset + 4]
+                            .copy_from_slice(&sb.blocks().to_le_bytes());
+                        seal_descriptor(&mut bad, 1, seed);
+                        assert!(
+                            core::group::parse_with_features(&bad, 1, sb.blocks(), ipg, seed, true)
+                                .is_none()
+                        );
+                    }
+                    let mut bad_count = second.descriptor().to_vec();
+                    bad_count[12..14].copy_from_slice(&40000u16.to_le_bytes());
+                    seal_descriptor(&mut bad_count, 1, seed);
+                    assert!(
+                        core::group::parse_with_features(
+                            &bad_count,
+                            1,
+                            sb.blocks(),
+                            ipg,
+                            seed,
+                            true
+                        )
+                        .is_none(),
+                        "free-block counters stay within the physical group despite global metadata placement"
+                    );
+                    let mut without_feature = image[..4096].to_vec();
+                    let flags = le32(&image, 1120) & !0x200;
+                    without_feature[1120..1124].copy_from_slice(&flags.to_le_bytes());
+                    seal_primary(&mut without_feature);
+                    assert!(
+                        superblock::parse(&without_feature[1024..2048], image.len() as u64)
+                            .is_some()
+                    );
+                    let patch = core::patch_set::PatchSet::new()
+                        .insert(0, &without_feature)
+                        .ok()
+                        .unwrap();
+                    let switched = source.overlay(&patch).unwrap();
+                    assert!(core::group_index::parse(switched.duplicate()).is_none());
+                    assert!(!core::bootstrap_identity::check(&boot, &switched));
+                    if wide && huge && csum_seed {
+                        let mut alias = image.clone();
+                        let first_bitmap = le32(&alias, 4096);
+                        let descriptor = &mut alias[offset..offset + width];
+                        descriptor[0..4].copy_from_slice(&first_bitmap.to_le_bytes());
+                        descriptor[18..20].copy_from_slice(&6u16.to_le_bytes());
+                        seal_descriptor(descriptor, 1, seed);
+                        assert!(
+                            core::group_metadata::parse(&Snapshot::from_bytes(&alias), 1).is_some()
+                        );
+                        assert!(
+                            core::allocation::parse(Snapshot::from_bytes(&alias)).is_none(),
+                            "FLEX_BG never permits two descriptors to own the same bitmap block"
+                        );
+                        let mut hidden_foreign_metadata = image.clone();
+                        let free = 32768 - 4 - ipg / 16;
+                        let old = core::bytes::read_le16(&image, 4108).unwrap() as u32;
+                        let descriptor = &mut hidden_foreign_metadata[4096..4096 + width];
+                        descriptor[12..14].copy_from_slice(&(free as u16).to_le_bytes());
+                        descriptor[18..20].copy_from_slice(&6u16.to_le_bytes());
+                        seal_descriptor(descriptor, 0, seed);
+                        let total = le32(&image, 1036) + free - old;
+                        hidden_foreign_metadata[1036..1040].copy_from_slice(&total.to_le_bytes());
+                        seal_primary(&mut hidden_foreign_metadata);
+                        assert!(
+                            core::group_metadata::parse(
+                                &Snapshot::from_bytes(&hidden_foreign_metadata),
+                                0
+                            )
+                            .is_some()
+                        );
+                        assert!(
+                            core::allocation::parse(Snapshot::from_bytes(&hidden_foreign_metadata))
+                                .is_none(),
+                            "UNINIT cannot hide metadata belonging to other logical groups"
+                        );
+                    }
+                    command("E2FSCK", &["-fn", &path], false);
                 }
             }
         }

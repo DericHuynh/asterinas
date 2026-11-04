@@ -116,7 +116,7 @@ The reviewed concrete boundaries are:
 | C-RECOVER | Every concurrent crash cut has a canonical recoverable committed prefix and validates a complete filesystem. | Serialized/repeated recovery and sealed host-image admission checked; concurrent closure open. |
 | C-PUBLISH | Readers, handles and fsync observe only their allowed version and durability closure. | Structural reads checked; concurrent VFS/handle publication open. |
 | C-RESIZE | Versioned bootstrap admits old/new geometry and journal targets across resize without partition escape. | Fixed-profile identity policy checked; dynamic geometry open. |
-| C-FEATURES | All supported feature combinations preserve the block/extent/concurrency invariants. | Bounded static profile includes optional HUGE_FILE, CSUM_SEED and bounded 64BIT descriptors, source-derived accounting/checksum domains and independent journal identity; full feature and concurrent mutation composition remain open. |
+| C-FEATURES | All supported feature combinations preserve the block/extent/concurrency invariants. | Bounded static profile includes optional HUGE_FILE, CSUM_SEED bounded 64BIT descriptors and FLEX_BG placement, source-derived accounting/checksum domains and independent journal identity; full feature and concurrent mutation composition remain open. |
 
 Every new transition needs an enabled condition, executable refinement,
 invariant-preservation proof and a nonempty reachable example. Arbitrary finite

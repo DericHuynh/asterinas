@@ -49,7 +49,7 @@ unsupported markers need Linux-compatible handling, not invented encodings.
 | INCOMPAT | `0x0040` | `EXTENTS` | Partial: owned read-only trees in bounded profile | 48-bit addresses, depth-0..5 trees, insert/split/merge/truncate and conversion |
 | INCOMPAT | `0x0080` | `64BIT` | Partial: wide field codecs and bounded 64-byte descriptors | Exact high/low addresses/counters, complete descriptor/full bitmap checksums, source stride and recovery identity checked; high-address volumes, other widths and mutations remain |
 | INCOMPAT | `0x0100` | `MMP` | Not implemented | Multiple-mount protection, leases, failure assumptions and heartbeat ordering |
-| INCOMPAT | `0x0200` | `FLEX_BG` | Not implemented | Cross-group bitmap/table placement and globally disjoint ownership |
+| INCOMPAT | `0x0200` | `FLEX_BG` | Partial: bounded source-selected metadata placement | Global bitmap/table bounds, logical group counters, retained inode addressing, lazy bitmap composition and global disjoint claims checked; flex allocation, resize and concurrent mutation remain |
 | INCOMPAT | `0x0400` | `EA_INODE` | Not implemented | Value inode lifetime, references, deduplication and quota coupling |
 | INCOMPAT | `0x1000` | `DIRDATA` | Not implemented | Non-mainline/legacy marker; match pinned Linux rejection policy |
 | INCOMPAT | `0x2000` | `CSUM_SEED` | Partial: bounded metadata and journal domain composition | Stored or UUID-derived ext4 seed, independent internal-journal UUID, exact recovery flag preservation and native UUID-change interoperability checked; remaining metadata types, mutation and runtime refinement remain |

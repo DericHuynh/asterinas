@@ -23,18 +23,18 @@ proof fn flags_change_only_recovery(flags: u32, dirty: bool)
     ensures recovery_flags(flags, dirty) & 0xfffffffbu32 == flags & 0xfffffffbu32,
         recovery_flags(flags, dirty) & 0x80u32 == flags & 0x80u32,
         (recovery_flags(flags, dirty) & 4 != 0) == dirty,
-        (flags & 0xffffdf7bu32 == 0x42) ==> (recovery_flags(flags, dirty) & 0xffffdf7bu32 == 0x42),
+        (flags & 0xffffdd7bu32 == 0x42) ==> (recovery_flags(flags, dirty) & 0xffffdd7bu32 == 0x42),
 {
     if dirty {
         assert((flags | 4u32) & 0xfffffffbu32 == flags & 0xfffffffbu32) by (bit_vector);
         assert((flags | 4u32) & 0x80u32 == flags & 0x80u32) by (bit_vector);
         assert((flags | 4u32) & 4u32 != 0) by (bit_vector);
-        assert((flags & 0xffffdf7bu32 == 0x42) ==> ((flags | 4u32) & 0xffffdf7bu32 == 0x42)) by (bit_vector);
+        assert((flags & 0xffffdd7bu32 == 0x42) ==> ((flags | 4u32) & 0xffffdd7bu32 == 0x42)) by (bit_vector);
     } else {
         assert((flags & 0xfffffffbu32) & 0xfffffffbu32 == flags & 0xfffffffbu32) by (bit_vector);
         assert((flags & 0xfffffffbu32) & 0x80u32 == flags & 0x80u32) by (bit_vector);
         assert((flags & 0xfffffffbu32) & 4u32 == 0) by (bit_vector);
-        assert((flags & 0xffffdf7bu32 == 0x42) ==> ((flags & 0xfffffffbu32) & 0xffffdf7bu32 == 0x42)) by (bit_vector);
+        assert((flags & 0xffffdd7bu32 == 0x42) ==> ((flags & 0xfffffffbu32) & 0xffffdd7bu32 == 0x42)) by (bit_vector);
     }
 }
 
