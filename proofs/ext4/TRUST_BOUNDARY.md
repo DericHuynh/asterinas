@@ -189,7 +189,7 @@ address, and `group_index.rs` retains that same source while checking every grou
 and summing free counters. Ghost byte provenance does not use CRC injectivity.
 Sparse-super/GDT reservations match the Linux power rule within the 32-group
 resource profile. The allocation builder now also enumerates every allocated inode and proves
-complete bitmap/counter agreement. Namespace validation is still missing. The borrowed host image is not an OSTD frame/DMA loan,
+complete bitmap/counter agreement. Static namespace validation now composes the source certificate. The borrowed host image is not an OSTD frame/DMA loan,
 a device snapshot, or permission to validate unrecovered partial checkpoints.
 
 `allocation.rs` produces a whole-image allocation certificate for the bounded
@@ -211,7 +211,7 @@ extents. These helpers do not accept or create credentials, open rights or VFS
 capabilities; kernel ingress must add those proofs. `directory_block.rs` checks
 complete canonical record coverage, including deleted records, and proves the
 complete stream unique. The directory-file layer now binds its checksum seed/source to the actual
-allocated directory; whole-namespace targets/topology remain to be checked.
+allocated directory; the namespace layer now composes target/link/topology checks.
 
 `directory_source.rs` defines canonical directory source bytes and records with
 guarded logical choices. Executable initialized mappings and complete record
@@ -229,6 +229,17 @@ i_size, including empty preallocation. All live records contribute exact owned
 entries, whose source directory and target type/generation are checked. Name-set
 ordinals are proved to identify their insertion position; lookup returns exactly
 the corresponding source entry and absence excludes every canonical name match.
-The index is bounded to 4096 directory blocks and 65536 names. It does not yet
-certify dot/parent relations, link counts, rooted topology, operations or mount
-admission. These host structures remain outside VFS/credential/device authority.
+The index is bounded to 4096 directory blocks and 65536 names. The namespace
+layer adds dot/parent relations, link counts and rooted topology; operation and
+recovery/mount admission remain separate. These host structures remain outside VFS/credential/device authority.
+
+`namespace.rs` composes exact source entry accounting with checked inode link
+counts, Linux canonical dot/dotdot placement/targets, unique ordinary directory
+parents and matching dotdot, and a bounded parent-graph walk. Integer depth ranks
+prove every accepted directory reaches root. The executable uses color/depth
+arrays and bounded cursor walks; path sequences are ghost proof certificates,
+not a runtime stack. Regular-file hard links are permitted, while directory
+hard links, orphaned live files and disconnected cycles are rejected. This
+certifies one immutable selected image. Recovery/boot selection, actual mount
+admission, operation preservation, credentials/handles and CortenMM/OSTD/device
+refinement are still required; the namespace object does not confer those rights.

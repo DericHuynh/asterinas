@@ -154,6 +154,12 @@
       "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/ialloc.c",
       "blob_sha": "b1bc1950c9f03b9dca9729cfac532ff95d504948",
       "review_scope": "initialized inode bitmap semantics and padding; reserved inode markers, group/slot addressing, inode-table unused high-water count and used-directory counter updates"
+    },
+    {
+      "path": "fs/ext4/namei.c",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/namei.c",
+      "blob_sha": "c4b5e252af0efbfcbaf83688a32d445327a74a02",
+      "review_scope": "selected dot/dotdot placement and target checks, directory parent lookup, link-count updates and zero-link orphan handling; independent Rust implementation"
     }
   ]
 }

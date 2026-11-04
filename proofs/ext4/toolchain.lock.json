@@ -85,7 +85,12 @@
     "src/name_set.rs",
     "src/directory_source.rs",
     "src/namespace_model.rs",
-    "src/directory_index.rs"
+    "src/directory_index.rs",
+    "src/namespace_counts.rs",
+    "src/parent_table.rs",
+    "src/tree_model.rs",
+    "src/namespace_tree.rs",
+    "src/namespace.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -311,7 +316,19 @@
     "directory_block::complete_record_coverage_is_unique",
     "allocated_inode::checked_view_is_the_source_projection",
     "directory_block::checked_block_has_canonical_records",
-    "directory_source::checked_mapping_and_records_are_the_canonical_source"
+    "directory_source::checked_mapping_and_records_are_the_canonical_source",
+    "namespace_counts::prefix_counts_are_bounded",
+    "tree_model::checked_parent_table_has_graph_shape",
+    "tree_model::append_fresh_path_node",
+    "tree_model::assign_next_depth",
+    "tree_model::full_depth_assignment_has_parent_ranks",
+    "tree_model::resolve_next_node",
+    "tree_model::completed_path_restores_closed_resolution",
+    "tree_model::empty_path_is_ready",
+    "tree_model::path_successor",
+    "tree_model::gathered_path_starts_resolution",
+    "namespace_tree::every_directory_reaches_root",
+    "namespace::every_directory_is_rooted"
   ],
   "required_flags": [
     "--no-cheating",
@@ -487,6 +504,20 @@
     "directory_index::block_count",
     "directory_index::get",
     "directory_index::lookup",
-    "directory_index::build"
+    "directory_index::build",
+    "namespace_counts::get",
+    "namespace_counts::collect",
+    "parent_table::len",
+    "parent_table::parent",
+    "parent_table::build",
+    "namespace_tree::depth",
+    "namespace_tree::parent",
+    "namespace_tree::build",
+    "namespace::index",
+    "namespace::lookup",
+    "namespace::parent",
+    "namespace::depth",
+    "namespace::validate",
+    "directory_index::location"
   ]
 }

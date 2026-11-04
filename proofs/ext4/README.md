@@ -7,9 +7,9 @@ implementation of a **Linux-compatible ext4 subset**.
 It is not a complete filesystem and is not registered with the kernel VFS.
 No mount or filesystem write path is enabled.
 
-The pinned Verus run checks **556 obligations with zero errors**, including
-224 named proof functions and 168 named executable functions.
-Thirty-one host interoperability/regression tests pass on Linux-created metadata.
+The pinned Verus run checks **597 obligations with zero errors**, including
+236 named proof functions and 182 named executable functions.
+Thirty-two host interoperability/regression tests pass on Linux-created metadata.
 [Proof status](proof-status.json) and [recorded evidence](verification-evidence.json)
 state the exact scope; tests do not discharge formal obligations.
 
@@ -29,10 +29,11 @@ state the exact scope; tests do not discharge formal obligations.
 | `snapshot.rs`, `group_metadata.rs`, `group_index.rs` | Exact immutable source ranges bind each group descriptor and bitmap to its declared address; complete ordered group enumeration and equality of aggregate free counters with the primary superblock. No whole-volume inode/namespace authority is produced. |
 | `inode_table.rs`, `inode_group.rs`, `allocation_counts.rs`, `allocation.rs` | Complete source-bound allocated-inode traversal, mandatory reserved inode markers, root type, empty unused reserved inodes, inode-table high-water bounds and directory counts; exact composition of metadata/journal/inode claims, all block bitmaps and global free-block accounting. This allocation certificate omits namespace, operation, recovery/mount and device authority. |
 | `allocated_inode.rs`, `file_read.rs` | Ordinary inode lookup inherits the whole-image source/ownership certificate; initialized logical mapping is unique and has exact owner/generation/slot identity; block/file-size clipped chunks return source bytes or zeros for holes/unwritten extents. Structural host helpers, not VFS/credential authority. |
-| `directory_block.rs` | Complete canonical linear-record coverage including deleted records, unique complete stream, checksum tail and bounded read-only record/name access. Namespace target/link/topology checks remain open. |
+| `directory_block.rs` | Complete canonical linear-record coverage including deleted records, unique complete stream, checksum tail and bounded read-only record/name access. Source/target, link and topology checks are composed by the namespace layer. |
 | `directory_file.rs`, `directory_source.rs` | Directory bytes and checksum seed come from the actual allocated inode and initialized mapping; executable records equal the unique canonical source stream. Gaps and malformed blocks fail closed. Whole-directory enumeration is composed by directory_index.rs. |
 | `name_set.rs` | Owned directory/name keys; exact membership, duplicate rejection and unchanged failed insertion; full byte comparison across CRC bucket collisions. At most 65536 keys, 64/bucket and 255 bytes/name. This is a bounded namespace-admission helper, not a complete namespace certificate. |
-| `namespace_model.rs`, `directory_index.rs` | Complete canonical enumeration of every allocated directory/block and live record, including empty preallocation; source/target inode types and target generations, global unique names, exact source entries and complete lookup via proved name-index positions. Bounded to 4096 directory blocks. Parent topology and link counts remain open. |
+| `namespace_model.rs`, `directory_index.rs` | Complete canonical enumeration of every allocated directory/block and live record, including empty preallocation; source/target inode types and target generations, global unique names, exact source entries and complete lookup via proved name-index positions. Bounded to 4096 directory blocks. Link counts and rooted parent topology are composed by namespace.rs. |
+| `namespace_counts.rs`, `parent_table.rs`, `tree_model.rs`, `namespace_tree.rs`, `namespace.rs` | Exact source-reference accounting, inode link counts, canonical first-block dot/dotdot placement and targets, unique ordinary directory parents and matching dotdot, root rules, bounded nonrecursive traversal and a theorem that every accepted directory reaches root. Regular file hard links are admitted; disconnected cycles and directory hard links are rejected. This is a static image certificate, not recovery/mount/VFS authority. |
 | `layout.rs` | Checked mapping of a single initialized journal extent; journal blocks excluded from replay targets. |
 | `replay.rs`, `replay_refinement.rs` | Linux same/later revoke suppression and reallocation, latest-image selection, exact chronological redo equivalence, arbitrary partial replay restart. |
 | `scan.rs`, `scan_trace.rs`, `scan_stop.rs`, `scan_budget.rs` | Bounded ring scan, contiguous exact record coverage, complete descriptor payloads, committed cut, actual source/commit provenance, checked stopping witnesses, unique canonical maximal prefix and recovered input. Clean snapshots and active snapshots satisfying the declared resource profile are admitted. Every writer crash snapshot satisfies that scan profile. |
@@ -86,15 +87,16 @@ Every modeled recovery crash snapshot remains admitted for another attempt;
 uncleared journals retain the same committed input. Admission survives arbitrary
 finite sequences of recovery crashes. These results require the stated atomicity,
 flush and quiescent-start contracts. Whole-image allocation validation is checked for the bounded initialized-group
-profile. Namespace validation, filesystem operations, unmount and actual
-gate/device refinement remain open.
+profile, and complete static namespace validation now composes source names,
+targets, link counts and rooted topology. Filesystem operations, recovery/mount
+admission, unmount and actual gate/device refinement remain open.
 
 All public executable entry points validate their inputs without `requires`
 clauses that an unverified caller could bypass.
 A successful structural parse or allocation certificate is not an authorization
 or mount certificate. The allocation builder binds every reserved region,
-allocated inode and bitmap to the same borrowed frozen image; namespace and
-recovery admission must still be checked before mounting.
+allocated inode and bitmap to the same borrowed frozen image. Namespace validation
+composes that certificate; recovery/mount admission remains separate.
 CRC checks do not authenticate a disk or prove freshness.
 
 ## Reproduce
@@ -152,7 +154,9 @@ bind the inode generation and reject holes; name-index tests accept 64 distinct
 colliding keys, reject the next without changing state, and retain owned names
 after caller mutation. Whole-directory indexing additionally rejects dangling/journal
 targets, type mismatches, duplicate names, malformed empty directory blocks and
-directory-credit exhaustion.
+directory-credit exhaustion. Namespace tests additionally cover link counts,
+dot/parent mismatches, swapped dot/dotdot records, directory hard links, orphaned
+files, a locally consistent disconnected cycle, and valid regular-file hard links.
 Do not link it into the kernel: its target and toolchain differ from the kernel's.
 A kernel source build and its OSTD adapter refinement remain necessary.
 
@@ -164,7 +168,7 @@ from the missing implementation/refinement work.
 The full design is **not implemented or proved**.
 In particular, these are still missing:
 
-- Parent topology and link-count validation, plus filesystem operation implementations,
+- Filesystem operation implementations,
   including allocation, create/unlink/rename, orphan handling, permissions integration and fsync.
 - Unmount ordering and actual device atomicity, quiescence and reuse refinement.
   The checked physical history is serialized; a runtime gate must enforce it.

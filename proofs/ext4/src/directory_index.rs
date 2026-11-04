@@ -26,6 +26,10 @@ impl Entry {
     { (self.directory, self.target, self.generation, self.file_type) }
 
     pub fn name(&self) -> (r: &[u8]) ensures r@ == self.view().name { self.name.as_slice() }
+
+    pub fn location(&self) -> (r: (u32, usize)) ensures r == (self.view().logical, self.view().record) {
+        (self.logical, self.record)
+    }
 }
 
 pub open spec fn views(entries: Seq<Entry>) -> Seq<EntryView> { Seq::new(entries.len(), |i: int| entries[i].view()) }

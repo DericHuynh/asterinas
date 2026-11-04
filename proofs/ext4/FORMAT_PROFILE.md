@@ -29,10 +29,11 @@ The accepted byte structures do not certify the whole volume.
 | Group source index | One immutable borrowed source; all groups in order, exact descriptor and bitmap byte provenance, aggregate free counters equal the superblock. Bounded to 32 groups; sparse-super backups reserve one superblock and one GDT block. Not a whole-volume certificate. |
 | Whole-image allocation | Complete same-source initialized-group/inode traversal; reserved inode bitmap markers 1..10 required, root inode 2 a directory, unused reserved inodes have no live mode/links/storage, no allocated inode in the declared unused table suffix, exact directory counts; metadata/journal/inode claims exactly match every valid block bitmap bit and global free counts. Namespace and recovery/mount admission remain separate. |
 | Structural host reads | Ordinary allocated inode lookup from the whole-image certificate; initialized logical mapping and source/owner/generation identity; chunks clipped to block boundaries and i_size, holes/unwritten extents return zeros. Not a VFS authorization API. |
-| Complete directory blocks | Exact contiguous record chain from offset 0 through 4084, including deleted records; unique complete stream, checksum tail, bounded name access, at most 510 records/block. No namespace target/topology certificate yet. |
+| Complete directory blocks | Exact contiguous record chain from offset 0 through 4084, including deleted records; unique complete stream, checksum tail, bounded name access, at most 510 records/block. Source/target and topology checks are composed by the namespace certificate. |
 | Source-bound directory reads | Directory blocks must be initialized, fit a positive block-aligned i_size, pass the UUID/inode/generation-derived checksum and have complete canonical records. The actual mapped source bytes and canonical record stream are proved equal. Whole-directory/namespace enumeration is separate. |
 | Name index | Full (directory inode, byte-name) equality; 1..255 byte names, no NUL or slash, owned snapshots, 4096 CRC buckets, at most 64 keys/bucket and 65536 total. Limit exhaustion rejects admission; CRC equality is never name equality. These are helper resource bounds, not an enabled mount profile. |
-| Directory index | Complete canonical live-entry enumeration for all allocated directories, positive block-aligned sizes, initialized blocks, source and target inode types/generations, globally unique (directory,name) keys and exact complete lookup. At most 4096 directory blocks and the name-index limits above. Dot/parent rules, link counts and rooted topology are not yet admitted. |
+| Directory index | Complete canonical live-entry enumeration for all allocated directories, positive block-aligned sizes, initialized blocks, source and target inode types/generations, globally unique (directory,name) keys and exact complete lookup. At most 4096 directory blocks and the name-index limits above. Dot/parent rules, link counts and rooted topology are checked separately by the namespace certificate. |
+| Namespace certificate | Exact live-inode reference counts equal i_links_count; one dot at block 0/record 0 targets self, one dotdot at block 0/record 1 targets the live parent; root parent is self with no ordinary incoming directory link, every other directory has one ordinary incoming link matching dotdot. Finite depth ranks prove every directory reaches root. Regular file hard links allowed; directory hard links, orphaned live files and disconnected cycles rejected. Bounded nonrecursive graph traversal, depth at most 65536; no mount/VFS/recovery authority. |
 | Recovery bounds | One initialized journal extent of 1024..32768 blocks; at most 4096 staged payload/revoke entries, with whole-record preflight; no transaction-ID wrap; a fully occupied ring without a proved stopping boundary is rejected. |
 
 Superblock reserved-GDT blocks and high block-count fields must be zero.
@@ -97,9 +98,9 @@ This local policy is not global inode/bitmap/ownership validation.
 
 ## Unfinished mount and write obligations
 
-- Dot/parent rules, link counts and rooted topology after the checked whole-image allocation and directory-entry indexes.
+- Bind the checked allocation/namespace certificates to recovery/mount admission and actual VFS/OSTD state.
 - Prove allocation/free counter and no-alias preservation for every mutating operation.
-- Inode topology, links, directory lookup/rename and orphan/reclamation rules.
+- Prove operation preservation of topology, link counts and directory lookup/rename, plus orphan/reclamation rules.
 - Verified read/write/allocation operation preservation and transaction closure.
 - Unmount ordering and actual runtime/device enforcement of serialized log reuse.
 - Bootstrap journal discovery, preservation of group addresses and journal inode 8, and recovery validation in a shadow view before publication.

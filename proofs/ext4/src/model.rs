@@ -125,3 +125,13 @@ pub mod directory_source;
 pub mod namespace_model;
 
 pub mod directory_index;
+
+mod namespace_counts;
+
+mod parent_table;
+
+mod tree_model;
+
+mod namespace_tree;
+
+pub mod namespace;

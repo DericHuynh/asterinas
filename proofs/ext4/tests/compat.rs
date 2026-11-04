@@ -933,6 +933,150 @@ fn directory_index_enumerates_empty_blocks_and_rejects_bad_targets_and_duplicate
 }
 
 #[test]
+fn namespace_checks_links_parents_and_cycles_and_allows_regular_file_hard_links() {
+    use core::{
+        allocated_inode, allocation, directory_file, directory_index, namespace, snapshot::Snapshot,
+    };
+    fn seal_inode(img: &mut [u8], table: u32, n: u32, seed: u32) {
+        let start = table as usize * 4096 + (n as usize - 1) * 256;
+        let raw = &mut img[start..start + 256];
+        let checksum = core::inode::calculated_checksum(raw, n, seed).unwrap();
+        raw[124..126].copy_from_slice(&(checksum as u16).to_le_bytes());
+        raw[130..132].copy_from_slice(&((checksum >> 16) as u16).to_le_bytes());
+    }
+    fn links(img: &mut [u8], table: u32, n: u32, value: u16, seed: u32) {
+        let offset = table as usize * 4096 + (n as usize - 1) * 256 + 26;
+        img[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+        seal_inode(img, table, n, seed);
+    }
+    fn seal_directory(img: &mut [u8], table: u32, n: u32, physical: u32, seed: u32) {
+        let generation = le32(inode_bytes(img, table, n), 100);
+        let seed = core::inode::inode_seed(seed, n, generation);
+        let start = physical as usize * 4096;
+        let raw = &mut img[start..start + 4096];
+        let checksum = core::crc::crc32c(seed, &raw[..4084]);
+        raw[4092..4096].copy_from_slice(&checksum.to_le_bytes());
+    }
+    fn add_after(block: &mut [u8], at: usize, target: u32, kind: u8, name: &[u8]) {
+        let minimum = (8 + block[at + 6] as usize + 3) / 4 * 4;
+        let next = at + minimum;
+        block[at + 4..at + 6].copy_from_slice(&(minimum as u16).to_le_bytes());
+        block[next..4084].fill(0);
+        block[next..next + 4].copy_from_slice(&target.to_le_bytes());
+        block[next + 4..next + 6].copy_from_slice(&((4084 - next) as u16).to_le_bytes());
+        block[next + 6] = name.len() as u8;
+        block[next + 7] = kind;
+        block[next + 8..next + 8 + name.len()].copy_from_slice(name);
+    }
+    let img = image();
+    let (sb, group, seed) = metadata(&img);
+    let volume = allocation::parse(Snapshot::from_bytes(&img)).unwrap();
+    let index = directory_index::build(&volume).unwrap();
+    let valid = namespace::validate(&index).expect("native rooted namespace");
+    assert_eq!(valid.parent(2), Some(2));
+    assert_eq!(valid.parent(11), Some(2));
+    assert_eq!(valid.depth(2), Some(0));
+    assert_eq!(valid.depth(11), Some(1));
+    assert_eq!(valid.parent(12), None);
+    assert_eq!(valid.depth(u32::MAX), None);
+    assert_eq!(valid.lookup(2, b"payload").unwrap().identity().1, 12);
+    let root = allocated_inode::get(&volume, 2).unwrap();
+    let lost = allocated_inode::get(&volume, 11).unwrap();
+    let root_records = directory_file::read(&root, 0).unwrap();
+    let record = |name: &[u8]| {
+        let i = (0..root_records.len())
+            .find(|&i| root_records.name(i) == Some(name))
+            .unwrap();
+        root_records.get(i).unwrap().name_offset - 8
+    };
+    let payload_at = record(b"payload");
+    let lost_at = record(b"lost+found");
+    let root_physical = first_data_block(root.raw(), sb.blocks());
+    let lost_physical = first_data_block(lost.raw(), sb.blocks());
+    let root_start = root_physical as usize * 4096;
+    let lost_start = lost_physical as usize * 4096;
+    for variant in 0..7u8 {
+        let mut changed = img.clone();
+        match variant {
+            0 => links(&mut changed, group.inode_table, 12, 2, seed),
+            1 => links(&mut changed, group.inode_table, 2, 4, seed),
+            2 => changed[lost_start + 12..lost_start + 16].copy_from_slice(&11u32.to_le_bytes()),
+            3 => changed[root_start..root_start + 4].copy_from_slice(&11u32.to_le_bytes()),
+            4 => {
+                add_after(
+                    &mut changed[root_start..root_start + 4096],
+                    payload_at,
+                    11,
+                    2,
+                    b"alias",
+                );
+                links(&mut changed, group.inode_table, 11, 3, seed);
+            }
+            5 => changed[root_start + payload_at..root_start + payload_at + 4].fill(0),
+            6 => {
+                changed[root_start + 6] = 2;
+                changed[root_start + 8..root_start + 10].copy_from_slice(b"..");
+                changed[root_start + 18] = 1;
+                changed[root_start + 20] = b'.';
+            }
+            _ => unreachable!(),
+        }
+        seal_directory(&mut changed, group.inode_table, 2, root_physical, seed);
+        seal_directory(&mut changed, group.inode_table, 11, lost_physical, seed);
+        let volume = allocation::parse(Snapshot::from_bytes(&changed)).unwrap();
+        let index = directory_index::build(&volume).unwrap();
+        assert!(
+            namespace::validate(&index).is_none(),
+            "namespace variant {variant}"
+        );
+    }
+    let mut changed = img.clone();
+    add_after(
+        &mut changed[root_start..root_start + 4096],
+        payload_at,
+        12,
+        1,
+        b"alias",
+    );
+    links(&mut changed, group.inode_table, 12, 2, seed);
+    seal_directory(&mut changed, group.inode_table, 2, root_physical, seed);
+    let volume = allocation::parse(Snapshot::from_bytes(&changed)).unwrap();
+    let index = directory_index::build(&volume).unwrap();
+    let valid = namespace::validate(&index).expect("regular file hard links are allowed");
+    assert_eq!(valid.lookup(2, b"alias").unwrap().identity().1, 12);
+    assert_eq!(valid.lookup(2, b"payload").unwrap().identity().1, 12);
+    let mut cycle = img.clone();
+    cycle[root_start + lost_at..root_start + lost_at + 4].fill(0);
+    cycle[lost_start + 12..lost_start + 16].copy_from_slice(&11u32.to_le_bytes());
+    add_after(
+        &mut cycle[lost_start..lost_start + 4096],
+        12,
+        11,
+        2,
+        b"loop",
+    );
+    links(&mut cycle, group.inode_table, 2, 2, seed);
+    links(&mut cycle, group.inode_table, 11, 3, seed);
+    seal_directory(&mut cycle, group.inode_table, 2, root_physical, seed);
+    seal_directory(&mut cycle, group.inode_table, 11, lost_physical, seed);
+    let volume = allocation::parse(Snapshot::from_bytes(&cycle)).unwrap();
+    let index = directory_index::build(&volume).unwrap();
+    assert!(index.lookup(2, b"lost+found").is_none());
+    assert_eq!(index.lookup(11, b"..").unwrap().identity().1, 11);
+    assert_eq!(index.lookup(11, b"loop").unwrap().identity().1, 11);
+    assert_eq!(
+        (0..index.len())
+            .filter(|&i| index.get(i).unwrap().identity().1 == 11)
+            .count(),
+        3
+    );
+    assert!(
+        namespace::validate(&index).is_none(),
+        "locally consistent disconnected cycle"
+    );
+}
+
+#[test]
 fn linux_metadata_checksums_and_directory_records_interoperate() {
     let img = image();
     let (sb, g, seed) = metadata(&img);
