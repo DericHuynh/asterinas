@@ -121,7 +121,8 @@
     "src/inode_touch.rs",
     "src/writer_image.rs",
     "src/disk_image.rs",
-    "src/recovery_image.rs"
+    "src/recovery_image.rs",
+    "src/recovery_crash_image.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -452,7 +453,13 @@
     "recovery_image::admitted_shadow_has_exactly_the_complete_redo_and_tail_bytes",
     "recovery_image::admitted_recovery_preserves_extra_partition_bytes",
     "recovery_image::successful_recovery_is_the_complete_validated_filesystem_image",
-    "recovery_image::admitted_recovery_images_have_a_finite_successful_execution"
+    "recovery_image::admitted_recovery_images_have_a_finite_successful_execution",
+    "recovery_crash_image::the_complete_admitted_redo_map_has_the_validated_filesystem_bytes",
+    "recovery_crash_image::an_unchanged_tail_cut_is_repairable_to_the_same_complete_validated_image",
+    "recovery_crash_image::a_changed_retirement_tail_cut_already_has_the_complete_validated_image",
+    "recovery_crash_image::every_admitted_recovery_cut_is_complete_or_repairable_with_its_exact_plan",
+    "recovery_crash_image::unchanged_tail_recovery_cuts_keep_the_exact_canonical_journal_input",
+    "recovery_crash_image::every_finite_admitted_recovery_execution_has_complete_or_repairable_crash_cuts"
   ],
   "required_flags": [
     "--no-cheating",
