@@ -74,6 +74,11 @@ pub proof fn every_valid_bootstrap_is_the_unique_source_projection(v: BootstrapV
     reveal(valid);
 }
 
+pub(crate) proof fn a_valid_bootstrap_uses_its_actual_journal_identity_seed(v: BootstrapView)
+    requires valid(v),
+    ensures v.seed == crc::fold(0xffffffff, journal_identity(v)),
+{ hide(crc::fold); reveal(valid); }
+
 pub proof fn valid_bootstraps_of_identical_bytes_have_identical_fields(before: BootstrapView, after: BootstrapView)
     requires valid(before), valid(after), before.source == after.source,
     ensures before == after,

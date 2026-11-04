@@ -29,6 +29,13 @@ CortenMM frame ownership and OSTD VmReader/VmWriter, locking, and DMA APIs
 remain the memory boundary. Linux struct page, buffer_head, and folio ownership
 are not interchangeable with those APIs.
 
+The bounded concurrent window now has source-bound initial/every-prefix static
+filesystem admission and fresh bootstrap discovery at every modeled crash cut;
+see [WINDOW_FILESYSTEM_ADMISSION.md](WINDOW_FILESYSTEM_ADMISSION.md). Full
+image/recovery acceptance completeness and runtime/operation refinement remain
+open. The C-COMMIT/C-CHECKPOINT/C-RECOVER and J-LOCATE/F-ADMIT tables record this
+separation in CONCURRENCY.md and PROOF_OBLIGATIONS.md.
+
 ## Architecture and refinement direction
 
 ~~~mermaid

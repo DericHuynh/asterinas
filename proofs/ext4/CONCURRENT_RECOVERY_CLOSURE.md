@@ -40,10 +40,12 @@ a clean journal, so a subsequent empty replay retains that result. Induction
 covers arbitrary finite recovery-attempt sequences, including attempts stopped
 before completion, after failure and after abort.
 
-Fresh bootstrap rediscovery of the journal mapping and complete filesystem
-admission of a multi-version window remain open. These proofs take the retained
-validated mapping as input; they do not establish that arbitrary candidate home
-updates preserve inode 8, allocation, namespace or operation permissions.
+The additional sealed [window filesystem admission](WINDOW_FILESYSTEM_ADMISSION.md)
+wrapper checks the initial image and every complete home prefix before I/O,
+preserves bootstrap identity and proves fresh discovery at every window cut.
+Cold recovery validates its actual repaired shadow before returning requests.
+Full-image/recovery acceptance completeness, operation permissions and runtime
+refinement remain open; the raw window factory alone does not grant admission.
 
 The device contract requires exclusive control of this protected journal
 window, a quiescent initial device matching the retained source, atomic 4 KiB
@@ -75,7 +77,7 @@ before I/O.
 | J-BOOT | `window_snapshot.rs`: every actual journal header is initial or an ordered prefix image; mapping, UUID, sequence, primary identity and active recovery policy survive every cut | Actual source provenance, reset and unmount |
 | J-ACK / C-COMMIT | `window_provenance.rs`, `window_scan.rs`, `window_recognition.rs`: stable commits form a contiguous prefix; fresh metadata comes from exact issued images; maximal actual scans return exactly the unretired durable suffix | Operation/fsync authority and actual worker/driver refinement |
 | C-CHECKPOINT / J-CUT | `window_redo.rs`, `window_recovery.rs`: chronological suffix redo covers every partial FIFO checkpoint and gives exact complete-prefix bytes for all nonjournal blocks, including block zero's persisted recovery mark | Circular reuse, sealed-credit reclamation and full filesystem operation preservation |
-| J-RESTART | `window_recovery_profile.rs`: every finite window cut admits actual scanning and recovery; arbitrary finite recovery attempts preserve admission | Hardware quiescence and whole-filesystem admission |
+| J-RESTART | `window_recovery_profile.rs`: every finite window cut admits actual scanning and recovery; arbitrary finite recovery attempts preserve admission | Hardware quiescence and full filesystem/recovery acceptance completeness |
 | J-TRACE | `window_repeated_recovery.rs`: every finite recovery crash history preserves the same exact target, and a final successful recovery reaches it | Unbounded progress, device responsiveness and scheduler fairness |
 | S-RACE / D-ORDER | Actual media projection and every enabled finite lane/completion/persistence/failure/abort interleaving compose into scanner/recovery closure | OSTD locks, callbacks, simultaneous pending BIOs, CortenMM frame/DMA loans and device contracts |
 

@@ -3313,3 +3313,434 @@ fn writer_crash_cuts_recover_before_or_after_and_success_is_retired() {
         assert!(core::write_io::dispatch(failed).is_err());
     }
 }
+
+mod admitted_windows {
+    use core::{
+        journal_program::Lane,
+        journal_queue::{Queue, Seal},
+        recovery_io::Command,
+        snapshot::Snapshot,
+        window_admission::{self},
+    };
+
+    use super::*;
+
+    fn staged(image: &[u8], versions: &[Vec<(u32, Vec<u8>)>]) -> Queue {
+        let mut queue = Queue::new(geometry(image).0).unwrap();
+        for images in versions {
+            let targets: Vec<_> = images.iter().map(|(block, _)| *block).collect();
+            assert!(queue.reserve(&targets));
+            {
+                let (_, mut part, _) = queue.borrow_work(images.len()).unwrap();
+                for (index, (_, bytes)) in images.iter().enumerate() {
+                    let mut handle = part.handle_at(index).unwrap();
+                    assert!(handle.stage(bytes));
+                    assert!(handle.close());
+                }
+            }
+            assert!(matches!(queue.seal(), Seal::Frozen(_)));
+        }
+        queue
+    }
+
+    fn block(image: &[u8], target: u32) -> Vec<u8> {
+        image[target as usize * 4096..(target as usize + 1) * 4096].to_vec()
+    }
+
+    fn inode_checksum(bytes: &mut [u8], number: u32, seed: u32) {
+        let start = (number as usize - 1) * 256;
+        let raw = &mut bytes[start..start + 256];
+        let crc = core::inode::calculated_checksum(raw, number, seed).unwrap();
+        raw[124..126].copy_from_slice(&(crc as u16).to_le_bytes());
+        raw[130..132].copy_from_slice(&((crc >> 16) as u16).to_le_bytes());
+    }
+
+    fn versions(image: &[u8]) -> Vec<Vec<(u32, Vec<u8>)>> {
+        let (_, seed, target) = geometry(image);
+        let table = core::bytes::read_le32(image, 4104).unwrap();
+        (0..2)
+            .map(|generation| {
+                let mut primary =
+                    core::super_state::recovery_image(&image[..4096], image.len() as u64, true)
+                        .unwrap()
+                        .as_slice()
+                        .to_vec();
+                primary[1144..1160].fill(b'K' + generation as u8);
+                let crc = core::crc::crc32c(0xffffffff, &primary[1024..2044]);
+                primary[2044..2048].copy_from_slice(&crc.to_le_bytes());
+                let mut descriptor = block(image, 1);
+                if generation == 0 {
+                    descriptor[18] ^= 4;
+                }
+                let crc = core::crc::crc32c(
+                    core::crc::crc32c(seed, &0u32.to_le_bytes()),
+                    &descriptor[..30],
+                );
+                let crc = core::crc::crc32c(crc, &[0, 0]);
+                descriptor[30..32].copy_from_slice(&(crc as u16).to_le_bytes());
+                let mut inode_block = block(image, table);
+                inode_block[256 + 8..256 + 12]
+                    .copy_from_slice(&(100u32 + generation as u32).to_le_bytes());
+                inode_checksum(&mut inode_block, 2, seed);
+                vec![
+                    (0, primary),
+                    (1, descriptor),
+                    (table, inode_block),
+                    (target, vec![0x81 + generation as u8; 4096]),
+                ]
+            })
+            .collect()
+    }
+
+    #[test]
+    fn prefix_admission_rejects_invalid_namespace_even_when_the_next_transaction_repairs_it() {
+        let (image, _, seed, _) = fixture();
+        let table = core::bytes::read_le32(&image, 4104).unwrap();
+        let mut bad = block(&image, table);
+        bad[256 + 26..256 + 28].copy_from_slice(&1u16.to_le_bytes());
+        inode_checksum(&mut bad, 2, seed);
+        let queue = staged(
+            &image,
+            &[vec![(table, bad)], vec![(table, block(&image, table))]],
+        );
+        let source = Snapshot::from_bytes(&image);
+        assert!(window_admission::prepare(&source, queue.frozen_versions()).is_none());
+    }
+
+    #[test]
+    fn admission_rejects_an_invalid_initial_filesystem_even_if_a_transaction_repairs_it() {
+        let (image, _, _, _) = fixture();
+        let bitmap = core::bytes::read_le32(&image, 4096).unwrap();
+        let queue = staged(&image, &[vec![(bitmap, block(&image, bitmap))]]);
+        let mut bad = image.clone();
+        bad[bitmap as usize * 4096] ^= 1;
+        let source = Snapshot::from_bytes(&bad);
+        assert!(core::bootstrap::locate(&source).is_some());
+        assert!(window_admission::prepare(&source, queue.frozen_versions()).is_none());
+    }
+
+    #[test]
+    fn admission_protects_the_complete_journal_inode_but_allows_other_inodes_in_its_block() {
+        let (image, _, seed, _) = fixture();
+        let table = core::bytes::read_le32(&image, 4104).unwrap();
+        let mut changed = block(&image, table);
+        changed[7 * 256 + 2] ^= 1;
+        inode_checksum(&mut changed, 8, seed);
+        let queue = staged(&image, &[vec![(table, changed)]]);
+        let source = Snapshot::from_bytes(&image);
+        assert!(window_admission::prepare(&source, queue.frozen_versions()).is_none());
+        let good = versions(&image);
+        let queue = staged(&image, &good);
+        assert!(window_admission::prepare(&source, queue.frozen_versions()).is_some());
+    }
+
+    #[test]
+    fn all_64_prefixes_use_two_additional_shadow_layers() {
+        let (image, _, _, target) = fixture();
+        let versions: Vec<_> = (0..64)
+            .map(|generation| vec![(target, vec![generation as u8; 4096])])
+            .collect();
+        let queue = staged(&image, &versions);
+        let empty: Vec<_> = (0..30).map(|_| core::patch_set::PatchSet::new()).collect();
+        let mut source = Snapshot::from_bytes(&image);
+        for patch in &empty {
+            source = source.overlay(patch).unwrap();
+        }
+        assert_eq!(source.shadow_depth(), 30);
+        let writer = window_admission::prepare(&source, queue.frozen_versions()).unwrap();
+        assert_eq!(writer.engine_ref().transaction_count(), 64);
+        assert!(!writer.finished());
+        assert_eq!(writer.source_snapshot().shadow_depth(), 30);
+    }
+
+    #[test]
+    fn upsert_keeps_all_other_owned_images_and_can_replace_at_capacity() {
+        let mut patches = core::patch_set::PatchSet::new();
+        for block in 0..4096 {
+            patches = patches
+                .upsert(block, &vec![(block % 251) as u8; 4096])
+                .ok()
+                .unwrap();
+        }
+        patches = patches.upsert(2048, &[0x89; 4096]).ok().unwrap();
+        assert_eq!(patches.len(), 4096);
+        assert_eq!(patches.get(2048).unwrap().as_slice(), &[0x89; 4096]);
+        assert_eq!(
+            patches.get(2047).unwrap().as_slice(),
+            &[(2047 % 251) as u8; 4096]
+        );
+        patches = patches.upsert(4096, &[0x91; 4096]).err().unwrap();
+        patches = patches.upsert(2048, &[0; 4095]).err().unwrap();
+        assert_eq!(patches.get(2048).unwrap().as_slice(), &[0x89; 4096]);
+        assert!(patches.get(4096).is_none());
+    }
+
+    fn recover(crash: &[u8]) -> Vec<u8> {
+        let source = Snapshot::from_bytes(crash);
+        let boot = core::bootstrap::locate(&source).unwrap();
+        let actual = boot.layout();
+        let wanted = geometry(crash).0;
+        assert_eq!(
+            (
+                actual.physical_start(),
+                actual.blocks(),
+                actual.filesystem_blocks()
+            ),
+            (
+                wanted.physical_start(),
+                wanted.blocks(),
+                wanted.filesystem_blocks()
+            )
+        );
+        let mut recovery = core::recovery_admission::prepare(&source)
+            .expect("cold recovered shadow must pass full filesystem admission before any request");
+        let mut stable = crash.to_vec();
+        let mut queued = Vec::new();
+        loop {
+            let pending = match recovery.dispatch() {
+                Ok(pending) => pending,
+                Err(done) => {
+                    recovery = done;
+                    break;
+                }
+            };
+            match pending.pending_command() {
+                Command::Write { block, image } => queued.push((block, image.to_vec())),
+                Command::Flush => {
+                    for (block, bytes) in queued.drain(..) {
+                        stable[block as usize * 4096..(block as usize + 1) * 4096]
+                            .copy_from_slice(&bytes);
+                    }
+                }
+            }
+            recovery = pending.finish_pending(Completion::Succeeded);
+        }
+        assert!(recovery.finished() && !recovery.failed());
+        assert!(queued.is_empty());
+        assert!(core::image_validation::inspect(Snapshot::from_bytes(&stable)).is_some());
+        stable
+    }
+
+    #[test]
+    fn fresh_discovery_and_full_recovery_admission_succeed_at_every_interleaved_request_cut() {
+        let (image, layout, _, target) = fixture();
+        let updates = versions(&image);
+        let queue = staged(&image, &updates);
+        let source = Snapshot::from_bytes(&image);
+        let mut writer = window_admission::prepare(&source, queue.frozen_versions()).unwrap();
+        let first = writer.engine_ref().first_sequence();
+        drop(queue);
+        let mut lanes = vec![Lane::Bootstrap; 4];
+        lanes.extend([Lane::Commit; 8]);
+        lanes.extend([Lane::Checkpoint; 2]);
+        lanes.extend([Lane::Commit; 8]);
+        lanes.extend([Lane::Checkpoint; 3]);
+        lanes.push(Lane::Tail);
+        lanes.extend([Lane::Checkpoint; 2]);
+        lanes.push(Lane::Tail);
+        lanes.extend([Lane::Checkpoint; 3]);
+        lanes.extend([Lane::Tail; 2]);
+        let mut stable = image.clone();
+        let mut queued: Vec<(u32, Vec<u8>)> = Vec::new();
+        let mut checked = 0usize;
+        for (cut, lane) in lanes.into_iter().enumerate() {
+            let pending = writer.dispatch(lane).ok().unwrap();
+            let write = match pending.pending_command() {
+                Command::Write { block, image } => {
+                    queued.push((block, image.to_vec()));
+                    true
+                }
+                Command::Flush => false,
+            };
+            let before = recover(&stable);
+            assert!(core::bootstrap::locate(&Snapshot::from_bytes(&before)).is_some());
+            checked += 1;
+            if !write {
+                for (block, bytes) in queued.drain(..).rev() {
+                    stable[block as usize * 4096..(block as usize + 1) * 4096]
+                        .copy_from_slice(&bytes);
+                }
+            } else if cut % 3 == 0 {
+                // Persist the newest issued block while older addresses remain volatile.
+                let (block, bytes) = queued.pop().unwrap();
+                stable[block as usize * 4096..(block as usize + 1) * 4096].copy_from_slice(&bytes);
+            }
+            let completed = recover(&stable);
+            let begin = layout.physical_start() as usize * 4096;
+            let scan = core::scan::recover(
+                &stable[begin..begin + layout.blocks() as usize * 4096],
+                &image[1128..1144],
+                layout.duplicate(),
+            )
+            .unwrap();
+            let header = core::journal_superblock::parse(
+                &stable[begin..begin + 1024],
+                &image[1128..1144],
+                layout.blocks(),
+            )
+            .unwrap();
+            let committed = if header.sequence < first {
+                0
+            } else {
+                (header.sequence - first) as usize + scan.committed_transactions() as usize
+            };
+            if committed > 0 {
+                let expected = &updates[committed - 1];
+                assert_eq!(&completed[1144..1160], &expected[0].1[1144..1160]);
+                assert_eq!(
+                    &completed[target as usize * 4096..(target as usize + 1) * 4096],
+                    &expected[3].1
+                );
+            }
+            writer = pending.finish_pending(Completion::Succeeded);
+            checked += 1;
+        }
+        assert!(writer.finished());
+        assert_eq!(writer.progress(), (2, 2, 2, false));
+        assert!(checked >= 60);
+        assert!(queued.is_empty());
+        let linux = linux_recover("build/admitted-window-final.img", &stable);
+        assert_eq!(&linux[1144..1160], &[b'L'; 16]);
+    }
+    #[test]
+    fn partially_checkpointed_namespace_is_repaired_before_full_filesystem_admission() {
+        let (image, _, seed, _) = fixture();
+        let table = core::bytes::read_le32(&image, 4104).unwrap();
+        let root_start = table as usize * 4096 + 256;
+        let directory = core::bytes::read_le32(&image, root_start + 60).unwrap();
+        let mut dir = block(&image, directory);
+        let mut cursor = 0usize;
+        let mut linked = None;
+        while cursor < 4084 {
+            let len = core::bytes::read_le16(&dir, cursor + 4).unwrap() as usize;
+            let name_len = dir[cursor + 6] as usize;
+            if &dir[cursor + 8..cursor + 8 + name_len] == b"payload" {
+                let number = core::bytes::read_le32(&dir, cursor).unwrap();
+                let used = (8 + name_len + 3) & !3;
+                assert!(len >= used + 16);
+                dir[cursor + 4..cursor + 6].copy_from_slice(&(used as u16).to_le_bytes());
+                let at = cursor + used;
+                dir[at..at + 4].copy_from_slice(&number.to_le_bytes());
+                dir[at + 4..at + 6].copy_from_slice(&((len - used) as u16).to_le_bytes());
+                dir[at + 6] = 5;
+                dir[at + 7] = 1;
+                dir[at + 8..at + 13].copy_from_slice(b"alias");
+                linked = Some(number);
+                break;
+            }
+            cursor += len;
+        }
+        let number = linked.unwrap();
+        assert!(number <= 16);
+        let mut inodes = block(&image, table);
+        let links = (number as usize - 1) * 256 + 26;
+        let old = core::bytes::read_le16(&inodes, links).unwrap();
+        inodes[links..links + 2].copy_from_slice(&(old + 1).to_le_bytes());
+        inode_checksum(&mut inodes, number, seed);
+        let generation = core::bytes::read_le32(&image, root_start + 100).unwrap();
+        let dir_seed = core::inode::inode_seed(seed, 2, generation);
+        let checksum = core::crc::crc32c(dir_seed, &dir[..4084]);
+        dir[4092..4096].copy_from_slice(&checksum.to_le_bytes());
+        let mut updates = vec![(table, inodes), (directory, dir)];
+        updates.sort_by_key(|(block, _)| *block);
+        let queue = staged(&image, &[updates]);
+        let source = Snapshot::from_bytes(&image);
+        let mut writer = window_admission::prepare(&source, queue.frozen_versions()).unwrap();
+        let mut stable = image.clone();
+        for lane in [Lane::Bootstrap; 4]
+            .into_iter()
+            .chain([Lane::Commit; 6])
+            .chain([Lane::Checkpoint])
+        {
+            let pending = writer.dispatch(lane).ok().unwrap();
+            if let Command::Write { block, image } = pending.pending_command() {
+                stable[block as usize * 4096..(block as usize + 1) * 4096].copy_from_slice(image);
+            }
+            writer = pending.finish_pending(Completion::Succeeded);
+        }
+        assert!(
+            core::image_validation::inspect(Snapshot::from_bytes(&stable)).is_none(),
+            "one of the two coordinated namespace blocks must fail full static validation"
+        );
+        assert!(core::bootstrap::locate(&Snapshot::from_bytes(&stable)).is_some());
+        let repaired = recover(&stable);
+        assert_eq!(
+            core::bytes::read_le16(&repaired, table as usize * 4096 + links),
+            Some(old + 1)
+        );
+        let linux = linux_recover("build/admitted-window-partial-namespace.img", &stable);
+        assert_eq!(
+            core::bytes::read_le16(&linux, table as usize * 4096 + links),
+            Some(old + 1)
+        );
+    }
+
+    #[test]
+    fn sealed_window_abort_and_failed_completion_never_release_more_requests() {
+        let (image, _, _, target) = fixture();
+        let queue = staged(&image, &[vec![(target, vec![0x17; 4096])]]);
+        let source = Snapshot::from_bytes(&image);
+        let writer = window_admission::prepare(&source, queue.frozen_versions()).unwrap();
+        let pending = writer
+            .dispatch(Lane::Bootstrap)
+            .ok()
+            .unwrap()
+            .abort_pending();
+        let stopped = pending.finish_pending(Completion::Succeeded);
+        assert_eq!(stopped.progress(), (0, 0, 0, true));
+        assert!(!stopped.can_dispatch(Lane::Bootstrap));
+        assert!(stopped.dispatch(Lane::Commit).is_err());
+        let writer = window_admission::prepare(&source, queue.frozen_versions()).unwrap();
+        let stopped = writer
+            .dispatch(Lane::Bootstrap)
+            .ok()
+            .unwrap()
+            .finish_pending(Completion::Failed);
+        assert_eq!(stopped.progress(), (0, 0, 0, true));
+        assert!(stopped.dispatch(Lane::Bootstrap).is_err());
+        let stopped = window_admission::prepare(&source, queue.frozen_versions())
+            .unwrap()
+            .abort();
+        assert!(stopped.dispatch(Lane::Bootstrap).is_err());
+    }
+    #[test]
+    fn fresh_admission_uses_the_internal_journal_uuid_separately_from_filesystem_metadata() {
+        let (mut image, layout, _, target) = fixture();
+        let begin = layout.physical_start() as usize * 4096;
+        let uuid = [0x75; 16];
+        assert_ne!(&image[1128..1144], &uuid);
+        image[begin + 48..begin + 64].copy_from_slice(&uuid);
+        // mke2fs's empty checksum-free JBD2 header needs no CRC reseal.
+        assert_eq!(core::bytes::read_be32(&image, begin + 40), Some(0));
+        let queue = staged(&image, &[vec![(target, vec![0x69; 4096])]]);
+        let source = Snapshot::from_bytes(&image);
+        let boot = core::bootstrap::locate(&source).unwrap();
+        assert_eq!(boot.journal_uuid(), &uuid);
+        let mut writer = window_admission::prepare(&source, queue.frozen_versions()).unwrap();
+        let mut stable = image.clone();
+        while !writer.finished() {
+            let lane = [Lane::Bootstrap, Lane::Commit, Lane::Checkpoint, Lane::Tail]
+                .into_iter()
+                .find(|lane| writer.can_dispatch(*lane))
+                .unwrap();
+            let pending = writer.dispatch(lane).ok().unwrap();
+            if let Command::Write { block, image } = pending.pending_command() {
+                stable[block as usize * 4096..(block as usize + 1) * 4096].copy_from_slice(image);
+            }
+            writer = pending.finish_pending(Completion::Succeeded);
+            if writer.progress().0 == 1 && writer.progress().1 == 0 {
+                let repaired = recover(&stable);
+                assert_eq!(
+                    &repaired[target as usize * 4096..(target as usize + 1) * 4096],
+                    &[0x69; 4096]
+                );
+            }
+        }
+        assert_eq!(&stable[begin + 48..begin + 64], &uuid);
+        let linux = linux_recover("build/admitted-window-independent-uuid.img", &stable);
+        assert_eq!(
+            &linux[target as usize * 4096..(target as usize + 1) * 4096],
+            &[0x69; 4096]
+        );
+    }
+}

@@ -27,7 +27,7 @@
       "path": "fs/jbd2/recovery.c",
       "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/jbd2/recovery.c",
       "blob_sha": "cac8c2cd4a92a749aa860eedf35b7f643ab345b4",
-      "review_scope": "do_one_pass source s_sequence/s_start and transaction scan/replay boundary (lines 607-675), commit recognition/checksum and sequence advance (816-877), and end_transaction stop consistency across passes (917-941); independent reserved-window proofs derive exact durable suffix parsing, resource admission and repeated crash/recovery byte closure"
+      "review_scope": "do_one_pass source s_sequence/s_start and transaction scan/replay boundary (lines 607-675), commit recognition/checksum and sequence advance (816-877), and end_transaction stop consistency across passes (917-941); independent reserved-window proofs derive exact durable suffix parsing, resource admission and repeated crash/recovery byte closure; jbd2_journal_recover (282-349) orders scan/revoke/replay followed by sync and flush; full repaired-image admission in this independent implementation runs before any sealed request"
     },
     {
       "path": "fs/ext4/fsync.c",
@@ -165,7 +165,7 @@
       "path": "fs/ext4/super.c",
       "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/super.c",
       "blob_sha": "a34efb44e73d70d034aa2ed1b4011a6851235f22",
-      "review_scope": "journal inode discovery, nonzero links/regular type, internal-journal open and mapping; referenced behavior only; ext4_max_size extent bound and no-HUGE_FILE 32-bit sector bound, including sparse files; ext4_init_metadata_csum selects stored s_checksum_seed for CSUM_SEED, otherwise CRC32C of filesystem UUID; ext4_group_desc_csum covers selected descriptor width with checksum word zeroed; ext4_check_descriptors selects filesystem-wide bounds under FLEX_BG while ext4_fill_flex_info normalizes out-of-range s_log_groups_per_flex to zero"
+      "review_scope": "journal inode discovery, nonzero links/regular type, internal-journal open and mapping; referenced behavior only; ext4_max_size extent bound and no-HUGE_FILE 32-bit sector bound, including sparse files; ext4_init_metadata_csum selects stored s_checksum_seed for CSUM_SEED, otherwise CRC32C of filesystem UUID; ext4_group_desc_csum covers selected descriptor width with checksum word zeroed; ext4_check_descriptors selects filesystem-wide bounds under FLEX_BG while ext4_fill_flex_info normalizes out-of-range s_log_groups_per_flex to zero; ext4_get_journal_inode (5878-5908) and ext4_open_inode_journal (5932-5958) derive the internal journal from the current source inode; ext4_load_journal (6072-6160) opens that journal before recovery; independent concurrent-window bootstrap proofs preserve source-derived primary/GDT/inode-8 discovery across mixed checkpoint versions"
     },
     {
       "path": "fs/ext4/inode.c",
