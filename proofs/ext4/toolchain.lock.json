@@ -107,7 +107,8 @@
     "src/extent_tree.rs",
     "src/extent_tree_model.rs",
     "src/extent_claims.rs",
-    "src/extent_ownership.rs"
+    "src/extent_ownership.rs",
+    "src/inode_size.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -390,7 +391,8 @@
     "extent_tree_model::every_stored_mapping_respects_the_subtree_interval",
     "extent_tree_model::audited_route_equals_complete_tree_mapping",
     "extent_tree_model::complete_tree_has_unique_covering_extent",
-    "extent_ownership::a_stored_mapping_has_its_source_bound_claim"
+    "extent_ownership::a_stored_mapping_has_its_source_bound_claim",
+    "inode_size::offsets_never_truncate_to_a_different_logical_block"
   ],
   "required_flags": [
     "--no-cheating",
@@ -666,6 +668,9 @@
     "extent_claims::metadata",
     "extent_claims::bind",
     "extent_claims::collect",
-    "extent_tree::lookup_allocated"
+    "extent_tree::lookup_allocated",
+    "inode_size::limit",
+    "inode_size::decode",
+    "inode_size::encode"
   ]
 }

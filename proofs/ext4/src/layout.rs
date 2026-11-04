@@ -94,7 +94,7 @@ pub fn from_inode(raw: &[u8], inodes: u32, fs_blocks: u32, uuid_seed: u32) -> (r
         assert(extent::accepted(root@, extent::entry_offset(0), fs_blocks));
     }
     let e = match extent::parse(root, 12, fs_blocks) { Some(e) => e, None => { return None; } };
-    if !e.initialized || e.logical != 0 || e.length != ino.size / 4096 || e.physical <= 1 { return None; }
+    if !e.initialized || e.logical != 0 || e.length as u64 != ino.size / 4096 || e.physical <= 1 { return None; }
     Some(JournalLayout { physical_start: e.physical, journal_blocks: e.length, fs_blocks })
 }
 

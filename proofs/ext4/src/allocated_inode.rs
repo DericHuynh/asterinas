@@ -6,7 +6,7 @@
 
 use vstd::prelude::*;
 use crate::{allocation::{self, Allocation, AllocationView}, bitmap, bytes, group_index::{self, IndexView},
-    inode::{self, Inode}, extent_claims, inode_group, inode_table};
+    inode::{self, Inode}, inode_size, extent_claims, inode_group, inode_table};
 
 verus! {
 
@@ -38,12 +38,12 @@ pub proof fn every_live_inode_has_source_bound_claims(v: AllocationView, n: u32)
 
 pub struct NodeView {
     pub volume: AllocationView, pub number: u32, pub mode: u16, pub uid: u32, pub gid: u32,
-    pub size: u32, pub generation: u32, pub links: u16,
+    pub size: u64, pub generation: u32, pub links: u16,
 }
 
 pub open spec fn source_view(volume: AllocationView, n: u32) -> NodeView {
     let raw = inode_table::raw(volume.index, n);
-    NodeView { volume, number: n, mode: bytes::le16(raw, 0) as u16, size: bytes::le32(raw, 4) as u32,
+    NodeView { volume, number: n, mode: bytes::le16(raw, 0) as u16, size: inode_size::value(raw, false) as u64,
         generation: bytes::le32(raw, 100) as u32, links: bytes::le16(raw, 26) as u16,
         uid: (bytes::le16(raw, 2) + 65536 * bytes::le16(raw, 120)) as u32,
         gid: (bytes::le16(raw, 24) + 65536 * bytes::le16(raw, 122)) as u32 }
@@ -55,7 +55,7 @@ pub open spec fn valid(v: NodeView) -> bool {
     &&& allocation::valid(v.volume) && live(v.volume.index, v.number)
     &&& inode_group::ordinary_checked(v.volume.index, v.volume.census.roles, v.number)
     &&& inode::metadata_accepted(raw, v.number, v.volume.index.inodes, v.volume.index.seed)
-    &&& v.mode as nat == bytes::le16(raw, 0) && v.size as nat == bytes::le32(raw, 4)
+    &&& v.mode as nat == bytes::le16(raw, 0) && v.size as nat == inode_size::value(raw, false)
     &&& v.generation as nat == bytes::le32(raw, 100) && v.links as nat == bytes::le16(raw, 26)
     &&& v.uid as nat == bytes::le16(raw, 2) + 65536 * bytes::le16(raw, 120)
     &&& v.gid as nat == bytes::le16(raw, 24) + 65536 * bytes::le16(raw, 122)
@@ -92,9 +92,10 @@ impl<'v, 'a> AllocatedInode<'v, 'a> {
 
     pub fn info(&self) -> (r: &Inode)
         ensures self.wf(), r.mode == self.view().mode, r.uid == self.view().uid, r.gid == self.view().gid,
-            r.size == self.view().size, r.generation == self.view().generation, r.links == self.view().links,
+            r.size == self.view().size, r.size <= inode_size::linux_max(4096, false), r.generation == self.view().generation, r.links == self.view().links,
     {
         proof { use_type_invariant(self); }
+        proof { reveal(valid); }
         &self.info
     }
 

@@ -7,7 +7,7 @@
 use vstd::prelude::*;
 use crate::{allocated_inode::{self, AllocatedInode, NodeView}, allocation, block_claims, bytes,
     extent, extent_claims, extent_ownership, extent_span::{self, SpanView}, extent_tree::{self, Mapping},
-    extent_tree_model, group_index, inode_group};
+    extent_tree_model, group_index, inode_group, inode_size};
 
 verus! {
 
@@ -149,6 +149,7 @@ pub fn chunk<'a>(node: &AllocatedInode<'_, 'a>, offset: u64, wanted: usize) -> (
 {
     let info = node.info();
     if wanted == 0 || offset >= info.size as u64 { return Chunk::End; }
+    proof { inode_size::offsets_never_truncate_to_a_different_logical_block(4096, false, info.size, offset); }
     let logical = (offset / 4096) as u32;
     let within = (offset % 4096) as usize;
     let remaining = info.size as u64 - offset;
