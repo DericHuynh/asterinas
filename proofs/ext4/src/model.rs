@@ -176,3 +176,4 @@ pub mod inode_touch;
 pub mod disk_image;
 pub mod writer_image;
 pub mod recovery_image;
+pub mod recovery_crash_image;

@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "license": "MPL-2.0",
-  "recorded_at": "2026-11-04T11:09:53.818605+00:00",
+  "recorded_at": "2026-11-04T11:29:14.991428+00:00",
   "scope": "Checked host core and specified abstract machines; not a complete or kernel-integrated ext4 filesystem",
   "verifier_version": {
     "verus": {
@@ -19,7 +19,7 @@
     "encountered-error": false,
     "encountered-vir-error": false,
     "success": true,
-    "verified": 970,
+    "verified": 976,
     "errors": 0,
     "is-verifying-entire-crate": true
   },
@@ -31,7 +31,7 @@
     "--crate-type=rlib"
   ],
   "source_sha256": {
-    "src/model.rs": "928be303a43bd2f591f6124a56524db256e13d4cb13db7c503439e520815587e",
+    "src/model.rs": "84372fc5f3f613fd2622b344522e6fd44e6cbb0cadbed864da6466b272b0f731",
     "src/redo.rs": "e964baa83ca170c3cc60dbc8df4bfc470a81549ac23a5cfe4526a9cb0edb7e7f",
     "src/journal.rs": "eef5dcc269f81cbc1c7e8c6a4daf0a58cf7015423657a9cfe1f0fff186b91834",
     "src/lease.rs": "37358276a3719454ddeaf16177a2ce058b5e382c57b0609cea97031da084b1aa",
@@ -135,9 +135,10 @@
     "src/inode_touch.rs": "5b8d4b918868b29b38cc84a5b46f745fd16190b40c00ab7b1000c6480eb83499",
     "src/writer_image.rs": "8f2ed63cb9fead6e610510ff8946ecc79dfd7cb196a490d907609425b7a79cd4",
     "src/disk_image.rs": "0497928880b2fc170b16f904376903dbed9c5dbfc7b30775656217b40614f87f",
-    "src/recovery_image.rs": "a0bed69d6da4318434c7fc7c16404be420e869433a30de5b79fd9a78e5182334"
+    "src/recovery_image.rs": "a0bed69d6da4318434c7fc7c16404be420e869433a30de5b79fd9a78e5182334",
+    "src/recovery_crash_image.rs": "165035cdea2508b0b1de331d85de593fdf6a19c1798dfd6e1b972bfc982d5c14"
   },
-  "lock_sha256": "68a2baad0f9da33760bcf8efa97a779a020d88b69d42ee8c4b0d97528af21c20",
+  "lock_sha256": "bf34513275d2201da1aeb776af4fcedf354e4db42d6b62d317cdf47a94a7f4fc",
   "runner_sha256": "de6b473ab50632068de9e7fc619591c7b4d5afbc0058a1fcd7f946c0198beb91",
   "named_proof_coverage": [
     "access::override_cannot_execute_a_nonexecutable_regular_file",
@@ -315,6 +316,12 @@
     "recovery_closure::every_recovery_crash_snapshot_can_prepare_another_recovery",
     "recovery_closure::every_recovery_cut_keeps_the_journal_mapped",
     "recovery_closure::partial_recovery_keeps_the_primary_volume_identity",
+    "recovery_crash_image::a_changed_retirement_tail_cut_already_has_the_complete_validated_image",
+    "recovery_crash_image::an_unchanged_tail_cut_is_repairable_to_the_same_complete_validated_image",
+    "recovery_crash_image::every_admitted_recovery_cut_is_complete_or_repairable_with_its_exact_plan",
+    "recovery_crash_image::every_finite_admitted_recovery_execution_has_complete_or_repairable_crash_cuts",
+    "recovery_crash_image::the_complete_admitted_redo_map_has_the_validated_filesystem_bytes",
+    "recovery_crash_image::unchanged_tail_recovery_cuts_keep_the_exact_canonical_journal_input",
     "recovery_device::abort_keeps_all_pending_persistence",
     "recovery_device::all_non_superblock_journal_records_are_preserved",
     "recovery_device::cleared_tail_is_safe_at_every_crash_cut",
@@ -810,14 +817,14 @@
     "writer_admission::prepare",
     "writer_admission::source_snapshot"
   ],
-  "host_library_sha256": "11ff0a44f7f5a280dfc76e29852ef06723dce3ac7b3e1305d393b03693605ca7",
+  "host_library_sha256": "61e4f3a93fc7665fc6fc6759375a8594d6a7a48c224d296b6349dfc8936a16ba",
   "compatibility": {
     "schema": 1,
     "status": "passed",
     "scope": "host interoperability tests, not formal proof",
     "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
-    "proof_artifact_sha256": "11ff0a44f7f5a280dfc76e29852ef06723dce3ac7b3e1305d393b03693605ca7",
-    "image_sha256": "7e5486dc7508be461aa6d0d6467c6f3eee9894a4e403382bd5c503dcc779e016",
+    "proof_artifact_sha256": "61e4f3a93fc7665fc6fc6759375a8594d6a7a48c224d296b6349dfc8936a16ba",
+    "image_sha256": "9918c90ddcb8661afe3e99eddcc19b2a7c9b17b83f6bd0e825d9fb74a6e07b74",
     "request_boundary_rejections": [
       "reuse_request",
       "redirect_completion",

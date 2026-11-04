@@ -55,3 +55,8 @@ cover valid replay, repaired home metadata, invalid replay rejection, abort with
 late completion, terminal sequence recovery, repeated recovery crashes and Linux
 interoperability. They supplement the formal model and do not discharge its
 hardware/runtime premises. Mount/write activation gates stay closed.
+
+Complete image repairability at every admitted recovery-model cut and exact
+journal preservation for unchanged tails are now checked in
+[RECOVERY_CRASH_IMAGES.md](RECOVERY_CRASH_IMAGES.md). Fresh-source admission
+reconstruction and runtime restart boundaries remain open.
