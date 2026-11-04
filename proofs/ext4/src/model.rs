@@ -252,3 +252,9 @@ pub mod htree_names;
 
 pub mod directory_piece;
 pub mod directory_htree;
+
+pub mod xattr_table_edit;
+
+pub mod xattr_replace;
+
+pub mod xattr_update;

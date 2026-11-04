@@ -128,6 +128,9 @@ impl<'a> Body<'a> {
     #[verifier::type_invariant]
     spec fn invariant(self) -> bool { self.wf() }
 
+    pub fn parameters(&self) -> (r: (bool, u32)) ensures self.wf(), r == (self.view().ea, self.view().inodes) {
+        proof { use_type_invariant(self); } (self.ea, self.inodes)
+    }
     pub fn entry_table(&self) -> (r: Option<&Table<'a>>)
         ensures self.wf(), match r { Some(table) => table.wf() && self.view().table == Some(table.view()), None => self.view().table is None },
     { proof { use_type_invariant(self); } self.table.as_ref() }

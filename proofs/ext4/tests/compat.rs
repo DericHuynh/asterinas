@@ -6885,3 +6885,356 @@ mod directory_hashes {
         let _ = std::fs::remove_file(path);
     }
 }
+
+mod inline_xattr_updates {
+    use core::{
+        access::Credentials, acl_access, allocated_inode, allocation, recovery_request::Completion,
+        snapshot::Snapshot, xattr, xattr_inode, xattr_table::ValueRef, xattr_update,
+    };
+
+    use super::*;
+
+    fn command(binary: &str, args: &[&str], modified: bool) -> Vec<u8> {
+        let output = std::process::Command::new(binary)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success() || modified && output.status.code() == Some(1),
+            "{args:?}: {} {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        output.stdout
+    }
+    fn fixture(prefix: &str, external: bool) -> Vec<u8> {
+        let path = format!("build/{prefix}.img");
+        let acl_path = format!("build/{prefix}-acl.bin");
+        let large_path = format!("build/{prefix}-large.bin");
+        std::fs::write(&path, image()).unwrap();
+        let mut acl = 2u32.to_le_bytes().to_vec();
+        for (tag, bits, id) in [
+            (1u16, 6u16, u32::MAX),
+            (2, 2, 1234),
+            (4, 0, u32::MAX),
+            (16, 2, u32::MAX),
+            (32, 0, u32::MAX),
+        ] {
+            acl.extend(tag.to_le_bytes());
+            acl.extend(bits.to_le_bytes());
+            acl.extend(id.to_le_bytes());
+        }
+        std::fs::write(&acl_path, acl).unwrap();
+        let debugfs = std::env::var("DEBUGFS_BIN").unwrap_or_else(|_| "debugfs".into());
+        command(&debugfs, &["-w", "-R", "feature ext_attr", &path], false);
+        command(
+            &debugfs,
+            &["-w", "-R", "ea_set /payload user.note before7", &path],
+            false,
+        );
+        command(
+            &debugfs,
+            &[
+                "-w",
+                "-R",
+                &format!("ea_set -f {acl_path} /payload system.posix_acl_access"),
+                &path,
+            ],
+            false,
+        );
+        command(
+            &debugfs,
+            &["-w", "-R", "sif /payload mode 0100620", &path],
+            false,
+        );
+        if external {
+            std::fs::write(&large_path, [0x59; 512]).unwrap();
+            command(
+                &debugfs,
+                &[
+                    "-w",
+                    "-R",
+                    &format!("ea_set -f {large_path} /payload user.large"),
+                    &path,
+                ],
+                false,
+            );
+        }
+        let fsck = std::env::var("E2FSCK_BIN").unwrap_or_else(|_| "e2fsck".into());
+        command(&fsck, &["-fn", &path], false);
+        let bytes = std::fs::read(&path).unwrap();
+        for file in [&path, &acl_path, &large_path] {
+            let _ = std::fs::remove_file(file);
+        }
+        bytes
+    }
+    fn named() -> Credentials {
+        Credentials {
+            fsuid: 1234,
+            in_inode_group: false,
+            dac_override: false,
+            dac_read_search: false,
+        }
+    }
+    fn attribute(img: &[u8], namespace: u8, name: &[u8]) -> Vec<u8> {
+        let volume = allocation::parse(Snapshot::from_bytes(img)).unwrap();
+        let attrs = xattr_inode::inspect(volume.index(), 12).unwrap();
+        match attrs.get(namespace, name).unwrap() {
+            ValueRef::Bytes(value) => value.to_vec(),
+            _ => panic!("local byte value"),
+        }
+    }
+    fn recover(mut img: Vec<u8>) -> Vec<u8> {
+        let source_bytes = img.clone();
+        let source = Snapshot::from_bytes(&source_bytes);
+        let mut recovery = core::recovery_admission::prepare(&source).unwrap();
+        loop {
+            let pending = match recovery.dispatch() {
+                Ok(pending) => pending,
+                Err(done) => {
+                    assert!(done.finished());
+                    break;
+                }
+            };
+            if let core::recovery_io::Command::Write { block, image } = pending.pending_command() {
+                img[block as usize * 4096..(block as usize + 1) * 4096].copy_from_slice(image);
+            }
+            recovery = pending.finish_pending(Completion::Succeeded);
+        }
+        assert!(core::image_validation::inspect(Snapshot::from_bytes(&img)).is_some());
+        img
+    }
+
+    #[test]
+    fn acl_authorized_inline_xattr_update_journals_one_inode_and_recovers_the_committed_value() {
+        let img = fixture("xattr-update-authorized", true);
+        let (_, group, _) = metadata(&img);
+        let original_inode = inode_bytes(&img, group.inode_table, 12).to_vec();
+        let body = xattr::parse_body(&original_inode, false, le32(&img, 1024)).unwrap();
+        assert!(body.entry_table().unwrap().find(1, b"note").is_some());
+        let acl = attribute(&img, 2, b"");
+        let external = core::xattr::inode_pointer(&original_inode).unwrap() as usize;
+        assert!(external > 0);
+        let volume = allocation::parse(Snapshot::from_bytes(&img)).unwrap();
+        let node = allocated_inode::get(&volume, 12).unwrap();
+        let user = named();
+        assert_eq!(
+            node.info().mode & 7,
+            0,
+            "the named ACL supplies this user's permission"
+        );
+        let grant = acl_access::authorize(&node, &user, &[], 2).unwrap();
+        let candidate =
+            xattr_update::prepare(grant, b"note", b"after77", 123456789, 987654321).unwrap();
+        let metadata_block = candidate.after_image().block();
+        let expected_block = candidate.after_image().as_slice().to_vec();
+        let mut writer = candidate.begin().unwrap();
+        let mut stable = img.clone();
+        let mut committed = false;
+        let mut committed_cut = None;
+        let mut precommit_cut = None;
+        let mut journal_writes = 0;
+        loop {
+            let pending = match writer.dispatch() {
+                Ok(pending) => pending,
+                Err(done) => {
+                    writer = done;
+                    break;
+                }
+            };
+            match pending.pending_command() {
+                core::recovery_io::Command::Write { block, image } => {
+                    if core::bytes::read_be32(image, 0) == Some(0xc03b3998) {
+                        journal_writes += 1;
+                        if core::bytes::read_be32(image, 4) == Some(2) {
+                            committed = true;
+                        }
+                    }
+                    stable[block as usize * 4096..(block as usize + 1) * 4096]
+                        .copy_from_slice(image);
+                }
+                core::recovery_io::Command::Flush => {
+                    if committed && committed_cut.is_none() {
+                        committed_cut = Some(stable.clone());
+                    } else if !committed && journal_writes > 0 {
+                        precommit_cut = Some(stable.clone());
+                    }
+                }
+            }
+            writer = pending.finish_pending(Completion::Succeeded);
+        }
+        assert!(writer.finished());
+        assert_eq!(
+            &stable[metadata_block as usize * 4096..(metadata_block as usize + 1) * 4096],
+            expected_block
+        );
+        assert_eq!(attribute(&stable, 1, b"note"), b"after77");
+        assert_eq!(attribute(&stable, 2, b""), acl);
+        assert_eq!(
+            &stable[external * 4096..(external + 1) * 4096],
+            &img[external * 4096..(external + 1) * 4096]
+        );
+        for block in 0..volume.index().parameters().0 {
+            if (4..=7).contains(&volume.census().role_of(block).unwrap().kind) {
+                assert_eq!(
+                    &stable[block as usize * 4096..(block as usize + 1) * 4096],
+                    &img[block as usize * 4096..(block as usize + 1) * 4096]
+                );
+            }
+        }
+        let after_inode = inode_bytes(&stable, group.inode_table, 12);
+        assert_eq!(
+            &after_inode[16..20],
+            &original_inode[16..20],
+            "mtime is unchanged"
+        );
+        assert_eq!(&after_inode[136..140], &original_inode[136..140]);
+        assert_eq!(
+            core::inode_time_fields::get_time(after_inode, core::inode_time_fields::Field::Ctime)
+                .unwrap()
+                .seconds,
+            123456789
+        );
+        let old_version =
+            le32(&original_inode, 36) as u64 + ((le32(&original_inode, 152) as u64) << 32);
+        let new_version = le32(after_inode, 36) as u64 + ((le32(after_inode, 152) as u64) << 32);
+        assert_eq!(new_version, old_version + 1);
+        let before_commit = recover(precommit_cut.unwrap());
+        assert_eq!(attribute(&before_commit, 1, b"note"), b"before7");
+        let cut = committed_cut.unwrap();
+        assert_eq!(
+            attribute(&cut, 1, b"note"),
+            b"before7",
+            "home inode has not been checkpointed"
+        );
+        let recovered = recover(cut.clone());
+        assert_eq!(attribute(&recovered, 1, b"note"), b"after77");
+        assert_eq!(attribute(&recovered, 2, b""), acl);
+        let fsck = std::env::var("E2FSCK_BIN").unwrap_or_else(|_| "e2fsck".into());
+        let debugfs = std::env::var("DEBUGFS_BIN").unwrap_or_else(|_| "debugfs".into());
+        for (path, bytes) in [
+            ("build/xattr-update-linux-final.img", stable),
+            ("build/xattr-update-linux-crash.img", cut),
+        ] {
+            std::fs::write(path, bytes).unwrap();
+            command(&fsck, &["-fy", path], true);
+            command(&fsck, &["-fn", path], false);
+            let linux = std::fs::read(path).unwrap();
+            assert_eq!(attribute(&linux, 1, b"note"), b"after77");
+            assert_eq!(attribute(&linux, 2, b""), acl);
+            let output = command(&debugfs, &["-R", "ea_get /payload user.note", path], false);
+            assert!(String::from_utf8_lossy(&output).contains("after77"));
+            let _ = std::fs::remove_file(path);
+        }
+    }
+
+    #[test]
+    fn inline_xattr_updates_reject_aliased_acl_storage_wrong_grants_noops_and_version_reuse() {
+        let img = fixture("xattr-update-rejection", false);
+        let (_, group, seed) = metadata(&img);
+        let inodes = le32(&img, 1024);
+        let raw = inode_bytes(&img, group.inode_table, 12);
+        let body = xattr::parse_body(raw, false, inodes).unwrap();
+        let table = body.entry_table().unwrap();
+        let slot = table.find(1, b"note").unwrap();
+        let selected = table.metadata(slot).unwrap();
+        let acl_entry = table.metadata(table.find(2, b"").unwrap()).unwrap();
+        let volume = allocation::parse(Snapshot::from_bytes(&img)).unwrap();
+        let node = allocated_inode::get(&volume, 12).unwrap();
+        let user = named();
+        for (name, data) in [
+            (b"note".as_slice(), b"before7".as_slice()),
+            (b"note", b"x"),
+            (b"missing", b"after77"),
+            (b"system.posix_acl_access", b"after77"),
+            (b"", b"after77"),
+        ] {
+            let grant = acl_access::authorize(&node, &user, &[], 2).unwrap();
+            assert!(xattr_update::prepare(grant, name, data, 123, 456).is_none());
+        }
+        let read = acl_access::authorize(&node, &user, &[], 0).unwrap();
+        assert!(xattr_update::prepare(read, b"note", b"after77", 123, 456).is_none());
+        let denied = Credentials {
+            fsuid: 5678,
+            ..named()
+        };
+        assert!(acl_access::authorize(&node, &denied, &[], 2).is_none());
+        let at = group.inode_table as usize * 4096 + 11 * 256;
+        let mut aliased = img.clone();
+        let offset = (acl_entry.value_offset - 164) as u16;
+        aliased[at + selected.position + 2..at + selected.position + 4]
+            .copy_from_slice(&offset.to_le_bytes());
+        seal_inode_image(&mut aliased, group.inode_table, 12, seed);
+        assert!(
+            core::image_validation::inspect(Snapshot::from_bytes(&aliased)).is_some(),
+            "immutable aliasing does not authorize mutation"
+        );
+        let alias_volume = allocation::parse(Snapshot::from_bytes(&aliased)).unwrap();
+        let alias_node = allocated_inode::get(&alias_volume, 12).unwrap();
+        let grant = acl_access::authorize(&alias_node, &user, &[], 2).unwrap();
+        assert!(xattr_update::prepare(grant, b"note", b"after77", 123, 456).is_none());
+        let mut version = raw.to_vec();
+        version[36..40].copy_from_slice(&u32::MAX.to_le_bytes());
+        version[152..156].copy_from_slice(&0u32.to_le_bytes());
+        version[selected.value_offset + selected.value_size as usize] = 0x7f;
+        let checksum = core::inode::calculated_checksum(&version, 12, seed).unwrap();
+        version[124..126].copy_from_slice(&(checksum as u16).to_le_bytes());
+        version[130..132].copy_from_slice(&((checksum >> 16) as u16).to_le_bytes());
+        let source = xattr::parse_body(&version, false, inodes).unwrap();
+        let encoded = core::xattr_replace::encode(
+            &source, slot, b"after77", 12, inodes, seed, false, 123, 456,
+        )
+        .unwrap();
+        assert_eq!(le32(&encoded, 36), 0);
+        assert_eq!(le32(&encoded, 152), 1);
+        assert_eq!(
+            encoded[selected.value_offset + selected.value_size as usize],
+            0
+        );
+        assert_eq!(
+            &encoded
+                [acl_entry.value_offset..acl_entry.value_offset + acl_entry.value_size as usize],
+            &raw[acl_entry.value_offset..acl_entry.value_offset + acl_entry.value_size as usize]
+        );
+        let mut last_version = version.clone();
+        last_version[36..40].copy_from_slice(&(u32::MAX - 1).to_le_bytes());
+        last_version[152..156].copy_from_slice(&0x7fffffffu32.to_le_bytes());
+        let checksum = core::inode::calculated_checksum(&last_version, 12, seed).unwrap();
+        last_version[124..126].copy_from_slice(&(checksum as u16).to_le_bytes());
+        last_version[130..132].copy_from_slice(&((checksum >> 16) as u16).to_le_bytes());
+        let source = xattr::parse_body(&last_version, false, inodes).unwrap();
+        let last = core::xattr_replace::encode(
+            &source, slot, b"after77", 12, inodes, seed, false, 123, 456,
+        )
+        .unwrap();
+        assert_eq!(le32(&last, 36), u32::MAX);
+        assert_eq!(le32(&last, 152), 0x7fffffff);
+        let terminal = xattr::parse_body(&last, false, inodes).unwrap();
+        assert!(
+            core::xattr_replace::encode(
+                &terminal, slot, b"again77", 12, inodes, seed, false, 123, 456
+            )
+            .is_none()
+        );
+        for old_version in [core::xattr_replace::MAX_VERSION, 1u64 << 63, u64::MAX] {
+            let mut maximum = img.clone();
+            maximum[at + 36..at + 40].copy_from_slice(&(old_version as u32).to_le_bytes());
+            maximum[at + 152..at + 156]
+                .copy_from_slice(&((old_version >> 32) as u32).to_le_bytes());
+            seal_inode_image(&mut maximum, group.inode_table, 12, seed);
+            let max_volume = allocation::parse(Snapshot::from_bytes(&maximum)).unwrap();
+            let max_node = allocated_inode::get(&max_volume, 12).unwrap();
+            let grant = acl_access::authorize(&max_node, &user, &[], 2).unwrap();
+            assert!(xattr_update::prepare(grant, b"note", b"after77", 123, 456).is_none());
+        }
+        let mut readonly = img.clone();
+        let flags = le32(&readonly, 1124) | 0x1000;
+        readonly[1124..1128].copy_from_slice(&flags.to_le_bytes());
+        let checksum = core::crc::crc32c(0xffffffff, &readonly[1024..2044]);
+        readonly[2044..2048].copy_from_slice(&checksum.to_le_bytes());
+        let ro_volume = allocation::parse(Snapshot::from_bytes(&readonly)).unwrap();
+        let ro_node = allocated_inode::get(&ro_volume, 12).unwrap();
+        let grant = acl_access::authorize(&ro_node, &user, &[], 2).unwrap();
+        assert!(xattr_update::prepare(grant, b"note", b"after77", 123, 456).is_none());
+    }
+}

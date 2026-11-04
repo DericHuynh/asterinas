@@ -171,7 +171,7 @@
       "path": "fs/ext4/inode.c",
       "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/inode.c",
       "blob_sha": "1123d995494b588744ba47fcee88e9cd0cc992dd",
-      "review_scope": "__ext4_get_inode_loc group/slot/block/offset arithmetic and inode-table validation; referenced behavior only; ext4_inode_blocks and ext4_inode_blocks_set distinguish 512-byte sector counts, high fields and HUGE_FILE units; bounded profile counts data and external extent metadata; source-bound HUGE_FILE feature/flag unit decoding and exact canonical encoder with explicit alignment domain; ext4_journalled_write_end copied-prefix, initialization, inode-size/metadata dirtying and journal-stop boundaries as reference for existing initialized content candidates; no Linux folio/buffer ownership copied; __ext4_get_inode_loc rejects inode-table addresses at or below s_first_data_block; the 4KiB bootstrap profile now explicitly rejects block zero before reading inode 8"
+      "review_scope": "__ext4_get_inode_loc group/slot/block/offset arithmetic and inode-table validation; referenced behavior only; ext4_inode_blocks and ext4_inode_blocks_set distinguish 512-byte sector counts, high fields and HUGE_FILE units; bounded profile counts data and external extent metadata; source-bound HUGE_FILE feature/flag unit decoding and exact canonical encoder with explicit alignment domain; ext4_journalled_write_end copied-prefix, initialization, inode-size/metadata dirtying and journal-stop boundaries as reference for existing initialized content candidates; no Linux folio/buffer ownership copied; __ext4_get_inode_loc rejects inode-table addresses at or below s_first_data_block; the 4KiB bootstrap profile now explicitly rejects block zero before reading inode 8ext4_inode_peek_iversion (4612-4618) distinguishes ordinary VFS counters from EA-inode raw versions; low/high disk serialization and checksum reseal (4732-4745); ext4_inode_set_iversion_queried (5067-5075) and disk load (5373 onwards). Bounded ordinary-counter update retains unrelated inode bytes and rejects counter exhaustion."
     },
     {
       "path": "fs/ext4/ext4_extents.h",
@@ -243,7 +243,7 @@
       "path": "fs/ext4/xattr.c",
       "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/xattr.c",
       "blob_sha": "7bf9ba19a89db2cd9e9536191eb904afe4c5f5d8",
-      "review_scope": "Header/refcount and checksum domain; entry bounds and inline/external value bases; exact namespace/name ordering and shared block reference semantics. Independently implemented immutable storage/census; mutation and EA_INODE lifetime remain open."
+      "review_scope": "Header/refcount and checksum domain; entry bounds and inline/external value bases; exact namespace/name ordering and shared block reference semantics. Independently implemented immutable storage/census; mutation and EA_INODE lifetime remain open. Same-padded-size local fast path (1627-1665), zeroed value padding, inline non-EA e_hash=0 (1815-1850), ibody update (2252-2308), and ctime/i_version dirtying (2477-2479). Independent stricter same-length nonempty isolated user-value replacement; create/remove/resize/external COW remain open."
     },
     {
       "path": "fs/ext4/xattr.h",
@@ -274,6 +274,18 @@
       "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/hash.c",
       "blob_sha": "48483cd015d3c70d44ba26fa09a0d1619d03f1dd",
       "review_scope": "All six unkeyed legacy/half-MD4/TEA signed/unsigned byte variants; default/nonzero seeds, remaining-length padding, word permutations/rotations/rounds/feed-forward and collision/EOF normalization. Independent safe Rust modular-word state models and executable refinement; keyed SipHash/fscrypt and Unicode casefold are not enabled."
+    },
+    {
+      "path": "fs/xattr.c",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/xattr.c",
+      "blob_sha": "3e49e612e1badc0b3a7c5ab1bf92e0559625bc00",
+      "review_scope": "xattr_permission (105-160): user namespace regular/directory restriction, write permission, sticky-directory special case, separate trusted/security/system policies. Implemented regular-file user-namespace operation consumes a source-bound ACL request-2 grant; VFS idmap, authentication and LSM remain open."
+    },
+    {
+      "path": "include/linux/iversion.h",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/include/linux/iversion.h",
+      "blob_sha": "8f972eaca2ed124c3ef72ed85a7209826635f586",
+      "review_scope": "I_VERSION_QUERIED_SHIFT=1 and increment constants (95-97), queried disk initialization (187-190), forced increment (203-206) and observable peek (250-252). New ordinary inode-body user-xattr operation admits only a strict increment within the observable 63-bit domain, with no wrap/reuse."
     }
   ]
 }

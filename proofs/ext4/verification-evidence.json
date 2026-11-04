@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "license": "MPL-2.0",
-  "recorded_at": "2026-11-04T23:04:53.259787+00:00",
+  "recorded_at": "2026-11-04T23:53:08.183460+00:00",
   "scope": "Checked host core and specified abstract machines; not a complete or kernel-integrated ext4 filesystem",
   "verifier_version": {
     "verus": {
@@ -19,7 +19,7 @@
     "encountered-error": false,
     "encountered-vir-error": false,
     "success": true,
-    "verified": 1593,
+    "verified": 1623,
     "errors": 0,
     "is-verifying-entire-crate": true
   },
@@ -31,7 +31,7 @@
     "--crate-type=rlib"
   ],
   "source_sha256": {
-    "src/model.rs": "53bbfc1e78c70a2ff2dcb2baddaa82310d0baa8712cf96ba1b574c014af867ef",
+    "src/model.rs": "3083c068594c5c509e9cafb83bc8874d7ca3ffc78679fb11bc1fe5af7bc5fa79",
     "src/redo.rs": "e964baa83ca170c3cc60dbc8df4bfc470a81549ac23a5cfe4526a9cb0edb7e7f",
     "src/journal.rs": "eef5dcc269f81cbc1c7e8c6a4daf0a58cf7015423657a9cfe1f0fff186b91834",
     "src/lease.rs": "37358276a3719454ddeaf16177a2ce058b5e382c57b0609cea97031da084b1aa",
@@ -171,7 +171,7 @@
     "src/link_count.rs": "ef97ee414a627a93514de4d0c6e2b0d39f265a73a826a1f4c28a8a9221815011",
     "src/xattr_entry.rs": "0ca9e665f0b06ef89d0f270f548eb5e2759832b5d5d879c251b7c8f23e1f04a1",
     "src/xattr_table.rs": "83ec31440c40e165eb065baac04023043fd1352ce9cfb0fea0698ec5b0476771",
-    "src/xattr.rs": "78113235d207828b569709da566b6818b435b5499ba44813bd83af6dc7b45bba",
+    "src/xattr.rs": "6e3a6844aaf6c09708218180bc4b7ba0d2070b5715ef661a6082063ea2b76db9",
     "src/xattr_source.rs": "4466c639beaaf6a77daee04d0956b12fa3b3ab79ff543863c7edcb3550b00b06",
     "src/xattr_inode.rs": "dfb7ba3e50626080506f116493fa0a0ea43ce65636cb8efe2624c2b500d207e3",
     "src/acl.rs": "23c8fb4405852319a6c9a4cc64f2dafd7b41604eff25a3acd6a3ecacc16fb2df",
@@ -182,9 +182,12 @@
     "src/htree_range.rs": "9c22d35aeff157b0b20991b28c5c0b556549169ca16c3c1382fe43480233b268",
     "src/htree_names.rs": "97418e2c800bd44d49e96ae05709445602ad9e8fbe024e31fbe5abee87ea61f4",
     "src/directory_piece.rs": "336860ab7f3be6fda33136f5982054e6351180f8c9981c2df920cd56de4f51f6",
-    "src/directory_htree.rs": "4ddc4afa2e04121d8b7a74204f987da91ad48b073051bf765a4318224e7b5644"
+    "src/directory_htree.rs": "4ddc4afa2e04121d8b7a74204f987da91ad48b073051bf765a4318224e7b5644",
+    "src/xattr_table_edit.rs": "51bb1f301bc2a79723d33a51a22793da2e3619ed888f9a7107e55213af1a55df",
+    "src/xattr_replace.rs": "9c4a3ec825b6b86789894b80d8a829e82787f0274032dcd4c435513482091e17",
+    "src/xattr_update.rs": "37cfab0efee1f0b11b2d493068c8d9083214e722c594e4ea6d2eaf7558554c83"
   },
-  "lock_sha256": "b8770ddbc9db0d98693e83b8ed82d7c2a9f2a4ddc4474b27fbb775e79183d84e",
+  "lock_sha256": "9c3be17277aa6eab3f426c8c1c7c2f948598d2fd65e4ca33f17ba1741dddf180",
   "runner_sha256": "de6b473ab50632068de9e7fc619591c7b4d5afbc0058a1fcd7f946c0198beb91",
   "named_proof_coverage": [
     "access::override_cannot_execute_a_nonexecutable_regular_file",
@@ -721,9 +724,22 @@
     "xattr_entry::decoded_entry_has_a_bounded_name",
     "xattr_entry::decoded_values_cannot_escape_their_container",
     "xattr_inode::a_full_xattr_key_cannot_select_two_different_values",
+    "xattr_replace::replacement_changes_only_its_value_ctime_version_and_checksum",
+    "xattr_replace::replacement_retains_inode_and_table_validity_and_every_other_attribute",
     "xattr_source::every_referenced_external_block_has_one_canonical_claim",
     "xattr_table::every_local_value_is_disjoint_from_all_entry_and_terminator_bytes",
-    "xattr_table::successful_tables_have_one_value_for_each_full_namespace_and_name_key"
+    "xattr_table::successful_tables_have_one_value_for_each_full_namespace_and_name_key",
+    "xattr_table_edit::an_isolated_value_edit_preserves_every_other_value",
+    "xattr_table_edit::every_entry_precedes_the_complete_table_terminator",
+    "xattr_table_edit::preserving_entry_and_terminator_bytes_preserves_the_complete_table",
+    "xattr_table_edit::two_complete_tables_from_the_same_bytes_have_identical_records",
+    "xattr_update::a_successful_journalled_update_has_the_exact_durable_inode",
+    "xattr_update::admitted_updates_preserve_every_data_directory_extent_and_external_xattr_block",
+    "xattr_update::an_admitted_update_has_the_exact_replaced_inode_home",
+    "xattr_update::every_candidate_has_the_exact_source_write_grant",
+    "xattr_update::every_successful_recovery_after_a_writer_cut_has_the_complete_old_or_new_inode",
+    "xattr_update::neighboring_inode_bytes_in_the_same_table_block_are_unchanged",
+    "xattr_update::no_candidate_changes_another_inline_attribute"
   ],
   "named_executable_coverage": [
     "access::allowed",
@@ -1161,6 +1177,7 @@
     "xattr::entries",
     "xattr::entry_table",
     "xattr::inode_pointer",
+    "xattr::parameters",
     "xattr::parse_block",
     "xattr::parse_body",
     "xattr::physical_block",
@@ -1170,6 +1187,7 @@
     "xattr_inode::distinct_keys",
     "xattr_inode::get",
     "xattr_inode::inspect",
+    "xattr_replace::encode",
     "xattr_source::audit",
     "xattr_source::inspect_block",
     "xattr_source::inspect_body",
@@ -1178,16 +1196,20 @@
     "xattr_table::metadata",
     "xattr_table::name",
     "xattr_table::source_bytes",
-    "xattr_table::value"
+    "xattr_table::value",
+    "xattr_table_edit::has_isolated_local_value",
+    "xattr_update::after_image",
+    "xattr_update::begin",
+    "xattr_update::prepare"
   ],
-  "host_library_sha256": "a1069c64d6aa7fecb1198bd16c5fc97de43f635d12268243591c90f6f377e271",
+  "host_library_sha256": "3cc4421d08cd5f4d9a2b6fe7e08d6751fcd6b51bea3c691760dabeadf9bc87ec",
   "compatibility": {
     "schema": 1,
     "status": "passed",
     "scope": "host interoperability tests, not formal proof",
     "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
-    "proof_artifact_sha256": "a1069c64d6aa7fecb1198bd16c5fc97de43f635d12268243591c90f6f377e271",
-    "image_sha256": "945da2c59fe7cd91280ec9ccdfce85b4466c499f2d1db801e7b72173a0b425ec",
+    "proof_artifact_sha256": "3cc4421d08cd5f4d9a2b6fe7e08d6751fcd6b51bea3c691760dabeadf9bc87ec",
+    "image_sha256": "f14df041df7a4e4ee7ac9426d5b4d3b4b23366fe017c1d48e328df45e28c3af2",
     "request_boundary_rejections": [
       "reuse_request",
       "redirect_completion",
@@ -1256,15 +1278,20 @@
       "forge_htree_name_catalog",
       "forge_htree_source_record",
       "mutate_live_htree_name_source",
-      "forge_directory_piece"
+      "forge_directory_piece",
+      "forge_xattr_update_candidate",
+      "redirect_xattr_update_source",
+      "reuse_xattr_update_authorization",
+      "reuse_started_xattr_update",
+      "mutate_xattr_update_image"
     ],
-    "compatibility_runner_sha256": "d182733223906719749509a5b682bc849f1e7893c09f8e58b11aa745a539e3c3",
+    "compatibility_runner_sha256": "1f3d66ed962153b918bbf9a08e29365d16edc27d72f785303cac2c264b003155",
     "test_source_sha256": {
-      "compat": "750f46cc68d63428f03b63f7f6e9778cc065f0c658162176c4c758a377baafe5",
+      "compat": "b94e06f650c3baaa622cb0e68415f75771cef08aca76acb13e4f8bdb681df0bf",
       "journal": "ba305b89c3bd732b3e2794c6e1be43a810328433d9c4aaf1297ada866256d73a"
     }
   },
-  "compatibility_test_count": 145,
+  "compatibility_test_count": 147,
   "e2fsprogs_version": "1.47.0",
   "negative_gate_checks": {
     "status": "passed",
