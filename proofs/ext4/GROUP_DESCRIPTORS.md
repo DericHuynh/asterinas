@@ -4,8 +4,8 @@
 
 The checked core admits ext4's 64BIT feature with 64-byte group descriptors in
 its bounded 4 KiB profile. Exact wide field codecs are also available. Full
-64-bit-volume allocation, other descriptor sizes, FLEX_BG, META_BG, block-bitmap initialization and allocation transitions remain
-unfinished. [Lazy inode groups](LAZY_INODES.md) have a checked static interpretation.
+64-bit-volume allocation, other descriptor sizes, FLEX_BG, META_BG and allocation/initialization transitions remain
+unfinished. [Lazy inode](LAZY_INODES.md) and [block](LAZY_BLOCKS.md) groups have checked static interpretations.
 
 | Component | Checked representation and boundary |
 | --- | --- |

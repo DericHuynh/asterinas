@@ -36,7 +36,7 @@ unsupported markers need Linux-compatible handling, not invented encodings.
 | RO_COMPAT | `0x0040` | `EXTRA_ISIZE` | Partial: initial profile only | Variable inode size, extra fields and checksum coverage |
 | RO_COMPAT | `0x0100` | `QUOTA` | Not implemented | Quota inode ownership, usage/reservation and atomic counter transitions |
 | RO_COMPAT | `0x0200` | `BIGALLOC` | Not implemented | Cluster bitmap, shared inode clusters, partial-cluster lifecycle and zeroing |
-| RO_COMPAT | `0x0400` | `METADATA_CSUM` | Partial: bounded source metadata and lazy inode groups | Checked checksum domains, extended descriptor/bitmap checks and INODE_UNINIT logical bitmap semantics; BLOCK_UNINIT, remaining metadata/layouts and mutation protocols remain |
+| RO_COMPAT | `0x0400` | `METADATA_CSUM` | Partial: bounded source metadata and lazy inode groups | Checked checksum domains, extended descriptor/bitmap checks and INODE_UNINIT/BLOCK_UNINIT logical bitmap semantics; remaining metadata/layouts and mutation/initialization protocols remain |
 | RO_COMPAT | `0x1000` | `READONLY` | Not implemented | Read-only feature semantics and prohibition of persistent mutation |
 | RO_COMPAT | `0x2000` | `PROJECT` | Not implemented | Project IDs, inheritance, project quota and authorization |
 | RO_COMPAT | `0x8000` | `VERITY` | Not implemented | Merkle metadata, immutable content and explicit cryptographic assumptions |

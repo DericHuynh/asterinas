@@ -4298,10 +4298,8 @@ mod lazy_inode_tests {
                         (14usize, ipg as u16 - 1),
                         (16, 1),
                         (28, ipg as u16 - 1),
-                        (18, 2),
-                        (18, 3),
-                        (18, 6),
-                        (18, 7),
+                        (18, 8),
+                        (18, 9),
                         (18, 0x8000),
                     ] {
                         let mut bad = descriptor.to_vec();
@@ -4309,7 +4307,301 @@ mod lazy_inode_tests {
                         seal_descriptor(&mut bad, 1, seed);
                         assert!(
                             core::group::parse(&bad, 1, sb.blocks(), ipg, seed).is_none(),
-                            "lazy counters and unsupported BLOCK_UNINIT/unknown flags must fail closed"
+                            "lazy counters and unknown group flags must fail closed"
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+mod lazy_block_tests {
+    use core::{bitmap, block_bitmap, snapshot::Snapshot};
+
+    use super::{
+        core,
+        group64_tests::{command, seal_descriptor},
+        image, le32, metadata,
+    };
+
+    #[test]
+    fn synthesized_block_bits_match_reserved_ranges_sparse_backups_and_partial_group_padding() {
+        let image = image();
+        let (_, _, seed) = metadata(&image);
+        for wide in [false, true] {
+            for number in [0u32, 1, 2, 3, 5, 7, 9, 25, 27, 31] {
+                let backup = matches!(number, 0 | 1 | 3 | 5 | 7 | 9 | 25 | 27);
+                for valid in [8191u32, 8192, 32768] {
+                    for ipg in [16u32, 256, 4096, 32768] {
+                        let first = number * 32768;
+                        let blocks = first + valid;
+                        let mut descriptor = image[4096..4128].to_vec();
+                        if wide {
+                            descriptor.resize(64, 0);
+                        }
+                        descriptor[0..4].copy_from_slice(&(first + 2).to_le_bytes());
+                        descriptor[4..8].copy_from_slice(&(first + 3).to_le_bytes());
+                        descriptor[8..12].copy_from_slice(&(first + 4).to_le_bytes());
+                        let mut allocated = std::collections::BTreeSet::new();
+                        if backup {
+                            allocated.extend([first, first + 1]);
+                        }
+                        allocated.extend([first + 2, first + 3]);
+                        allocated.extend(first + 4..first + 4 + ipg / 16);
+                        let free = valid - allocated.len() as u32;
+                        descriptor[12..14].copy_from_slice(&(free as u16).to_le_bytes());
+                        descriptor[14..16].copy_from_slice(&(ipg as u16).to_le_bytes());
+                        descriptor[16..18].fill(0);
+                        descriptor[18..20].copy_from_slice(
+                            &(if number == 0 { 6u16 } else { 7u16 }).to_le_bytes(),
+                        );
+                        descriptor[28..30].copy_from_slice(&(ipg as u16).to_le_bytes());
+                        seal_descriptor(&mut descriptor, number, seed);
+                        let logical =
+                            block_bitmap::synthesize(&descriptor, number, blocks, ipg, seed)
+                                .unwrap();
+                        assert_eq!(logical.entry_count(), valid);
+                        assert_eq!(logical.free_count(), free);
+                        for bit in 0..32768 {
+                            let expected = bit >= valid || allocated.contains(&(first + bit));
+                            assert_eq!(
+                                bitmap::read_bit(logical.raw_image(), bit),
+                                Some(expected),
+                                "group {number}, valid {valid}, ipg {ipg}, bit {bit}"
+                            );
+                            assert_eq!(
+                                logical.is_set(bit),
+                                if bit < valid { Some(expected) } else { None }
+                            );
+                        }
+                        let mut wrong_count = descriptor.clone();
+                        wrong_count[12..14].copy_from_slice(&((free + 1) as u16).to_le_bytes());
+                        seal_descriptor(&mut wrong_count, number, seed);
+                        assert!(
+                            block_bitmap::synthesize(&wrong_count, number, blocks, ipg, seed)
+                                .is_none()
+                        );
+                    }
+                }
+            }
+        }
+        for length in [0, 1, 31, 33, 63, 65] {
+            assert!(block_bitmap::synthesize(&vec![0; length], 0, 8192, 256, seed).is_none());
+        }
+        assert!(block_bitmap::synthesize(&image[4096..4128], 32, 1048576, 256, seed).is_none());
+        assert!(block_bitmap::synthesize(&image[4096..4128], 0, 1048577, 256, seed).is_none());
+    }
+
+    #[test]
+    fn native_lazy_block_groups_ignore_stale_bytes_but_reject_metadata_aliases_and_hidden_journal_blocks()
+     {
+        struct ImageFile(String);
+        impl Drop for ImageFile {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_file(&self.0);
+            }
+        }
+        for wide in [false, true] {
+            for huge in [false, true] {
+                for csum_seed in [false, true] {
+                    let path = ImageFile(format!(
+                        "build/native-lazy-blocks-{}-{wide}-{huge}-{csum_seed}.img",
+                        std::process::id()
+                    ));
+                    let features = format!(
+                        "none,has_journal,extent,filetype,sparse_super,large_file,extra_isize,metadata_csum{}{}{}",
+                        if wide { ",64bit" } else { "" },
+                        if huge { ",huge_file" } else { "" },
+                        if csum_seed { ",metadata_csum_seed" } else { "" }
+                    );
+                    command(
+                        "MKE2FS",
+                        &[
+                            "-q",
+                            "-F",
+                            "-t",
+                            "ext4",
+                            "-b",
+                            "4096",
+                            "-I",
+                            "256",
+                            "-N",
+                            "16384",
+                            "-O",
+                            &features,
+                            "-E",
+                            "lazy_itable_init=0,lazy_journal_init=0",
+                            &path.0,
+                            "106496",
+                        ],
+                        false,
+                    );
+                    command(
+                        "DEBUGFS",
+                        &["-w", "-R", "write build/fixture-file.bin /payload", &path.0],
+                        false,
+                    );
+                    command("E2FSCK", &["-fn", &path.0], false);
+                    let image = std::fs::read(&path.0).unwrap();
+                    let (sb, _, seed) = metadata(&image);
+                    let width = if wide { 64 } else { 32 };
+                    let ipg = le32(&image, 1064);
+                    let source = Snapshot::from_bytes(&image);
+                    let original = core::allocation::parse(source.duplicate()).unwrap();
+                    assert_eq!(original.index().group_count(), 4);
+                    assert_ne!(
+                        core::bytes::read_le16(&image, 4096 + width + 18).unwrap() & 2,
+                        0,
+                        "native mke2fs leaves a complete unused group BLOCK_UNINIT"
+                    );
+                    assert!(core::image_validation::inspect(source.duplicate()).is_some());
+                    assert!(core::recovery_admission::prepare(&source).is_some());
+                    let mut stale = image.clone();
+                    for group in [1usize, 3] {
+                        let offset = 4096 + group * width;
+                        let block_bitmap = le32(&stale, offset) as usize * 4096;
+                        stale[block_bitmap..block_bitmap + 4096].fill(0xa5);
+                        let descriptor = &mut stale[offset..offset + width];
+                        descriptor[18..20].copy_from_slice(&7u16.to_le_bytes());
+                        descriptor[24..28].fill(0x69);
+                        if wide {
+                            descriptor[56..60].fill(0xb3);
+                        }
+                        seal_descriptor(descriptor, group as u32, seed);
+                    }
+                    let volume = core::allocation::parse(Snapshot::from_bytes(&stale)).unwrap();
+                    assert!(
+                        core::image_validation::inspect(Snapshot::from_bytes(&stale)).is_some()
+                    );
+                    assert!(
+                        core::recovery_admission::prepare(&Snapshot::from_bytes(&stale)).is_some()
+                    );
+                    for group in [1u32, 3] {
+                        let meta = volume.index().get(group).unwrap();
+                        let (logical, _) = meta.bitmaps();
+                        assert_eq!(
+                            logical.raw_image(),
+                            block_bitmap::synthesize(
+                                meta.descriptor(),
+                                group,
+                                sb.blocks(),
+                                ipg,
+                                seed
+                            )
+                            .unwrap()
+                            .raw_image()
+                        );
+                        let first = group * 32768;
+                        assert_eq!(volume.census().role_of(first).unwrap().kind, 1);
+                        assert_eq!(volume.census().role_of(first + 1).unwrap().kind, 1);
+                        assert_eq!(
+                            volume
+                                .census()
+                                .role_of(meta.info().block_bitmap)
+                                .unwrap()
+                                .kind,
+                            3
+                        );
+                        assert_eq!(
+                            volume
+                                .census()
+                                .role_of(meta.info().inode_bitmap)
+                                .unwrap()
+                                .kind,
+                            3
+                        );
+                        assert_eq!(
+                            volume
+                                .census()
+                                .role_of(meta.info().inode_table)
+                                .unwrap()
+                                .kind,
+                            3
+                        );
+                        assert!(!logical.is_set(260).unwrap());
+                        assert_eq!(volume.census().role_of(first + 260).unwrap().kind, 0);
+                    }
+                    assert_eq!(
+                        bitmap::read_bit(
+                            volume.index().get(3).unwrap().bitmaps().0.raw_image(),
+                            8192
+                        ),
+                        Some(true)
+                    );
+                    if !wide && !huge && !csum_seed {
+                        for flags in [2u16, 6] {
+                            let mut initialized_inodes = stale.clone();
+                            let offset = 4096 + width;
+                            let address = le32(&initialized_inodes, offset + 4) as usize * 4096;
+                            let inode_bits = bitmap::synthesize_free_inodes(ipg, seed).unwrap();
+                            initialized_inodes[address..address + 4096]
+                                .copy_from_slice(inode_bits.raw_image());
+                            let checksum = core::crc::crc32c(
+                                seed,
+                                &inode_bits.raw_image()[..ipg as usize / 8],
+                            );
+                            let descriptor = &mut initialized_inodes[offset..offset + width];
+                            descriptor[18..20].copy_from_slice(&flags.to_le_bytes());
+                            descriptor[26..28].copy_from_slice(&(checksum as u16).to_le_bytes());
+                            seal_descriptor(descriptor, 1, seed);
+                            assert!(
+                                core::image_validation::inspect(Snapshot::from_bytes(
+                                    &initialized_inodes
+                                ))
+                                .is_some()
+                            );
+                        }
+                    }
+                    drop(volume);
+                    let mut cleared = stale.clone();
+                    let offset = 4096 + width;
+                    let descriptor = &mut cleared[offset..offset + width];
+                    descriptor[18..20].copy_from_slice(&5u16.to_le_bytes());
+                    seal_descriptor(descriptor, 1, seed);
+                    assert!(
+                        core::group_metadata::parse(&Snapshot::from_bytes(&cleared), 1).is_none(),
+                        "clearing BLOCK_UNINIT restores physical bitmap checksum/count checks"
+                    );
+                    if wide && huge && csum_seed {
+                        let mut alias = stale.clone();
+                        let free = core::bytes::read_le16(&alias, offset + 12).unwrap() + 1;
+                        let descriptor = &mut alias[offset..offset + width];
+                        descriptor[0..4].copy_from_slice(&(32768u32 + 1).to_le_bytes());
+                        descriptor[12..14].copy_from_slice(&free.to_le_bytes());
+                        seal_descriptor(descriptor, 1, seed);
+                        let total = le32(&alias, 1036) + 1;
+                        alias[1036..1040].copy_from_slice(&total.to_le_bytes());
+                        let checksum = core::crc::crc32c(0xffffffff, &alias[1024..2044]);
+                        alias[2044..2048].copy_from_slice(&checksum.to_le_bytes());
+                        assert!(
+                            core::group_metadata::parse(&Snapshot::from_bytes(&alias), 1).is_some(),
+                            "local synthesized bits can describe the overlapping metadata union"
+                        );
+                        assert!(
+                            core::allocation::parse(Snapshot::from_bytes(&alias)).is_none(),
+                            "global disjoint claims reject reuse of a backup GDT block as a bitmap"
+                        );
+                        let mut hidden_journal = image.clone();
+                        let offset = 4096 + 2 * width;
+                        let descriptor = &mut hidden_journal[offset..offset + width];
+                        let count = 32768 - 2 - ipg / 16; // group 2 has no backup superblock
+                        descriptor[12..14].copy_from_slice(&(count as u16).to_le_bytes());
+                        descriptor[18..20].copy_from_slice(&7u16.to_le_bytes());
+                        seal_descriptor(descriptor, 2, seed);
+                        let old = core::bytes::read_le16(&image, offset + 12).unwrap() as u32;
+                        let total = le32(&image, 1036) + count - old;
+                        hidden_journal[1036..1040].copy_from_slice(&total.to_le_bytes());
+                        let checksum = core::crc::crc32c(0xffffffff, &hidden_journal[1024..2044]);
+                        hidden_journal[2044..2048].copy_from_slice(&checksum.to_le_bytes());
+                        assert!(
+                            core::group_metadata::parse(&Snapshot::from_bytes(&hidden_journal), 2)
+                                .is_some()
+                        );
+                        assert!(
+                            core::allocation::parse(Snapshot::from_bytes(&hidden_journal))
+                                .is_none(),
+                            "an uninitialized logical bitmap cannot hide allocated internal journal storage"
                         );
                     }
                 }

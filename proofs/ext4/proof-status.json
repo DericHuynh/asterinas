@@ -9,13 +9,13 @@
   "writable_mount_enabled": false,
   "verification": {
     "status": "core_and_models_checked",
-    "verus_verified_units": 841,
+    "verus_verified_units": 850,
     "verification_errors": 0,
-    "checked_named_proof_functions": 288,
-    "checked_named_executable_functions": 286,
+    "checked_named_proof_functions": 290,
+    "checked_named_executable_functions": 287,
     "runner_validated": true,
     "negative_gate_checks_passed": 6,
-    "host_compatibility_tests_passed": 67,
+    "host_compatibility_tests_passed": 69,
     "evidence": "verification-evidence.json",
     "request_boundary_rejections_passed": 13
   },
@@ -58,7 +58,7 @@
     "owned_block_claim_census": "checked_disjoint_ranges_preservation_on_failure_and_of_prior_occupied_slots_bitmap_agreement_and_free_count_refinement",
     "inode_extent_allocation_binding": "checked_bounded_4KiB_depth_0_to_5_source_inode_root_seed_generation_complete_metadata_role_6_and_data_claims_exact_sector_accounting_no_alias_and_global_bitmap_composition",
     "whole_volume_enumeration_and_namespace": "static_allocation_and_namespace_checked_operation_preservation_recovery_mount_and_runtime_refinement_open",
-    "same_source_group_index": "checked_complete_ordered_group_enumeration_exact_descriptor_bitmap_provenance_and_global_free_counter_sums",
+    "same_source_group_index": "checked_complete_ordered_group_enumeration_exact_descriptor_initialized_bitmap_or_canonical_lazy_provenance_and_global_free_counter_sums",
     "group_reserved_regions": "checked_sparse_super_power_rule_and_disjoint_metadata_claims_within_32_group_profile",
     "whole_image_physical_allocation": "checked_complete_same_source_claim_composition_all_ordinary_extent_depths_0_to_5_in_bounded_4KiB_profile_inode_owned_tree_metadata_reserved_regions_journal_data_all_bitmaps_counters_and_source_bound_read_inheritance",
     "bootstrap_journal_mapping_preservation_and_shadow_admission": "checked_host_core_including_owned_IO_admission_actual_filesystem_operation_driver_and_mount_refinement_open",
@@ -91,7 +91,8 @@
     "huge_file_accounting": "checked_source_superblock_feature_and_inode_flag_binding_32_48_bit_counts_sector_and_filesystem_block_units_exact_encoding_alignment_and_overflow_bounded_global_data_tree_accounting_and_16TiB_minus_4KiB_sparse_reads_runtime_and_mutations_open",
     "ext4_metadata_and_jbd2_checksum_domains": "checked_source_bound_CSUM_SEED_selection_group_inode_directory_extent_composition_independent_internal_journal_UUID_and_seed_writer_recovery_volume_identity_and_non_RECOVER_feature_flag_preservation_bounded_profile_other_metadata_runtime_mutations_open",
     "wide_group_fields_and_extended_descriptors": "checked_total_64_bit_address_and_super_count_32_bit_counter_codecs_nontruncating_encoding_source_selected_32_64_byte_descriptor_stride_complete_descriptor_and_bitmap_CRCs_bounded_high_field_rejection_all_group_low_high_bootstrap_identity_static_allocation_namespace_and_recovery_composition_high_address_volumes_other_widths_runtime_and_mutations_open",
-    "lazy_inode_bitmap_interpretation": "checked_source_descriptor_flags_and_CRC_group_zero_rejection_exact_synthesized_empty_bitmap_free_count_allocated_padding_no_live_inode_or_directory_target_from_stale_physical_bits_or_table_static_allocation_namespace_and_recovery_composition_first_allocation_concurrency_background_table_zeroing_BLOCK_UNINIT_and_legacy_GDT_CSUM_open"
+    "lazy_inode_bitmap_interpretation": "checked_source_descriptor_flags_and_CRC_group_zero_rejection_exact_synthesized_empty_bitmap_free_count_allocated_padding_no_live_inode_or_directory_target_from_stale_physical_bits_or_table_static_allocation_namespace_and_recovery_composition_first_allocation_concurrency_background_table_zeroing_and_legacy_GDT_CSUM_open",
+    "lazy_block_bitmap_interpretation": "checked_source_descriptor_flags_CRC_exact_canonical_reserved_super_GDT_bitmap_table_and_padding_bits_complete_bounded_synthesis_admission_exact_free_count_and_reserved_metadata_claim_for_every_real_set_bit_global_census_namespace_recovery_composition_no_hidden_journal_or_metadata_alias_first_allocation_concurrency_other_group_layouts_and_legacy_GDT_CSUM_open"
   },
   "production_activation_gate": "All applicable obligations in PROOF_OBLIGATIONS.md must be discharged for the admitted profile.",
   "evidence_policy": "Only successful pinned entire-crate checking plus compilation produces a valid build report; it certifies only the declared source/model scope.",

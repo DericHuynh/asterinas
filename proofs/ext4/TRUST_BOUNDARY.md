@@ -184,8 +184,8 @@ stated host allocator foundation. Kernel memory must use fallible CortenMM/OSTD
 reservation before accepting a volume or transaction.
 
 The borrowed `snapshot.rs` source prevents host Rust mutation while its bytes are
-borrowed. `group_metadata.rs` reads each descriptor and bitmap at its declared
-address, and `group_index.rs` retains that same source while checking every group
+borrowed. `group_metadata.rs` reads each descriptor and initialized bitmap at its declared
+address, or derives the appropriate canonical bitmap under checked UNINIT flags, and `group_index.rs` retains that same source while checking every group
 and summing free counters. Ghost byte provenance does not use CRC injectivity.
 Sparse-super/GDT reservations match the Linux power rule within the 32-group
 resource profile. The allocation builder now also enumerates every allocated inode and proves
@@ -193,11 +193,13 @@ complete bitmap/counter agreement. Static namespace validation now composes the 
 a device snapshot, or permission to validate unrecovered partial checkpoints.
 
 `allocation.rs` produces a whole-image allocation certificate for the bounded
-initialized-group subset. It checks all reserved regions and allocated inode
+logical-group subset. It checks all reserved regions and allocated inode
 claims against the same immutable source, including inode-bitmap markers, unused
 reserved inode storage, directory counts and declared unused inode-table tails.
-Every block-bitmap bit matches exactly the disjoint source-derived census; its
-free total equals the primary superblock. This does not certify namespace/link
+Every logical block-bitmap bit matches exactly the disjoint source-derived census;
+BLOCK_UNINIT selects proved reserved-metadata/padding bits, and initialized groups
+retain their physical bitmap relation. The aggregate free total equals the
+primary superblock. This does not certify namespace/link
 consistency, VFS access, journal cleanliness, recovery or mount admission. Global
 allocation validation belongs after recovery or over a validated shadow image;
 bootstrap journal discovery and operation preservation of its static inode/table

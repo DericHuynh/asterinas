@@ -9,10 +9,10 @@ rule in the bounded metadata-checksum profile, for 32- and 64-byte descriptors.
 
 | Boundary | Checked behavior |
 | --- | --- |
-| Group flags | Flags 0/4 select the physical initialized inode bitmap; 1/5 select INODE_UNINIT, with optional INODE_ZEROED bookkeeping. BLOCK_UNINIT and unknown flags remain rejected. |
+| Group flags | INODE_UNINIT (`0x1`) selects the logical empty inode bitmap; otherwise use initialized physical bits. BLOCK_UNINIT (`0x2`) independently selects the block bitmap interpretation, with optional INODE_ZEROED bookkeeping; unknown flags remain rejected. |
 | Descriptor admission | Verify the descriptor checksum before using its flags. An uninitialized inode group must be nonzero, report all `inodes_per_group` inodes free, zero used directories and a fully unused inode-table suffix. |
 | Logical bitmap | `bitmap::synthesize_free_inodes` returns 4096 initialized bytes, zero bits for every actual inode, allocated padding, and an exact free count. Invalid geometry returns None. Its checksum describes this logical buffer, rather than claiming equality with unused physical checksum fields. |
-| Source relation | An initialized inode bitmap retains exact source-byte provenance and the on-disk checksum relation. An INODE_UNINIT bitmap instead equals the canonical synthesized bitmap derived from the same checked descriptor/superblock. Stored inode-bitmap checksums and stale physical bitmap bytes are ignored only in that branch. Block bitmap checks remain active. |
+| Source relation | An initialized inode bitmap retains exact source-byte provenance and the on-disk checksum relation. An INODE_UNINIT bitmap instead equals the canonical synthesized bitmap derived from the same checked descriptor/superblock. Stored inode-bitmap checksums and stale physical bitmap bytes are ignored only in that branch. Block bitmaps independently retain initialized checks or their proved [BLOCK_UNINIT interpretation](LAZY_BLOCKS.md). |
 | Lookup | Theorems in bitmap.rs, group_metadata.rs and allocated_inode.rs prove that no inode in an uninitialized group is live. Both allocated inode lookup and bound extent-tree admission reject it before interpreting stale inode contents. |
 | Namespace | Directory target admission uses that same logical allocation bitmap. A correctly checksummed directory entry cannot make a stale inode reachable. |
 | Group zero | INODE_UNINIT is rejected for group zero, preserving the reserved inode markers and the root/internal journal boundary. |
@@ -26,8 +26,9 @@ This implements static interpretation. Allocating the first inode requires a
 separate proved transaction that initializes the bitmap/table as necessary,
 changes counters and clears INODE_UNINIT without exposing stale contents.
 Concurrent initialization and background inode-table zeroing are unfinished;
-no writable or mounted filesystem is enabled by this change. BLOCK_UNINIT and
-legacy GDT_CSUM checksum handling also remain unfinished.
+no writable or mounted filesystem is enabled by this change. BLOCK_UNINIT now
+has a checked static interpretation; its allocation transition and legacy
+GDT_CSUM checksum handling remain unfinished.
 
 The Linux reference is pinned `fs/ext4/ialloc.c`, recorded in
 [sources.json](sources.json). Host tests cover ordinary native two-group images
