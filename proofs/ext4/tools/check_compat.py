@@ -110,6 +110,19 @@ def main():
                                "let h = p.handle_at(0).unwrap(); let _ = p.handle_at(0); let _ = h.close(); }\n", "E0499"),
         "forge_frozen_edit_batch": ("pub fn misuse(f: verified_ext4::edit_handles::FrozenBatch) "
                                     "{ let _ = verified_ext4::edit_handles::FrozenBatch { ..f }; }\n", "E0451"),
+        "forge_admitted_writer": ("pub fn misuse(w: verified_ext4::writer_admission::CheckedWriter<'_, '_>) "
+                                   "{ let _ = verified_ext4::writer_admission::CheckedWriter { ..w }; }\n", "E0451"),
+        "replace_admitted_writer": ("pub fn misuse(mut w: verified_ext4::writer_admission::CheckedWriter<'_, '_>, "
+                                     "raw: verified_ext4::write_io::Writer) { w.writer = raw; }\n", "E0616"),
+        "extract_admitted_writer": ("pub fn misuse(w: verified_ext4::writer_admission::CheckedWriter<'_, '_>) "
+                                     "{ let _ = w.writer; }\n", "E0616"),
+        "reuse_admitted_write_completion": ("pub fn misuse(p: verified_ext4::writer_admission::Pending<'_, '_>) { "
+                                             "let _ = p.finish_pending(verified_ext4::recovery_request::Completion::Succeeded); "
+                                             "let _ = p.finish_pending(verified_ext4::recovery_request::Completion::Succeeded); }\n", "E0382"),
+        "reuse_dispatched_admitted_writer": ("pub fn misuse(w: verified_ext4::writer_admission::CheckedWriter<'_, '_>) "
+                                              "{ let _ = w.dispatch(); let _ = w.dispatch(); }\n", "E0382"),
+        "replace_admitted_write_pending": ("pub fn misuse(mut p: verified_ext4::writer_admission::Pending<'_, '_>, "
+                                            "raw: verified_ext4::write_io::Pending) { p.pending = raw; }\n", "E0616"),
     })
     for name, (source, code) in misuse.items():
         path = BUILD / (name + ".rs")

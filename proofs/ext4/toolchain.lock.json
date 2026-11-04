@@ -113,7 +113,8 @@
     "src/group_fields.rs",
     "src/block_bitmap.rs",
     "src/edit_handles.rs",
-    "src/edit_schedule.rs"
+    "src/edit_schedule.rs",
+    "src/writer_admission.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -729,6 +730,25 @@
     "edit_handles::stage",
     "edit_handles::close",
     "edit_handles::abort",
-    "edit_handles::reserve"
+    "edit_handles::reserve",
+    "edit_handles::reserved_layout",
+    "patch_set::from_images",
+    "write_io::original_count",
+    "write_io::original_image",
+    "write_io::dirty_marker",
+    "write_io::retirement_image",
+    "write_io::abort",
+    "writer_admission::source_snapshot",
+    "writer_admission::engine_ref",
+    "writer_admission::finished",
+    "writer_admission::failed",
+    "writer_admission::abort",
+    "writer_admission::dispatch",
+    "writer_admission::pending_command",
+    "writer_admission::abort_pending",
+    "writer_admission::finish_pending",
+    "writer_admission::prepare",
+    "write_io::log_record_count",
+    "write_io::log_record"
   ]
 }

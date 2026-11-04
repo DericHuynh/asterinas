@@ -104,6 +104,41 @@ impl PatchSet {
         PatchSet { images }
     }
 
+    pub fn from_images(images: Vec<AfterImage>) -> (r: Result<Self, Vec<AfterImage>>)
+        ensures match r {
+            Ok(patches) => patches.wf() && patches.view() == transaction::images(images@),
+            Err(original) => !valid(transaction::images(images@)) && original@ == images@,
+        },
+    {
+        proof { reveal(valid); }
+        if images.len() > MAX_PATCHES { return Err(images); }
+        let mut index = 0usize;
+        while index < images.len()
+            invariant index <= images.len() <= MAX_PATCHES,
+                forall|i: int| 0 <= i < index ==> (#[trigger] transaction::images(images@)[i]).image.len() == 4096,
+                forall|i: int, j: int| 0 <= i < j < index ==> (#[trigger] transaction::images(images@)[i]).block < (#[trigger] transaction::images(images@)[j]).block,
+            decreases images.len() - index,
+        {
+            let image = &images[index];
+            let block = image.block();
+            let _ = image.as_slice();
+            if index > 0 && images[index - 1].block() >= block {
+                assert(!valid(transaction::images(images@))) by {
+                    reveal(valid);
+                    if valid(transaction::images(images@)) {
+                        assert(transaction::images(images@)[index as int - 1].block < transaction::images(images@)[index as int].block);
+                    }
+                }
+                return Err(images);
+            }
+            assert forall|i: int| 0 <= i < index implies (#[trigger] transaction::images(images@)[i]).block < block by {
+                if i < index as int - 1 { assert(transaction::images(images@)[i].block < transaction::images(images@)[index as int - 1].block); }
+            }
+            index += 1;
+        }
+        Ok(PatchSet { images })
+    }
+
     pub fn len(&self) -> (r: usize) ensures self.wf(), r == self.view().len(), r <= MAX_PATCHES {
         proof { use_type_invariant(self); reveal(valid); }
         self.images.len()

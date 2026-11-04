@@ -317,6 +317,13 @@ impl FrozenBatch {
         self.images
     }
 
+    pub fn reserved_layout(&self) -> (r: &JournalLayout)
+        ensures self.wf(), r.wf(), r.view() == self.frozen_layout(),
+    {
+        proof { use_type_invariant(self); }
+        &self.layout
+    }
+
     pub fn encode(self, uuid: &[u8], sequence: u32, primary: &[u8], partition_bytes: u64) -> (r: Option<Encoded>)
         ensures self.wf(), match r {
             Some(tx) => transaction::wf(tx.view()) && tx.view().original == self.frozen_view() && tx.view().layout == self.frozen_layout(),
