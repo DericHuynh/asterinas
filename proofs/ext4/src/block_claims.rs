@@ -13,7 +13,7 @@ verus! {
 pub const MAX_BLOCKS: u32 = 1048576;
 
 // 0: free, 1: reserved, 2: journal, 3: volume metadata, 4: file data,
-// 5: directory data, 6: inode-owned extent-tree metadata.
+// 5: directory data, 6: inode-owned extent-tree metadata, 7: shared xattr block.
 #[derive(Clone, Copy)]
 pub struct Slot { pub kind: u8, pub inode: u32, pub generation: u32, pub logical: u32, pub initialized: bool }
 #[derive(Clone, Copy)]
@@ -26,7 +26,7 @@ pub open spec fn free_slot() -> Slot { Slot { kind: 0, inode: 0, generation: 0, 
 
 pub open spec fn valid_claim(c: Claim, blocks: nat) -> bool {
     &&& c.length > 0 && c.start as nat + c.length <= blocks
-    &&& 1 <= c.kind <= 6
+    &&& 1 <= c.kind <= 7
     &&& (if c.kind == 4 || c.kind == 5 {
         c.inode > 0 && c.logical as nat + c.length <= 4294967296 && (c.kind == 5 ==> c.initialized)
     } else if c.kind == 6 {
@@ -163,7 +163,7 @@ proof fn matching_prefixes_have_equal_free_counts(roles: Seq<Slot>, first: u32, 
 fn check_claim(c: &Claim, blocks: usize) -> (r: bool)
     ensures r == valid_claim(*c, blocks as nat),
 {
-    c.length > 0 && c.start as u64 + c.length as u64 <= blocks as u64 && c.kind >= 1 && c.kind <= 6
+    c.length > 0 && c.start as u64 + c.length as u64 <= blocks as u64 && c.kind >= 1 && c.kind <= 7
         && if c.kind == 4 || c.kind == 5 {
             c.inode > 0 && c.logical as u64 + c.length as u64 <= 4294967296 && (c.kind != 5 || c.initialized)
         } else if c.kind == 6 {

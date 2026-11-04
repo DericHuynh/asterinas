@@ -154,7 +154,12 @@
     "src/window_bootstrap.rs",
     "src/feature_policy.rs",
     "src/backup_layout.rs",
-    "src/link_count.rs"
+    "src/link_count.rs",
+    "src/xattr_entry.rs",
+    "src/xattr_table.rs",
+    "src/xattr.rs",
+    "src/xattr_source.rs",
+    "src/xattr_inode.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -656,7 +661,14 @@
     "feature_policy::recovery_mark_preserves_readonly_stable_and_link_count_features",
     "feature_policy::no_serial_writer_starts_on_a_readonly_filesystem",
     "feature_policy::no_concurrent_window_starts_on_a_readonly_filesystem",
-    "feature_policy::linux_unsupported_compression_and_dirdata_markers_are_always_rejected"
+    "feature_policy::linux_unsupported_compression_and_dirdata_markers_are_always_rejected",
+    "xattr_entry::decoded_values_cannot_escape_their_container",
+    "xattr_entry::decoded_entry_has_a_bounded_name",
+    "xattr_table::successful_tables_have_one_value_for_each_full_namespace_and_name_key",
+    "xattr_table::every_local_value_is_disjoint_from_all_entry_and_terminator_bytes",
+    "xattr::block_checksums_cover_all_bytes_except_the_checksum_word",
+    "xattr_source::every_referenced_external_block_has_one_canonical_claim",
+    "xattr_inode::a_full_xattr_key_cannot_select_two_different_values"
   ],
   "required_flags": [
     "--no-cheating",
@@ -1059,6 +1071,28 @@
     "block_bitmap::synthesize_with_backup",
     "feature_policy::incompatible_flags",
     "superblock::feature_flags",
-    "superblock::read_only"
+    "superblock::read_only",
+    "xattr_entry::decode",
+    "xattr_table::len",
+    "xattr_table::source_bytes",
+    "xattr_table::metadata",
+    "xattr_table::name",
+    "xattr_table::value",
+    "xattr_table::find",
+    "xattr::checksum",
+    "xattr::entries",
+    "xattr::refcount",
+    "xattr::physical_block",
+    "xattr::parse_block",
+    "xattr::present",
+    "xattr::parse_body",
+    "xattr::entry_table",
+    "xattr_source::inspect_body",
+    "xattr_source::inspect_block",
+    "xattr_source::audit",
+    "xattr::inode_pointer",
+    "xattr_inode::distinct_keys",
+    "xattr_inode::get",
+    "xattr_inode::inspect"
   ]
 }

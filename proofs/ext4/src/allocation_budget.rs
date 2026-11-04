@@ -72,6 +72,8 @@ pub proof fn every_live_inode_fits_the_volume_sized_audit_budget(v: AllocationVi
     a_group_claim_sum_fits_the_complete_data_claim_sum(v.index, group, v.index.groups.len());
     extent_claims::allocated_concatenation(allocation::reserved(v.index, v.index.groups.len()) + seq![allocation::journal_claim(v.journal)],
         allocation::data(v.index, v.index.groups.len()));
+    extent_claims::allocated_concatenation(allocation::reserved(v.index, v.index.groups.len()) + seq![allocation::journal_claim(v.journal)]
+        + allocation::data(v.index, v.index.groups.len()), crate::xattr_source::claims(v.index, v.index.inodes as nat));
     extent_claims::an_inode_audit_visits_at_most_its_claimed_blocks_plus_the_inline_root(v.index, number);
 }
 

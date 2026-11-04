@@ -38,7 +38,7 @@ pub open spec fn journal_matches(v: IndexView, j: LayoutView) -> bool {
     &&& j.fs_blocks == v.blocks && j.start > 1 && 1024 <= j.journal_blocks <= 32768
     &&& j.start as nat + j.journal_blocks <= v.blocks
     &&& j.start as nat == bytes::le32(raw, 60) && j.journal_blocks as nat == bytes::le32(raw, 4) / 4096
-    &&& bytes::le16(raw, 116) == 0 && bytes::le32(raw, 28) == j.journal_blocks as nat * 8
+    &&& bytes::le16(raw, 116) == 0 && bytes::le32(raw, 28) == (j.journal_blocks as nat + crate::xattr::allocated_block_count(raw)) * 8
 }
 
 #[verifier::opaque]
@@ -71,7 +71,8 @@ pub open spec fn valid(v: AllocationView) -> bool {
     &&& group_index::valid(v.index)
     &&& block_claims::ledger(v.census.roles, v.census.claims) && v.census.roles.len() == v.index.blocks
     &&& journal_matches(v.index, v.journal)
-    &&& v.census.claims == reserved(v.index, v.index.groups.len()) + seq![journal_claim(v.journal)] + data(v.index, v.index.groups.len())
+    &&& v.census.claims == reserved(v.index, v.index.groups.len()) + seq![journal_claim(v.journal)] + data(v.index, v.index.groups.len()) + crate::xattr_source::claims(v.index, v.index.inodes as nat)
+    &&& crate::xattr_source::checked(v.index, v.census.roles)
     &&& checked_groups(v.index, v.census.roles, v.index.groups.len())
     &&& allocation_counts::bitmaps_match(v.index, v.census.roles, v.index.groups.len())
     &&& block_claims::free_roles(v.census.roles, 0, v.census.roles.len()) == bytes::le32(v.index.source, 1036)
@@ -277,13 +278,23 @@ pub fn parse<'a>(source: Snapshot<'a>) -> (r: Option<Allocation<'a>>)
         }
         g += 1;
     }
+    let ghost before_attributes = census.view().roles;
+    census = match crate::xattr_source::audit(census, &index) { Some(next) => next, None => { return None; } };
+    proof {
+        reveal(checked_groups);
+        assert forall|g: nat| g < count implies #[trigger] inode_group::checked_prefix(index.view(), census.view().roles, g as u32, index.view().ipg as nat)
+            && inode_group::directory_count(index.view(), g as u32, index.view().ipg as nat) == bytes::le16(index.view().groups[g as int].descriptor, 16) by {
+            inode_group::occupied_preservation_keeps_checked_nodes(index.view(), before_attributes, census.view().roles, g as u32, index.view().ipg as nat);
+        }
+    }
     g = 0;
     assert(allocation_counts::bitmaps_match(index.view(), census.view().roles, 0)) by { reveal(allocation_counts::bitmaps_match); }
     while g < count
         invariant index.wf(), count == index.view().groups.len(), count <= 32, g <= count,
             census.wf(), census.view().roles.len() == index.view().blocks,
             journal_matches(index.view(), journal.view()),
-            census.view().claims == reserved(index.view(), count as nat) + seq![journal_claim(journal.view())] + data(index.view(), count as nat),
+            census.view().claims == reserved(index.view(), count as nat) + seq![journal_claim(journal.view())] + data(index.view(), count as nat) + crate::xattr_source::claims(index.view(), index.view().inodes as nat),
+            crate::xattr_source::checked(index.view(), census.view().roles),
             checked_groups(index.view(), census.view().roles, count as nat),
             allocation_counts::bitmaps_match(index.view(), census.view().roles, g as nat),
         decreases count - g,

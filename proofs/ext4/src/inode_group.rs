@@ -57,7 +57,7 @@ pub open spec fn ordinary_checked(v: IndexView, roles: Seq<Slot>, n: u32) -> boo
     &&& extent_claims::accepted(v, n)
     &&& n == 2 ==> (bytes::le16(raw, 0) as u16 & 0xf000) == 0x4000
     &&& !group_index::has_huge_files(v) ==> bytes::le16(raw, 116) == 0
-    &&& inode_blocks::sectors(raw, 4096, group_index::has_huge_files(v)) == 8 * inode_claims::allocated(extent_claims::claims(v, n))
+    &&& inode_blocks::sectors(raw, 4096, group_index::has_huge_files(v)) == 8 * (inode_claims::allocated(extent_claims::claims(v, n)) + crate::xattr::allocated_block_count(raw))
     &&& block_claims::mapped_claims(roles, extent_claims::claims(v, n))
 }
 

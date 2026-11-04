@@ -225,3 +225,13 @@ pub mod window_bootstrap;
 pub mod feature_policy;
 pub mod backup_layout;
 pub mod link_count;
+
+pub mod xattr_entry;
+
+pub mod xattr_table;
+
+pub mod xattr;
+
+pub mod xattr_source;
+
+pub mod xattr_inode;

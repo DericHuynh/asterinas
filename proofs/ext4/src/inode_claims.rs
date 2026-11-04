@@ -95,7 +95,7 @@ pub open spec fn journal_claim(raw: Seq<u8>) -> Claim {
 
 pub open spec fn journal_reservation_admissible(census: CensusView, raw: Seq<u8>, inodes: u32, blocks: u32, seed: u32) -> bool {
     &&& census.roles.len() == blocks && layout::admitted(raw, inodes, blocks, seed)
-    &&& bytes::le16(raw, 116) == 0 && bytes::le32(raw, 28) == journal_claim(raw).length as nat * 8
+    &&& bytes::le16(raw, 116) == 0 && bytes::le32(raw, 28) == (journal_claim(raw).length as nat + crate::xattr::allocated_block_count(raw)) * 8
     &&& claim_admission::available(census.roles, journal_claim(raw))
 }
 
@@ -108,7 +108,7 @@ pub fn reserve_journal(census: Census, raw: &[u8], inodes: u32, blocks: u32, see
             && journal.view().journal_blocks as nat == bytes::le32(raw@, 4) / 4096
             && next.view().claims == census.view().claims.push(Claim { start: journal.view().start,
                 length: journal.view().journal_blocks, kind: 2, inode: 0, generation: 0, logical: 0, initialized: false })
-            && bytes::le16(raw@, 116) == 0 && bytes::le32(raw@, 28) == journal.view().journal_blocks as nat * 8
+            && bytes::le16(raw@, 116) == 0 && bytes::le32(raw@, 28) == (journal.view().journal_blocks as nat + crate::xattr::allocated_block_count(raw@)) * 8
             && journal_reservation_admissible(census.view(), raw@, inodes, blocks, seed),
         None => !journal_reservation_admissible(census.view(), raw@, inodes, blocks, seed),
     },
@@ -120,8 +120,9 @@ pub fn reserve_journal(census: Census, raw: &[u8], inodes: u32, blocks: u32, see
     if census.block_count() != blocks { return None; }
     let journal = match layout::from_inode(raw, inodes, blocks, seed) { Some(j) => j, None => { return None; } };
     assert(raw.len() == 256) by { reveal(inode::accepted); }
+    let attribute_blocks = if crate::xattr::inode_pointer(raw).unwrap() == 0 { 0u32 } else { 1u32 };
     if bytes::read_le16(raw, 116).unwrap() != 0
-        || bytes::read_le32(raw, 28).unwrap() != journal.blocks() * 8 { return None; }
+        || bytes::read_le32(raw, 28).unwrap() != (journal.blocks() + attribute_blocks) * 8 { return None; }
     let claim = Claim { start: (journal.offset(0, 18446744073709551615).unwrap() / 4096) as u32,
         length: journal.blocks(), kind: 2, inode: 0, generation: 0, logical: 0, initialized: false };
     assert(claim == journal_claim(raw@));
