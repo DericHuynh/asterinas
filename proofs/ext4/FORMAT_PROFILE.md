@@ -19,7 +19,7 @@ The accepted byte structures do not certify the whole volume.
 | Feature INCOMPAT | FILETYPE + EXTENTS (`0x0042`), optionally RECOVER (`0x0046`). Raw parsing surfaces RECOVER; recovery preparation requires it when the journal has a nonzero start. |
 | Feature RO_COMPAT | Exactly SPARSE_SUPER + LARGE_FILE + EXTRA_ISIZE + METADATA_CSUM (`0x0443`). |
 | Group descriptor | 32 bytes, bitmaps and inode table inside the group and locally disjoint, initialized bitmaps/table (`bg_flags=4`), bounded counters and metadata CRC32C truncation. |
-| Inode | 256 bytes, extra_isize 32, live regular file/directory, EXTENTS flag only, no ACL/xattr block, 32-bit i_size, Linux UID/GID high halves and inode CRC32C. |
+| Inode | 256 bytes, extra_isize 32, live regular file/directory, EXTENTS flag only, no ACL/xattr block, 64-bit regular-file i_size up to Linux's 2 TiB-minus-4 KiB bound without HUGE_FILE, low-only directory size with zero high field, Linux UID/GID high halves and inode CRC32C. |
 | Ordinary inode extent tree | Inline root with up to four entries, external 4 KiB nodes at depth 0–5, exact parent/depth/key bounds and checksums; complete same-source metadata/data ownership census. Physical addresses must fit the bounded volume, despite the 48-bit codec. Written length up to 32768; unwritten length up to 32767; zero length rejected. |
 | Directory | Linear 4 KiB records with FILETYPE and metadata checksum tail; live entries limited to regular files/directories; no NUL or slash in a name. |
 | JBD2 superblock | Version 2, 4 KiB journal blocks, first log position 1, >=1024 journal blocks, one user, matching filesystem UUID, no stored error/dynamic copy/fast-commit blocks. |

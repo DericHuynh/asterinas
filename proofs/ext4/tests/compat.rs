@@ -1103,6 +1103,242 @@ fn extent_metadata_claims_retain_inode_generation_and_reject_forged_shapes() {
     }
 }
 
+mod inode_size_tests {
+    use core::{inode_size, snapshot::Snapshot};
+
+    use super::{core, image, inode_bytes, le32, metadata, seal_inode_image};
+
+    #[test]
+    fn linux_size_codecs_cover_high_fields_feature_limits_and_directory_interpretation() {
+        for block_bytes in [1024, 2048, 4096, 8192, 16384, 32768, 65536] {
+            for huge in [false, true] {
+                let maximum = if huge {
+                    (1u64 << 32) * block_bytes as u64 - block_bytes as u64
+                } else {
+                    (1u64 << 41) - block_bytes as u64
+                };
+                assert_eq!(inode_size::limit(block_bytes, huge), Some(maximum));
+                for size in [
+                    0,
+                    u32::MAX as u64,
+                    1u64 << 32,
+                    (1u64 << 32) + 17,
+                    maximum - 1,
+                    maximum,
+                    maximum + 1,
+                    u64::MAX,
+                ] {
+                    let mut raw = [0u8; 112];
+                    raw[..2].copy_from_slice(&0x81a4u16.to_le_bytes());
+                    raw[4..8].copy_from_slice(&(size as u32).to_le_bytes());
+                    raw[108..112].copy_from_slice(&((size >> 32) as u32).to_le_bytes());
+                    assert_eq!(
+                        inode_size::decode(&raw, block_bytes, huge, false),
+                        (size <= maximum).then_some(size)
+                    );
+                    let encoded = inode_size::encode(size, block_bytes, huge);
+                    assert_eq!(encoded.is_some(), size <= maximum);
+                    if let Some((low, high)) = encoded {
+                        raw[4..8].copy_from_slice(&low);
+                        raw[108..112].copy_from_slice(&high);
+                        assert_eq!(
+                            inode_size::decode(&raw, block_bytes, huge, false),
+                            Some(size)
+                        );
+                    }
+                }
+            }
+        }
+        let mut raw = [0u8; 112];
+        raw[4..8].copy_from_slice(&5u32.to_le_bytes());
+        raw[108..112].copy_from_slice(&1u32.to_le_bytes());
+        for mode in [0x41edu16, 0xa1ff, 0x1180] {
+            raw[..2].copy_from_slice(&mode.to_le_bytes());
+            assert_eq!(inode_size::decode(&raw, 4096, false, false), Some(5));
+            assert_eq!(
+                inode_size::decode(&raw, 4096, false, true),
+                Some((1u64 << 32) + 5)
+            );
+        }
+        for length in [0, 1, 107, 108, 111] {
+            assert!(inode_size::decode(&raw[..length], 4096, false, false).is_none());
+        }
+        for block_bytes in [0, 512, 1536, 3072, 65537, u32::MAX] {
+            assert!(inode_size::limit(block_bytes, false).is_none());
+            assert!(inode_size::decode(&raw, block_bytes, false, false).is_none());
+            assert!(inode_size::encode(0, block_bytes, false).is_none());
+        }
+    }
+
+    #[test]
+    fn large_sparse_inodes_preserve_full_size_clipping_and_reject_wrong_feature_interpretations() {
+        let img = image();
+        let (sb, group, seed) = metadata(&img);
+        let start = group.inode_table as usize * 4096 + 11 * 256;
+        let maximum = (1u64 << 41) - 4096;
+        for size in [
+            (1u64 << 32) - 1,
+            1u64 << 32,
+            (1u64 << 32) + 123,
+            1u64 << 40,
+            maximum,
+        ] {
+            let mut sparse = img.clone();
+            sparse[start + 4..start + 8].copy_from_slice(&(size as u32).to_le_bytes());
+            sparse[start + 108..start + 112].copy_from_slice(&((size >> 32) as u32).to_le_bytes());
+            seal_inode_image(&mut sparse, group.inode_table, 12, seed);
+            let index = core::group_index::parse(Snapshot::from_bytes(&sparse)).unwrap();
+            assert_eq!(
+                core::extent_claims::bind(&index, 12, 1)
+                    .unwrap()
+                    .metadata()
+                    .size,
+                size
+            );
+            let volume = core::allocation::parse(Snapshot::from_bytes(&sparse)).unwrap();
+            let node = core::allocated_inode::get(&volume, 12).unwrap();
+            assert_eq!(node.info().size, size);
+            assert!(matches!(
+                core::file_read::chunk(&node, 0, 32),
+                core::file_read::Chunk::Data(_)
+            ));
+            assert!(matches!(
+                core::file_read::chunk(&node, size - 7, usize::MAX),
+                core::file_read::Chunk::Zero(7)
+            ));
+            assert!(matches!(
+                core::file_read::chunk(&node, size, usize::MAX),
+                core::file_read::Chunk::End
+            ));
+            assert!(matches!(
+                core::file_read::chunk(&node, u64::MAX, usize::MAX),
+                core::file_read::Chunk::End
+            ));
+            assert!(core::image_validation::inspect(Snapshot::from_bytes(&sparse)).is_some());
+        }
+        for size in [maximum + 1, 1u64 << 63, u64::MAX] {
+            let mut bad = img.clone();
+            bad[start + 4..start + 8].copy_from_slice(&(size as u32).to_le_bytes());
+            bad[start + 108..start + 112].copy_from_slice(&((size >> 32) as u32).to_le_bytes());
+            seal_inode_image(&mut bad, group.inode_table, 12, seed);
+            assert!(
+                core::inode::parse_metadata(
+                    inode_bytes(&bad, group.inode_table, 12),
+                    12,
+                    sb.inodes(),
+                    seed
+                )
+                .is_none()
+            );
+            assert!(core::allocation::parse(Snapshot::from_bytes(&bad)).is_none());
+        }
+        for number in [2, 8] {
+            let mut bad = img.clone();
+            let offset = group.inode_table as usize * 4096 + (number as usize - 1) * 256;
+            bad[offset + 108..offset + 112].copy_from_slice(&1u32.to_le_bytes());
+            seal_inode_image(&mut bad, group.inode_table, number, seed);
+            assert!(
+                core::allocation::parse(Snapshot::from_bytes(&bad)).is_none(),
+                "directory/journal high fields cannot silently adopt the regular-file policy"
+            );
+            if number == 8 {
+                assert!(core::bootstrap::locate(&Snapshot::from_bytes(&bad)).is_none());
+            }
+        }
+    }
+
+    #[test]
+    fn high_logical_extents_read_the_owned_physical_blocks_without_offset_truncation() {
+        let mut img = image();
+        let (_, group, seed) = metadata(&img);
+        let start = group.inode_table as usize * 4096 + 11 * 256;
+        let physical = le32(&img, start + 60);
+        let maximum = (1u64 << 41) - 4096;
+        let first_logical = (maximum / 4096 - 2) as u32;
+        img[start + 4..start + 8].copy_from_slice(&(maximum as u32).to_le_bytes());
+        img[start + 108..start + 112].copy_from_slice(&((maximum >> 32) as u32).to_le_bytes());
+        img[start + 52..start + 56].copy_from_slice(&first_logical.to_le_bytes());
+        seal_inode_image(&mut img, group.inode_table, 12, seed);
+        let volume = core::allocation::parse(Snapshot::from_bytes(&img)).unwrap();
+        let node = core::allocated_inode::get(&volume, 12).unwrap();
+        assert!(matches!(
+            core::file_read::chunk(&node, 0, 4096),
+            core::file_read::Chunk::Zero(4096)
+        ));
+        for i in 0..2u32 {
+            let offset = (first_logical as u64 + i as u64) * 4096 + 3;
+            let bytes = match core::file_read::chunk(&node, offset, 31) {
+                core::file_read::Chunk::Data(bytes) => bytes,
+                _ => panic!("mapped high logical extent"),
+            };
+            let source_start = (physical as usize + i as usize) * 4096 + 3;
+            assert_eq!(bytes, &img[source_start..source_start + 31]);
+            assert_eq!(
+                volume.census().role_of(physical + i).unwrap().logical,
+                first_logical + i
+            );
+        }
+        assert!(
+            matches!(core::file_read::chunk(&node, maximum - 1, usize::MAX), core::file_read::Chunk::Data(bytes) if bytes.len() == 1)
+        );
+        assert!(matches!(
+            core::file_read::chunk(&node, maximum, usize::MAX),
+            core::file_read::Chunk::End
+        ));
+        assert!(core::image_validation::inspect(Snapshot::from_bytes(&img)).is_some());
+    }
+
+    #[test]
+    fn linux_tools_accept_large_sparse_size_fields_and_the_checked_reader_agrees() {
+        struct ImageFile(String);
+        impl Drop for ImageFile {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_file(&self.0);
+            }
+        }
+        let path = ImageFile(format!(
+            "build/native-large-size-{}.img",
+            std::process::id()
+        ));
+        std::fs::write(&path.0, image()).unwrap();
+        let debugfs = std::env::var("DEBUGFS_BIN").unwrap_or_else(|_| "debugfs".into());
+        for size in [(1u64 << 32) + 123, (1u64 << 41) - 4096] {
+            for (field, value) in [("size", size as u32), ("size_hi", (size >> 32) as u32)] {
+                let request = format!("set_inode_field /payload {field} {value}");
+                let result = std::process::Command::new(&debugfs)
+                    .args(["-w", "-R", &request, &path.0])
+                    .output()
+                    .unwrap();
+                assert!(
+                    result.status.success(),
+                    "{}",
+                    String::from_utf8_lossy(&result.stderr)
+                );
+            }
+            let img = std::fs::read(&path.0).unwrap();
+            let volume = core::allocation::parse(Snapshot::from_bytes(&img)).unwrap();
+            let node = core::allocated_inode::get(&volume, 12).unwrap();
+            assert_eq!(node.info().size, size);
+            assert!(matches!(
+                core::file_read::chunk(&node, size - 1, usize::MAX),
+                core::file_read::Chunk::Zero(1)
+            ));
+            assert!(core::image_validation::inspect(Snapshot::from_bytes(&img)).is_some());
+        }
+        let e2fsck = std::env::var("E2FSCK_BIN").unwrap_or_else(|_| "e2fsck".into());
+        let result = std::process::Command::new(e2fsck)
+            .args(["-fn", &path.0])
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&result.stdout),
+            String::from_utf8_lossy(&result.stderr)
+        );
+    }
+}
+
 mod extent_tree_tests {
     use super::core::{
         crc,
@@ -2332,7 +2568,7 @@ fn directory_reads_bind_the_inode_generation_and_reject_holes() {
     assert!(directory_file::read(&file, 0).is_none());
     let lost = allocated_inode::get(&volume, 11).unwrap();
     for logical in 0..lost.info().size / 4096 {
-        assert!(directory_file::read(&lost, logical).is_some());
+        assert!(directory_file::read(&lost, u32::try_from(logical).unwrap()).is_some());
     }
     for generation in [false, true] {
         let mut changed = img.clone();
@@ -2483,7 +2719,7 @@ fn directory_index_enumerates_empty_blocks_and_rejects_bad_targets_and_duplicate
         if variant == 4 {
             let lost = allocated_inode::get(&volume, 11).unwrap();
             let logical = lost.info().size / 4096 - 1;
-            let physical = match file_read::resolve(&lost, logical) {
+            let physical = match file_read::resolve(&lost, u32::try_from(logical).unwrap()) {
                 file_read::Resolution::Data(b) => b,
                 _ => panic!("lost+found mapping"),
             };
@@ -2694,8 +2930,12 @@ fn linux_metadata_checksums_and_directory_records_interoperate() {
     let journal_inode = core::inode::parse(journal_raw, 8, sb.inodes(), sb.blocks(), seed).unwrap();
     let journal_block = first_data_block(journal_raw, sb.blocks());
     let journal = &img[journal_block as usize * 4096..journal_block as usize * 4096 + 1024];
-    let j = core::journal_superblock::parse(journal, &img[1128..1144], journal_inode.size / 4096)
-        .unwrap();
+    let j = core::journal_superblock::parse(
+        journal,
+        &img[1128..1144],
+        u32::try_from(journal_inode.size / 4096).unwrap(),
+    )
+    .unwrap();
     assert_eq!(j.start, 0);
     assert_eq!(j.uuid_seed, seed);
     // Clean mke2fs journals do not yet have the CSUM_V3 feature enabled.

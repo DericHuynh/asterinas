@@ -28,7 +28,7 @@ unsupported markers need Linux-compatible handling, not invented encodings.
 | COMPAT | `0x0800` | `STABLE_INODES` | Not implemented | Stable inode identity constraints and incompatible maintenance operations |
 | COMPAT | `0x1000` | `ORPHAN_FILE` | Not implemented | Orphan-file allocation, checksums, insertion/removal and restartable reclamation |
 | RO_COMPAT | `0x0001` | `SPARSE_SUPER` | Partial: initial profile only | Backup placement over all supported group layouts |
-| RO_COMPAT | `0x0002` | `LARGE_FILE` | Partial: initial profile only | 64-bit file sizes and correct legacy inode interpretation |
+| RO_COMPAT | `0x0002` | `LARGE_FILE` | Partial: 64-bit regular sizes and reads in bounded profile | Source-bound high/low fields and Linux no-HUGE_FILE limits checked; other inode formats/feature combinations and mutations remain |
 | RO_COMPAT | `0x0004` | `BTREE_DIR` | Not implemented | Legacy/reserved directory marker and exact Linux acceptance semantics |
 | RO_COMPAT | `0x0008` | `HUGE_FILE` | Not implemented | 48-bit i_blocks accounting, unit changes, overflow and quota coupling |
 | RO_COMPAT | `0x0010` | `GDT_CSUM` | Not implemented | Legacy descriptor/bitmap checksums and lazy/uninitialized group states |

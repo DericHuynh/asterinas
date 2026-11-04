@@ -157,3 +157,5 @@ pub mod extent_tree_model;
 pub mod extent_claims;
 
 pub mod extent_ownership;
+
+pub mod inode_size;

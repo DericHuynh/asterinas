@@ -26,7 +26,7 @@ pub fn read<'a>(node: &AllocatedInode<'_, 'a>, logical: u32) -> (r: Option<Direc
     },
 {
     let info = node.info();
-    if info.mode & 0xf000 != 0x4000 || info.size == 0 || info.size % 4096 != 0 || logical >= info.size / 4096 { return None; }
+    if info.mode & 0xf000 != 0x4000 || info.size == 0 || info.size % 4096 != 0 || logical as u64 >= info.size / 4096 { return None; }
     let bytes = match file_read::chunk(node, logical as u64 * 4096, 4096) {
         Chunk::Data(bytes) => bytes,
         _ => { return None; }

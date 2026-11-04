@@ -105,6 +105,10 @@ impl<'v, 'image> BoundInode<'v, 'image> {
         &&& self.wf() && self.tree.wf() && self.tree.context() == context(self.index_view(), self.inode_number())
         &&& self.info.mode as nat == bytes::le16(inode_table::raw(self.index_view(), self.inode_number()), 0)
         &&& self.info.generation as nat == bytes::le32(inode_table::raw(self.index_view(), self.inode_number()), 100)
+        &&& self.info.size as nat == crate::inode_size::value(inode_table::raw(self.index_view(), self.inode_number()), false)
+        &&& self.info.links as nat == bytes::le16(inode_table::raw(self.index_view(), self.inode_number()), 26)
+        &&& self.info.uid as nat == bytes::le16(inode_table::raw(self.index_view(), self.inode_number()), 2) + 65536 * bytes::le16(inode_table::raw(self.index_view(), self.inode_number()), 120)
+        &&& self.info.gid as nat == bytes::le16(inode_table::raw(self.index_view(), self.inode_number()), 24) + 65536 * bytes::le16(inode_table::raw(self.index_view(), self.inode_number()), 122)
     }
 
     pub fn tree(&self) -> (r: &CheckedTree<'v, 'image>)
@@ -117,6 +121,10 @@ impl<'v, 'image> BoundInode<'v, 'image> {
     pub fn metadata(&self) -> (r: &Inode)
         ensures self.wf(), r.mode as nat == bytes::le16(inode_table::raw(self.index_view(), self.inode_number()), 0),
             r.generation as nat == bytes::le32(inode_table::raw(self.index_view(), self.inode_number()), 100),
+            r.size as nat == crate::inode_size::value(inode_table::raw(self.index_view(), self.inode_number()), false),
+            r.links as nat == bytes::le16(inode_table::raw(self.index_view(), self.inode_number()), 26),
+            r.uid as nat == bytes::le16(inode_table::raw(self.index_view(), self.inode_number()), 2) + 65536 * bytes::le16(inode_table::raw(self.index_view(), self.inode_number()), 120),
+            r.gid as nat == bytes::le16(inode_table::raw(self.index_view(), self.inode_number()), 24) + 65536 * bytes::le16(inode_table::raw(self.index_view(), self.inode_number()), 122),
     {
         proof { use_type_invariant(self); }
         &self.info

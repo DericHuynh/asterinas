@@ -227,7 +227,8 @@ pub fn build<'v, 'a>(volume: &'v Allocation<'a>) -> (r: Option<DirectoryIndex<'v
                     assert(model::is_directory(volume.view(), number)) by { reveal(allocated_inode::valid); }
                     if info.size == 0 || info.size % 4096 != 0 { return None; }
                     let count = info.size / 4096;
-                    if count > model::MAX_DIRECTORY_BLOCKS - blocks { return None; }
+                    if count > (model::MAX_DIRECTORY_BLOCKS - blocks) as u64 { return None; }
+                    let count = count as u32;
                     let ghost base = views(entries@);
                     let mut logical = 0u32;
                     assert(model::directory_entries(volume.view(), number, 0) == Seq::<EntryView>::empty()) by { reveal(model::directory_entries); }
