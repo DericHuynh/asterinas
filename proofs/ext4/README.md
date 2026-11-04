@@ -9,9 +9,9 @@ and a [concurrent block/extent/transaction protocol](CONCURRENCY.md).
 It is not a complete filesystem and is not registered with the kernel VFS.
 No mount or filesystem write path is enabled.
 
-The pinned Verus run checks **1460 obligations with zero errors**, including
-516 named proof functions and 426 named executable functions.
-135 host interoperability/regression tests pass on Linux-created metadata.
+The pinned Verus run checks **1476 obligations with zero errors**, including
+518 named proof functions and 434 named executable functions.
+138 host interoperability/regression tests pass on Linux-created metadata.
 [Proof status](proof-status.json) and [recorded evidence](verification-evidence.json)
 state the exact scope; tests do not discharge formal obligations.
 
@@ -19,6 +19,7 @@ state the exact scope; tests do not discharge formal obligations.
 
 | Component | Checked behavior |
 | --- | --- |
+| `htree.rs` | Standalone Linux HTree root/internal table codecs, exact used-prefix/tail CRC domain, logical child bounds and collision-aware binary search. See [HTree routing](HTREE_ROUTING.md). Full DIR_INDEX admission, hashing, whole-tree/name equivalence and operations remain open. |
 | `acl.rs`, `acl_access.rs`, `content_write::prepare_authorized` | Compact Linux ACL codec, permission precedence/masks, exact source value and mode binding, consumed ACL-aware content/time candidate, xattr byte framing. See [POSIX ACLs](POSIX_ACL.md). Authentication/idmaps/LSM, inheritance/mutation and kernel runtime remain open. |
 | `xattr_entry.rs`, `xattr_table.rs`, `xattr.rs`, `xattr_inode.rs`, `xattr_source.rs` | Source-bound inode/external/shared xattr storage, full-key lookup and uniqueness, physical CRCs, exact reference census and complete allocation accounting; mode-only writes reject access ACLs. See [xattr storage](XATTR_STORAGE.md). Mutations, ACL/LSM policy and EA_INODE lifetime remain open. |
 | `bytes.rs`, `crc.rs` | Total endian codecs, checked ranges, CRC32C and streaming/zero-field checksum relations. |

@@ -161,7 +161,8 @@
     "src/xattr_source.rs",
     "src/xattr_inode.rs",
     "src/acl.rs",
-    "src/acl_access.rs"
+    "src/acl_access.rs",
+    "src/htree.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -679,7 +680,9 @@
     "acl_access::an_acl_grant_binds_the_exact_source_inode_and_access_value",
     "acl_access::unprivileged_acl_grants_require_the_actual_acl_decision",
     "write_frame::a_timed_write_preserves_every_external_xattr_block",
-    "write_frame::a_timed_write_preserves_inline_xattr_bytes_and_the_external_pointer"
+    "write_frame::a_timed_write_preserves_inline_xattr_bytes_and_the_external_pointer",
+    "htree::a_probe_has_one_exact_initial_child",
+    "htree::odd_hash_continuations_are_distinct_from_initial_even_boundaries"
   ],
   "required_flags": [
     "--no-cheating",
@@ -1113,6 +1116,14 @@
     "acl_access::requested_bits",
     "acl_access::authorize",
     "content_write::prepare_authorized",
-    "acl::mode_matches"
+    "acl::mode_matches",
+    "htree::child_count",
+    "htree::child",
+    "htree::probe",
+    "htree::continues",
+    "htree::parse_node",
+    "htree::routing_index",
+    "htree::hash_and_levels",
+    "htree::parse_root"
   ]
 }
