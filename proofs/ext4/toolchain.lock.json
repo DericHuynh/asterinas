@@ -110,7 +110,8 @@
     "src/extent_ownership.rs",
     "src/inode_size.rs",
     "src/inode_blocks.rs",
-    "src/group_fields.rs"
+    "src/group_fields.rs",
+    "src/block_bitmap.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -400,7 +401,9 @@
     "group::bounded_groups_do_not_truncate_high_address_or_counter_fields",
     "bitmap::empty_inode_bitmap_has_only_allocated_padding",
     "group_metadata::an_uninitialized_group_has_no_allocated_inode",
-    "allocated_inode::a_lazy_group_cannot_make_an_inode_live"
+    "allocated_inode::a_lazy_group_cannot_make_an_inode_live",
+    "block_bitmap::every_canonical_bit_has_the_exact_reserved_or_padding_meaning",
+    "block_bitmap::every_set_real_bit_has_a_reserved_metadata_claim"
   ],
   "required_flags": [
     "--no-cheating",
@@ -694,6 +697,7 @@
     "group_fields::encode_counter",
     "group_fields::decode",
     "group_fields::super_counts",
-    "bitmap::synthesize_free_inodes"
+    "bitmap::synthesize_free_inodes",
+    "block_bitmap::synthesize"
   ]
 }

@@ -7,7 +7,7 @@
 //! This is metadata admission, not a complete filesystem or mount authority.
 
 use vstd::prelude::*;
-use crate::{bitmap::{self, Bitmap, BitmapView}, block_claims, bytes, crc, group::{self, Group}, group_fields, snapshot::Snapshot, superblock};
+use crate::{bitmap::{self, Bitmap, BitmapView}, block_claims, block_bitmap, bytes, crc, group::{self, Group}, group_fields, snapshot::Snapshot, superblock};
 
 verus! {
 
@@ -32,12 +32,16 @@ pub open spec fn valid(v: GroupView) -> bool {
     &&& group::accepted(v.descriptor, v.number, v.blocks, v.ipg, v.seed)
     &&& v.block_bitmap as nat == bytes::le32(v.descriptor, 0) && v.inode_bitmap as nat == bytes::le32(v.descriptor, 4)
     &&& v.inode_table as nat == bytes::le32(v.descriptor, 8) && v.table_blocks == v.ipg / 16
-    &&& v.allocation.raw == v.source.subrange(v.block_bitmap as int * 4096, (v.block_bitmap as int + 1) * 4096)
+    &&& v.allocation.raw == if group::block_uninitialized(v.descriptor) {
+        block_bitmap::canonical(block_bitmap::context(v.descriptor, v.number, v.blocks, v.ipg))
+    } else { v.source.subrange(v.block_bitmap as int * 4096, (v.block_bitmap as int + 1) * 4096) }
     &&& v.allocation.valid as nat == valid_bits(v.blocks, v.number) && v.allocation.meaningful == 32768
-    &&& v.allocation.free as nat == bytes::le16(v.descriptor, 12) && v.allocation.checksum as nat == bytes::le16(v.descriptor, 24)
+    &&& v.allocation.free as nat == bytes::le16(v.descriptor, 12) && v.allocation.checksum == if group::block_uninitialized(v.descriptor) {
+        (crc::fold(v.seed, block_bitmap::canonical(block_bitmap::context(v.descriptor, v.number, v.blocks, v.ipg))) & 0xffffu32) as u16
+    } else { bytes::le16(v.descriptor, 24) as u16 }
     &&& v.allocation.seed == v.seed
     &&& bitmap::accepted(v.allocation.raw, v.allocation.valid, v.allocation.meaningful, v.allocation.free, v.allocation.checksum, v.seed)
-    &&& (v.descriptor.len() == 64 ==> crc::fold(v.seed, v.allocation.raw)
+    &&& (v.descriptor.len() == 64 && !group::block_uninitialized(v.descriptor) ==> crc::fold(v.seed, v.allocation.raw)
         == group_fields::counter(v.descriptor, 24, 56, true))
     &&& v.inodes.raw == if group::inode_uninitialized(v.descriptor) { bitmap::empty_inode_bytes(v.ipg as nat) }
         else { v.source.subrange(v.inode_bitmap as int * 4096, (v.inode_bitmap as int + 1) * 4096) }
@@ -141,15 +145,20 @@ pub fn parse(source: &Snapshot<'_>, number: u32) -> (r: Option<GroupMetadata>)
     let available = blocks - number * 32768;
     let valid_blocks = if available < 32768 { available } else { 32768 };
     let lazy = bytes::read_le16(raw, 18).unwrap() & 1 != 0;
+    let lazy_blocks = bytes::read_le16(raw, 18).unwrap() & 2 != 0;
     if length == 64 {
         let block_checksum = group_fields::read_counter(raw, 24, 56, true).unwrap();
         let inode_checksum = group_fields::read_counter(raw, 26, 58, true).unwrap();
-        if crc::crc32c(seed, block_bitmap.as_slice()) != block_checksum
+        if (!lazy_blocks && crc::crc32c(seed, block_bitmap.as_slice()) != block_checksum)
             || (!lazy && crc::crc32c(seed, &inode_bitmap.as_slice()[..(ipg / 8) as usize]) != inode_checksum) { return None; }
     }
-    let allocation = match bitmap::parse(block_bitmap.as_slice(), valid_blocks, 32768,
-        bytes::read_le16(raw, 12).unwrap() as u32, bytes::read_le16(raw, 24).unwrap(), seed) {
-        Some(bitmap) => bitmap, None => { return None; }
+    let allocation = if lazy_blocks {
+        match block_bitmap::synthesize(raw, number, blocks, ipg, seed) { Some(bitmap) => bitmap, None => { return None; } }
+    } else {
+        match bitmap::parse(block_bitmap.as_slice(), valid_blocks, 32768,
+            bytes::read_le16(raw, 12).unwrap() as u32, bytes::read_le16(raw, 24).unwrap(), seed) {
+            Some(bitmap) => bitmap, None => { return None; }
+        }
     };
     let inodes = if lazy {
         assert(bytes::le16(raw@, 14) == ipg) by { reveal(group::accepted); }

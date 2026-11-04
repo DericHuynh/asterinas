@@ -9,9 +9,9 @@ and a [concurrent block/extent/transaction protocol](CONCURRENCY.md).
 It is not a complete filesystem and is not registered with the kernel VFS.
 No mount or filesystem write path is enabled.
 
-The pinned Verus run checks **841 obligations with zero errors**, including
-288 named proof functions and 286 named executable functions.
-67 host interoperability/regression tests pass on Linux-created metadata.
+The pinned Verus run checks **850 obligations with zero errors**, including
+290 named proof functions and 287 named executable functions.
+69 host interoperability/regression tests pass on Linux-created metadata.
 [Proof status](proof-status.json) and [recorded evidence](verification-evidence.json)
 state the exact scope; tests do not discharge formal obligations.
 
@@ -35,6 +35,7 @@ state the exact scope; tests do not discharge formal obligations.
 | `jbd2.rs`, `journal_superblock.rs` | Header/tag codecs, UUID binding, checksum primitives, counter bounds and superblock parsing. |
 | `descriptor.rs`, `revoke.rs` | Complete canonical v3 descriptor/revoke parsing and encoding, UUIDs, tag terminators, target bounds, checksum tails and capacity limits. |
 | `bitmap.rs`, `group_metadata.rs` | Owned initialized block/inode bitmaps, exact free counts, allocated padding, bounded lookup and Linux checksum ranges. INODE_UNINIT groups use a proved canonical empty logical inode bitmap; stale physical bitmap/table contents cannot grant inode access. See [lazy inode groups](LAZY_INODES.md). |
+| `block_bitmap.rs` | Exact BLOCK_UNINIT reserved metadata/padding bits, complete bounded synthesis admission and free-count relation, and a reserved metadata claim for every real set bit. Complete image/census composition rejects stale bitmap authority, metadata aliases and hidden journal storage. See [lazy block groups](LAZY_BLOCKS.md). Initialization and allocation transactions remain open. |
 | `block_claims.rs`, `inode_claims.rs` | Bounded disjoint ownership census; failed claims preserve the original; bitmap/role and free-counter equivalence; inode/journal byte binding, exact physical slots, initialized directory extents and `i_blocks` accounting. These are validation components, not a whole-volume certificate or file-access authority. |
 | `group_claims.rs` | Sparse-super backup locations match the Linux power rule over the bounded profile; reserve superblock/GDT, bitmaps and inode tables with exact disjoint claims. |
 | `snapshot.rs`, `group_metadata.rs`, `group_index.rs` | Exact immutable source ranges bind each group descriptor and bitmap to its declared address; complete ordered group enumeration and equality of aggregate free counters with the primary superblock. No whole-volume inode/namespace authority is produced. |
