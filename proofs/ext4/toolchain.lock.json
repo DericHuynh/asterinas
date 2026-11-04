@@ -128,7 +128,8 @@
     "src/inode_projection.rs",
     "src/write_result.rs",
     "src/bootstrap_frame.rs",
-    "src/recovery_bootstrap.rs"
+    "src/recovery_bootstrap.rs",
+    "src/claim_admission.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -508,7 +509,9 @@
     "recovery_bootstrap::unchanged_tail_cuts_have_the_same_fresh_canonical_scan_source",
     "journal_view::a_mapped_logical_block_has_complete_physical_bytes",
     "group_metadata::every_valid_group_is_the_unique_source_projection",
-    "group_index::every_valid_index_is_the_unique_source_projection"
+    "group_index::every_valid_index_is_the_unique_source_projection",
+    "claim_admission::every_valid_ledger_extension_was_appendable",
+    "claim_admission::appending_one_claim_keeps_the_remaining_claims_appendable"
   ],
   "required_flags": [
     "--no-cheating",

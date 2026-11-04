@@ -9,8 +9,8 @@ and a [concurrent block/extent/transaction protocol](CONCURRENCY.md).
 It is not a complete filesystem and is not registered with the kernel VFS.
 No mount or filesystem write path is enabled.
 
-The pinned Verus run checks **1064 obligations with zero errors**, including
-378 named proof functions and 338 named executable functions.
+The pinned Verus run checks **1067 obligations with zero errors**, including
+380 named proof functions and 338 named executable functions.
 98 host interoperability/regression tests pass on Linux-created metadata.
 [Proof status](proof-status.json) and [recorded evidence](verification-evidence.json)
 state the exact scope; tests do not discharge formal obligations.
@@ -21,6 +21,7 @@ state the exact scope; tests do not discharge formal obligations.
 | --- | --- |
 | `bytes.rs`, `crc.rs` | Total endian codecs, checked ranges, CRC32C and streaming/zero-field checksum relations. |
 | `superblock.rs`, `group.rs`, `inode.rs` | Strict profile checks, geometry/ranges, Linux metadata checksums, typed field decoding, source-selected CSUM_SEED or UUID-derived metadata seeds. [Checksum domains](CSUM_SEED.md) remain separate from the internal journal UUID and JBD2 seed. |
+| `claim_admission.rs`, `group_claims.rs`, `inode_claims::reserve_journal` | Exact sequence availability, necessary ledger-extension conditions, preservation of later disjoint claims and complete metadata/internal-journal reservation contracts. See [claim admission](CLAIM_ADMISSION.md). Complete inode/extent census construction and whole-image admission remain open. |
 | `group_metadata.rs`, `group_index.rs` | Unique exact source projections, complete Some/None admission contracts, initialized/canonical-lazy bitmap selection, ordered source prefixes and exact global free-counter sums. See [group admission](GROUP_ADMISSION.md). Full allocation/namespace/recovery admission completeness remains open. |
 | `group_index.rs`, `group_claims.rs`, `inode_table.rs` | Source-selected FLEX_BG global metadata placement, physical/logical group separation, retained inode group/slot reads and globally disjoint physical claims. See [flexible groups](FLEX_GROUPS.md). Allocation policy, resize and runtime refinement remain open. |
 | `group_fields.rs`, `group.rs`, `group_metadata.rs` | Exact 64-bit addresses/superblock counts and 32-bit counters; optional source-selected 64-byte descriptors, complete descriptor and bitmap checksum coverage, bounded high-field rejection and recovery identity. See [group descriptors](GROUP_DESCRIPTORS.md). High-address volumes and other group layouts remain open. |
