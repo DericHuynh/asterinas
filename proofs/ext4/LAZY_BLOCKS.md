@@ -2,7 +2,7 @@
 
 # Uninitialized block bitmaps
 
-The bounded non-FLEX_BG/non-META_BG profile now implements Linux's
+The bounded non-META_BG profile implements Linux's
 BLOCK_UNINIT interpretation. Physical bitmap bytes and their unused checksum
 do not define allocation in this state. The checked descriptor instead defines
 a canonical logical bitmap containing reserved metadata and allocated padding.
@@ -10,7 +10,7 @@ a canonical logical bitmap containing reserved metadata and allocated padding.
 | Component | Checked relation |
 | --- | --- |
 | Base metadata | Sparse-super groups reserve the first two blocks for superblock/GDT. Other groups have no base header reservation. The bounded sparse-super set is already proved equivalent to Linux's power rule. |
-| Group metadata | Block/inode bitmap addresses and the entire inode-table interval are allocated bits. Addresses come from the checked same-source descriptor. |
+| Group metadata | Block/inode bitmap addresses and the inode-table interval are allocated bits where they lie inside this physical group. Addresses come from the checked same-source descriptor; FLEX_BG may place them elsewhere. |
 | Data and padding | Every other real group bit is free; bits beyond a partial group's end are allocated. The byte packing proof establishes the exact meaning of every bit. |
 | Free count | The synthesizer computes the canonical buffer and validates its exact free count against the descriptor. Its public admission predicate is exact: admitted bounded descriptors with that count succeed; rejection means that predicate is false. |
 | Metadata claims | Every set real bit has a covering reserved metadata claim. Whole-image disjoint claim/bitmap agreement then prevents interpreting those bits as ordinary file data, inode-owned extent metadata or journal storage. |
@@ -26,7 +26,9 @@ Rust and introduces no Linux memory ownership model.
 This is static interpretation. First allocation must atomically initialize the
 physical bitmap, update allocation/free counters and clear BLOCK_UNINIT as part
 of a proved filesystem transaction. Concurrent initialization, general allocator
-operations, FLEX_BG/META_BG/BIGALLOC and legacy GDT_CSUM remain open. The host
+operations, META_BG/BIGALLOC and legacy GDT_CSUM remain open. FLEX_BG has a
+checked static placement interpretation; global claim agreement rejects omitted
+foreign metadata, as described in [flexible groups](FLEX_GROUPS.md). The host
 buffers do not establish CortenMM/OSTD cache, guard, DMA or device refinement.
 No mount or filesystem write path is enabled.
 

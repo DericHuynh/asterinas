@@ -27,6 +27,8 @@ pub struct IndexView {
     pub source: Seq<u8>, pub groups: Seq<GroupView>, pub blocks: u32, pub inodes: u32, pub ipg: u32, pub seed: u32,
 }
 
+pub open spec fn has_flex_groups(v: IndexView) -> bool { superblock::flex_bg(v.source.subrange(1024, 2048)) }
+
 pub open spec fn has_huge_files(v: IndexView) -> bool { bytes::le32(v.source, 1124) as u32 & 8 != 0 }
 
 #[verifier::opaque]
@@ -93,6 +95,13 @@ impl<'a> GroupIndex<'a> {
     {
         proof { use_type_invariant(self); }
         (self.blocks, self.inodes, self.ipg, self.seed)
+    }
+
+    pub fn flex_groups(&self) -> (r: bool) ensures self.wf(), r == has_flex_groups(self.view()) {
+        let source = self.source();
+        proof { reveal(valid); }
+        let primary = source.block(0).unwrap();
+        superblock::flex_enabled(primary.range(1024, 1024).unwrap()).unwrap()
     }
 
     pub fn huge_files(&self) -> (r: bool) ensures self.wf(), r == has_huge_files(self.view()) {

@@ -62,7 +62,7 @@ pub open spec fn claims(raw: Seq<u8>, number: u32, ipg: u32) -> Seq<Claim> {
     else { ordinary }
 }
 
-pub fn reserve(mut census: Census, raw: &[u8], number: u32, blocks: u32, ipg: u32, seed: u32) -> (r: Option<Census>)
+pub fn reserve(census: Census, raw: &[u8], number: u32, blocks: u32, ipg: u32, seed: u32) -> (r: Option<Census>)
     ensures match r {
         Some(next) => group::accepted(raw@, number, blocks, ipg, seed) && number < 32
             && next.wf() && next.view().roles.len() == census.view().roles.len() && next.view().roles.len() == blocks
@@ -71,12 +71,23 @@ pub fn reserve(mut census: Census, raw: &[u8], number: u32, blocks: u32, ipg: u3
             && block_claims::preserves_occupied(census.view().roles, next.view().roles),
         None => true,
     },
+{ reserve_with_features(census, raw, number, blocks, ipg, seed, false) }
+
+pub fn reserve_with_features(mut census: Census, raw: &[u8], number: u32, blocks: u32, ipg: u32, seed: u32, flex: bool) -> (r: Option<Census>)
+    ensures match r {
+        Some(next) => group::accepted_with_features(raw@, number, blocks, ipg, seed, flex) && number < 32
+            && next.wf() && next.view().roles.len() == census.view().roles.len() && next.view().roles.len() == blocks
+            && next.view().claims == census.view().claims + claims(raw@, number, ipg)
+            && block_claims::mapped_claims(next.view().roles, claims(raw@, number, ipg))
+            && block_claims::preserves_occupied(census.view().roles, next.view().roles),
+        None => true,
+    },
 {
     hide(crc::fold);
-    hide(group::accepted);
+    hide(group::accepted_with_features);
     let ghost original = census.view();
     if census.block_count() != blocks { return None; }
-    let desc = match group::parse(raw, number, blocks, ipg, seed) { Some(desc) => desc, None => { return None; } };
+    let desc = match group::parse_with_features(raw, number, blocks, ipg, seed, flex) { Some(desc) => desc, None => { return None; } };
     let backup = match backup_group(number) { Some(backup) => backup, None => { return None; } };
     let mut input = Vec::new();
     if backup { input.push(candidate(number * 32768, 2, 1)); }

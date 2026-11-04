@@ -37,7 +37,7 @@ pub fn position(index: &GroupIndex<'_>, number: u32) -> (r: Option<u64>)
     }
     let meta = index.get(group).unwrap();
     let table = meta.info().inode_table;
-    proof { reveal(group_index::records_match); reveal(group_metadata::valid); reveal(crate::group::accepted); }
+    proof { reveal(group_index::records_match); reveal(group_metadata::valid); reveal(crate::group::accepted_with_features); }
     Some(table as u64 * 4096 + slot as u64 * 256)
 }
 
@@ -63,7 +63,7 @@ pub fn read<'a>(index: &GroupIndex<'a>, number: u32) -> (r: Option<&'a [u8]>)
         reveal(group_index::valid);
         reveal(group_index::records_match);
         reveal(group_metadata::valid);
-        reveal(crate::group::accepted);
+        reveal(crate::group::accepted_with_features);
     }
     let block = info.inode_table + slot / 16;
     assert((block as nat + 1) * 4096 <= index.view().source.len()) by { reveal(group_index::valid); }

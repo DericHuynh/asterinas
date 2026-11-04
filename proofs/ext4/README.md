@@ -9,9 +9,9 @@ and a [concurrent block/extent/transaction protocol](CONCURRENCY.md).
 It is not a complete filesystem and is not registered with the kernel VFS.
 No mount or filesystem write path is enabled.
 
-The pinned Verus run checks **850 obligations with zero errors**, including
-290 named proof functions and 287 named executable functions.
-69 host interoperability/regression tests pass on Linux-created metadata.
+The pinned Verus run checks **856 obligations with zero errors**, including
+290 named proof functions and 293 named executable functions.
+71 host interoperability/regression tests pass on Linux-created metadata.
 [Proof status](proof-status.json) and [recorded evidence](verification-evidence.json)
 state the exact scope; tests do not discharge formal obligations.
 
@@ -21,6 +21,7 @@ state the exact scope; tests do not discharge formal obligations.
 | --- | --- |
 | `bytes.rs`, `crc.rs` | Total endian codecs, checked ranges, CRC32C and streaming/zero-field checksum relations. |
 | `superblock.rs`, `group.rs`, `inode.rs` | Strict profile checks, geometry/ranges, Linux metadata checksums, typed field decoding, source-selected CSUM_SEED or UUID-derived metadata seeds. [Checksum domains](CSUM_SEED.md) remain separate from the internal journal UUID and JBD2 seed. |
+| `group_index.rs`, `group_claims.rs`, `inode_table.rs` | Source-selected FLEX_BG global metadata placement, physical/logical group separation, retained inode group/slot reads and globally disjoint physical claims. See [flexible groups](FLEX_GROUPS.md). Allocation policy, resize and runtime refinement remain open. |
 | `group_fields.rs`, `group.rs`, `group_metadata.rs` | Exact 64-bit addresses/superblock counts and 32-bit counters; optional source-selected 64-byte descriptors, complete descriptor and bitmap checksum coverage, bounded high-field rejection and recovery identity. See [group descriptors](GROUP_DESCRIPTORS.md). High-address volumes and other group layouts remain open. |
 | `inode_size.rs` | Total Linux high/low size codecs and feature-dependent maximum sizes over seven block sizes; 64-bit regular inode sizes with source-bound optional HUGE_FILE policy in the current 4 KiB profile; exact source metadata and nontruncating logical offsets with EOF/data/hole clipping. See [inode sizes](INODE_SIZES.md). Mutations, other feature combinations and runtime authority remain open. |
 | `inode_blocks.rs` | Linux 32/48-bit i_blocks fields and sector/filesystem-block units, exact canonical encoding with aligned huge-unit inputs, checked overflow bounds, and source-bound HUGE_FILE composition with complete data/extent-metadata accounting. See [inode accounting](INODE_BLOCKS.md). |

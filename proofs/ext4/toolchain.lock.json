@@ -698,6 +698,12 @@
     "group_fields::decode",
     "group_fields::super_counts",
     "bitmap::synthesize_free_inodes",
-    "block_bitmap::synthesize"
+    "block_bitmap::synthesize",
+    "superblock::flex_enabled",
+    "superblock::normalized_flex_shift",
+    "group::parse_with_features",
+    "group_index::flex_groups",
+    "group_claims::reserve_with_features",
+    "block_bitmap::synthesize_with_features"
   ]
 }

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Logical BLOCK_UNINIT bitmaps for the bounded non-flex/non-meta layout.
+//! Logical BLOCK_UNINIT bitmaps for bounded source-selected group placement.
+//! META_BG and reserved GDT growth remain outside the supported layout.
 //! Set real bits name reserved metadata; padding is allocated. This describes
 //! allocation state, not a CortenMM frame or filesystem mutation capability.
 
@@ -112,8 +113,13 @@ fn make_byte(l: &Layout, index: u32) -> (r: u8)
 
 #[verifier::opaque]
 pub open spec fn admitted(raw: Seq<u8>, number: u32, blocks: u32, ipg: u32, seed: u32) -> bool {
+    admitted_with_features(raw, number, blocks, ipg, seed, false)
+}
+
+#[verifier::opaque]
+pub open spec fn admitted_with_features(raw: Seq<u8>, number: u32, blocks: u32, ipg: u32, seed: u32, flex: bool) -> bool {
     &&& number < 32 && blocks <= block_claims::MAX_BLOCKS
-    &&& group::accepted(raw, number, blocks, ipg, seed)
+    &&& group::accepted_with_features(raw, number, blocks, ipg, seed, flex)
     &&& bitmap::free_bits(canonical(context(raw, number, blocks, ipg)), real_bits(context(raw, number, blocks, ipg)))
         == bytes::le16(raw, 12)
 }
@@ -130,15 +136,31 @@ pub fn synthesize(raw: &[u8], number: u32, blocks: u32, ipg: u32, seed: u32) -> 
         None => !admitted(raw@, number, blocks, ipg, seed),
     },
 {
-    hide(crc::fold);
-    hide(group::accepted);
     reveal(admitted);
+    synthesize_with_features(raw, number, blocks, ipg, seed, false)
+}
+
+pub fn synthesize_with_features(raw: &[u8], number: u32, blocks: u32, ipg: u32, seed: u32, flex: bool) -> (r: Option<Bitmap>)
+    ensures match r {
+        Some(result) => admitted_with_features(raw@, number, blocks, ipg, seed, flex)
+            && group::accepted_with_features(raw@, number, blocks, ipg, seed, flex) && valid(context(raw@, number, blocks, ipg))
+            && result.view().raw == canonical(context(raw@, number, blocks, ipg))
+            && result.view().valid as nat == real_bits(context(raw@, number, blocks, ipg)) && result.view().meaningful == 32768
+            && result.view().free as nat == bytes::le16(raw@, 12) && result.view().seed == seed
+            && result.view().checksum == (crc::fold(seed, canonical(context(raw@, number, blocks, ipg))) & 0xffffu32) as u16
+            && bitmap::accepted(result.view().raw, result.view().valid, 32768, result.view().free, result.view().checksum, seed),
+        None => !admitted_with_features(raw@, number, blocks, ipg, seed, flex),
+    },
+{
+    hide(crc::fold);
+    hide(group::accepted_with_features);
+    reveal(admitted_with_features);
     if number >= 32 || blocks > block_claims::MAX_BLOCKS { return None; }
-    let fields = match group::parse(raw, number, blocks, ipg, seed) { Some(f) => f, None => { return None; } };
-    assert(raw.len() == 32 || raw.len() == 64) by { reveal(group::accepted); }
+    let fields = match group::parse_with_features(raw, number, blocks, ipg, seed, flex) { Some(f) => f, None => { return None; } };
+    assert(raw.len() == 32 || raw.len() == 64) by { reveal(group::accepted_with_features); }
     let free = bytes::read_le16(raw, 12).unwrap() as u32;
     let backup = group_claims::backup_group(number).unwrap();
-    assert(number as nat * 32768 < blocks) by { reveal(group::accepted); }
+    assert(number as nat * 32768 < blocks) by { reveal(group::accepted_with_features); }
     let layout = Layout { number, blocks, block_bitmap: fields.block_bitmap, inode_bitmap: fields.inode_bitmap,
         inode_table: fields.inode_table, table_blocks: fields.inode_table_blocks, backup };
     assert(layout == context(raw@, number, blocks, ipg));
@@ -146,7 +168,7 @@ pub fn synthesize(raw: &[u8], number: u32, blocks: u32, ipg: u32, seed: u32) -> 
     let mut index = 0u32;
     while index < 4096
         invariant index <= 4096, bytes.len() == index, valid(layout),
-            group::accepted(raw@, number, blocks, ipg, seed), layout == context(raw@, number, blocks, ipg),
+            group::accepted_with_features(raw@, number, blocks, ipg, seed, flex), layout == context(raw@, number, blocks, ipg),
             free as nat == bytes::le16(raw@, 12),
             forall|i: int| 0 <= i < index ==> #[trigger] bytes@[i] == byte(layout, i as nat),
         decreases 4096 - index,
@@ -164,7 +186,7 @@ pub fn synthesize(raw: &[u8], number: u32, blocks: u32, ipg: u32, seed: u32) -> 
     let valid = if available < 32768 { available } else { 32768 };
     assert(valid as nat == real_bits(layout));
     proof {
-        assert(free <= valid) by { reveal(group::accepted); }
+        assert(free <= valid) by { reveal(group::accepted_with_features); }
         assert(bytes@.take(4096) =~= bytes@);
         assert forall|i: int| valid <= i < 32768 implies #[trigger] bitmap::set(bytes@, i) by {
             every_canonical_bit_has_the_exact_reserved_or_padding_meaning(layout, i as u32);
@@ -176,8 +198,8 @@ pub fn synthesize(raw: &[u8], number: u32, blocks: u32, ipg: u32, seed: u32) -> 
 /// Every real set bit is explained by an actual reserved metadata claim.
 /// Disjoint whole-image census composition therefore cannot repurpose it as
 /// ordinary file data, extent metadata or journal storage.
-pub proof fn every_set_real_bit_has_a_reserved_metadata_claim(raw: Seq<u8>, number: u32, blocks: u32, ipg: u32, seed: u32, index: u32)
-    requires group::accepted(raw, number, blocks, ipg, seed), valid(context(raw, number, blocks, ipg)),
+pub proof fn every_set_real_bit_has_a_reserved_metadata_claim(raw: Seq<u8>, number: u32, blocks: u32, ipg: u32, seed: u32, index: u32, flex: bool)
+    requires group::accepted_with_features(raw, number, blocks, ipg, seed, flex), valid(context(raw, number, blocks, ipg)),
         index < real_bits(context(raw, number, blocks, ipg)),
         bitmap::set(canonical(context(raw, number, blocks, ipg)), index as int),
     ensures exists|i: int| 0 <= i < group_claims::claims(raw, number, ipg).len()

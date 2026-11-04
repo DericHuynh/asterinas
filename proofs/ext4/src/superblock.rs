@@ -39,6 +39,27 @@ pub fn descriptor_length(s: &[u8]) -> (r: Option<usize>)
     Some(if read_le32(s, 96).unwrap() & 0x80 != 0 { 64usize } else { 32usize })
 }
 
+pub open spec fn flex_bg(s: Seq<u8>) -> bool { le32(s, 96) as u32 & 0x200 != 0 }
+
+pub open spec fn flex_shift(s: Seq<u8>) -> u8 {
+    if flex_bg(s) && 1 <= s[372] <= 31 { s[372] } else { 0u8 }
+}
+
+pub fn flex_enabled(s: &[u8]) -> (r: Option<bool>)
+    ensures match r { Some(enabled) => s.len() == 1024 && enabled == flex_bg(s@), None => s.len() != 1024 },
+{
+    if s.len() != 1024 { return None; }
+    Some(read_le32(s, 96).unwrap() & 0x200 != 0)
+}
+
+pub fn normalized_flex_shift(s: &[u8]) -> (r: Option<u8>)
+    ensures match r { Some(shift) => s.len() == 1024 && shift == flex_shift(s@) && shift <= 31,
+        None => s.len() != 1024 },
+{
+    if s.len() != 1024 { return None; }
+    Some(if read_le32(s, 96).unwrap() & 0x200 != 0 && 1 <= s[372] && s[372] <= 31 { s[372] } else { 0u8 })
+}
+
 pub struct Superblock {
     blocks: u32,
     inodes: u32,
@@ -62,7 +83,7 @@ pub open spec fn accepted(s: Seq<u8>, partition_bytes: u64) -> bool {
     &&& le32(s, 84) == 11
     &&& le16(s, 88) == 256
     &&& le32(s, 92) == 4
-    &&& (le32(s, 96) as u32 & 0xffffdf7bu32 == 0x42)
+    &&& (le32(s, 96) as u32 & 0xffffdd7bu32 == 0x42)
     &&& (le32(s, 100) == 0x443 || le32(s, 100) == 0x44b)
     &&& (if descriptor_bytes(s) == 64 { le16(s, 254) == 64 } else { le16(s, 254) == 0 || le16(s, 254) == 32 })
     &&& le16(s, 206) == 0
@@ -152,7 +173,7 @@ pub fn parse(s: &[u8], partition_bytes: u64) -> (r: Option<Superblock>)
     let incompat = read_le32(s, 96).unwrap();
     let desc_size = read_le16(s, 254).unwrap();
     let ro_compat = read_le32(s, 100).unwrap();
-    if (incompat & 0xffffdf7bu32 != 0x42) || (ro_compat != 0x443 && ro_compat != 0x44b)
+    if (incompat & 0xffffdd7bu32 != 0x42) || (ro_compat != 0x443 && ro_compat != 0x44b)
         || (if incompat & 0x80 != 0 { desc_size != 64 } else { desc_size != 0 && desc_size != 32 }) || read_le16(s, 206).unwrap() != 0
         || read_le32(s, 228).unwrap() != 0 || read_le32(s, 232).unwrap() != 0
         || read_le16(s, 348).unwrap() != 32 || read_le16(s, 350).unwrap() != 32

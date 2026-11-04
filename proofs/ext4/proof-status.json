@@ -9,15 +9,15 @@
   "writable_mount_enabled": false,
   "verification": {
     "status": "core_and_models_checked",
-    "verus_verified_units": 850,
+    "verus_verified_units": 856,
     "verification_errors": 0,
     "checked_named_proof_functions": 290,
-    "checked_named_executable_functions": 287,
+    "checked_named_executable_functions": 293,
     "runner_validated": true,
     "negative_gate_checks_passed": 6,
-    "host_compatibility_tests_passed": 69,
+    "host_compatibility_tests_passed": 71,
     "evidence": "verification-evidence.json",
-    "request_boundary_rejections_passed": 13
+    "request_boundary_rejections_passed": 15
   },
   "claims": {
     "abstract_redo": "checked",
@@ -92,7 +92,8 @@
     "ext4_metadata_and_jbd2_checksum_domains": "checked_source_bound_CSUM_SEED_selection_group_inode_directory_extent_composition_independent_internal_journal_UUID_and_seed_writer_recovery_volume_identity_and_non_RECOVER_feature_flag_preservation_bounded_profile_other_metadata_runtime_mutations_open",
     "wide_group_fields_and_extended_descriptors": "checked_total_64_bit_address_and_super_count_32_bit_counter_codecs_nontruncating_encoding_source_selected_32_64_byte_descriptor_stride_complete_descriptor_and_bitmap_CRCs_bounded_high_field_rejection_all_group_low_high_bootstrap_identity_static_allocation_namespace_and_recovery_composition_high_address_volumes_other_widths_runtime_and_mutations_open",
     "lazy_inode_bitmap_interpretation": "checked_source_descriptor_flags_and_CRC_group_zero_rejection_exact_synthesized_empty_bitmap_free_count_allocated_padding_no_live_inode_or_directory_target_from_stale_physical_bits_or_table_static_allocation_namespace_and_recovery_composition_first_allocation_concurrency_background_table_zeroing_and_legacy_GDT_CSUM_open",
-    "lazy_block_bitmap_interpretation": "checked_source_descriptor_flags_CRC_exact_canonical_reserved_super_GDT_bitmap_table_and_padding_bits_complete_bounded_synthesis_admission_exact_free_count_and_reserved_metadata_claim_for_every_real_set_bit_global_census_namespace_recovery_composition_no_hidden_journal_or_metadata_alias_first_allocation_concurrency_other_group_layouts_and_legacy_GDT_CSUM_open"
+    "lazy_block_bitmap_interpretation": "checked_source_descriptor_flags_CRC_exact_canonical_reserved_super_GDT_bitmap_table_and_padding_bits_complete_bounded_synthesis_admission_exact_free_count_and_reserved_metadata_claim_for_every_real_set_bit_global_census_namespace_recovery_composition_no_hidden_journal_or_metadata_alias_first_allocation_concurrency_other_group_layouts_and_legacy_GDT_CSUM_open",
+    "flexible_group_metadata_placement": "checked_actual_source_FLEX_BG_selection_group_local_or_filesystem_global_address_bounds_unchanged_logical_group_counter_limits_retained_inode_group_slot_table_provenance_global_disjoint_claims_lazy_bitmap_foreign_metadata_agreement_and_recovery_feature_identity_allocation_policy_resize_concurrency_and_runtime_refinement_open"
   },
   "production_activation_gate": "All applicable obligations in PROOF_OBLIGATIONS.md must be discharged for the admitted profile.",
   "evidence_policy": "Only successful pinned entire-crate checking plus compilation produces a valid build report; it certifies only the declared source/model scope.",
