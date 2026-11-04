@@ -216,6 +216,16 @@ def main():
                                              "{ let _ = verified_ext4::content_write::prepare_authorized(a, 0, b\"x\"); "
                                              "let _ = a.requested_bits(); }\n", "E0382"),
     })
+    misuse.update({
+        "forge_htree_graph": ("pub fn misuse(g: verified_ext4::htree_topology::Graph<'_>) "
+                              "{ let _ = verified_ext4::htree_topology::Graph { ..g }; }\n", "E0451"),
+        "alter_htree_logical_count": ("pub fn misuse(mut g: verified_ext4::htree_topology::Graph<'_>) "
+                                      "{ g.blocks = 3; }\n", "E0616"),
+        "mutate_htree_leaf_source": ("pub fn misuse(root: Vec<u8>, mut leaf: Vec<u8>) { "
+                                     "let blocks: [&[u8]; 2] = [&root, &leaf]; "
+                                     "let graph = verified_ext4::htree_topology::parse(&blocks, 4096, 0, false).unwrap(); "
+                                     "leaf[0] = 1; let _ = graph.logical_role(1); }\n", "E0502"),
+    })
     for name, (source, code) in misuse.items():
         path = BUILD / (name + ".rs")
         path.write_text(source)

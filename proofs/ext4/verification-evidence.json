@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "license": "MPL-2.0",
-  "recorded_at": "2026-11-04T21:31:30.786496+00:00",
+  "recorded_at": "2026-11-04T22:03:21.432175+00:00",
   "scope": "Checked host core and specified abstract machines; not a complete or kernel-integrated ext4 filesystem",
   "verifier_version": {
     "verus": {
@@ -19,7 +19,7 @@
     "encountered-error": false,
     "encountered-vir-error": false,
     "success": true,
-    "verified": 1503,
+    "verified": 1522,
     "errors": 0,
     "is-verifying-entire-crate": true
   },
@@ -31,7 +31,7 @@
     "--crate-type=rlib"
   ],
   "source_sha256": {
-    "src/model.rs": "67cae2e66faab811d1b4b0ef0b4259a89172b3e2b54d58cf65dbe683e5478f5f",
+    "src/model.rs": "40431d524ead3f7c795de5f1e4bd1be1af9000b688c88285acde8d8890f16714",
     "src/redo.rs": "e964baa83ca170c3cc60dbc8df4bfc470a81549ac23a5cfe4526a9cb0edb7e7f",
     "src/journal.rs": "eef5dcc269f81cbc1c7e8c6a4daf0a58cf7015423657a9cfe1f0fff186b91834",
     "src/lease.rs": "37358276a3719454ddeaf16177a2ce058b5e382c57b0609cea97031da084b1aa",
@@ -177,9 +177,10 @@
     "src/acl.rs": "23c8fb4405852319a6c9a4cc64f2dafd7b41604eff25a3acd6a3ecacc16fb2df",
     "src/acl_access.rs": "62de30f1ffc47a54cf8b9700abfabec1c69f4bc68face5725d3ee1d1f85de35d",
     "src/htree.rs": "9b09a04a9384673bdca2f0a97a765356e6a78a8c6c06ffd15ab07155c8405adb",
-    "src/dir_hash.rs": "d39d5a32335771576758ac69fe1d945894f2bbb134e6db46c9fbe4858458610e"
+    "src/dir_hash.rs": "d39d5a32335771576758ac69fe1d945894f2bbb134e6db46c9fbe4858458610e",
+    "src/htree_topology.rs": "f8ee8073499ff5a133db0f20a2f0dd9f76201c7ae3ebef4e107695a7cd873643"
   },
-  "lock_sha256": "7e591397a6f4709649ac5cc674d11c5ef16393cabd9c0910c477cd2b223f0a3e",
+  "lock_sha256": "275c0279309a21b6ca3d65b5d8ec0b61385c15d232a48a43d75145b2b4bea8dc",
   "runner_sha256": "de6b473ab50632068de9e7fc619591c7b4d5afbc0058a1fcd7f946c0198beb91",
   "named_proof_coverage": [
     "access::override_cannot_execute_a_nonexecutable_regular_file",
@@ -342,6 +343,9 @@
     "history::step_preserves",
     "htree::a_probe_has_one_exact_initial_child",
     "htree::odd_hash_continuations_are_distinct_from_initial_even_boundaries",
+    "htree_topology::a_checked_node_retains_its_header_and_every_source_child",
+    "htree_topology::every_supplied_logical_block_is_reachable_from_the_exact_root",
+    "htree_topology::two_tree_claims_cannot_reuse_one_logical_block",
     "inode_group::number_has_the_expected_group_and_slot",
     "inode_group::occupied_preservation_keeps_checked_nodes",
     "inode_projection::a_preserved_primary_and_gdt_keep_every_inode_coordinate",
@@ -900,6 +904,10 @@
     "htree::parse_root",
     "htree::probe",
     "htree::routing_index",
+    "htree_topology::checked_root",
+    "htree_topology::logical_block_count",
+    "htree_topology::logical_role",
+    "htree_topology::parse",
     "image_validation::inspect",
     "image_validation::journal",
     "image_validation::source",
@@ -1139,14 +1147,14 @@
     "xattr_table::source_bytes",
     "xattr_table::value"
   ],
-  "host_library_sha256": "9b8bda0ee65abb4d5391aa75480924974dce898773211705293611d64aa364f7",
+  "host_library_sha256": "049706be3c98f77c48238368f2f6a56fe8e9136955235881343cb61daa19d44e",
   "compatibility": {
     "schema": 1,
     "status": "passed",
     "scope": "host interoperability tests, not formal proof",
     "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
-    "proof_artifact_sha256": "9b8bda0ee65abb4d5391aa75480924974dce898773211705293611d64aa364f7",
-    "image_sha256": "1574aab4ee5320167cf0a7927ba5b699c683dbdc36debe3ca59b322e189a2c93",
+    "proof_artifact_sha256": "049706be3c98f77c48238368f2f6a56fe8e9136955235881343cb61daa19d44e",
+    "image_sha256": "94946d32f6a19fc32d1bb417d50f2d40fbede4649788e759be0f219afcfe53ca",
     "request_boundary_rejections": [
       "reuse_request",
       "redirect_completion",
@@ -1208,15 +1216,18 @@
       "forge_parsed_acl",
       "forge_acl_authorization",
       "redirect_acl_authorization",
-      "reuse_consumed_acl_authorization"
+      "reuse_consumed_acl_authorization",
+      "forge_htree_graph",
+      "alter_htree_logical_count",
+      "mutate_htree_leaf_source"
     ],
-    "compatibility_runner_sha256": "cc7b864641b0c474b11ab4815f2bf294c3e35a88df7aca2cf575e40935fb1e10",
+    "compatibility_runner_sha256": "77bd7c3ceffefb44cdc3d8a972d4a9ffd0e0d9420041ebe951d842a862a3eefe",
     "test_source_sha256": {
-      "compat": "c5b858cc7f0026935744772babeef03d853e08cf3a26bcdd45bf40fd584cc5e7",
+      "compat": "42e1051c191821c1dac04199655f928c92032631a7d8ec7b7a2437ed66e7bc63",
       "journal": "ba305b89c3bd732b3e2794c6e1be43a810328433d9c4aaf1297ada866256d73a"
     }
   },
-  "compatibility_test_count": 140,
+  "compatibility_test_count": 141,
   "e2fsprogs_version": "1.47.0",
   "negative_gate_checks": {
     "status": "passed",
