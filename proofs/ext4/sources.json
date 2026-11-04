@@ -25,9 +25,9 @@
     },
     {
       "path": "fs/jbd2/recovery.c",
-      "url": "https://github.com/torvalds/linux/blob/v7.0/fs/jbd2/recovery.c",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/jbd2/recovery.c",
       "blob_sha": "cac8c2cd4a92a749aa860eedf35b7f643ab345b4",
-      "review_scope": "selected relevant ranges"
+      "review_scope": "do_one_pass source s_sequence/s_start and transaction scan/replay boundary (lines 607-675), commit recognition/checksum and sequence advance (816-877), and end_transaction stop consistency across passes (917-941); independent reserved-window proofs derive exact durable suffix parsing, resource admission and repeated crash/recovery byte closure"
     },
     {
       "path": "fs/ext4/fsync.c",

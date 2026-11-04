@@ -196,3 +196,22 @@ pub mod journal_window_device;
 pub mod journal_window_media;
 
 pub mod journal_window_progress;
+
+pub mod window_provenance;
+
+pub mod window_stream;
+
+pub mod window_snapshot;
+
+pub mod window_scan;
+
+pub mod window_records;
+
+pub mod window_recognition;
+
+pub mod window_recovery_profile;
+pub mod window_redo;
+
+pub mod window_recovery;
+
+pub mod window_repeated_recovery;

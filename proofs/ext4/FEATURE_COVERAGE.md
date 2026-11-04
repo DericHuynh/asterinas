@@ -43,7 +43,7 @@ unsupported markers need Linux-compatible handling, not invented encodings.
 | RO_COMPAT | `0x10000` | `ORPHAN_PRESENT` | Not implemented | Recovery state and orphan-file emptiness/retirement rules |
 | INCOMPAT | `0x0001` | `COMPRESSION` | Not implemented | Legacy unsupported marker; match pinned Linux rejection policy |
 | INCOMPAT | `0x0002` | `FILETYPE` | Partial: initial profile only | All inode/dirent types, including symlinks and special files |
-| INCOMPAT | `0x0004` | `RECOVER` | Partial: initial profile only | Dirty/clean transitions with concurrent commit/checkpoint/recovery |
+| INCOMPAT | `0x0004` | `RECOVER` | Partial: bounded concurrent-window dirty/activation/retirement and actual scanner/repeated-recovery closure under explicit device contracts | Full filesystem admission, bootstrap rediscovery, runtime CortenMM/device refinement and clean unmount |
 | INCOMPAT | `0x0008` | `JOURNAL_DEV` | Not implemented | External journal device identity, bounds, exclusion and exclusivity |
 | INCOMPAT | `0x0010` | `META_BG` | Not implemented | Distributed descriptor locations and reserved regions across resize |
 | INCOMPAT | `0x0040` | `EXTENTS` | Partial: owned read-only trees in bounded profile | 48-bit addresses, depth-0..5 trees, insert/split/merge/truncate and conversion |

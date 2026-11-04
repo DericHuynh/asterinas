@@ -837,6 +837,243 @@ mod durable_windows {
         assert!(prepare(&image, &queue).is_none());
     }
 
+    fn larger_fixture() -> Vec<u8> {
+        let path = "build/window-credit-source.img";
+        let executable = std::env::var("MKE2FS_BIN").unwrap_or_else(|_| "mke2fs".into());
+        let status = std::process::Command::new(executable).args([
+            "-q", "-F", "-t", "ext4", "-b", "4096", "-I", "256",
+            "-O", "none,has_journal,extent,filetype,sparse_super,large_file,extra_isize,metadata_csum",
+            "-E", "lazy_itable_init=0,lazy_journal_init=0", "-J", "size=32", path, "32768",
+        ]).status().unwrap();
+        assert!(status.success());
+        std::fs::write("build/window-credit-file.bin", vec![0x21; 256 * 4096]).unwrap();
+        let executable = std::env::var("DEBUGFS_BIN").unwrap_or_else(|_| "debugfs".into());
+        assert!(
+            std::process::Command::new(executable)
+                .args([
+                    "-w",
+                    "-R",
+                    "write build/window-credit-file.bin /payload",
+                    path,
+                ])
+                .status()
+                .unwrap()
+                .success()
+        );
+        let image = std::fs::read(path).unwrap();
+        std::fs::remove_file(path).unwrap();
+        std::fs::remove_file("build/window-credit-file.bin").unwrap();
+        image
+    }
+
+    #[test]
+    fn window_recovery_credit_limit_accepts_4096_payloads_and_rejects_4097_before_io() {
+        let image = larger_fixture();
+        let (layout, _, target) = geometry(&image);
+        assert!(layout.blocks() > 5000);
+        let begin = layout.physical_start() as usize * 4096;
+        let end = begin + layout.blocks() as usize * 4096;
+        for total in [4096, 4097] {
+            let mut queue = Queue::new(layout.duplicate()).unwrap();
+            let mut remaining = total;
+            let mut generation = 0;
+            while remaining > 0 {
+                let count = remaining.min(250);
+                let targets: Vec<_> = (target..target + count as u32).collect();
+                assert!(queue.reserve(&targets));
+                {
+                    let (_, mut part, _) = queue.borrow_work(count).unwrap();
+                    for index in 0..count {
+                        let mut handle = part.handle_at(index).unwrap();
+                        assert!(handle.stage(&[0x61 + generation; 4096]));
+                        assert!(handle.close());
+                    }
+                }
+                assert!(matches!(queue.seal(), Seal::Frozen(_)));
+                remaining -= count;
+                generation += 1;
+            }
+            let candidate = prepare(&image, &queue);
+            if total == 4097 {
+                assert!(candidate.is_none());
+                continue;
+            }
+            let mut engine = candidate.unwrap();
+            let mut cache = Cache::new(&image);
+            for _ in 0..4 {
+                engine = cache.complete(engine, Lane::Bootstrap);
+            }
+            while engine.can_dispatch(Lane::Commit) {
+                engine = cache.complete(engine, Lane::Commit);
+            }
+            assert_eq!(engine.progress(), (17, 0, 0, false));
+            let scanned = core::scan::recover(
+                &cache.stable[begin..end],
+                &image[1128..1144],
+                layout.duplicate(),
+            )
+            .unwrap();
+            assert_eq!(scanned.committed_transactions(), 17);
+            assert_eq!(scanned.replay_plan().len(), 250);
+            let recovered = linux_recover("build/window-credit-linux.img", &cache.stable);
+            for index in 0..250 {
+                let at = (target as usize + index) * 4096;
+                let expected = if index < 96 { 0x71 } else { 0x70 };
+                assert_eq!(&recovered[at..at + 4096], &[expected; 4096]);
+            }
+        }
+    }
+
+    fn interrupted_recovery(image: &[u8], cut: usize, pattern: usize) -> Vec<u8> {
+        let layout = geometry(image).0;
+        let begin = layout.physical_start() as usize * 4096;
+        let end = begin + layout.blocks() as usize * 4096;
+        let mut engine = core::recovery_io::prepare(
+            &image[begin..end],
+            &image[1128..1144],
+            layout,
+            &image[..4096],
+            image.len() as u64,
+        )
+        .unwrap();
+        let mut stable = image.to_vec();
+        let mut cache = Vec::new();
+        for _ in 0..cut {
+            let pending = match core::recovery_request::dispatch(engine) {
+                Ok(pending) => pending,
+                Err(done) => {
+                    engine = done;
+                    break;
+                }
+            };
+            match pending.pending_command() {
+                Command::Write { block, image } => cache.push((block, image.to_vec())),
+                Command::Flush => {
+                    for (block, bytes) in cache.drain(..).rev() {
+                        let at = block as usize * 4096;
+                        stable[at..at + 4096].copy_from_slice(&bytes);
+                    }
+                }
+            }
+            engine = pending.finish_pending(Completion::Succeeded);
+        }
+        if let Ok(pending) = core::recovery_request::dispatch(engine) {
+            if let Command::Write { block, image } = pending.pending_command() {
+                cache.push((block, image.to_vec()));
+            }
+            let _ = pending
+                .abort_pending()
+                .finish_pending(Completion::Succeeded);
+        }
+        for (index, (block, bytes)) in cache.into_iter().enumerate().rev() {
+            if index % 2 == pattern % 2 {
+                let at = block as usize * 4096;
+                stable[at..at + 4096].copy_from_slice(&bytes);
+            }
+        }
+        stable
+    }
+
+    #[test]
+    fn variable_sized_window_with_primary_updates_survives_repeated_recovery_crashes() {
+        let (image, layout, _, target) = fixture();
+        let mut queue = Queue::new(layout.duplicate()).unwrap();
+        for generation in 0..3 {
+            let targets = match generation {
+                0 => vec![0, target, target + 1],
+                1 => vec![target, target + 1],
+                _ => vec![0, target],
+            };
+            assert!(queue.reserve(&targets));
+            {
+                let (_, mut part, _) = queue.borrow_work(targets.len()).unwrap();
+                for (index, block) in targets.iter().enumerate() {
+                    let bytes = if *block == 0 {
+                        let mut primary = core::super_state::recovery_image(
+                            &image[..4096],
+                            image.len() as u64,
+                            true,
+                        )
+                        .unwrap()
+                        .as_slice()
+                        .to_vec();
+                        primary[1144..1160].fill(b'a' + generation as u8);
+                        let checksum = core::crc::crc32c(0xffffffff, &primary[1024..2044]);
+                        primary[2044..2048].copy_from_slice(&checksum.to_le_bytes());
+                        primary
+                    } else {
+                        value(generation, (*block - target) as usize)
+                    };
+                    let mut handle = part.handle_at(index).unwrap();
+                    assert!(handle.stage(&bytes));
+                    assert!(handle.close());
+                }
+            }
+            assert!(matches!(queue.seal(), Seal::Frozen(_)));
+        }
+        let mut engine = prepare(&image, &queue).unwrap();
+        let mut cache = Cache::new(&image);
+        let mut lanes = vec![Lane::Bootstrap; 4];
+        lanes.extend([Lane::Commit; 7]);
+        lanes.push(Lane::Checkpoint);
+        lanes.extend([Lane::Commit; 6]);
+        lanes.extend([Lane::Checkpoint; 3]);
+        lanes.push(Lane::Tail);
+        lanes.extend([Lane::Commit; 6]);
+        lanes.push(Lane::Checkpoint);
+        lanes.push(Lane::Tail);
+        lanes.extend([Lane::Checkpoint; 2]);
+        for lane in lanes {
+            engine = cache.complete(engine, lane);
+        }
+        assert_eq!(engine.progress(), (3, 2, 1, false));
+        let begin = layout.physical_start() as usize * 4096;
+        let end = begin + layout.blocks() as usize * 4096;
+        let scanned = core::scan::recover(
+            &cache.stable[begin..end],
+            &image[1128..1144],
+            layout.duplicate(),
+        )
+        .unwrap();
+        assert_eq!(scanned.committed_transactions(), 2);
+        let mut crash = cache.stable;
+        for (attempt, cut) in [1, 2, 4, 5].into_iter().enumerate() {
+            crash = interrupted_recovery(&crash, cut, attempt);
+            assert!(
+                core::recovery_io::prepare(
+                    &crash[begin..end],
+                    &image[1128..1144],
+                    layout.duplicate(),
+                    &crash[..4096],
+                    image.len() as u64
+                )
+                .is_some()
+            );
+            let linux = linux_recover(
+                &format!("build/window-recovery-attempt-{attempt}.img"),
+                &crash,
+            );
+            assert_eq!(&linux[1144..1160], &[b'c'; 16]);
+            let at = target as usize * 4096;
+            assert_eq!(&linux[at..at + 4096], value(2, 0));
+            assert_eq!(&linux[at + 4096..at + 8192], value(1, 1));
+        }
+        let completed = interrupted_recovery(&crash, usize::MAX, 0);
+        let mut primary =
+            core::super_state::recovery_image(&image[..4096], image.len() as u64, true)
+                .unwrap()
+                .as_slice()
+                .to_vec();
+        primary[1144..1160].fill(b'c');
+        let checksum = core::crc::crc32c(0xffffffff, &primary[1024..2044]);
+        primary[2044..2048].copy_from_slice(&checksum.to_le_bytes());
+        assert_eq!(&completed[..4096], primary);
+        let at = target as usize * 4096;
+        assert_eq!(&completed[at..at + 4096], value(2, 0));
+        assert_eq!(&completed[at + 4096..at + 8192], value(1, 1));
+        assert_eq!(core::bytes::read_be32(&completed[begin..end], 28), Some(0));
+    }
+
     #[test]
     fn coalesced_tail_skips_only_checkpointed_transactions() {
         let (image, _, _, target) = fixture();

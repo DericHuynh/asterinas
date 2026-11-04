@@ -77,7 +77,7 @@ in sources.json.
 | Concurrency obligation | Accomplished | Remaining |
 | --- | --- | --- |
 | C-RUN | Bounded shared window accounting, actual disjoint borrowed handles, exact close/seal, unused-credit release and arbitrary finite reservation/edit interleavings | Running transaction extension/restart, wait queues, mount ownership and full operation closure |
-| C-COMMIT | Older/newer candidate versions remain isolated; the separate [closed-window core](DURABLE_JOURNAL_WINDOWS.md) now owns encodings, sequences and durable commit requests with byte-level persistence proofs | Actual concurrent crash-scan/recovery composition, full filesystem admission and runtime refinement |
+| C-COMMIT | Older/newer candidate versions remain isolated; the separate [closed-window core](DURABLE_JOURNAL_WINDOWS.md) now owns encodings, sequences and durable commit requests with byte-level persistence proofs | Bounded actual scanner/recovery closure now composes in [concurrent recovery closure](CONCURRENT_RECOVERY_CLOSURE.md); full filesystem admission and runtime refinement remain open |
 | C-CHECKPOINT | Sealed reservations remain pinned; the separate closed-window core now checks FIFO home checkpoints, conflicting-version fences and fenced tail-prefix retirement | Circular log/credit reclamation, fresh-source restart and hardware quiescence |
 | C-LOCK | Rust loans prevent cancellation or sealing while work parts remain live | Actual OSTD guard ranks, waits, callbacks, reset/unmount and deadlock/progress refinement |
 
