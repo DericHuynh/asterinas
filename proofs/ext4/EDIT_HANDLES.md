@@ -17,6 +17,12 @@ connect all returned slots back to their parent batch, including exact values
 outside an edited slot. No scalar owner ID or assumed fresh integer stands in
 for the actual Rust borrow.
 
+Staging and mutable part operations preserve the same prophetic final-slot
+relation. `Part::release` consumes a part and relates its exact current bytes
+to the parent borrow's final view. This permits checked clients to compose
+handle staging/close, returned partitions and consuming freeze without treating
+an opaque borrowed container's drop as an unspecified mutation.
+
 The `Open`, `Stage`, `Close` and `Abort` transition definitions occur in the
 executable methods' checked contracts. The schedule proofs use these exact
 definitions. Enabled steps preserve sorted targets, slot count and image

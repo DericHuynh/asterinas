@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "license": "MPL-2.0",
-  "recorded_at": "2026-11-04T09:33:22.903237+00:00",
+  "recorded_at": "2026-11-04T09:50:19.591767+00:00",
   "scope": "Checked host core and specified abstract machines; not a complete or kernel-integrated ext4 filesystem",
   "verifier_version": {
     "verus": {
@@ -19,7 +19,7 @@
     "encountered-error": false,
     "encountered-vir-error": false,
     "success": true,
-    "verified": 913,
+    "verified": 923,
     "errors": 0,
     "is-verifying-entire-crate": true
   },
@@ -31,7 +31,7 @@
     "--crate-type=rlib"
   ],
   "source_sha256": {
-    "src/model.rs": "5dec75617c7811495d0c6858f723a835e6ef909d7fc28084758e74480395b661",
+    "src/model.rs": "392df7d4b5e7ee8dbbeb74a2048eec83c9b714cf11c665e92fb6c8c75d99241b",
     "src/redo.rs": "e964baa83ca170c3cc60dbc8df4bfc470a81549ac23a5cfe4526a9cb0edb7e7f",
     "src/journal.rs": "eef5dcc269f81cbc1c7e8c6a4daf0a58cf7015423657a9cfe1f0fff186b91834",
     "src/lease.rs": "37358276a3719454ddeaf16177a2ce058b5e382c57b0609cea97031da084b1aa",
@@ -126,11 +126,12 @@
     "src/inode_blocks.rs": "f79664689eef5fb9e82bfbabbffd5a0ae654d09dbda2839517144c5727d01185",
     "src/group_fields.rs": "cd4cc565a798e62ed42a7271ac3d5c4999cfb8ab44a1b00544a819e81dbf66ea",
     "src/block_bitmap.rs": "795e26ab1b4255b0229390363e70527633a0eaef9c6d5ca68348a44a18811176",
-    "src/edit_handles.rs": "522534b471e9c3e581927ffdbf42908959aa5c099483c8de5f649d9c900b6ab6",
+    "src/edit_handles.rs": "248d29d0130ad6f65935f7b2ab48505b02dfce06ed75321f155ed96b64083d11",
     "src/edit_schedule.rs": "8cbb424b5c5a0627b69c48b641ac5d4f7fbdcb3e06452f9469226ba75f75b122",
-    "src/writer_admission.rs": "ed5d1dc971c1c1e4179e19aab7e0f2774ff14541775775391e5c04415331e58d"
+    "src/writer_admission.rs": "ed5d1dc971c1c1e4179e19aab7e0f2774ff14541775775391e5c04415331e58d",
+    "src/content_write.rs": "6f0550330d437461a746fd8585aa254702045a4d0f0eb04716cb6973e50884a9"
   },
-  "lock_sha256": "20d59113e24c5aa486415f46c06bfe6aa4fa47370c9e470bf64cb0d8d489c00e",
+  "lock_sha256": "7cbc625dabf0fe7f717084623c6f931c325f2d1334fb35c743af890ce5dc1a83",
   "runner_sha256": "de6b473ab50632068de9e7fc619591c7b4d5afbc0058a1fcd7f946c0198beb91",
   "named_proof_coverage": [
     "access::override_cannot_execute_a_nonexecutable_regular_file",
@@ -171,6 +172,11 @@
     "block_range::split_is_an_exact_disjoint_partition",
     "bytes::splice_frame",
     "bytes::splice_word_frame",
+    "content_write::an_initialized_content_write_cannot_touch_another_inode",
+    "content_write::bytes_outside_the_requested_content_span_are_preserved",
+    "content_write::candidates_for_distinct_physical_blocks_commute",
+    "content_write::every_replaced_byte_stays_in_the_same_logical_block",
+    "content_write::replacement_bytes_equal_the_exact_requested_prefix",
     "crc::streaming",
     "crc::zero4_restores_written_checksum",
     "descriptor::bad_next_entry_excludes_all_candidates",
@@ -492,6 +498,10 @@
     "bytes::write_bytes",
     "bytes::write_le32",
     "bytes::zero_block",
+    "content_write::after_image",
+    "content_write::begin",
+    "content_write::prepare_chunk",
+    "content_write::written_prefix",
     "crc::crc32c",
     "crc::crc32c_zero4",
     "crc::update_byte",
@@ -525,6 +535,7 @@
     "edit_handles::into_images",
     "edit_handles::part_count",
     "edit_handles::partition",
+    "edit_handles::release",
     "edit_handles::reserve",
     "edit_handles::reserved_count",
     "edit_handles::reserved_layout",
@@ -761,14 +772,14 @@
     "writer_admission::prepare",
     "writer_admission::source_snapshot"
   ],
-  "host_library_sha256": "e0cff74a4ed631fe6c29434b1edc1a821ace8737675fc5fb9d457da27060c0a8",
+  "host_library_sha256": "cc11ed55fec433e0244183a73374a07e94faa11034084a74661643a9e473c8ae",
   "compatibility": {
     "schema": 1,
     "status": "passed",
     "scope": "host interoperability tests, not formal proof",
     "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
-    "proof_artifact_sha256": "e0cff74a4ed631fe6c29434b1edc1a821ace8737675fc5fb9d457da27060c0a8",
-    "image_sha256": "f5785fb8f5aa8315dc1e8331978467c000dbcbe9a84c8b1ef212641e5d16e7b0",
+    "proof_artifact_sha256": "cc11ed55fec433e0244183a73374a07e94faa11034084a74661643a9e473c8ae",
+    "image_sha256": "3f5ab66cd89e10355d75a1352f42269bf46170c8d81acc2d19b4c5f6f0642683",
     "request_boundary_rejections": [
       "reuse_request",
       "redirect_completion",
@@ -796,15 +807,20 @@
       "extract_admitted_writer",
       "reuse_admitted_write_completion",
       "reuse_dispatched_admitted_writer",
-      "replace_admitted_write_pending"
+      "replace_admitted_write_pending",
+      "forge_content_candidate",
+      "redirect_content_candidate",
+      "reuse_content_candidate",
+      "replace_content_inode",
+      "reuse_released_edit_part"
     ],
-    "compatibility_runner_sha256": "82e3605740f4a166ebad56ce2a5c9387c17ab00d906b8bcf933d305351377ed3",
+    "compatibility_runner_sha256": "1a59ff23ba0e1291b32d7fc88098b9d2dbf71c3a3c02397badf4ed08c26e51d5",
     "test_source_sha256": {
       "compat": "29f10af4aaffedfe09c4d4b36c26ba746cde829f5293b3a62226dec5ae4178e0",
-      "journal": "efce4c789cef6d2d5914656e6f6f6928ec055c80356248586dedf2ae898aab38"
+      "journal": "2bc6d4246155e213f5bd08ba2cf780b6163f6a5f1f32f0216b5d3142c77a4e6b"
     }
   },
-  "compatibility_test_count": 82,
+  "compatibility_test_count": 87,
   "e2fsprogs_version": "1.47.0",
   "negative_gate_checks": {
     "status": "passed",

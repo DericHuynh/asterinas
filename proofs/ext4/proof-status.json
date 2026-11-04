@@ -9,15 +9,15 @@
   "writable_mount_enabled": false,
   "verification": {
     "status": "core_and_models_checked",
-    "verus_verified_units": 913,
+    "verus_verified_units": 923,
     "verification_errors": 0,
-    "checked_named_proof_functions": 299,
-    "checked_named_executable_functions": 326,
+    "checked_named_proof_functions": 304,
+    "checked_named_executable_functions": 331,
     "runner_validated": true,
     "negative_gate_checks_passed": 6,
-    "host_compatibility_tests_passed": 82,
+    "host_compatibility_tests_passed": 87,
     "evidence": "verification-evidence.json",
-    "request_boundary_rejections_passed": 27
+    "request_boundary_rejections_passed": 32
   },
   "claims": {
     "abstract_redo": "checked",
@@ -95,7 +95,8 @@
     "lazy_block_bitmap_interpretation": "checked_source_descriptor_flags_CRC_exact_canonical_reserved_super_GDT_bitmap_table_and_padding_bits_complete_bounded_synthesis_admission_exact_free_count_and_reserved_metadata_claim_for_every_real_set_bit_global_census_namespace_recovery_composition_no_hidden_journal_or_metadata_alias_first_allocation_concurrency_other_group_layouts_and_legacy_GDT_CSUM_open",
     "flexible_group_metadata_placement": "checked_actual_source_FLEX_BG_selection_group_local_or_filesystem_global_address_bounds_unchanged_logical_group_counter_limits_retained_inode_group_slot_table_provenance_global_disjoint_claims_lazy_bitmap_foreign_metadata_agreement_and_recovery_feature_identity_allocation_policy_resize_concurrency_and_runtime_refinement_open",
     "borrowed_concurrent_edit_batches": "checked_actual_disjoint_mutable_Rust_borrows_sorted_target_credits_exact_owned_snapshot_stage_consume_close_sticky_abort_complete_freeze_sealed_encoder_composition_exact_slot_transition_refinement_all_finite_interleavings_disjoint_commutation_retired_slots_and_nonempty_witness_shared_journal_space_filesystem_operations_kernel_locks_CortenMM_DMA_and_concurrent_commit_checkpoint_open",
-    "candidate_writer_filesystem_admission": "checked_same_retained_source_bootstrap_and_complete_initial_allocation_namespace_exact_frozen_layout_actual_dirty_log_home_retirement_shadow_complete_final_allocation_namespace_bootstrap_identity_and_sealed_owned_dispatch_completion_abort_certificate_preservation_operation_authority_complete_physical_ledger_filesystem_refinement_concurrent_journal_mount_CortenMM_and_device_open"
+    "candidate_writer_filesystem_admission": "checked_same_retained_source_bootstrap_and_complete_initial_allocation_namespace_exact_frozen_layout_actual_dirty_log_home_retirement_shadow_complete_final_allocation_namespace_bootstrap_identity_and_sealed_owned_dispatch_completion_abort_certificate_preservation_operation_authority_complete_physical_ledger_filesystem_refinement_concurrent_journal_mount_CortenMM_and_device_open",
+    "source_bound_initialized_content_candidates": "checked_actual_allocated_regular_inode_source_generation_initialized_mapping_and_ownership_DAC_input_predicate_setid_rejection_exact_block_EOF_clipped_snapshot_surrounding_byte_frame_same_logical_block_disjoint_patch_commutation_and_consuming_handle_close_release_freeze_same_source_validated_writer_composition_POSIX_write_timestamps_authenticated_credentials_allocation_conversion_and_kernel_CortenMM_refinement_open"
   },
   "production_activation_gate": "All applicable obligations in PROOF_OBLIGATIONS.md must be discharged for the admitted profile.",
   "evidence_policy": "Only successful pinned entire-crate checking plus compilation produces a valid build report; it certifies only the declared source/model scope.",
@@ -110,5 +111,6 @@
   "concurrent_block_lifetime_model_present": true,
   "external_extent_tree_allocation_present": true,
   "borrowed_candidate_edit_batches_present": true,
-  "checked_candidate_writer_admission_present": true
+  "checked_candidate_writer_admission_present": true,
+  "initialized_content_candidates_present": true
 }
