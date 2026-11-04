@@ -151,7 +151,10 @@
     "src/window_repeated_recovery.rs",
     "src/window_prefix.rs",
     "src/window_admission.rs",
-    "src/window_bootstrap.rs"
+    "src/window_bootstrap.rs",
+    "src/feature_policy.rs",
+    "src/backup_layout.rs",
+    "src/link_count.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -641,7 +644,19 @@
     "window_bootstrap::fresh_bootstrap_scans_the_exact_actual_window_journal",
     "window_bootstrap::an_admitted_cold_recovery_uses_fresh_discovery_and_validates_its_complete_result",
     "window_bootstrap::every_crash_during_admitted_cold_recovery_keeps_the_original_window_locator",
-    "window_bootstrap::successful_admitted_cold_recovery_has_the_exact_complete_filesystem_image"
+    "window_bootstrap::successful_admitted_cold_recovery_has_the_exact_complete_filesystem_image",
+    "feature_policy::every_admitted_mask_keeps_required_features_and_rejects_unimplemented_bits",
+    "backup_layout::explicit_backup_groups_override_the_classic_sparse_rule",
+    "backup_layout::non_sparse_layout_reserves_primary_and_backup_metadata_in_every_group",
+    "backup_layout::bootstrap_identity_preserves_every_backup_coordinate",
+    "link_count::unknown_directory_counts_cannot_weaken_regular_file_reference_checks",
+    "link_count::unknown_counts_still_require_a_live_directory_with_multiple_references",
+    "block_bitmap::every_set_real_bit_has_a_source_selected_reserved_metadata_claim",
+    "feature_policy::bootstrap_identity_preserves_source_feature_policy",
+    "feature_policy::recovery_mark_preserves_readonly_stable_and_link_count_features",
+    "feature_policy::no_serial_writer_starts_on_a_readonly_filesystem",
+    "feature_policy::no_concurrent_window_starts_on_a_readonly_filesystem",
+    "feature_policy::linux_unsupported_compression_and_dirdata_markers_are_always_rejected"
   ],
   "required_flags": [
     "--no-cheating",
@@ -1029,6 +1044,21 @@
     "window_admission::pending_command",
     "window_admission::abort_pending",
     "window_admission::finish_pending",
-    "window_admission::prepare"
+    "window_admission::prepare",
+    "feature_policy::compatible_flags",
+    "feature_policy::readonly_compatible_flags",
+    "feature_policy::is_readonly",
+    "feature_policy::has_dir_nlink",
+    "feature_policy::has_stable_inodes",
+    "backup_layout::has_backup",
+    "backup_layout::source_group",
+    "link_count::agrees",
+    "link_count::increment_directory",
+    "link_count::decrement_directory",
+    "group_claims::reserve_with_backup",
+    "block_bitmap::synthesize_with_backup",
+    "feature_policy::incompatible_flags",
+    "superblock::feature_flags",
+    "superblock::read_only"
   ]
 }

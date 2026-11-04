@@ -221,3 +221,7 @@ pub mod window_prefix;
 pub mod window_admission;
 
 pub mod window_bootstrap;
+
+pub mod feature_policy;
+pub mod backup_layout;
+pub mod link_count;

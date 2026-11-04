@@ -29,6 +29,7 @@ pub open spec fn valid_images(v: Images) -> bool {
     &&& v.tx.layout.fs_blocks as nat * 4096 <= v.partition_bytes
     &&& v.initial_journal.len() == v.tx.layout.journal_blocks as nat * 4096
     &&& superblock::accepted(v.initial_primary.subrange(1024, 2048), v.partition_bytes)
+    &&& !crate::feature_policy::readonly(v.initial_primary.subrange(1024, 2048))
     &&& bytes::le32(v.initial_primary, 1028) == v.tx.layout.fs_blocks
     &&& journal_superblock::accepted(v.initial_journal.subrange(0, 1024), v.tx.uuid, v.tx.layout.journal_blocks)
     &&& bytes::be32(v.initial_journal, 28) == 0
@@ -236,16 +237,26 @@ pub proof fn expected_command_is_confined(v: Images, state: State)
         CommandView::Flush => true,
     },
 {
+    command_context(v);
+    image_shapes(v);
+    state_image_shapes(v);
+    if state.phase is Homes { home_bounds(v, state.cursor as int); }
+}
+
+proof fn state_image_shapes(v: Images)
+    requires valid_images(v),
+    ensures v.dirty.len() == 4096, v.activation.len() == 4096, v.tail.len() == 4096,
+{ reveal(valid_images); }
+
+proof fn home_bounds(v: Images, i: int)
+    requires valid_images(v), 0 <= i < v.tx.original.len(),
+    ensures v.tx.original[i].block < v.tx.layout.fs_blocks,
+{
     hide(crate::crc::fold);
     reveal(valid_images);
-    if state.phase is Homes {
-        assert(replay_candidate_allowed(v, state.cursor as int));
-    }
-    if state.phase is Payloads {
-        assert(crate::replay::payload_for_layout(v.tx.tags[state.cursor as int], v.tx.payloads[state.cursor as int],
-            v.tx.sequence, v.tx.seed, v.tx.layout));
-    }
+    assert(crate::replay::payload_for_layout(v.tx.tags[i], v.tx.payloads[i], v.tx.sequence, v.tx.seed, v.tx.layout));
 }
+
 
 spec fn replay_candidate_allowed(v: Images, i: int) -> bool {
     v.tx.original[i].block < v.tx.layout.fs_blocks && v.tx.original[i].image.len() == 4096
@@ -283,6 +294,7 @@ pub open spec fn can_prepare(journal: Seq<u8>, uuid: Seq<u8>, layout: &JournalLa
     &&& layout.wf() && primary.len() == 4096
     &&& journal.len() == layout.view().journal_blocks as nat * 4096
     &&& superblock::accepted(primary.subrange(1024, 2048), partition_bytes)
+    &&& !crate::feature_policy::readonly(primary.subrange(1024, 2048))
     &&& layout.view().fs_blocks as nat == bytes::le32(primary, 1028)
     &&& journal_superblock::accepted(journal.subrange(0, 1024), uuid, layout.view().journal_blocks)
     &&& bytes::be32(journal, 28) == 0
@@ -307,6 +319,7 @@ pub fn prepare(journal: &[u8], uuid: &[u8], layout: JournalLayout, primary: &[u8
     hide(superblock::accepted);
     hide(journal_superblock::accepted);
     if !layout.valid() || primary.len() != 4096 || journal.len() as u64 != layout.blocks() as u64 * 4096 { return None; }
+    if crate::feature_policy::is_readonly(&primary[1024..2048]).unwrap() { return None; }
     let boot = match superblock::parse(&primary[1024..2048], partition_bytes) { Some(s) => s, None => { return None; } };
     if boot.blocks() != layout.filesystem_blocks() { return None; }
     assert(layout.view().fs_blocks as nat * 4096 <= partition_bytes) by { reveal(superblock::accepted); }

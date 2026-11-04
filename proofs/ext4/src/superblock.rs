@@ -67,6 +67,9 @@ pub struct Superblock {
     inodes_per_group: u32,
     journal_inode: u32,
     needs_recovery: bool,
+    compat: u32,
+    ro_compat: u32,
+    incompat: u32,
 }
 
 pub open spec fn accepted(s: Seq<u8>, partition_bytes: u64) -> bool {
@@ -82,9 +85,9 @@ pub open spec fn accepted(s: Seq<u8>, partition_bytes: u64) -> bool {
     &&& le32(s, 76) == 1
     &&& le32(s, 84) == 11
     &&& le16(s, 88) == 256
-    &&& le32(s, 92) == 4
-    &&& (le32(s, 96) as u32 & 0xffffdd7bu32 == 0x42)
-    &&& (le32(s, 100) == 0x443 || le32(s, 100) == 0x44b)
+    &&& crate::feature_policy::compat_allowed(le32(s, 92) as u32)
+    &&& crate::feature_policy::incompat_allowed(le32(s, 96) as u32)
+    &&& crate::feature_policy::ro_allowed(le32(s, 100) as u32)
     &&& (if descriptor_bytes(s) == 64 { le16(s, 254) == 64 } else { le16(s, 254) == 0 || le16(s, 254) == 32 })
     &&& le16(s, 206) == 0
     &&& le32(s, 228) == 0
@@ -114,13 +117,16 @@ pub struct Geometry {
     pub inodes_per_group: u32,
     pub journal_inode: u32,
     pub needs_recovery: bool,
+    pub compat: u32,
+    pub ro_compat: u32,
+    pub incompat: u32,
 }
 
 impl Superblock {
     pub closed spec fn view(&self) -> Geometry {
         Geometry { blocks: self.blocks, inodes: self.inodes, groups: self.groups,
             inodes_per_group: self.inodes_per_group, journal_inode: self.journal_inode,
-            needs_recovery: self.needs_recovery }
+            needs_recovery: self.needs_recovery, compat: self.compat, ro_compat: self.ro_compat, incompat: self.incompat }
     }
     pub open spec fn wf(&self) -> bool {
         &&& self.view().blocks > 2
@@ -137,6 +143,8 @@ impl Superblock {
         &&& self.view().inodes_per_group as nat == le32(s, 40)
         &&& self.view().journal_inode as nat == le32(s, 224)
         &&& self.view().needs_recovery == (le32(s, 96) as u32 & 4 != 0)
+        &&& self.view().compat as nat == le32(s, 92) && self.view().ro_compat as nat == le32(s, 100)
+        &&& self.view().incompat as nat == le32(s, 96)
     }
 
     pub fn blocks(&self) -> (r: u32) ensures r == self.view().blocks { self.blocks }
@@ -144,6 +152,14 @@ impl Superblock {
     pub fn groups(&self) -> (r: u32) ensures r == self.view().groups { self.groups }
     pub fn journal_inode(&self) -> (r: u32) ensures r == self.view().journal_inode { self.journal_inode }
     pub fn needs_recovery(&self) -> (r: bool) ensures r == self.view().needs_recovery { self.needs_recovery }
+
+    pub fn feature_flags(&self) -> (r: (u32, u32, u32))
+        ensures r == (self.view().compat, self.view().ro_compat, self.view().incompat),
+    { (self.compat, self.ro_compat, self.incompat) }
+
+    pub fn read_only(&self) -> (r: bool) ensures r == (self.view().ro_compat & crate::feature_policy::READONLY != 0) {
+        self.ro_compat & crate::feature_policy::READONLY != 0
+    }
 
     pub fn offset(&self, block: u32, partition_bytes: u64) -> (r: Option<u64>)
         ensures match r {
@@ -168,12 +184,12 @@ pub fn parse(s: &[u8], partition_bytes: u64) -> (r: Option<Superblock>)
         || read_le32(s, 28).unwrap() != 2 || read_le32(s, 32).unwrap() != 32768
         || read_le32(s, 36).unwrap() != 32768 || read_le32(s, 72).unwrap() != 0
         || read_le32(s, 76).unwrap() != 1 || read_le32(s, 84).unwrap() != 11
-        || read_le16(s, 88).unwrap() != 256 || read_le32(s, 92).unwrap() != 4
+        || read_le16(s, 88).unwrap() != 256 || !crate::feature_policy::compatible_flags(read_le32(s, 92).unwrap())
     { return None; }
     let incompat = read_le32(s, 96).unwrap();
     let desc_size = read_le16(s, 254).unwrap();
     let ro_compat = read_le32(s, 100).unwrap();
-    if (incompat & 0xffffdd7bu32 != 0x42) || (ro_compat != 0x443 && ro_compat != 0x44b)
+    if !crate::feature_policy::incompatible_flags(incompat) || !crate::feature_policy::readonly_compatible_flags(ro_compat)
         || (if incompat & 0x80 != 0 { desc_size != 64 } else { desc_size != 0 && desc_size != 32 }) || read_le16(s, 206).unwrap() != 0
         || read_le32(s, 228).unwrap() != 0 || read_le32(s, 232).unwrap() != 0
         || read_le16(s, 348).unwrap() != 32 || read_le16(s, 350).unwrap() != 32
@@ -196,7 +212,7 @@ pub fn parse(s: &[u8], partition_bytes: u64) -> (r: Option<Superblock>)
     let checksum = crc::crc32c(0xffffffff, &s[0..1020]);
     if read_le32(s, 1020).unwrap() != checksum { return None; }
     Some(Superblock { blocks, inodes, groups, inodes_per_group: ipg,
-        journal_inode, needs_recovery: incompat & 4 != 0 })
+        journal_inode, needs_recovery: incompat & 4 != 0, compat: read_le32(s, 92).unwrap(), ro_compat, incompat })
 }
 
 }

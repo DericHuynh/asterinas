@@ -16,8 +16,12 @@ pub struct Layout {
 }
 
 pub open spec fn context(raw: Seq<u8>, number: u32, blocks: u32, ipg: u32) -> Layout {
+context_with_backup(raw, number, blocks, ipg, group_claims::sparse_super(number))
+}
+
+pub open spec fn context_with_backup(raw: Seq<u8>, number: u32, blocks: u32, ipg: u32, backup: bool) -> Layout {
     Layout { number, blocks, block_bitmap: bytes::le32(raw, 0) as u32, inode_bitmap: bytes::le32(raw, 4) as u32,
-        inode_table: bytes::le32(raw, 8) as u32, table_blocks: (ipg / 16) as u32, backup: group_claims::sparse_super(number) }
+        inode_table: bytes::le32(raw, 8) as u32, table_blocks: (ipg / 16) as u32, backup }
 }
 
 pub open spec fn valid(l: Layout) -> bool {
@@ -118,9 +122,14 @@ pub open spec fn admitted(raw: Seq<u8>, number: u32, blocks: u32, ipg: u32, seed
 
 #[verifier::opaque]
 pub open spec fn admitted_with_features(raw: Seq<u8>, number: u32, blocks: u32, ipg: u32, seed: u32, flex: bool) -> bool {
+    admitted_with_backup(raw, number, blocks, ipg, seed, flex, group_claims::sparse_super(number))
+}
+
+#[verifier::opaque]
+pub open spec fn admitted_with_backup(raw: Seq<u8>, number: u32, blocks: u32, ipg: u32, seed: u32, flex: bool, backup: bool) -> bool {
     &&& number < 32 && blocks <= block_claims::MAX_BLOCKS
     &&& group::accepted_with_features(raw, number, blocks, ipg, seed, flex)
-    &&& bitmap::free_bits(canonical(context(raw, number, blocks, ipg)), real_bits(context(raw, number, blocks, ipg)))
+    &&& bitmap::free_bits(canonical(context_with_backup(raw, number, blocks, ipg, backup)), real_bits(context_with_backup(raw, number, blocks, ipg, backup)))
         == bytes::le16(raw, 12)
 }
 
@@ -152,23 +161,40 @@ pub fn synthesize_with_features(raw: &[u8], number: u32, blocks: u32, ipg: u32, 
         None => !admitted_with_features(raw@, number, blocks, ipg, seed, flex),
     },
 {
+    reveal(admitted_with_features);
+    reveal(admitted_with_backup);
+    if number >= 32 { return None; }
+    synthesize_with_backup(raw, number, blocks, ipg, seed, flex, group_claims::backup_group(number).unwrap())
+}
+
+pub fn synthesize_with_backup(raw: &[u8], number: u32, blocks: u32, ipg: u32, seed: u32, flex: bool, backup: bool) -> (r: Option<Bitmap>)
+    ensures match r {
+        Some(result) => admitted_with_backup(raw@, number, blocks, ipg, seed, flex, backup)
+            && group::accepted_with_features(raw@, number, blocks, ipg, seed, flex) && valid(context_with_backup(raw@, number, blocks, ipg, backup))
+            && result.view().raw == canonical(context_with_backup(raw@, number, blocks, ipg, backup))
+            && result.view().valid as nat == real_bits(context_with_backup(raw@, number, blocks, ipg, backup)) && result.view().meaningful == 32768
+            && result.view().free as nat == bytes::le16(raw@, 12) && result.view().seed == seed
+            && result.view().checksum == (crc::fold(seed, canonical(context_with_backup(raw@, number, blocks, ipg, backup))) & 0xffffu32) as u16
+            && bitmap::accepted(result.view().raw, result.view().valid, 32768, result.view().free, result.view().checksum, seed),
+        None => !admitted_with_backup(raw@, number, blocks, ipg, seed, flex, backup),
+    },
+{
     hide(crc::fold);
     hide(group::accepted_with_features);
-    reveal(admitted_with_features);
+    reveal(admitted_with_backup);
     if number >= 32 || blocks > block_claims::MAX_BLOCKS { return None; }
     let fields = match group::parse_with_features(raw, number, blocks, ipg, seed, flex) { Some(f) => f, None => { return None; } };
     assert(raw.len() == 32 || raw.len() == 64) by { reveal(group::accepted_with_features); }
     let free = bytes::read_le16(raw, 12).unwrap() as u32;
-    let backup = group_claims::backup_group(number).unwrap();
     assert(number as nat * 32768 < blocks) by { reveal(group::accepted_with_features); }
     let layout = Layout { number, blocks, block_bitmap: fields.block_bitmap, inode_bitmap: fields.inode_bitmap,
         inode_table: fields.inode_table, table_blocks: fields.inode_table_blocks, backup };
-    assert(layout == context(raw@, number, blocks, ipg));
+    assert(layout == context_with_backup(raw@, number, blocks, ipg, backup));
     let mut bytes: Vec<u8> = Vec::new();
     let mut index = 0u32;
     while index < 4096
         invariant index <= 4096, bytes.len() == index, valid(layout),
-            group::accepted_with_features(raw@, number, blocks, ipg, seed, flex), layout == context(raw@, number, blocks, ipg),
+            group::accepted_with_features(raw@, number, blocks, ipg, seed, flex), layout == context_with_backup(raw@, number, blocks, ipg, backup),
             free as nat == bytes::le16(raw@, 12),
             forall|i: int| 0 <= i < index ==> #[trigger] bytes@[i] == byte(layout, i as nat),
         decreases 4096 - index,
@@ -205,12 +231,23 @@ pub proof fn every_set_real_bit_has_a_reserved_metadata_claim(raw: Seq<u8>, numb
     ensures exists|i: int| 0 <= i < group_claims::claims(raw, number, ipg).len()
         && block_claims::covers(#[trigger] group_claims::claims(raw, number, ipg)[i], number as int * 32768 + index as int),
 {
+    every_set_real_bit_has_a_source_selected_reserved_metadata_claim(raw, number, blocks, ipg, seed, index, flex, group_claims::sparse_super(number));
+    assert(group_claims::claims(raw, number, ipg) == group_claims::claims_with_backup(raw, number, ipg, group_claims::sparse_super(number)));
+}
+
+pub proof fn every_set_real_bit_has_a_source_selected_reserved_metadata_claim(raw: Seq<u8>, number: u32, blocks: u32, ipg: u32, seed: u32, index: u32, flex: bool, backup: bool)
+    requires group::accepted_with_features(raw, number, blocks, ipg, seed, flex), valid(context_with_backup(raw, number, blocks, ipg, backup)),
+        index < real_bits(context_with_backup(raw, number, blocks, ipg, backup)),
+        bitmap::set(canonical(context_with_backup(raw, number, blocks, ipg, backup)), index as int),
+    ensures exists|i: int| 0 <= i < group_claims::claims_with_backup(raw, number, ipg, backup).len()
+        && block_claims::covers(#[trigger] group_claims::claims_with_backup(raw, number, ipg, backup)[i], number as int * 32768 + index as int),
+{
     hide(crc::fold);
-    let l = context(raw, number, blocks, ipg);
+    let l = context_with_backup(raw, number, blocks, ipg, backup);
     assert(real_bits(l) <= 32768);
     every_canonical_bit_has_the_exact_reserved_or_padding_meaning(l, index);
     let prefix = if l.backup { 1int } else { 0int };
-    let claims = group_claims::claims(raw, number, ipg);
+    let claims = group_claims::claims_with_backup(raw, number, ipg, backup);
     let physical = number as int * 32768 + index as int;
     if l.backup && index < 2 { assert(block_claims::covers(claims[0], physical)); }
     else if physical == l.block_bitmap { assert(block_claims::covers(claims[prefix], physical)); }

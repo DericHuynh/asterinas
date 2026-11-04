@@ -4,7 +4,7 @@
 
 The target is full Linux-compatible ext4 feature coverage, including concurrent
 read/write, allocation, commit, checkpoint and recovery. The implementation still
-admits only the initial profile in [FORMAT_PROFILE.md](FORMAT_PROFILE.md).
+admits the bounded, explicitly extended profile in [FORMAT_PROFILE.md](FORMAT_PROFILE.md).
 This table expands the target; it does not enable any additional feature.
 
 The inventory is pinned to Linux v7.0 commit
@@ -23,25 +23,25 @@ unsupported markers need Linux-compatible handling, not invented encodings.
 | COMPAT | `0x0008` | `EXT_ATTR` | Not implemented | Inline/external xattrs, ACLs, shared-xattr reference counts and authorization |
 | COMPAT | `0x0010` | `RESIZE_INODE` | Not implemented | Reserved GDT inode, online resize and crash-safe geometry changes |
 | COMPAT | `0x0020` | `DIR_INDEX` | Not implemented | HTree hashes, collision handling, split/merge and lookup equivalence |
-| COMPAT | `0x0200` | `SPARSE_SUPER2` | Not implemented | Explicit backup-group selection and resize/backup updates |
+| COMPAT | `0x0200` | `SPARSE_SUPER2` | Partial: source-selected backup placement, census and lazy bitmap integration | Exact Linux explicit-group precedence, non-sparse/classic alternatives, all admitted group claims/counters and source framing checked in FEATURE_POLICY.md; backup updates during resize remain open |
 | COMPAT | `0x0400` | `FAST_COMMIT` | Not implemented | Fast-commit records, full-commit interaction, replay and fallback |
-| COMPAT | `0x0800` | `STABLE_INODES` | Not implemented | Stable inode identity constraints and incompatible maintenance operations |
+| COMPAT | `0x0800` | `STABLE_INODES` | Partial: admitted fixed-geometry identity policy | Source flags retained and UUID/geometry preserved through admitted primary updates; resize, offline renumbering and encryption-specific constraints remain open (FEATURE_POLICY.md) |
 | COMPAT | `0x1000` | `ORPHAN_FILE` | Not implemented | Orphan-file allocation, checksums, insertion/removal and restartable reclamation |
 | RO_COMPAT | `0x0001` | `SPARSE_SUPER` | Partial: initial profile only | Backup placement over all supported group layouts |
 | RO_COMPAT | `0x0002` | `LARGE_FILE` | Partial: 64-bit regular sizes and reads in bounded profile | Source-bound high/low fields and Linux no-HUGE_FILE limits checked; other inode formats/feature combinations and mutations remain |
-| RO_COMPAT | `0x0004` | `BTREE_DIR` | Not implemented | Legacy/reserved directory marker and exact Linux acceptance semantics |
+| RO_COMPAT | `0x0004` | `BTREE_DIR` | Implemented legacy marker admission in bounded profile | Pinned Linux RO_COMPAT marker accepted; this does not enable DIR_INDEX/HTree formats |
 | RO_COMPAT | `0x0008` | `HUGE_FILE` | Partial: sizes/accounting in bounded read-only profile | Source feature and inode flag binding, 32/48-bit normalized counts, exact units/encoding and sparse limit checked; larger volumes, mutation and quota coupling remain |
 | RO_COMPAT | `0x0010` | `GDT_CSUM` | Not implemented | Legacy descriptor/bitmap checksums and lazy/uninitialized group states |
-| RO_COMPAT | `0x0020` | `DIR_NLINK` | Not implemented | Directory link overflow conventions and namespace accounting |
+| RO_COMPAT | `0x0020` | `DIR_NLINK` | Partial: source-bound sentinel/count and namespace semantics | Unknown directory count=1, exact regular counts, unchanged full topology checks and total overflow/decrement helpers checked; HTree/create/unlink/runtime operations remain open (FEATURE_POLICY.md) |
 | RO_COMPAT | `0x0040` | `EXTRA_ISIZE` | Partial: initial profile only | Variable inode size, extra fields and checksum coverage |
 | RO_COMPAT | `0x0100` | `QUOTA` | Not implemented | Quota inode ownership, usage/reservation and atomic counter transitions |
 | RO_COMPAT | `0x0200` | `BIGALLOC` | Not implemented | Cluster bitmap, shared inode clusters, partial-cluster lifecycle and zeroing |
 | RO_COMPAT | `0x0400` | `METADATA_CSUM` | Partial: bounded source metadata and lazy inode groups | Checked checksum domains, extended descriptor/bitmap checks and INODE_UNINIT/BLOCK_UNINIT logical bitmap semantics; remaining metadata/layouts and mutation/initialization protocols remain |
-| RO_COMPAT | `0x1000` | `READONLY` | Not implemented | Read-only feature semantics and prohibition of persistent mutation |
+| RO_COMPAT | `0x1000` | `READONLY` | Partial: complete fresh-writer exclusion and committed recovery in host profile | Source flag retained; all raw/sealed serial/window factories reject before I/O; committed recovery validates repaired image and retains marker; actual mount/device/VFS refinement remains open (FEATURE_POLICY.md) |
 | RO_COMPAT | `0x2000` | `PROJECT` | Not implemented | Project IDs, inheritance, project quota and authorization |
 | RO_COMPAT | `0x8000` | `VERITY` | Not implemented | Merkle metadata, immutable content and explicit cryptographic assumptions |
 | RO_COMPAT | `0x10000` | `ORPHAN_PRESENT` | Not implemented | Recovery state and orphan-file emptiness/retirement rules |
-| INCOMPAT | `0x0001` | `COMPRESSION` | Not implemented | Legacy unsupported marker; match pinned Linux rejection policy |
+| INCOMPAT | `0x0001` | `COMPRESSION` | Implemented pinned Linux rejection policy | Named bit-vector proof and structural admission reject this unsupported INCOMPAT marker |
 | INCOMPAT | `0x0002` | `FILETYPE` | Partial: initial profile only | All inode/dirent types, including symlinks and special files |
 | INCOMPAT | `0x0004` | `RECOVER` | Partial: bounded concurrent-window dirty/activation/retirement, actual scanner/repeated-recovery closure, fresh bootstrap discovery and guarded full prefix/recovery-image admission under explicit device contracts | Full image/recovery acceptance completeness, runtime CortenMM/device refinement and clean unmount |
 | INCOMPAT | `0x0008` | `JOURNAL_DEV` | Not implemented | External journal device identity, bounds, exclusion and exclusivity |
@@ -51,7 +51,7 @@ unsupported markers need Linux-compatible handling, not invented encodings.
 | INCOMPAT | `0x0100` | `MMP` | Not implemented | Multiple-mount protection, leases, failure assumptions and heartbeat ordering |
 | INCOMPAT | `0x0200` | `FLEX_BG` | Partial: bounded source-selected metadata placement | Global bitmap/table bounds, logical group counters, retained inode addressing, lazy bitmap composition and global disjoint claims checked; flex allocation, resize and concurrent mutation remain |
 | INCOMPAT | `0x0400` | `EA_INODE` | Not implemented | Value inode lifetime, references, deduplication and quota coupling |
-| INCOMPAT | `0x1000` | `DIRDATA` | Not implemented | Non-mainline/legacy marker; match pinned Linux rejection policy |
+| INCOMPAT | `0x1000` | `DIRDATA` | Implemented pinned Linux rejection policy | Named bit-vector proof and structural admission reject this unsupported INCOMPAT marker |
 | INCOMPAT | `0x2000` | `CSUM_SEED` | Partial: bounded metadata and journal domain composition | Stored or UUID-derived ext4 seed, independent internal-journal UUID, exact recovery flag preservation and native UUID-change interoperability checked; remaining metadata types, mutation and runtime refinement remain |
 | INCOMPAT | `0x4000` | `LARGEDIR` | Not implemented | Large directories, additional HTree depth and record/size bounds |
 | INCOMPAT | `0x8000` | `INLINE_DATA` | Not implemented | Inline file/directory storage, xattr coupling and crash-safe conversion |

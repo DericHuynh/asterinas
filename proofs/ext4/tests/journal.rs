@@ -3744,3 +3744,151 @@ mod admitted_windows {
         );
     }
 }
+
+mod readonly_feature {
+    use core::{
+        feature_policy,
+        journal_queue::{Queue, Seal},
+        snapshot::Snapshot,
+    };
+
+    use super::*;
+
+    fn readonly(image: &mut [u8]) {
+        let flags = core::bytes::read_le32(image, 1124).unwrap() | 0x1000;
+        image[1124..1128].copy_from_slice(&flags.to_le_bytes());
+        let checksum = core::crc::crc32c(0xffffffff, &image[1024..2044]);
+        image[2044..2048].copy_from_slice(&checksum.to_le_bytes());
+    }
+
+    fn versions(image: &[u8], target: u32) -> Queue {
+        let mut queue = Queue::new(geometry(image).0).unwrap();
+        assert!(queue.reserve(&[target]));
+        {
+            let (_, mut part, _) = queue.borrow_work(1).unwrap();
+            let mut handle = part.handle_at(0).unwrap();
+            assert!(handle.stage(&[0x86; 4096]));
+            assert!(handle.close());
+        }
+        assert!(matches!(queue.seal(), Seal::Frozen(_)));
+        queue
+    }
+
+    fn batch(image: &[u8], target: u32) -> core::edit_handles::FrozenBatch {
+        let mut running = core::edit_handles::reserve(&[target], geometry(image).0).unwrap();
+        {
+            let (mut part, _) = running.borrow_parts(1).unwrap();
+            let mut handle = part.handle_at(0).unwrap();
+            assert!(handle.stage(&[0x86; 4096]));
+            assert!(handle.close());
+        }
+        running.freeze().ok().unwrap()
+    }
+
+    #[test]
+    fn readonly_feature_rejects_raw_and_sealed_serial_and_concurrent_writers_before_io() {
+        let (mut image, layout, _, target) = fixture();
+        readonly(&mut image);
+        let source = Snapshot::from_bytes(&image);
+        let boot = core::bootstrap::locate(&source).unwrap();
+        let journal = boot.capture_journal();
+        assert_eq!(
+            feature_policy::is_readonly(boot.primary().get(1024..2048).unwrap()),
+            Some(true)
+        );
+        assert!(core::image_validation::inspect(source.duplicate()).is_some());
+        assert!(
+            core::write_io::prepare(
+                &journal,
+                boot.journal_uuid(),
+                layout.duplicate(),
+                boot.primary(),
+                image.len() as u64,
+                vec![core::transaction::AfterImage::capture(target, &[0x86; 4096]).unwrap()]
+            )
+            .is_none()
+        );
+        let queue = versions(&image, target);
+        assert!(
+            core::journal_window::prepare(
+                queue.frozen_versions(),
+                &journal,
+                boot.journal_uuid(),
+                layout,
+                boot.primary(),
+                image.len() as u64
+            )
+            .is_none()
+        );
+        assert!(core::writer_admission::prepare(&source, batch(&image, target)).is_none());
+        assert!(core::window_admission::prepare(&source, queue.frozen_versions()).is_none());
+        assert!(
+            core::recovery_admission::prepare(&source).is_some(),
+            "read-only admission does not bypass journal inspection"
+        );
+    }
+
+    #[test]
+    fn readonly_filesystem_still_replays_a_committed_foreign_journal_and_retains_the_feature() {
+        let (mut image, layout, _, target) = fixture();
+        readonly(&mut image);
+        let begin = layout.physical_start() as usize * 4096;
+        let uuid = image[begin + 48..begin + 64].to_vec();
+        let primary =
+            core::super_state::recovery_image(&image[..4096], image.len() as u64, true).unwrap();
+        image[..4096].copy_from_slice(primary.as_slice());
+        let header =
+            core::journal_state::encode(&image[begin..begin + 4096], &uuid, layout.blocks(), 7, 1)
+                .unwrap();
+        image[begin..begin + 4096].copy_from_slice(header.as_slice());
+        let tx = core::transaction::encode(
+            vec![core::transaction::AfterImage::capture(target, &[0x97; 4096]).unwrap()],
+            &uuid,
+            7,
+            &layout,
+            &image[..4096],
+            image.len() as u64,
+        )
+        .unwrap();
+        image[begin + 4096..begin + 8192].copy_from_slice(tx.descriptor_bytes());
+        image[begin + 8192..begin + 12288].copy_from_slice(tx.payload_at(0).unwrap());
+        image[begin + 12288..begin + 16384].copy_from_slice(tx.commit_bytes());
+        let source = Snapshot::from_bytes(&image);
+        let mut recovery = core::recovery_admission::prepare(&source).unwrap();
+        let mut stable = image.clone();
+        let mut queued = Vec::new();
+        loop {
+            let pending = match recovery.dispatch() {
+                Ok(pending) => pending,
+                Err(done) => {
+                    recovery = done;
+                    break;
+                }
+            };
+            match pending.pending_command() {
+                core::recovery_io::Command::Write { block, image } => {
+                    queued.push((block, image.to_vec()))
+                }
+                core::recovery_io::Command::Flush => {
+                    for (block, bytes) in queued.drain(..) {
+                        stable[block as usize * 4096..(block as usize + 1) * 4096]
+                            .copy_from_slice(&bytes);
+                    }
+                }
+            }
+            recovery = pending.finish_pending(Completion::Succeeded);
+        }
+        assert!(recovery.finished());
+        assert_eq!(
+            &stable[target as usize * 4096..(target as usize + 1) * 4096],
+            &[0x97; 4096]
+        );
+        assert_eq!(feature_policy::is_readonly(&stable[1024..2048]), Some(true));
+        assert!(core::image_validation::inspect(Snapshot::from_bytes(&stable)).is_some());
+        let linux = linux_recover("build/readonly-foreign-journal.img", &image);
+        assert_eq!(
+            &linux[target as usize * 4096..(target as usize + 1) * 4096],
+            &[0x97; 4096]
+        );
+    }
+}

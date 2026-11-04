@@ -34,7 +34,7 @@ pub open spec fn projection(source: Seq<u8>, number: u32) -> GroupView {
     let block_bitmap = bytes::le32(descriptor, 0) as u32;
     let inode_bitmap = bytes::le32(descriptor, 4) as u32;
     let allocation = if group::block_uninitialized(descriptor) {
-        block_bitmap::canonical(block_bitmap::context(descriptor, number, blocks, ipg))
+        block_bitmap::canonical(block_bitmap::context_with_backup(descriptor, number, blocks, ipg, crate::backup_layout::present(sb, number)))
     } else { source.subrange(block_bitmap as int * 4096, (block_bitmap as int + 1) * 4096) };
     let inodes = if group::inode_uninitialized(descriptor) { bitmap::empty_inode_bytes(ipg as nat) }
         else { source.subrange(inode_bitmap as int * 4096, (inode_bitmap as int + 1) * 4096) };
@@ -63,11 +63,11 @@ pub open spec fn valid(v: GroupView) -> bool {
     &&& v.block_bitmap as nat == bytes::le32(v.descriptor, 0) && v.inode_bitmap as nat == bytes::le32(v.descriptor, 4)
     &&& v.inode_table as nat == bytes::le32(v.descriptor, 8) && v.table_blocks == v.ipg / 16
     &&& v.allocation.raw == if group::block_uninitialized(v.descriptor) {
-        block_bitmap::canonical(block_bitmap::context(v.descriptor, v.number, v.blocks, v.ipg))
+        block_bitmap::canonical(block_bitmap::context_with_backup(v.descriptor, v.number, v.blocks, v.ipg, crate::backup_layout::present(v.source.subrange(1024, 2048), v.number)))
     } else { v.source.subrange(v.block_bitmap as int * 4096, (v.block_bitmap as int + 1) * 4096) }
     &&& v.allocation.valid as nat == valid_bits(v.blocks, v.number) && v.allocation.meaningful == 32768
     &&& v.allocation.free as nat == bytes::le16(v.descriptor, 12) && v.allocation.checksum == if group::block_uninitialized(v.descriptor) {
-        (crc::fold(v.seed, block_bitmap::canonical(block_bitmap::context(v.descriptor, v.number, v.blocks, v.ipg))) & 0xffffu32) as u16
+        (crc::fold(v.seed, block_bitmap::canonical(block_bitmap::context_with_backup(v.descriptor, v.number, v.blocks, v.ipg, crate::backup_layout::present(v.source.subrange(1024, 2048), v.number)))) & 0xffffu32) as u16
     } else { bytes::le16(v.descriptor, 24) as u16 }
     &&& v.allocation.seed == v.seed
     &&& bitmap::accepted(v.allocation.raw, v.allocation.valid, v.allocation.meaningful, v.allocation.free, v.allocation.checksum, v.seed)
@@ -106,8 +106,8 @@ proof fn an_admitted_source_supplies_the_group_parser_inputs(source: Seq<u8>, nu
         &&& v.block_bitmap < v.blocks && v.inode_bitmap < v.blocks
         &&& bitmap::accepted(v.allocation.raw, v.allocation.valid, 32768, v.allocation.free, v.allocation.checksum, v.seed)
         &&& bitmap::accepted(v.inodes.raw, v.ipg, v.ipg, v.inodes.free, v.inodes.checksum, v.seed)
-        &&& (group::block_uninitialized(v.descriptor) ==> block_bitmap::admitted_with_features(v.descriptor,
-            number, v.blocks, v.ipg, v.seed, superblock::flex_bg(source.subrange(1024, 2048))))
+        &&& (group::block_uninitialized(v.descriptor) ==> block_bitmap::admitted_with_backup(v.descriptor,
+            number, v.blocks, v.ipg, v.seed, superblock::flex_bg(source.subrange(1024, 2048)), crate::backup_layout::present(source.subrange(1024, 2048), number)))
         &&& (v.descriptor.len() == 64 && !group::block_uninitialized(v.descriptor) ==>
             crc::fold(v.seed, v.allocation.raw) == group_fields::counter(v.descriptor, 24, 56, true))
         &&& (v.descriptor.len() == 64 && !group::inode_uninitialized(v.descriptor) ==>
@@ -119,7 +119,7 @@ proof fn an_admitted_source_supplies_the_group_parser_inputs(source: Seq<u8>, nu
         reveal(valid);
         reveal(superblock::accepted);
         reveal(group::accepted_with_features);
-        reveal(block_bitmap::admitted_with_features);
+        reveal(block_bitmap::admitted_with_backup);
     }
 }
 
@@ -210,6 +210,7 @@ pub fn parse(source: &Snapshot<'_>, number: u32) -> (r: Option<GroupMetadata>)
     let length = superblock::descriptor_length(boot).unwrap();
     let raw = gdt.range(number as usize * length, length).unwrap();
     let flex = superblock::flex_enabled(boot).unwrap();
+    let backup = crate::backup_layout::has_backup(boot, number).unwrap();
     let group = match group::parse_with_features(raw, number, blocks, ipg, seed, flex) { Some(g) => g, None => { return None; } };
     let block_bitmap = match source.block(group.block_bitmap) { Some(block) => block, None => { return None; } };
     let inode_bitmap = match source.block(group.inode_bitmap) { Some(block) => block, None => { return None; } };
@@ -224,7 +225,7 @@ pub fn parse(source: &Snapshot<'_>, number: u32) -> (r: Option<GroupMetadata>)
             || (!lazy && crc::crc32c(seed, &inode_bitmap.as_slice()[..(ipg / 8) as usize]) != inode_checksum) { return None; }
     }
     let allocation = if lazy_blocks {
-        match block_bitmap::synthesize_with_features(raw, number, blocks, ipg, seed, flex) { Some(bitmap) => bitmap, None => { return None; } }
+        match block_bitmap::synthesize_with_backup(raw, number, blocks, ipg, seed, flex, backup) { Some(bitmap) => bitmap, None => { return None; } }
     } else {
         match bitmap::parse(block_bitmap.as_slice(), valid_blocks, 32768,
             bytes::read_le16(raw, 12).unwrap() as u32, bytes::read_le16(raw, 24).unwrap(), seed) {
