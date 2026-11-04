@@ -16,6 +16,13 @@ pub struct Images {
     pub initial_journal: Seq<u8>, pub initial_primary: Seq<u8>, pub journal_block: u32, pub partition_bytes: u64,
 }
 
+pub open spec fn log_images(v: Images) -> Seq<transaction::ImageView> {
+    Seq::new(v.tx.payloads.len() + 2, |i: int| transaction::ImageView {
+        block: (v.journal_block as int + 1 + i) as u32,
+        image: if i == 0 { v.tx.descriptor } else if i == v.tx.payloads.len() as int + 1 { v.tx.commit } else { v.tx.payloads[i - 1] },
+    })
+}
+
 #[verifier::opaque]
 pub open spec fn valid_images(v: Images) -> bool {
     &&& transaction::wf(v.tx) && v.journal_block == v.tx.layout.start
@@ -79,6 +86,69 @@ impl Writer {
         match self.state.phase { Phase::Done => !self.state.pending && !self.state.faulted, _ => false }
     }
     pub fn failed(&self) -> (r: bool) ensures r == self.state().faulted { self.state.faulted }
+
+    pub fn original_count(&self) -> (r: usize)
+        ensures valid_images(self.images()), r == self.images().tx.original.len(), r <= 250,
+    {
+        proof { use_type_invariant(self); reveal(valid_images); }
+        self.tx.payload_count()
+    }
+
+    pub fn original_image(&self, index: usize) -> (r: Option<(u32, &[u8])>)
+        ensures valid_images(self.images()), match r {
+            Some((block, image)) => index < self.images().tx.original.len()
+                && self.images().tx.original[index as int] == (transaction::ImageView { block, image: image@ }) && image.len() == 4096,
+            None => index >= self.images().tx.original.len(),
+        },
+    {
+        proof { use_type_invariant(self); image_shapes(self.images()); }
+        self.tx.original_at(index)
+    }
+
+    pub fn dirty_marker(&self) -> (r: &[u8])
+        ensures valid_images(self.images()), r@ == self.images().dirty, r.len() == 4096,
+    {
+        proof { use_type_invariant(self); reveal(valid_images); }
+        self.dirty.as_slice()
+    }
+
+    pub fn retirement_image(&self) -> (r: (u32, &[u8]))
+        ensures valid_images(self.images()), r.0 == self.images().journal_block, r.1@ == self.images().tail, r.1.len() == 4096,
+    {
+        proof { use_type_invariant(self); reveal(valid_images); }
+        (self.journal_block, self.tail.as_slice())
+    }
+
+    pub fn log_record_count(&self) -> (r: usize)
+        ensures valid_images(self.images()), r == log_images(self.images()).len(), 3 <= r <= 252,
+    {
+        proof { use_type_invariant(self); reveal(valid_images); }
+        self.tx.payload_count() + 2
+    }
+
+    pub fn log_record(&self, index: usize) -> (r: Option<(u32, &[u8])>)
+        ensures valid_images(self.images()), match r {
+            Some((block, image)) => index < log_images(self.images()).len()
+                && log_images(self.images())[index as int] == (transaction::ImageView { block, image: image@ }) && image.len() == 4096,
+            None => index >= log_images(self.images()).len(),
+        },
+    {
+        proof { use_type_invariant(self); image_shapes(self.images()); command_context(self.images()); }
+        let count = self.tx.payload_count();
+        if index >= count + 2 { return None; }
+        let block = self.journal_block + 1 + index as u32;
+        if index == 0 { Some((block, self.tx.descriptor_bytes())) }
+        else if index == count + 1 { Some((block, self.tx.commit_bytes())) }
+        else { Some((block, self.tx.payload_at(index - 1).unwrap())) }
+    }
+}
+
+pub fn abort(mut writer: Writer) -> (r: Writer)
+    ensures r.images() == writer.images(), r.state() == (State { faulted: true, ..writer.state() }),
+{
+    proof { use_type_invariant(&writer); }
+    writer.state = State { faulted: true, ..writer.state };
+    writer
 }
 
 pub struct Pending { writer: Writer }
@@ -157,6 +227,7 @@ pub fn dispatch(mut writer: Writer) -> (r: Result<Pending, Writer>)
     Ok(Pending { writer })
 }
 
+#[verifier::rlimit(30)]
 pub proof fn expected_command_is_confined(v: Images, state: State)
     requires valid_images(v), write_protocol::wf(state, v.tx.payloads.len()),
     ensures match expected(v, state) {
@@ -165,6 +236,7 @@ pub proof fn expected_command_is_confined(v: Images, state: State)
         CommandView::Flush => true,
     },
 {
+    hide(crate::crc::fold);
     reveal(valid_images);
     if state.phase is Homes {
         assert(replay_candidate_allowed(v, state.cursor as int));
@@ -188,6 +260,24 @@ proof fn command_context(v: Images)
     reveal(valid_images);
 }
 
+proof fn image_shapes(v: Images)
+    requires valid_images(v),
+    ensures v.tx.descriptor.len() == 4096, v.tx.commit.len() == 4096,
+        forall|i: int| 0 <= i < v.tx.original.len() ==> (#[trigger] v.tx.original[i]).image.len() == 4096,
+        forall|i: int| 0 <= i < v.tx.payloads.len() ==> (#[trigger] v.tx.payloads[i]).len() == 4096,
+{
+    hide(crate::crc::fold);
+    reveal(valid_images);
+    assert forall|i: int| 0 <= i < v.tx.payloads.len() implies (#[trigger] v.tx.payloads[i]).len() == 4096 by {
+        assert(crate::replay::payload_for_layout(v.tx.tags[i], v.tx.payloads[i], v.tx.sequence, v.tx.seed, v.tx.layout));
+    }
+    assert forall|i: int| 0 <= i < v.tx.original.len() implies (#[trigger] v.tx.original[i]).image.len() == 4096 by {
+        assert(crate::replay::payload_for_layout(v.tx.tags[i], v.tx.payloads[i], v.tx.sequence, v.tx.seed, v.tx.layout));
+        assert(crate::replay::restored(v.tx.payloads[i], v.tx.tags[i].flags % 2 == 1) == v.tx.original[i].image);
+        assert(crate::replay::restored(v.tx.payloads[i], v.tx.tags[i].flags % 2 == 1).len() == v.tx.payloads[i].len());
+    }
+}
+
 pub open spec fn can_prepare(journal: Seq<u8>, uuid: Seq<u8>, layout: &JournalLayout, primary: Seq<u8>,
     partition_bytes: u64, input: Seq<transaction::ImageView>) -> bool {
     &&& layout.wf() && primary.len() == 4096
@@ -205,6 +295,8 @@ pub fn prepare(journal: &[u8], uuid: &[u8], layout: JournalLayout, primary: &[u8
     input: Vec<AfterImage>) -> (r: Option<Writer>)
     ensures match r {
         Some(w) => valid_images(w.images()) && w.state() == write_protocol::initial()
+            && w.images().tx.layout == layout.view() && w.images().tx.uuid == uuid@
+            && w.images().partition_bytes == partition_bytes && w.images().journal_block == layout.view().start
             && w.images().initial_journal == journal@ && w.images().initial_primary == primary@
             && w.images().tx.original == transaction::images(input@)
             && can_prepare(journal@, uuid@, &layout, primary@, partition_bytes, transaction::images(input@)),

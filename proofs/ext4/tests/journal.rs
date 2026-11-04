@@ -242,6 +242,265 @@ fn fixture() -> (Vec<u8>, core::layout::JournalLayout, u32, u32) {
     (img, layout, seed, target)
 }
 
+mod admitted_writers {
+    use super::*;
+
+    fn frozen(image: &[u8], updates: &[(u32, Vec<u8>)]) -> core::edit_handles::FrozenBatch {
+        let layout = geometry(image).0;
+        let targets: Vec<_> = updates.iter().map(|(block, _)| *block).collect();
+        let mut running = core::edit_handles::reserve(&targets, layout).unwrap();
+        {
+            let (mut part, _) = running.borrow_parts(targets.len()).unwrap();
+            for (index, (_, bytes)) in updates.iter().enumerate() {
+                let mut handle = part.handle_at(index).unwrap();
+                assert!(handle.stage(bytes));
+                assert!(handle.close());
+            }
+        }
+        running.freeze().ok().unwrap()
+    }
+
+    #[test]
+    fn admitted_writer_preserves_the_exact_validated_complete_result_through_six_fences() {
+        let (image, _, _, target) = fixture();
+        let mut primary =
+            core::super_state::recovery_image(&image[..4096], image.len() as u64, true)
+                .unwrap()
+                .as_slice()
+                .to_vec();
+        primary[1144..1160].copy_from_slice(b"verus-admit-sb0!");
+        let checksum = core::crc::crc32c(0xffffffff, &primary[1024..2044]);
+        primary[2044..2048].copy_from_slice(&checksum.to_le_bytes());
+        let updates = [
+            (0, primary),
+            (target, vec![0x71; 4096]),
+            (target + 1, vec![0x72; 4096]),
+        ];
+        let source = core::snapshot::Snapshot::from_bytes(&image);
+        let mut writer =
+            core::writer_admission::prepare(&source, frozen(&image, &updates)).unwrap();
+        let mut expected = image.clone();
+        let engine = writer.engine_ref();
+        expected[..4096].copy_from_slice(engine.dirty_marker());
+        for index in 0..engine.log_record_count() {
+            let (block, bytes) = engine.log_record(index).unwrap();
+            expected[block as usize * 4096..(block as usize + 1) * 4096].copy_from_slice(bytes);
+        }
+        for index in 0..engine.original_count() {
+            let (block, bytes) = engine.original_image(index).unwrap();
+            expected[block as usize * 4096..(block as usize + 1) * 4096].copy_from_slice(bytes);
+        }
+        let (block, bytes) = engine.retirement_image();
+        expected[block as usize * 4096..(block as usize + 1) * 4096].copy_from_slice(bytes);
+        assert!(
+            core::image_validation::inspect(core::snapshot::Snapshot::from_bytes(&expected))
+                .is_some()
+        );
+        let mut stable = image.clone();
+        let mut pending_images = Vec::new();
+        let mut fences = 0;
+        loop {
+            let pending = match writer.dispatch() {
+                Ok(pending) => pending,
+                Err(done) => {
+                    writer = done;
+                    break;
+                }
+            };
+            match pending.pending_command() {
+                core::recovery_io::Command::Write { block, image } => {
+                    pending_images.push((block, image.to_vec()))
+                }
+                core::recovery_io::Command::Flush => {
+                    for (block, bytes) in pending_images.drain(..) {
+                        stable[block as usize * 4096..(block as usize + 1) * 4096]
+                            .copy_from_slice(&bytes);
+                    }
+                    fences += 1;
+                }
+            }
+            writer = pending.finish_pending(Completion::Succeeded);
+        }
+        assert!(writer.finished() && !writer.failed());
+        assert_eq!(fences, 6);
+        assert!(pending_images.is_empty());
+        assert!(
+            stable == expected,
+            "complete physical bytes must match the admitted result, including journal records"
+        );
+        assert!(
+            core::image_validation::inspect(core::snapshot::Snapshot::from_bytes(&stable))
+                .is_some()
+        );
+        let linux = linux_recover("build/admitted-writer-final.img", &stable);
+        assert_eq!(&linux[1144..1160], b"verus-admit-sb0!");
+        assert_eq!(
+            &linux[target as usize * 4096..(target as usize + 1) * 4096],
+            &[0x71; 4096]
+        );
+    }
+
+    #[test]
+    fn writer_admission_rejects_checksummed_namespace_and_bootstrap_identity_corruption() {
+        let (image, _, seed, _) = fixture();
+        let table = core::bytes::read_le32(&image, 4104).unwrap();
+        for number in [2u32, 8] {
+            let mut block = image[table as usize * 4096..(table as usize + 1) * 4096].to_vec();
+            let start = (number as usize - 1) * 256;
+            let inode = &mut block[start..start + 256];
+            if number == 2 {
+                inode[26..28].copy_from_slice(&1u16.to_le_bytes());
+            } else {
+                inode[2] ^= 1;
+            }
+            let checksum = core::inode::calculated_checksum(inode, number, seed).unwrap();
+            inode[124..126].copy_from_slice(&(checksum as u16).to_le_bytes());
+            inode[130..132].copy_from_slice(&((checksum >> 16) as u16).to_le_bytes());
+            let input = frozen(&image, &[(table, block)]);
+            let source = core::snapshot::Snapshot::from_bytes(&image);
+            assert!(
+                core::writer_admission::prepare(&source, input).is_none(),
+                "inode {number}"
+            );
+        }
+    }
+
+    #[test]
+    fn writer_admission_requires_a_valid_start_and_the_actual_reserved_layout() {
+        let (image, layout, seed, target) = fixture();
+        let bitmap = core::bytes::read_le32(&image, 4096).unwrap();
+        let mut corrupt = image.clone();
+        corrupt[bitmap as usize * 4096] ^= 1;
+        let repair = frozen(
+            &image,
+            &[(
+                bitmap,
+                image[bitmap as usize * 4096..(bitmap as usize + 1) * 4096].to_vec(),
+            )],
+        );
+        let source = core::snapshot::Snapshot::from_bytes(&corrupt);
+        assert!(core::writer_admission::prepare(&source, repair).is_none());
+        let table = core::bytes::read_le32(&image, 4104).unwrap() as usize;
+        let mut inode = image[table * 4096 + 7 * 256..table * 4096 + 8 * 256].to_vec();
+        let physical = core::bytes::read_le32(&inode, 60).unwrap();
+        core::bytes::write_le32(&mut inode, 60, physical + 1);
+        let checksum = core::inode::calculated_checksum(&inode, 8, seed).unwrap();
+        inode[124..126].copy_from_slice(&(checksum as u16).to_le_bytes());
+        inode[130..132].copy_from_slice(&((checksum >> 16) as u16).to_le_bytes());
+        let inodes = core::bytes::read_le32(&image, 1024).unwrap();
+        let other =
+            core::layout::from_inode(&inode, inodes, layout.filesystem_blocks(), seed).unwrap();
+        let mut running = core::edit_handles::reserve(&[target + 1], other).unwrap();
+        {
+            let (mut part, _) = running.borrow_parts(1).unwrap();
+            let mut h = part.handle_at(0).unwrap();
+            assert!(h.stage(&[0x73; 4096]));
+            assert!(h.close());
+        }
+        let source = core::snapshot::Snapshot::from_bytes(&image);
+        assert!(core::writer_admission::prepare(&source, running.freeze().ok().unwrap()).is_none());
+    }
+
+    #[test]
+    fn admitted_writer_abort_and_failure_retain_owned_completion_and_block_new_io() {
+        let (image, _, _, target) = fixture();
+        let source = core::snapshot::Snapshot::from_bytes(&image);
+        for case in 0..3 {
+            let writer = core::writer_admission::prepare(
+                &source,
+                frozen(&image, &[(target, vec![0x74; 4096])]),
+            )
+            .unwrap();
+            let stopped = if case == 0 {
+                writer.abort()
+            } else {
+                let pending = writer.dispatch().ok().unwrap();
+                if case == 1 {
+                    pending
+                        .abort_pending()
+                        .finish_pending(Completion::Succeeded)
+                } else {
+                    pending.finish_pending(Completion::Failed)
+                }
+            };
+            assert!(stopped.failed() && !stopped.finished());
+            assert_eq!(
+                stopped.engine_ref().original_image(0).unwrap().1,
+                &[0x74; 4096]
+            );
+            assert_eq!(
+                stopped.source_snapshot().partition_bytes(),
+                image.len() as u64
+            );
+            assert!(stopped.dispatch().is_err());
+        }
+    }
+
+    #[test]
+    fn writer_admission_derives_metadata_seed_and_journal_uuid_from_the_same_source() {
+        let (original, _, seed, target) = fixture();
+        let mut image = original.clone();
+        let flags = core::bytes::read_le32(&image, 1024 + 96).unwrap();
+        assert!(core::bytes::write_le32(
+            &mut image,
+            1024 + 96,
+            flags | 0x2000
+        ));
+        assert!(core::bytes::write_le32(&mut image, 1024 + 624, seed));
+        image[1128..1144].copy_from_slice(&[0xa7; 16]);
+        let checksum = core::crc::crc32c(0xffffffff, &image[1024..2044]);
+        image[2044..2048].copy_from_slice(&checksum.to_le_bytes());
+        let source = core::snapshot::Snapshot::from_bytes(&image);
+        let boot = core::bootstrap::locate(&source).unwrap();
+        assert_eq!(boot.uuid(), &[0xa7; 16]);
+        assert_eq!(boot.journal_uuid(), &original[1128..1144]);
+        assert_eq!(
+            core::superblock::metadata_checksum_seed(&image[1024..2048]),
+            Some(seed)
+        );
+        let writer = core::writer_admission::prepare(
+            &source,
+            frozen(&original, &[(target, vec![0x77; 4096])]),
+        )
+        .unwrap();
+        assert_eq!(
+            writer.engine_ref().original_image(0).unwrap().1,
+            &[0x77; 4096]
+        );
+        assert!(writer.dispatch().is_ok());
+    }
+
+    #[test]
+    fn owned_patch_factory_rejects_unsorted_duplicates_and_over_credit_without_consuming_bytes() {
+        for blocks in [vec![4, 3], vec![3, 3], (0..4097).collect()] {
+            let images = blocks
+                .iter()
+                .map(|block| core::transaction::AfterImage::capture(*block, &[0x75; 4096]).unwrap())
+                .collect();
+            let returned = core::patch_set::PatchSet::from_images(images)
+                .err()
+                .unwrap();
+            assert_eq!(returned.len(), blocks.len());
+            for (image, block) in returned.iter().zip(&blocks) {
+                assert_eq!(image.block(), *block);
+                assert_eq!(image.as_slice(), &[0x75; 4096]);
+            }
+        }
+        let empty = core::patch_set::PatchSet::from_images(vec![]).ok().unwrap();
+        assert_eq!(empty.len(), 0);
+        let images = (0..4096)
+            .map(|block| core::transaction::AfterImage::capture(block, &[0x76; 4096]).unwrap())
+            .collect();
+        assert_eq!(
+            core::patch_set::PatchSet::from_images(images)
+                .ok()
+                .unwrap()
+                .len(),
+            4096
+        );
+    }
+}
+
 fn geometry(img: &[u8]) -> (core::layout::JournalLayout, u32, u32) {
     let sb = core::superblock::parse(&img[1024..2048], img.len() as u64).unwrap();
     let seed = core::crc::crc32c(0xffffffff, &img[1128..1144]);
