@@ -42,10 +42,13 @@ proof fn append_checked_group(groups: Seq<GroupView>, source: Seq<u8>, blocks: u
     ensures records_match(groups.push(next), source, blocks, ipg, seed),
 {
     reveal(records_match);
-    assert forall|i: int| 0 <= i < groups.len() + 1 implies #[trigger] group_metadata::valid(groups.push(next)[i])
+    assert forall|i: int| 0 <= i < groups.push(next).len() implies #[trigger] group_metadata::valid(groups.push(next)[i])
         && groups.push(next)[i].source == source && groups.push(next)[i].number as int == i
         && groups.push(next)[i].blocks == blocks && groups.push(next)[i].ipg == ipg && groups.push(next)[i].seed == seed by {
-        if i < groups.len() { assert(groups.push(next)[i] == groups[i]); }
+        if i < groups.len() {
+            assert(groups.push(next)[i] == groups[i]);
+            assert(group_metadata::valid(groups[i]));
+        } else { assert(i == groups.len()); assert(groups.push(next)[i] == next); }
     }
 }
 
@@ -59,7 +62,7 @@ pub open spec fn valid(v: IndexView) -> bool {
     &&& v.groups.len() == (v.blocks as nat + 32767) / 32768
     &&& v.blocks as nat == bytes::le32(v.source, 1028) && v.inodes as nat == bytes::le32(v.source, 1024)
     &&& v.ipg as nat == bytes::le32(v.source, 1064) && v.inodes as nat == v.groups.len() * v.ipg as nat
-    &&& v.seed == crc::fold(0xffffffff, v.source.subrange(1128, 1144))
+    &&& v.seed == superblock::metadata_seed(v.source.subrange(1024, 2048))
     &&& records_match(v.groups, v.source, v.blocks, v.ipg, v.seed)
     &&& free_blocks(v.groups) == bytes::le32(v.source, 1036)
     &&& free_inodes(v.groups) == bytes::le32(v.source, 1040)
@@ -126,7 +129,7 @@ pub fn parse<'a>(source: Snapshot<'a>) -> (r: Option<GroupIndex<'a>>)
     let count = sb.groups();
     if blocks > block_claims::MAX_BLOCKS { return None; }
     let ipg = bytes::read_le32(boot, 40).unwrap();
-    let seed = crc::crc32c(0xffffffff, primary.range(1128, 16).unwrap());
+    let seed = superblock::metadata_checksum_seed(boot).unwrap();
     assert(blocks as nat * 4096 <= source.view().len() && 0 < ipg <= 32768 && ipg % 16 == 0 && inodes >= 11)
         by { reveal(superblock::accepted); }
     let mut groups: Vec<GroupMetadata> = Vec::new();
@@ -141,7 +144,7 @@ pub fn parse<'a>(source: Snapshot<'a>) -> (r: Option<GroupIndex<'a>>)
             source.view().len() >= 4096,
             blocks as nat * 4096 <= source.view().len(), 0 < ipg <= 32768, ipg % 16 == 0, inodes >= 11,
             blocks as nat == bytes::le32(source.view(), 1028), ipg as nat == bytes::le32(source.view(), 1064),
-            seed == crc::fold(0xffffffff, source.view().subrange(1128, 1144)),
+            seed == superblock::metadata_seed(source.view().subrange(1024, 2048)),
             block_free as nat == free_blocks(views(groups@)), inode_free as nat == free_inodes(views(groups@)),
             block_free as nat <= number as nat * 32768, inode_free as nat <= number as nat * 32768,
             records_match(views(groups@), source.view(), blocks, ipg, seed),

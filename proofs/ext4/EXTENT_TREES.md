@@ -96,7 +96,8 @@ truncate, allocation, journalling and recovery must preserve the complete tree
 and ownership relations; the read-only audit does not prove these transitions.
 
 Host interoperability covers a Linux-created external extent tree and the
-actual UUID/inode/generation checksum seed. Synthetic tests cover all seven
+actual source-selected metadata/inode/generation checksum seed, including
+CSUM_SEED volumes whose filesystem and internal journal UUIDs differ. Synthetic tests cover all seven
 block sizes, depths zero through five, full-capacity binary searches, sibling
 boundaries, unvisited corruption, cycles and budget exhaustion. Additional tests
 compose owned depth-two-through-five trees, initialized reads and unwritten zeros

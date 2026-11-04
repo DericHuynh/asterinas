@@ -13,7 +13,7 @@ verus! {
 
 pub struct BootstrapView {
     pub source: Seq<u8>, pub layout: LayoutView, pub table: u32,
-    pub blocks: u32, pub inodes: u32, pub ipg: u32, pub seed: u32,
+    pub blocks: u32, pub inodes: u32, pub ipg: u32, pub seed: u32, pub metadata_seed: u32,
 }
 
 pub open spec fn journal_inode(v: BootstrapView) -> Seq<u8> {
@@ -24,10 +24,12 @@ pub open spec fn journal_bytes(v: BootstrapView) -> Seq<u8> {
     v.source.subrange(v.layout.start as int * 4096, (v.layout.start as int + v.layout.journal_blocks) * 4096)
 }
 
+pub open spec fn journal_identity(v: BootstrapView) -> Seq<u8> { journal_bytes(v).subrange(48, 64) }
+
 pub open spec fn scan_source(v: BootstrapView) -> Source {
     let journal = journal_bytes(v);
     Source { journal, blocks: v.layout.journal_blocks, start: bytes::be32(journal, 28) as u32,
-        first: bytes::be32(journal, 24) as u32, uuid: v.source.subrange(1128, 1144), seed: v.seed, layout: v.layout }
+        first: bytes::be32(journal, 24) as u32, uuid: journal_identity(v), seed: v.seed, layout: v.layout }
 }
 
 #[verifier::opaque]
@@ -37,10 +39,11 @@ pub open spec fn valid(v: BootstrapView) -> bool {
     &&& 2 < v.blocks <= block_claims::MAX_BLOCKS && v.blocks as nat * 4096 <= v.source.len()
     &&& v.blocks as nat == bytes::le32(v.source, 1028) && v.inodes as nat == bytes::le32(v.source, 1024)
     &&& v.ipg as nat == bytes::le32(v.source, 1064) && 0 < v.ipg <= 32768 && v.ipg % 16 == 0 && v.inodes >= 11
-    &&& v.seed == crc::fold(0xffffffff, v.source.subrange(1128, 1144))
-    &&& group::accepted(v.source.subrange(4096, 4128), 0, v.blocks, v.ipg, v.seed)
+    &&& v.seed == crc::fold(0xffffffff, journal_identity(v))
+    &&& v.metadata_seed == superblock::metadata_seed(v.source.subrange(1024, 2048))
+    &&& group::accepted(v.source.subrange(4096, 4128), 0, v.blocks, v.ipg, v.metadata_seed)
     &&& v.table as nat == bytes::le32(v.source, 4104) && v.table < v.blocks
-    &&& layout::admitted(journal_inode(v), v.inodes, v.blocks, v.seed)
+    &&& layout::admitted(journal_inode(v), v.inodes, v.blocks, v.metadata_seed)
     &&& v.layout.start > 1 && 1024 <= v.layout.journal_blocks <= 32768
     &&& v.layout.start as nat + v.layout.journal_blocks <= v.blocks && v.layout.fs_blocks == v.blocks
     &&& v.layout.start as nat == bytes::le32(journal_inode(v), 60)
@@ -49,13 +52,13 @@ pub open spec fn valid(v: BootstrapView) -> bool {
 
 pub struct Bootstrap<'s, 'a> {
     source: &'s Snapshot<'a>, layout: JournalLayout, table: u32,
-    blocks: u32, inodes: u32, ipg: u32, seed: u32,
+    blocks: u32, inodes: u32, ipg: u32, seed: u32, metadata_seed: u32,
 }
 
 impl<'s, 'a> Bootstrap<'s, 'a> {
     pub closed spec fn view(&self) -> BootstrapView {
         BootstrapView { source: self.source.view(), layout: self.layout.view(), table: self.table,
-            blocks: self.blocks, inodes: self.inodes, ipg: self.ipg, seed: self.seed }
+            blocks: self.blocks, inodes: self.inodes, ipg: self.ipg, seed: self.seed, metadata_seed: self.metadata_seed }
     }
     pub open spec fn wf(&self) -> bool { valid(self.view()) }
 
@@ -98,6 +101,13 @@ impl<'s, 'a> Bootstrap<'s, 'a> {
         self.source.block(0).unwrap().range(1128, 16).unwrap()
     }
 
+    pub fn journal_uuid(&self) -> (r: &'a [u8])
+        ensures self.wf(), r@ == journal_identity(self.view()), r.len() == 16,
+    {
+        proof { use_type_invariant(self); reveal(valid); }
+        self.source.block(self.layout.physical_start()).unwrap().range(48, 16).unwrap()
+    }
+
     pub fn raw_journal_inode(&self) -> (r: &'a [u8])
         ensures self.wf(), r@ == journal_inode(self.view()), r.len() == 256,
     {
@@ -131,12 +141,12 @@ impl<'s, 'a> Bootstrap<'s, 'a> {
         hide(superblock::accepted);
         let _ = self.layout();
         let raw = self.raw_journal_inode();
-        assert(layout::admitted(raw@, self.inodes, self.blocks, self.seed)) by { reveal(valid); }
-        let layout = layout::from_inode(raw, self.inodes, self.blocks, self.seed).unwrap();
+        assert(layout::admitted(raw@, self.inodes, self.blocks, self.metadata_seed)) by { reveal(valid); }
+        let layout = layout::from_inode(raw, self.inodes, self.blocks, self.metadata_seed).unwrap();
         assert(layout.view() == self.view().layout) by { reveal(valid); }
-        assert(self.seed == crc::fold(0xffffffff, self.view().source.subrange(1128, 1144))) by { reveal(valid); }
+        assert(self.seed == crc::fold(0xffffffff, journal_identity(self.view()))) by { reveal(valid); }
         let journal = self.capture_journal();
-        recovery_io::prepare(journal.as_slice(), self.uuid(), layout, self.primary(), self.source.partition_bytes())
+        recovery_io::prepare(journal.as_slice(), self.journal_uuid(), layout, self.primary(), self.source.partition_bytes())
     }
 }
 
@@ -155,19 +165,23 @@ pub fn locate<'s, 'a>(source: &'s Snapshot<'a>) -> (r: Option<Bootstrap<'s, 'a>>
     if blocks > block_claims::MAX_BLOCKS { return None; }
     let inodes = sb.inodes();
     let ipg = bytes::read_le32(raw, 40).unwrap();
-    let seed = crc::crc32c(0xffffffff, primary.range(1128, 16).unwrap());
+    let metadata_seed = superblock::metadata_checksum_seed(raw).unwrap();
     let descriptor = match source.block(1) { Some(block) => block, None => { return None; } };
     let desc = descriptor.range(0, 32).unwrap();
-    let group = match group::parse(desc, 0, blocks, ipg, seed) { Some(group) => group, None => { return None; } };
+    let group = match group::parse(desc, 0, blocks, ipg, metadata_seed) { Some(group) => group, None => { return None; } };
     let table = group.inode_table;
     let itable = match source.block(table) { Some(block) => block, None => { return None; } };
     let journal = itable.range(1792, 256).unwrap();
-    let layout = match layout::from_inode(journal, inodes, blocks, seed) { Some(layout) => layout, None => { return None; } };
+    let layout = match layout::from_inode(journal, inodes, blocks, metadata_seed) { Some(layout) => layout, None => { return None; } };
     assert(blocks as nat * 4096 <= source.view().len()) by { reveal(superblock::accepted); }
     assert(table < blocks) by { reveal(group::accepted); }
-    let ghost assembled = BootstrapView { source: source.view(), layout: layout.view(), table, blocks, inodes, ipg, seed };
+    let journal_header = source.block(layout.physical_start()).unwrap();
+    let uuid_bytes = journal_header.range(48, 16).unwrap();
+    let seed = crc::crc32c(0xffffffff, uuid_bytes);
+    let ghost assembled = BootstrapView { source: source.view(), layout: layout.view(), table, blocks, inodes, ipg, seed, metadata_seed };
+    assert(journal_identity(assembled) =~= uuid_bytes@);
     assert(valid(assembled)) by { reveal(valid); }
-    Some(Bootstrap { source, layout, table, blocks, inodes, ipg, seed })
+    Some(Bootstrap { source, layout, table, blocks, inodes, ipg, seed, metadata_seed })
 }
 
 }

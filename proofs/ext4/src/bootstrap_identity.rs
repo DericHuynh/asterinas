@@ -11,6 +11,7 @@ verus! {
 
 pub open spec fn primary_fixed(before: Seq<u8>, after: Seq<u8>) -> bool {
     &&& before.len() == 4096 && after.len() == 4096
+    &&& super_state::same_feature_flags(before, after)
     &&& forall|i: int| 0 <= i < 4096 && !super_state::replay_mutable(i) ==> #[trigger] after[i] == before[i]
 }
 
@@ -32,6 +33,8 @@ fn check_primary(before: &[u8], after: &[u8]) -> (r: bool)
     ensures r == primary_fixed(before@, after@),
 {
     if before.len() != 4096 || after.len() != 4096 { return false; }
+    if (bytes::read_le32(before, 1120).unwrap() & 0xfffffffbu32)
+        != (bytes::read_le32(after, 1120).unwrap() & 0xfffffffbu32) { return false; }
     let mut index = 0usize;
     while index < 4096
         invariant index <= 4096, before.len() == 4096, after.len() == 4096,

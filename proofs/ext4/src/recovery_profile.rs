@@ -25,8 +25,7 @@ pub open spec fn input_ok(journal: Seq<u8>, uuid: Seq<u8>, layout: &JournalLayou
     &&& scan_budget::admitted(journal, uuid, layout)
     &&& primary.len() == 4096 && superblock::accepted(primary.subrange(1024, 2048), partition_bytes)
     &&& bytes::le32(primary, 1028) == layout.view().fs_blocks
-    &&& primary.subrange(1128, 1144) == uuid
-    &&& (bytes::be32(journal, 28) != 0 ==> bytes::le32(primary, 1120) == 0x46
+    &&& (bytes::be32(journal, 28) != 0 ==> super_state::is_dirty(primary)
         && safe_committed_streams(scan_budget::source(journal, uuid, layout), primary, partition_bytes))
 }
 

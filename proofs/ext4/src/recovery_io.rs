@@ -233,7 +233,7 @@ pub fn prepare(journal: &[u8], uuid: &[u8], layout: JournalLayout, primary: &[u8
             && journal_superblock::accepted(s.tail().subrange(0, 1024), uuid@, layout.view().journal_blocks)
             && s.primary() == primary@ && s.partition_bytes() == partition_bytes
             && superblock::accepted(primary@.subrange(1024, 2048), partition_bytes)
-            && (bytes::be32(journal@, 28) != 0 ==> bytes::le32(primary@, 1120) == 0x46)
+            && (bytes::be32(journal@, 28) != 0 ==> super_state::is_dirty(primary@))
             && (forall|p: int| 0 <= p < s.plan().selection().len() ==>
                 (#[trigger] s.plan().log()[s.plan().selection()[p] as int]).block == 0 ==>
                     super_state::replay_ok(primary@, s.plan().log()[s.plan().selection()[p] as int].image, partition_bytes)),
@@ -248,7 +248,7 @@ pub fn prepare(journal: &[u8], uuid: &[u8], layout: JournalLayout, primary: &[u8
     let boot = match superblock::parse(&primary[1024..2048], partition_bytes) {
         Some(boot) => boot, None => { proof { reveal(recovery_profile::input_ok); } return None; }
     };
-    if boot.blocks() != layout.filesystem_blocks() || !bytes::equal(&primary[1128..1144], uuid) {
+    if boot.blocks() != layout.filesystem_blocks() {
         proof { reveal(recovery_profile::input_ok); } return None;
     }
     assert(layout.view().fs_blocks as nat * 4096 <= partition_bytes) by { reveal(superblock::accepted); }
