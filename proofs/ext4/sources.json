@@ -183,7 +183,7 @@
       "path": "fs/ext4/extents.c",
       "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/extents.c",
       "blob_sha": "8cce1479be6d1e8d4f57428a0a0ed1088744e72e",
-      "review_scope": "ext4_valid_extent logical exclusive-end wrap rejection, ordered extent/index entry validation, tree header/depth/capacity checks; ext4_extent_block_csum and verification coverage through the eh_max-derived tail"
+      "review_scope": "ext4_valid_extent logical exclusive-end wrap rejection, ordered extent/index entry validation, tree header/depth/capacity checks; ext4_extent_block_csum and verification coverage through the eh_max-derived tail; ext4_ext_binsearch_idx, ext4_ext_binsearch, ext4_find_extent selection, exact child depths and first-key binding; independent structural audit adds inherited sibling bounds"
     },
     {
       "path": "ostd/src/mm/frame/mod.rs",

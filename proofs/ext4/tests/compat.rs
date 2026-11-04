@@ -694,6 +694,18 @@ fn linux_created_external_extent_nodes_match_source_capture_and_inode_checksum_s
     );
     assert!(entries > 0);
     let source = Snapshot::from_bytes(&img);
+    let root_offset = group.inode_table as u64 * 4096 + (number as u64 - 1) * 256 + 40;
+    let tree = core::extent_tree::audit(
+        &source,
+        root_offset,
+        sb.blocks() as u64,
+        4096,
+        BlockChecksum::Crc32c(inode_seed),
+        16,
+    )
+    .ok()
+    .expect("complete Linux-created extent-tree audit");
+    assert_eq!(tree.checked_nodes(), entries as u64 + 1);
     let mut logicals = Vec::new();
     for index in 0..entries as usize {
         let entry = root.index_entry(index).unwrap();
@@ -715,10 +727,535 @@ fn linux_created_external_extent_nodes_match_source_capture_and_inode_checksum_s
         }
     }
     assert_eq!(logicals, (0..16).step_by(2).collect::<Vec<u32>>());
+    for logical in 0..18 {
+        let path = tree
+            .find(logical)
+            .expect("audited Linux extent-tree traversal");
+        assert_eq!(path.visited_nodes(), depth + 1);
+        match path.resolved() {
+            core::extent_tree::Mapping::Unwritten(block) => {
+                assert!(logical < 16 && logical % 2 == 0);
+                assert!(block > 0 && block < sb.blocks() as u64);
+            }
+            core::extent_tree::Mapping::Hole => assert!(logical >= 16 || logical % 2 == 1),
+            core::extent_tree::Mapping::Written(_) => {
+                panic!("fallocate produced unwritten extents")
+            }
+        }
+    }
     assert!(
         core::allocation::parse(source).is_none(),
         "local wide-node support must not silently widen the initial whole-image admission profile"
     );
+}
+
+mod extent_tree_tests {
+    use super::core::{
+        crc,
+        extent_node::{self, BlockChecksum},
+        extent_span::{ExtentSpan, ExtentState},
+        extent_tree::{self, LookupError, Mapping},
+        snapshot::Snapshot,
+    };
+
+    const SEED: u32 = 0x8a94b27d;
+    const ROOT: u64 = 100;
+    const BLOCKS: u64 = 128;
+
+    fn header(length: usize, depth: u16, count: u16) -> Vec<u8> {
+        let mut raw = vec![0; length];
+        raw[..2].copy_from_slice(&0xf30au16.to_le_bytes());
+        raw[2..4].copy_from_slice(&count.to_le_bytes());
+        let maximum = if length == 60 {
+            4
+        } else {
+            ((length - 12) / 12) as u16
+        };
+        raw[4..6].copy_from_slice(&maximum.to_le_bytes());
+        raw[6..8].copy_from_slice(&depth.to_le_bytes());
+        raw
+    }
+
+    fn seal(raw: &mut [u8]) {
+        if raw.len() == 60 {
+            return;
+        }
+        let maximum = u16::from_le_bytes(raw[4..6].try_into().unwrap()) as usize;
+        let tail = 12 + 12 * maximum;
+        let checksum = crc::crc32c(SEED, &raw[..tail]);
+        raw[tail..tail + 4].copy_from_slice(&checksum.to_le_bytes());
+    }
+
+    fn index(raw: &mut [u8], ordinal: usize, logical: u32, child: u64) {
+        let offset = 12 + ordinal * 12;
+        raw[offset..offset + 4].copy_from_slice(&logical.to_le_bytes());
+        raw[offset + 4..offset + 8].copy_from_slice(&(child as u32).to_le_bytes());
+        raw[offset + 8..offset + 10].copy_from_slice(&((child >> 32) as u16).to_le_bytes());
+    }
+
+    fn span(
+        raw: &mut [u8],
+        ordinal: usize,
+        logical: u32,
+        length: u32,
+        physical: u64,
+        initialized: bool,
+        blocks: u64,
+    ) {
+        let state = if initialized {
+            ExtentState::Written
+        } else {
+            ExtentState::Unwritten
+        };
+        let encoded = ExtentSpan::new(logical, length, physical, state, blocks)
+            .unwrap()
+            .encode()
+            .unwrap();
+        raw[12 + ordinal * 12..24 + ordinal * 12].copy_from_slice(&encoded);
+    }
+
+    fn chain(size: usize, depth: u16) -> Vec<u8> {
+        let mut image = vec![0; size * BLOCKS as usize];
+        for level in 0..=depth {
+            let remaining = depth - level;
+            let mut raw = header(
+                if level == 0 { 60 } else { size },
+                remaining,
+                if remaining == 0 { 2 } else { 1 },
+            );
+            if remaining == 0 {
+                span(&mut raw, 0, 10, 2, 100, true, BLOCKS);
+                span(&mut raw, 1, 20, 3, 110, false, BLOCKS);
+            } else {
+                index(&mut raw, 0, 10, level as u64 + 2);
+            }
+            seal(&mut raw);
+            let start = if level == 0 {
+                ROOT as usize
+            } else {
+                (level as usize + 1) * size
+            };
+            image[start..start + raw.len()].copy_from_slice(&raw);
+        }
+        image
+    }
+
+    #[test]
+    fn binary_search_matches_complete_linear_oracle_at_full_node_capacity() {
+        for size in [1024, 2048, 4096, 8192, 16384, 32768, 65536] {
+            let count = ((size - 12) / 12) as u16;
+            let mut raw = header(size, 0, count);
+            let keys: Vec<u32> = (0..count as u32).map(|i| 10 + 3 * i).collect();
+            for (i, &logical) in keys.iter().enumerate() {
+                span(&mut raw, i, logical, 1, 10000 + i as u64, true, 65536);
+            }
+            seal(&mut raw);
+            let node = extent_node::parse_block(&raw, 65536, BlockChecksum::Crc32c(SEED)).unwrap();
+            for query in (0..keys.last().unwrap() + 3).chain([u32::MAX - 1, u32::MAX]) {
+                let expected = keys.partition_point(|&key| key <= query);
+                assert_eq!(node.upper_bound(query), expected);
+                let found = node.find_leaf(query);
+                if let Ok(index) = keys.binary_search(&query) {
+                    assert_eq!(
+                        found.unwrap().physical_block(query),
+                        Some(10000 + index as u64)
+                    );
+                } else {
+                    assert!(found.is_none());
+                }
+            }
+            assert!(node.key_at(count as usize).is_none());
+            assert!(node.key_at(usize::MAX).is_none());
+        }
+    }
+
+    #[test]
+    fn source_paths_cover_all_block_sizes_and_depths_without_exposing_unwritten_as_written() {
+        for size in [1024, 2048, 4096, 8192, 16384, 32768, 65536] {
+            for depth in 0..=5 {
+                let image = chain(size, depth);
+                let source = Snapshot::from_bytes(&image);
+                let tree = extent_tree::audit(
+                    &source,
+                    ROOT,
+                    BLOCKS,
+                    size as u32,
+                    BlockChecksum::Crc32c(SEED),
+                    depth as u64 + 1,
+                )
+                .ok()
+                .unwrap();
+                assert_eq!(tree.checked_nodes(), depth as u64 + 1);
+                assert!(tree.find(u32::MAX).is_none());
+                for budget in 0..=depth as u64 {
+                    assert!(matches!(
+                        extent_tree::audit(
+                            &source,
+                            ROOT,
+                            BLOCKS,
+                            size as u32,
+                            BlockChecksum::Crc32c(SEED),
+                            budget
+                        ),
+                        Err(extent_tree::AuditError::Budget)
+                    ));
+                }
+                for query in [0, 9, 10, 11, 12, 19, 20, 21, 22, 23, u32::MAX - 1] {
+                    let path = tree.find(query).unwrap();
+                    assert_eq!(path.visited_nodes(), depth + 1);
+                    match path.resolved() {
+                        Mapping::Written(block) => {
+                            assert!((10..12).contains(&query));
+                            assert_eq!(block, 100 + (query - 10) as u64);
+                        }
+                        Mapping::Unwritten(block) => {
+                            assert!((20..23).contains(&query));
+                            assert_eq!(block, 110 + (query - 20) as u64);
+                        }
+                        Mapping::Hole => {
+                            assert!(!(10..12).contains(&query) && !(20..23).contains(&query))
+                        }
+                    }
+                }
+                assert!(matches!(
+                    extent_tree::lookup(
+                        &source,
+                        ROOT,
+                        BLOCKS,
+                        size as u32,
+                        BlockChecksum::Legacy,
+                        u32::MAX
+                    ),
+                    Err(LookupError::Geometry)
+                ));
+            }
+        }
+    }
+
+    #[test]
+    fn parent_bounds_depth_keys_checksums_and_cycles_fail_as_corruption() {
+        let size = 4096;
+        let mut image = chain(size, 1);
+        let mut root = header(60, 1, 2);
+        index(&mut root, 0, 10, 2);
+        index(&mut root, 1, 20, 3);
+        image[ROOT as usize..ROOT as usize + 60].copy_from_slice(&root);
+        let mut left = header(size, 0, 1);
+        span(&mut left, 0, 10, 2, 100, true, BLOCKS);
+        seal(&mut left);
+        image[2 * size..3 * size].copy_from_slice(&left);
+        let mut right = header(size, 0, 1);
+        span(&mut right, 0, 20, 3, 110, false, BLOCKS);
+        seal(&mut right);
+        image[3 * size..4 * size].copy_from_slice(&right);
+        let source = Snapshot::from_bytes(&image);
+        assert_eq!(
+            extent_tree::audit(
+                &source,
+                ROOT,
+                BLOCKS,
+                size as u32,
+                BlockChecksum::Crc32c(SEED),
+                3
+            )
+            .ok()
+            .unwrap()
+            .checked_nodes(),
+            3
+        );
+        assert!(matches!(
+            extent_tree::audit(
+                &source,
+                ROOT,
+                BLOCKS,
+                size as u32,
+                BlockChecksum::Crc32c(SEED),
+                2
+            ),
+            Err(extent_tree::AuditError::Budget)
+        ));
+        for query in [0, 10, 19, 20, 22, 23] {
+            assert!(
+                extent_tree::lookup(
+                    &source,
+                    ROOT,
+                    BLOCKS,
+                    size as u32,
+                    BlockChecksum::Crc32c(SEED),
+                    query
+                )
+                .is_ok()
+            );
+        }
+        for mutation in 0..6 {
+            let mut broken = image.clone();
+            let raw = &mut broken[2 * size..3 * size];
+            match mutation {
+                0 => raw[6..8].copy_from_slice(&1u16.to_le_bytes()), // wrong child depth
+                1 => raw[12..16].copy_from_slice(&11u32.to_le_bytes()), // wrong first key
+                2 => raw[16..18].copy_from_slice(&11u16.to_le_bytes()), // crosses sibling key 20
+                3 => raw[6..8].copy_from_slice(&5u16.to_le_bytes()), // plausible cyclic node
+                4 => {
+                    raw[6..8].copy_from_slice(&1u16.to_le_bytes());
+                    raw[2..4].fill(0);
+                }
+                _ => {}
+            }
+            seal(raw);
+            if mutation == 5 {
+                raw[100] ^= 1;
+            } // damaged unused entry is still checksummed
+            let source = Snapshot::from_bytes(&broken);
+            assert!(
+                matches!(
+                    extent_tree::audit(
+                        &source,
+                        ROOT,
+                        BLOCKS,
+                        size as u32,
+                        BlockChecksum::Crc32c(SEED),
+                        3
+                    ),
+                    Err(extent_tree::AuditError::Corrupt)
+                ),
+                "the audit must reject corruption even outside a requested lookup path"
+            );
+            assert!(matches!(
+                extent_tree::lookup(
+                    &source,
+                    ROOT,
+                    BLOCKS,
+                    size as u32,
+                    BlockChecksum::Crc32c(SEED),
+                    10
+                ),
+                Err(LookupError::Corrupt)
+            ));
+            assert!(
+                extent_tree::lookup(
+                    &source,
+                    ROOT,
+                    BLOCKS,
+                    size as u32,
+                    BlockChecksum::Crc32c(SEED),
+                    20
+                )
+                .is_ok(),
+                "a path certificate does not claim validation of unvisited subtrees"
+            );
+        }
+        let mut cyclic = chain(size, 2);
+        index(&mut cyclic[2 * size..3 * size], 0, 10, 2);
+        seal(&mut cyclic[2 * size..3 * size]);
+        assert!(matches!(
+            extent_tree::lookup(
+                &Snapshot::from_bytes(&cyclic),
+                ROOT,
+                BLOCKS,
+                size as u32,
+                BlockChecksum::Crc32c(SEED),
+                10
+            ),
+            Err(LookupError::Corrupt)
+        ));
+        for (root, blocks, size) in [
+            (u64::MAX, BLOCKS, size as u32),
+            (ROOT, u64::MAX, size as u32),
+            (ROOT, BLOCKS, 0),
+            (ROOT, BLOCKS, 3072),
+        ] {
+            assert!(matches!(
+                extent_tree::lookup(&source, root, blocks, size, BlockChecksum::Legacy, 0),
+                Err(LookupError::Geometry)
+            ));
+        }
+    }
+
+    #[test]
+    fn complete_audit_visits_every_branch_and_separates_budget_from_corruption() {
+        fn build(
+            image: &mut [u8],
+            size: usize,
+            depth: u16,
+            low: u32,
+            width: u32,
+            address: Option<u64>,
+            next: &mut u64,
+        ) {
+            let mut raw = header(
+                if address.is_none() { 60 } else { size },
+                depth,
+                if depth == 0 { 1 } else { 2 },
+            );
+            if depth == 0 {
+                span(
+                    &mut raw,
+                    0,
+                    low,
+                    1,
+                    100 + (low - 10) as u64 / 10,
+                    low % 20 == 10,
+                    BLOCKS,
+                );
+            } else {
+                for ordinal in 0..2 {
+                    let child = *next;
+                    *next += 1;
+                    let first = low + ordinal as u32 * width / 2;
+                    index(&mut raw, ordinal, first, child);
+                    build(image, size, depth - 1, first, width / 2, Some(child), next);
+                }
+            }
+            seal(&mut raw);
+            let start = address.map_or(ROOT as usize, |number| number as usize * size);
+            image[start..start + raw.len()].copy_from_slice(&raw);
+        }
+        for size in [1024, 4096, 65536] {
+            let mut image = vec![0; size * BLOCKS as usize];
+            let mut next = 2;
+            build(&mut image, size, 3, 10, 80, None, &mut next);
+            assert_eq!(next, 16);
+            let source = Snapshot::from_bytes(&image);
+            let tree = extent_tree::audit(
+                &source,
+                ROOT,
+                BLOCKS,
+                size as u32,
+                BlockChecksum::Crc32c(SEED),
+                15,
+            )
+            .ok()
+            .unwrap();
+            assert_eq!(tree.checked_nodes(), 15);
+            for query in 0..90 {
+                let result = tree.find(query).unwrap().resolved();
+                if (10..90).contains(&query) && query % 10 == 0 {
+                    let block = match result {
+                        Mapping::Written(block) | Mapping::Unwritten(block) => block,
+                        Mapping::Hole => panic!("missing leaf"),
+                    };
+                    assert_eq!(block, 100 + (query - 10) as u64 / 10);
+                } else {
+                    assert!(matches!(result, Mapping::Hole));
+                }
+            }
+            assert!(matches!(
+                extent_tree::audit(
+                    &source,
+                    ROOT,
+                    BLOCKS,
+                    size as u32,
+                    BlockChecksum::Crc32c(SEED),
+                    14
+                ),
+                Err(extent_tree::AuditError::Budget)
+            ));
+            image[15 * size + 6..15 * size + 8].copy_from_slice(&1u16.to_le_bytes());
+            seal(&mut image[15 * size..16 * size]);
+            let source = Snapshot::from_bytes(&image);
+            assert!(
+                extent_tree::lookup(
+                    &source,
+                    ROOT,
+                    BLOCKS,
+                    size as u32,
+                    BlockChecksum::Crc32c(SEED),
+                    10
+                )
+                .is_ok()
+            );
+            assert!(matches!(
+                extent_tree::audit(
+                    &source,
+                    ROOT,
+                    BLOCKS,
+                    size as u32,
+                    BlockChecksum::Crc32c(SEED),
+                    15
+                ),
+                Err(extent_tree::AuditError::Corrupt)
+            ));
+        }
+    }
+
+    #[test]
+    fn audited_trees_retain_exact_shadow_source_and_allow_empty_leaves() {
+        use super::core::patch_set::PatchSet;
+        let size = 1024;
+        let image = chain(size, 1);
+        let base = Snapshot::from_bytes(&image);
+        let original = extent_tree::audit(
+            &base,
+            ROOT,
+            BLOCKS,
+            size as u32,
+            BlockChecksum::Crc32c(SEED),
+            2,
+        )
+        .ok()
+        .unwrap();
+        let mut page = image[..4096].to_vec();
+        span(&mut page[2 * size..3 * size], 0, 10, 2, 105, true, BLOCKS);
+        seal(&mut page[2 * size..3 * size]);
+        let patches = PatchSet::new().insert(0, &page).ok().unwrap();
+        page.fill(0);
+        let shadow = base.overlay(&patches).unwrap();
+        let modified = extent_tree::audit(
+            &shadow,
+            ROOT,
+            BLOCKS,
+            size as u32,
+            BlockChecksum::Crc32c(SEED),
+            2,
+        )
+        .ok()
+        .unwrap();
+        assert!(matches!(
+            original.find(10).unwrap().resolved(),
+            Mapping::Written(100)
+        ));
+        assert!(matches!(
+            modified.find(10).unwrap().resolved(),
+            Mapping::Written(105)
+        ));
+        assert!(matches!(
+            modified.find(20).unwrap().resolved(),
+            Mapping::Unwritten(110)
+        ));
+        assert_eq!(modified.checked_nodes(), 2);
+
+        let mut empty_external = image.clone();
+        empty_external[2 * size..3 * size].copy_from_slice(&header(size, 0, 0));
+        seal(&mut empty_external[2 * size..3 * size]);
+        let source = Snapshot::from_bytes(&empty_external);
+        let empty = extent_tree::audit(
+            &source,
+            ROOT,
+            BLOCKS,
+            size as u32,
+            BlockChecksum::Crc32c(SEED),
+            2,
+        )
+        .ok()
+        .unwrap();
+        assert_eq!(empty.checked_nodes(), 2);
+        for query in [0, 10, 20, u32::MAX - 1] {
+            assert!(matches!(
+                empty.find(query).unwrap().resolved(),
+                Mapping::Hole
+            ));
+        }
+        let mut empty_root = image;
+        empty_root[ROOT as usize..ROOT as usize + 60].copy_from_slice(&header(60, 0, 0));
+        let source = Snapshot::from_bytes(&empty_root);
+        let empty =
+            extent_tree::audit(&source, ROOT, BLOCKS, size as u32, BlockChecksum::Legacy, 1)
+                .ok()
+                .unwrap();
+        assert_eq!(empty.checked_nodes(), 1);
+        assert!(matches!(empty.find(0).unwrap().resolved(), Mapping::Hole));
+        assert!(empty.find(u32::MAX).is_none());
+    }
 }
 
 #[test]

@@ -149,3 +149,7 @@ mod block_lifetime;
 pub mod block_size;
 pub mod extent_node;
 pub mod source_block;
+
+pub mod extent_tree;
+
+pub mod extent_tree_model;

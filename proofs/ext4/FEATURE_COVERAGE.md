@@ -58,6 +58,11 @@ unsupported markers need Linux-compatible handling, not invented encodings.
 | INCOMPAT | `0x10000` | `ENCRYPT` | Not implemented | Key/credential boundary, encrypted names/data, nonce lifetime and explicit crypto assumptions |
 | INCOMPAT | `0x20000` | `CASEFOLD` | Not implemented | Pinned Unicode normalization, encrypted/casefold lookup and HTree equivalence |
 
+Read-only extent-tree helpers now check complete structural trees and lookup
+equivalence at depths zero through five over 1–64 KiB blocks; see
+[EXTENT_TREES.md](EXTENT_TREES.md). Inode/feature binding and global physical
+ownership must still compose before this widens the admitted feature profile.
+
 The bit inventory is only one part of full compatibility. Additional coverage
 includes power-of-two 1 through 64 KiB block geometry where supported by the target architecture,
 128-byte and larger inodes, legacy direct/indirect block maps, full extent-tree

@@ -103,7 +103,9 @@
     "src/block_lifetime.rs",
     "src/block_size.rs",
     "src/extent_node.rs",
-    "src/source_block.rs"
+    "src/source_block.rs",
+    "src/extent_tree.rs",
+    "src/extent_tree_model.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -370,7 +372,18 @@
     "block_lifetime::a_foreign_volume_request_cannot_pin",
     "block_lifetime::a_writer_lease_cannot_authorize_another_block_or_volume",
     "shadow_model::a_segment_has_exact_selected_bytes",
-    "source_block::whole_blocks_fit_exactly_below_the_partition_quotient"
+    "source_block::whole_blocks_fit_exactly_below_the_partition_quotient",
+    "extent_tree::complete_tree_includes_each_child",
+    "extent_tree::successful_route_has_exact_depths_and_sources",
+    "extent_tree::successful_route_never_revisits_an_external_block",
+    "extent_node::record_keys_are_strictly_increasing",
+    "extent_node::record_intervals_are_ordered",
+    "extent_node::leaf_mapping_is_unique",
+    "extent_node::every_record_respects_branch_bounds",
+    "extent_node::child_intervals_stay_within_parent",
+    "extent_node::leaf_result_is_unique",
+    "extent_tree_model::every_stored_mapping_respects_the_subtree_interval",
+    "extent_tree_model::audited_route_equals_complete_tree_mapping"
   ],
   "required_flags": [
     "--no-cheating",
@@ -628,6 +641,17 @@
     "source_block::raw",
     "source_block::identity",
     "source_block::parse_extent_node",
-    "source_block::capture"
+    "source_block::capture",
+    "extent_node::key_at",
+    "extent_node::upper_bound",
+    "extent_node::fits_branch",
+    "extent_node::find_leaf",
+    "extent_node::find_child",
+    "extent_tree::resolved",
+    "extent_tree::visited_nodes",
+    "extent_tree::lookup",
+    "extent_tree::checked_nodes",
+    "extent_tree::audit",
+    "extent_tree::find"
   ]
 }

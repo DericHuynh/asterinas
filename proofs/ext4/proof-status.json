@@ -9,15 +9,15 @@
   "writable_mount_enabled": false,
   "verification": {
     "status": "core_and_models_checked",
-    "verus_verified_units": 734,
+    "verus_verified_units": 779,
     "verification_errors": 0,
-    "checked_named_proof_functions": 265,
-    "checked_named_executable_functions": 250,
+    "checked_named_proof_functions": 276,
+    "checked_named_executable_functions": 261,
     "runner_validated": true,
     "negative_gate_checks_passed": 6,
-    "host_compatibility_tests_passed": 42,
+    "host_compatibility_tests_passed": 47,
     "evidence": "verification-evidence.json",
-    "request_boundary_rejections_passed": 9
+    "request_boundary_rejections_passed": 11
   },
   "claims": {
     "abstract_redo": "checked",
@@ -83,7 +83,9 @@
     "concurrent_block_lifetime_model": "checked_all_finite_enabled_interleavings_shared_read_pins_per_block_writer_leases_volume_and_allocation_epochs_retired_IDs_stale_reacquisition_zeroing_publication_reuse_disjoint_write_commutation_nonempty_examples_1_to_64_KiB_runtime_extent_DMA_journal_refinement_open",
     "local_extent_nodes": "checked_total_inline_and_external_1_to_64_KiB_depth_0_to_5_48_bit_children_header_capacity_ordering_leaf_intervals_and_eh_max_checksum_domain_legacy_mode_source_seed_and_complete_tree_ownership_refinement_open",
     "wide_source_blocks": "checked_owned_1_to_64_KiB_blocks_exact_64_bit_source_ranges_partition_quotient_product_bounds_and_clipped_shadow_segments_no_high_address_truncation_inode_seed_feature_CortenMM_and_full_tree_refinement_open",
-    "source_block_linux_interoperability": "tested_Linux_created_external_leaf_tree_actual_UUID_inode_generation_checksum_seed_and_eh_max_checksum_domain_not_a_formal_Linux_driver_refinement"
+    "source_block_linux_interoperability": "tested_Linux_created_external_leaf_tree_actual_UUID_inode_generation_checksum_seed_and_eh_max_checksum_domain_not_a_formal_Linux_driver_refinement",
+    "extent_tree_paths": "checked_exact_same_source_root_and_external_nodes_depth_decrease_no_successful_path_cycles_parent_first_key_and_inherited_upper_bounds_unique_leaf_selection_written_unwritten_holes",
+    "complete_structural_extent_trees": "checked_all_reachable_children_exact_visit_counts_sufficient_budget_completion_sound_geometry_corruption_budget_classification_and_public_lookup_equivalence_with_every_covering_leaf_record_global_physical_ownership_inode_feature_binding_mutations_and_runtime_authority_open"
   },
   "production_activation_gate": "All applicable obligations in PROOF_OBLIGATIONS.md must be discharged for the admitted profile.",
   "evidence_policy": "Only successful pinned entire-crate checking plus compilation produces a valid build report; it certifies only the declared source/model scope.",

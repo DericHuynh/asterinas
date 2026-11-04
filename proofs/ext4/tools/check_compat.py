@@ -83,6 +83,10 @@ def main():
                                     "{ let _ = verified_ext4::recovery_admission::CheckedRecovery { ..r }; }\n", "E0451"),
         "replace_admitted_engine": ("pub fn misuse(mut r: verified_ext4::recovery_admission::CheckedRecovery<'_, '_>, "
                                     "e: verified_ext4::recovery_io::Recovery) { r.engine = e; }\n", "E0616"),
+        "forge_extent_tree": ("pub fn misuse(t: verified_ext4::extent_tree::CheckedTree<'_, '_>) "
+                              "{ let _ = verified_ext4::extent_tree::CheckedTree { ..t }; }\n", "E0451"),
+        "replace_extent_tree_source": ("pub fn misuse<'s, 'image>(mut t: verified_ext4::extent_tree::CheckedTree<'s, 'image>, "
+                                      "s: &'s verified_ext4::snapshot::Snapshot<'image>) { t.source = s; }\n", "E0616"),
     }
     for name, (source, code) in misuse.items():
         path = BUILD / (name + ".rs")
