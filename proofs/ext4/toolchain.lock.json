@@ -164,7 +164,11 @@
     "src/acl_access.rs",
     "src/htree.rs",
     "src/dir_hash.rs",
-    "src/htree_topology.rs"
+    "src/htree_topology.rs",
+    "src/htree_range.rs",
+    "src/htree_names.rs",
+    "src/directory_piece.rs",
+    "src/directory_htree.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -688,7 +692,17 @@
     "dir_hash::every_unkeyed_hash_reserves_the_collision_bit_and_eof_value",
     "htree_topology::a_checked_node_retains_its_header_and_every_source_child",
     "htree_topology::every_supplied_logical_block_is_reachable_from_the_exact_root",
-    "htree_topology::two_tree_claims_cannot_reuse_one_logical_block"
+    "htree_topology::two_tree_claims_cannot_reuse_one_logical_block",
+    "directory_source::checked_mapping_is_the_canonical_source",
+    "htree_topology::every_leaf_role_has_a_checked_source_leaf_claim",
+    "htree_range::a_checked_child_interval_cannot_escape_its_parent",
+    "htree_range::every_contained_hash_is_in_the_linux_probe_continuation_set",
+    "htree_range::every_checked_index_has_a_linux_probe_selection",
+    "htree_names::full_name_lookup_has_at_most_one_source_record",
+    "htree_names::every_live_source_leaf_record_appears_in_lookup",
+    "htree_names::every_live_source_record_is_reachable_by_linux_hash_probe_and_continuations",
+    "directory_htree::a_namespace_indexed_directory_has_a_complete_source_tree",
+    "directory_htree::every_bound_tree_block_has_initialized_physical_source_ownership"
   ],
   "required_flags": [
     "--no-cheating",
@@ -1135,6 +1149,20 @@
     "htree_topology::logical_block_count",
     "htree_topology::logical_role",
     "htree_topology::checked_root",
-    "htree_topology::parse"
+    "htree_topology::parse",
+    "htree_range::full",
+    "htree_range::includes",
+    "htree_range::subdivide",
+    "htree_names::identity",
+    "htree_names::name_bytes",
+    "htree_names::len",
+    "htree_names::get",
+    "htree_names::lookup",
+    "htree_names::build",
+    "directory_piece::len",
+    "directory_piece::get",
+    "directory_piece::name",
+    "directory_piece::parse",
+    "directory_htree::validate"
   ]
 }

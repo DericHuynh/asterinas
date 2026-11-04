@@ -245,3 +245,10 @@ pub mod htree;
 pub mod dir_hash;
 
 pub mod htree_topology;
+
+pub mod htree_range;
+
+pub mod htree_names;
+
+pub mod directory_piece;
+pub mod directory_htree;

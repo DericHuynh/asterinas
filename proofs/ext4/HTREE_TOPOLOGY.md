@@ -10,7 +10,7 @@ and rejects reuse, cycles and unreferenced supplied logical blocks.
 This certifies logical reachability and record structure. Physical extent/BIO
 identity, hash-range/name lookup equivalence, inode target allocation, namespace
 consistency and VFS authority still require composition with the filesystem.
-DIR_INDEX admission therefore remains closed. This host object does not replace
+The bounded filesystem adapter now composes these in [HTree admission](HTREE_ADMISSION.md). This standalone graph alone grants no filesystem authority. This host object does not replace
 CortenMM/OSTD snapshot, ownership, locking or device refinement.
 
 | Component | Implemented contract | Remaining work |

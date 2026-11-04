@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! A 256-byte Linux inode subset: regular files and linear directories,
+//! A 256-byte Linux inode subset: regular files and linear/indexed directories,
 //! metadata checksums and no xattrs/ACL block. Metadata parsing is separate
 //! from the legacy inline-leaf parser and wider source-bound tree validation.
 //! Link topology, allocation accounting and global ownership remain separate.
@@ -35,7 +35,8 @@ pub open spec fn metadata_accepted_with_features(s: Seq<u8>, inode: u32, inodes:
     &&& 0 < inode <= inodes
     &&& ((le16(s, 0) as u16 & 0xf000) == 0x8000 || (le16(s, 0) as u16 & 0xf000) == 0x4000)
     &&& le32(s, 20) == 0 && le16(s, 26) > 0
-    &&& (le32(s, 32) == 0x80000 || huge_file && le32(s, 32) == 0xc0000)
+    &&& ((le32(s, 32) as u32 & !0x1000u32) == 0x80000 || huge_file && (le32(s, 32) as u32 & !0x1000u32) == 0xc0000)
+    &&& (le32(s, 32) as u32 & 0x1000 != 0 ==> (le16(s, 0) as u16 & 0xf000) == 0x4000)
     &&& ((le16(s, 0) as u16 & 0xf000) == 0x4000 ==> le32(s, 108) == 0)
     &&& inode_size::accepted(s, 4096, huge_file, false)
     &&& le16(s, 128) == 32
@@ -100,7 +101,8 @@ pub fn parse_metadata_with_features(s: &[u8], number: u32, inodes: u32, uuid_see
     let mode = read_le16(s, 0).unwrap();
     let links = read_le16(s, 26).unwrap();
     if (mode & 0xf000 != 0x8000 && mode & 0xf000 != 0x4000)
-        || read_le32(s, 20).unwrap() != 0 || links == 0 || (read_le32(s, 32).unwrap() != 0x80000 && (!huge_file || read_le32(s, 32).unwrap() != 0xc0000))
+        || read_le32(s, 20).unwrap() != 0 || links == 0 || (read_le32(s, 32).unwrap() & !0x1000u32 != 0x80000 && (!huge_file || read_le32(s, 32).unwrap() & !0x1000u32 != 0xc0000))
+        || (read_le32(s, 32).unwrap() & 0x1000 != 0 && mode & 0xf000 != 0x4000)
         || (mode & 0xf000 == 0x4000 && read_le32(s, 108).unwrap() != 0)
         || read_le16(s, 128).unwrap() != 32
     { return None; }

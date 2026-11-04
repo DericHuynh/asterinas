@@ -55,6 +55,7 @@ pub fn reserved_is_empty(raw: &[u8]) -> (r: bool) ensures r == empty_reserved(ra
 pub open spec fn ordinary_checked(v: IndexView, roles: Seq<Slot>, n: u32) -> bool {
     let raw = inode_table::raw(v, n);
     &&& extent_claims::accepted(v, n)
+    &&& bytes::le32(raw, 32) as u32 & 0x1000 != 0 ==> bytes::le32(v.source, 1116) as u32 & 0x20 != 0
     &&& n == 2 ==> (bytes::le16(raw, 0) as u16 & 0xf000) == 0x4000
     &&& !group_index::has_huge_files(v) ==> bytes::le16(raw, 116) == 0
     &&& inode_blocks::sectors(raw, 4096, group_index::has_huge_files(v)) == 8 * (inode_claims::allocated(extent_claims::claims(v, n)) + crate::xattr::allocated_block_count(raw))
@@ -157,6 +158,8 @@ pub fn collect(index: &GroupIndex<'_>, mut census: Census, g: u32) -> (r: Option
     hide(group_metadata::valid);
     let ghost original = census.view();
     let (blocks, inodes, ipg, seed) = index.parameters();
+    let primary = match index.source().block(0) { Some(primary) => primary, None => { return None; } };
+    let directory_indexes = bytes::read_le32(primary.as_slice(), 1116).unwrap() & 0x20 != 0;
     let meta = match index.get(g) { Some(meta) => meta, None => { return None; } };
     let _ = meta.parameters();
     if census.block_count() != blocks { return None; }
@@ -180,6 +183,7 @@ pub fn collect(index: &GroupIndex<'_>, mut census: Census, g: u32) -> (r: Option
     while slot < ipg
         invariant index.wf(), g < index.view().groups.len(), (blocks, inodes, ipg, seed) ==
                 (index.view().blocks, index.view().inodes, index.view().ipg, index.view().seed),
+            directory_indexes == (bytes::le32(index.view().source, 1116) as u32 & 0x20 != 0),
             slot <= ipg <= 32768, unused <= ipg, descriptor@ == index.view().groups[g as int].descriptor,
             unused as nat == bytes::le16(descriptor@, 28), used_dirs as nat == bytes::le16(descriptor@, 16),
             bitmap.view() == index.view().groups[g as int].inodes, bitmap.view().valid == ipg,
@@ -203,6 +207,8 @@ pub fn collect(index: &GroupIndex<'_>, mut census: Census, g: u32) -> (r: Option
                 let mode = bytes::read_le16(raw, 0).unwrap();
                 if n == 2 && mode & 0xf000 != 0x4000 { return None; }
                 directory = mode & 0xf000 == 0x4000;
+                if bytes::read_le32(raw, 32).unwrap() & 0x1000 != 0
+                    && !directory_indexes { return None; }
                 let bound = match extent_claims::bind(index, n, blocks as u64 + 1) {
                     Some(bound) => bound, None => { return None; }
                 };

@@ -5435,7 +5435,7 @@ mod feature_coverage {
             let compat = 4 | (1u32 << bit);
             assert_eq!(
                 feature_policy::compatible_flags(compat),
-                matches!(bit, 2 | 3 | 9 | 11),
+                matches!(bit, 2 | 3 | 5 | 9 | 11),
                 "COMPAT bit {bit}"
             );
             let incompat = 0x42 | (1u32 << bit);
@@ -6169,9 +6169,69 @@ mod htree_indexes {
         for logical in 1..blocks {
             assert_eq!(graph.logical_role(logical), Some(3));
         }
+        let hash_seed = core::dir_hash::State {
+            a: le32(&img, 1260),
+            b: le32(&img, 1264),
+            c: le32(&img, 1268),
+            d: le32(&img, 1272),
+        };
+        let directory = core::htree_names::build(
+            &logical_blocks,
+            inodes,
+            seed,
+            hash_seed,
+            le32(&img, 1376) & 2 != 0,
+            false,
+        )
+        .unwrap();
+        assert_eq!(directory.len(), 302);
+        for n in 0..300 {
+            let name = format!("{n:04}-{}", "x".repeat(210));
+            let entry = directory.lookup(name.as_bytes()).unwrap();
+            assert_eq!(entry.identity().2, 13 + n);
+            assert_eq!(entry.name_bytes(), name.as_bytes());
+        }
+        assert!(directory.lookup(b"missing").is_none());
+        let volume = core::allocation::parse(core::snapshot::Snapshot::from_bytes(&img)).unwrap();
+        let node = core::allocated_inode::get(&volume, 12).unwrap();
+        assert!(core::directory_htree::validate(&node));
+        let catalog = core::directory_index::build(&volume).unwrap();
+        let namespace = core::namespace::validate(&catalog).unwrap();
+        assert_eq!(namespace.parent(12), Some(2));
+        assert_eq!(namespace.lookup(12, b".").unwrap().identity().1, 12);
         assert!(
-            core::image_validation::inspect(core::snapshot::Snapshot::from_bytes(&img)).is_none(),
-            "standalone HTree codecs do not open full filesystem feature admission"
+            core::image_validation::inspect(core::snapshot::Snapshot::from_bytes(&img)).is_some()
+        );
+        // Move whole leaves across valid hash ranges. All records, counters,
+        // inode checksums and HTree reachability are still individually valid.
+        let mut wrong = img.clone();
+        let mut swapped = raw.to_vec();
+        let left = le32(&swapped, 36);
+        let right = le32(&swapped, 44);
+        swapped[36..40].copy_from_slice(&right.to_le_bytes());
+        swapped[44..48].copy_from_slice(&left.to_le_bytes());
+        seal(&mut swapped, 32, seed);
+        wrong[physical * 4096..(physical + 1) * 4096].copy_from_slice(&swapped);
+        assert!(core::allocation::parse(core::snapshot::Snapshot::from_bytes(&wrong)).is_some());
+        assert!(
+            core::image_validation::inspect(core::snapshot::Snapshot::from_bytes(&wrong)).is_none()
+        );
+        let mut wrong_seed = img.clone();
+        wrong_seed[1260] ^= 1;
+        let checksum = core::crc::crc32c(0xffffffff, &wrong_seed[1024..2044]);
+        wrong_seed[2044..2048].copy_from_slice(&checksum.to_le_bytes());
+        assert!(
+            core::image_validation::inspect(core::snapshot::Snapshot::from_bytes(&wrong_seed))
+                .is_none()
+        );
+        let mut no_feature = img.clone();
+        let compat = le32(&no_feature, 1116) & !0x20;
+        no_feature[1116..1120].copy_from_slice(&compat.to_le_bytes());
+        let checksum = core::crc::crc32c(0xffffffff, &no_feature[1024..2044]);
+        no_feature[2044..2048].copy_from_slice(&checksum.to_le_bytes());
+        assert!(
+            core::allocation::parse(core::snapshot::Snapshot::from_bytes(&no_feature)).is_none(),
+            "INDEX inode requires source DIR_INDEX feature"
         );
         for file in [path, "build/htree-empty.bin", "build/htree-debugfs.txt"] {
             let _ = std::fs::remove_file(file);
@@ -6249,6 +6309,189 @@ mod htree_indexes {
             minimal.logical_role(2),
             None,
             "private ledger padding is not a directory block"
+        );
+    }
+    #[test]
+    fn inherited_hash_intervals_cover_probe_and_every_collision_continuation() {
+        use core::htree_range;
+        let raw = block(4096, true, true);
+        let root = htree::parse_root(&raw, 100, 4096, 0x12345678, true, false).unwrap();
+        let index = root.routing_index();
+        let full = htree_range::full();
+        for hash in [0, 98, 100, 102, 198, 200, u32::MAX - 1] {
+            let start = index.probe(hash);
+            for child in 0..index.child_count() {
+                let bounds = htree_range::subdivide(index, &full, child).unwrap();
+                if htree_range::includes(&bounds, hash) {
+                    assert!(start <= child);
+                    for next in start + 1..=child {
+                        assert!(index.continues(hash, next));
+                    }
+                }
+            }
+        }
+        for child in [1, 2, 3] {
+            assert!(htree_range::includes(
+                &htree_range::subdivide(index, &full, child).unwrap(),
+                100
+            ));
+        }
+        let parent = htree_range::Bounds {
+            lower: 150,
+            upper: 175,
+            inclusive: false,
+        };
+        assert!(htree_range::subdivide(index, &parent, 2).is_none());
+        assert!(htree_range::subdivide(index, &full, usize::MAX).is_none());
+        let invalid = htree_range::Bounds {
+            lower: 100,
+            upper: 50,
+            inclusive: false,
+        };
+        assert!(htree_range::subdivide(index, &invalid, 0).is_none());
+    }
+
+    fn named_leaf(seed: u32, target: u32, name: &[u8]) -> Vec<u8> {
+        let mut leaf = empty_leaf(seed);
+        leaf[..4].copy_from_slice(&target.to_le_bytes());
+        leaf[6] = name.len() as u8;
+        leaf[7] = 1;
+        leaf[8..8 + name.len()].copy_from_slice(name);
+        let checksum = core::crc::crc32c(seed, &leaf[..4084]);
+        leaf[4092..].copy_from_slice(&checksum.to_le_bytes());
+        leaf
+    }
+
+    #[test]
+    fn complete_name_lookup_keeps_real_hash_collisions_distinct_and_rejects_wrong_ranges() {
+        use core::{
+            dir_hash::{self, State},
+            htree_names,
+        };
+        let seed = 0x12345678;
+        let hash_seed = State {
+            a: 0,
+            b: 0,
+            c: 0,
+            d: 0,
+        };
+        let left_name = b"collision-012141";
+        let right_name = b"collision-012441";
+        let left_hash = dir_hash::calculate(left_name, hash_seed, 0).unwrap().major;
+        assert_eq!(left_hash, 0x80bd17e8);
+        assert_eq!(
+            left_hash,
+            dir_hash::calculate(right_name, hash_seed, 0).unwrap().major
+        );
+        let mut root = block(4096, true, true);
+        root[28] = 0;
+        root[34..36].copy_from_slice(&2u16.to_le_bytes());
+        root[40..44].copy_from_slice(&(left_hash | 1).to_le_bytes());
+        root[44..48].copy_from_slice(&2u32.to_le_bytes());
+        seal(&mut root, 32, seed);
+        let left = named_leaf(seed, 13, left_name);
+        let right = named_leaf(seed, 14, right_name);
+        let directory =
+            htree_names::build(&[&root, &left, &right], 4096, seed, hash_seed, false, false)
+                .unwrap();
+        assert_eq!(directory.len(), 4);
+        assert_eq!(directory.lookup(b".").unwrap().identity(), (0, 0, 12, 2));
+        assert_eq!(directory.lookup(b"..").unwrap().identity(), (0, 1, 2, 2));
+        assert_eq!(
+            directory.lookup(left_name).unwrap().identity(),
+            (1, 0, 13, 1)
+        );
+        assert_eq!(
+            directory.lookup(right_name).unwrap().identity(),
+            (2, 0, 14, 1)
+        );
+        assert!(directory.lookup(b"collision-01214").is_none());
+        assert!(directory.lookup(b"collision-012141\0").is_none());
+        assert!(directory.get(directory.len()).is_none());
+        let duplicate = named_leaf(seed, 14, left_name);
+        assert!(
+            htree_names::build(
+                &[&root, &left, &duplicate],
+                4096,
+                seed,
+                hash_seed,
+                false,
+                false
+            )
+            .is_none()
+        );
+        root[40..44].copy_from_slice(&left_hash.to_le_bytes());
+        seal(&mut root, 32, seed);
+        assert!(core::htree_topology::parse(&[&root, &left, &right], 4096, seed, false).is_some());
+        assert!(
+            htree_names::build(&[&root, &left, &right], 4096, seed, hash_seed, false, false)
+                .is_none(),
+            "an even split excludes the equal hash from the preceding leaf"
+        );
+    }
+
+    #[test]
+    fn deep_htree_names_and_canonical_root_internal_leaf_projections_agree() {
+        use core::{dir_hash::State, directory_piece, htree_names};
+        let seed = 0x12345678;
+        let mut root = block(4096, true, true);
+        root[30] = 2;
+        root[34..36].copy_from_slice(&1u16.to_le_bytes());
+        root[36..40].copy_from_slice(&1u32.to_le_bytes());
+        seal(&mut root, 32, seed);
+        let mut node = block(4096, false, true);
+        node[10..12].copy_from_slice(&1u16.to_le_bytes());
+        node[12..16].copy_from_slice(&2u32.to_le_bytes());
+        seal(&mut node, 8, seed);
+        let mut nested = node.clone();
+        nested[12..16].copy_from_slice(&3u32.to_le_bytes());
+        seal(&mut nested, 8, seed);
+        let leaf = named_leaf(seed, 13, b"deep-name");
+        let directory = htree_names::build(
+            &[&root, &node, &nested, &leaf],
+            4096,
+            seed,
+            State {
+                a: 1,
+                b: 2,
+                c: 3,
+                d: 4,
+            },
+            false,
+            true,
+        )
+        .unwrap();
+        assert_eq!(
+            directory.lookup(b"deep-name").unwrap().identity(),
+            (3, 0, 13, 1)
+        );
+        assert!(directory.lookup(b"absent").is_none());
+        for (logical, raw, names) in [(0, &root, 2), (1, &node, 0), (2, &nested, 0), (3, &leaf, 1)]
+        {
+            let piece = directory_piece::parse(raw, 4096, seed, true, logical, 4, true).unwrap();
+            assert_eq!(piece.len(), names);
+            assert!(piece.get(names).is_none());
+        }
+        assert!(directory_piece::parse(&root, 4096, seed, false, 0, 4, true).is_none());
+        assert!(directory_piece::parse(&node, 4096, seed, false, 1, 4, true).is_none());
+        root[28] = 6;
+        seal(&mut root, 32, seed);
+        assert!(
+            htree_names::build(
+                &[&root, &node, &nested, &leaf],
+                4096,
+                seed,
+                State {
+                    a: 1,
+                    b: 2,
+                    c: 3,
+                    d: 4
+                },
+                false,
+                true
+            )
+            .is_none(),
+            "keyed hashing needs fscrypt authority"
         );
     }
 }

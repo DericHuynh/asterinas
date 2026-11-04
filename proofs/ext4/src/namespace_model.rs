@@ -90,7 +90,7 @@ pub open spec fn blocks_valid(v: AllocationView, n: u32, count: nat) -> bool {
 
 pub open spec fn directory_valid(v: AllocationView, n: u32) -> bool {
     let node = allocated_inode::source_view(v, n);
-    node.size > 0 && node.size % 4096 == 0 && blocks_valid(v, n, block_count(v, n))
+    node.size > 0 && node.size % 4096 == 0 && blocks_valid(v, n, block_count(v, n)) && crate::directory_htree::admitted(v, n)
 }
 
 #[verifier::opaque]

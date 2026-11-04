@@ -15,7 +15,7 @@ pub const BTREE_DIR: u32 = 0x4;
 pub const DIR_NLINK: u32 = 0x20;
 pub const READONLY: u32 = 0x1000;
 
-pub open spec fn compat_allowed(flags: u32) -> bool { flags & !0xa0cu32 == 0 && flags & HAS_JOURNAL != 0 }
+pub open spec fn compat_allowed(flags: u32) -> bool { flags & !0xa2cu32 == 0 && flags & HAS_JOURNAL != 0 }
 pub open spec fn ro_allowed(flags: u32) -> bool { flags & !0x146fu32 == 0 && flags & 0x442u32 == 0x442u32 }
 pub open spec fn incompat_allowed(flags: u32) -> bool { flags & 0xffffdd7bu32 == 0x42u32 }
 pub open spec fn readonly(s: Seq<u8>) -> bool { bytes::le32(s, 100) as u32 & READONLY != 0 }
@@ -23,7 +23,7 @@ pub open spec fn stable_inodes(s: Seq<u8>) -> bool { bytes::le32(s, 92) as u32 &
 pub open spec fn dir_nlink(s: Seq<u8>) -> bool { bytes::le32(s, 100) as u32 & DIR_NLINK != 0 }
 
 pub fn compatible_flags(flags: u32) -> (r: bool) ensures r == compat_allowed(flags) {
-    flags & !0xa0cu32 == 0 && flags & HAS_JOURNAL != 0
+    flags & !0xa2cu32 == 0 && flags & HAS_JOURNAL != 0
 }
 pub fn readonly_compatible_flags(flags: u32) -> (r: bool) ensures r == ro_allowed(flags) {
     flags & !0x146fu32 == 0 && flags & 0x442u32 == 0x442u32
@@ -50,9 +50,9 @@ pub fn has_stable_inodes(s: &[u8]) -> (r: Option<bool>)
 pub proof fn every_admitted_mask_keeps_required_features_and_rejects_unimplemented_bits(compat: u32, ro: u32)
     requires compat_allowed(compat), ro_allowed(ro),
     ensures compat & 4u32 != 0, ro & 0x442u32 == 0x442u32,
-        compat & 0xfffff5f3u32 == 0, ro & 0xffffeb90u32 == 0,
-{ assert(compat & 0xfffff5f3u32 == 0 && ro & 0xffffeb90u32 == 0) by (bit_vector)
-    requires compat & !0xa0cu32 == 0, ro & !0x146fu32 == 0; }
+        compat & 0xfffff5d3u32 == 0, ro & 0xffffeb90u32 == 0,
+{ assert(compat & 0xfffff5d3u32 == 0 && ro & 0xffffeb90u32 == 0) by (bit_vector)
+    requires compat & !0xa2cu32 == 0, ro & !0x146fu32 == 0; }
 
 pub proof fn linux_unsupported_compression_and_dirdata_markers_are_always_rejected(flags: u32)
     requires flags & 0x1001u32 != 0,

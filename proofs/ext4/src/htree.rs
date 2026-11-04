@@ -114,7 +114,7 @@ impl<'a> Index<'a> {
     }
 }
 
-proof fn monotone(v: IndexView, a: nat, b: nat)
+pub(crate) proof fn monotone(v: IndexView, a: nat, b: nat)
     requires valid(v), a <= b < count(v),
     ensures edge(v.raw, v.first as nat, a).hash <= edge(v.raw, v.first as nat, b).hash,
     decreases b - a,
