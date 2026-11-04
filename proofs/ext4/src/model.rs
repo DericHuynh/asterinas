@@ -146,3 +146,5 @@ pub mod recovery_admission;
 pub mod block_range;
 pub mod extent_span;
 mod block_lifetime;
+pub mod block_size;
+pub mod extent_node;

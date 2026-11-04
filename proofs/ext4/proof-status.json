@@ -9,13 +9,13 @@
   "writable_mount_enabled": false,
   "verification": {
     "status": "core_and_models_checked",
-    "verus_verified_units": 709,
+    "verus_verified_units": 722,
     "verification_errors": 0,
     "checked_named_proof_functions": 263,
-    "checked_named_executable_functions": 238,
+    "checked_named_executable_functions": 245,
     "runner_validated": true,
     "negative_gate_checks_passed": 6,
-    "host_compatibility_tests_passed": 39,
+    "host_compatibility_tests_passed": 40,
     "evidence": "verification-evidence.json",
     "request_boundary_rejections_passed": 9
   },
@@ -80,7 +80,8 @@
     "recovery_image_admission": "checked_same_source_bootstrap_selected_homes_and_retired_tail_shadow_complete_allocation_namespace_validation_exact_bootstrap_identity_and_journal_mapping_preserved_through_owned_dispatch_abort_completion_no_kernel_mount_or_driver_claim",
     "wide_block_intervals": "checked_64_bit_overflow_safe_bounds_membership_disjointness_and_exact_split_partition_descriptions_not_capabilities",
     "wide_extent_intervals": "checked_Linux_48_bit_start_codec_64_bit_physical_arithmetic_written_unwritten_lengths_reserved_terminal_logical_block_and_pointwise_mapping_preservation_on_split_and_merge_no_tree_or_allocation_authority",
-    "concurrent_block_lifetime_model": "checked_all_finite_enabled_interleavings_shared_read_pins_per_block_writer_leases_volume_and_allocation_epochs_retired_IDs_stale_reacquisition_zeroing_publication_reuse_disjoint_write_commutation_nonempty_examples_1_to_64_KiB_runtime_extent_DMA_journal_refinement_open"
+    "concurrent_block_lifetime_model": "checked_all_finite_enabled_interleavings_shared_read_pins_per_block_writer_leases_volume_and_allocation_epochs_retired_IDs_stale_reacquisition_zeroing_publication_reuse_disjoint_write_commutation_nonempty_examples_1_to_64_KiB_runtime_extent_DMA_journal_refinement_open",
+    "local_extent_nodes": "checked_total_inline_and_external_1_to_64_KiB_depth_0_to_5_48_bit_children_header_capacity_ordering_leaf_intervals_and_eh_max_checksum_domain_legacy_mode_source_seed_and_complete_tree_ownership_refinement_open"
   },
   "production_activation_gate": "All applicable obligations in PROOF_OBLIGATIONS.md must be discharged for the admitted profile.",
   "evidence_policy": "Only successful pinned entire-crate checking plus compilation produces a valid build report; it certifies only the declared source/model scope.",

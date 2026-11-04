@@ -401,6 +401,138 @@ fn extent_spans_preserve_48_bit_addresses_and_every_mapping_across_splits() {
 }
 
 #[test]
+fn extent_nodes_check_full_capacity_checksums_depth_and_48_bit_children() {
+    use core::{
+        extent_node::{self, BlockChecksum},
+        extent_span::{ExtentSpan, ExtentState},
+    };
+    fn header(size: usize, depth: u16, count: u16, maximum: u16) -> Vec<u8> {
+        let mut raw = vec![0; size];
+        raw[..2].copy_from_slice(&0xf30au16.to_le_bytes());
+        raw[2..4].copy_from_slice(&count.to_le_bytes());
+        raw[4..6].copy_from_slice(&maximum.to_le_bytes());
+        raw[6..8].copy_from_slice(&depth.to_le_bytes());
+        raw[8..12].copy_from_slice(&0x789abcdeu32.to_le_bytes());
+        raw
+    }
+    fn seal(raw: &mut [u8], seed: u32) {
+        let maximum = u16::from_le_bytes(raw[4..6].try_into().unwrap()) as usize;
+        let tail = 12 + maximum * 12;
+        let checksum = core::crc::crc32c(seed, &raw[..tail]);
+        raw[tail..tail + 4].copy_from_slice(&checksum.to_le_bytes());
+    }
+    fn index(raw: &mut [u8], ordinal: usize, logical: u32, child: u64) {
+        let offset = 12 + ordinal * 12;
+        raw[offset..offset + 4].copy_from_slice(&logical.to_le_bytes());
+        raw[offset + 4..offset + 8].copy_from_slice(&(child as u32).to_le_bytes());
+        raw[offset + 8..offset + 10].copy_from_slice(&((child >> 32) as u16).to_le_bytes());
+        raw[offset + 10..offset + 12].copy_from_slice(&0xabcdu16.to_le_bytes()); // Linux's unused field.
+    }
+    let seed = 0x9abcdef0;
+    let physical = 0x1234_5678_9010u64;
+    let blocks = physical + 100;
+    let first = ExtentSpan::new(1, 3, physical, ExtentState::Written, blocks)
+        .unwrap()
+        .encode()
+        .unwrap();
+    let second = ExtentSpan::new(8, 2, physical + 10, ExtentState::Unwritten, blocks)
+        .unwrap()
+        .encode()
+        .unwrap();
+    for size in [1024usize, 2048, 4096, 8192, 16384, 32768, 65536] {
+        let maximum = ((size - 12) / 12) as u16;
+        let tail = 12 + maximum as usize * 12;
+        let mut raw = header(size, 0, 2, maximum);
+        raw[12..24].copy_from_slice(&first);
+        raw[24..36].copy_from_slice(&second);
+        seal(&mut raw, seed);
+        let node = extent_node::parse_block(&raw, blocks, BlockChecksum::Crc32c(seed)).unwrap();
+        assert_eq!(node.header_fields(), (2, maximum, 0));
+        assert_eq!(node.raw(), &raw);
+        assert_eq!(node.leaf_extent(0).unwrap().info().physical, physical);
+        assert!(!node.leaf_extent(1).unwrap().info().initialized);
+        assert!(node.leaf_extent(2).is_none() && node.leaf_extent(usize::MAX).is_none());
+        assert!(node.index_entry(0).is_none());
+        assert!(extent_node::parse_block(&raw, blocks, BlockChecksum::Crc32c(seed ^ 1)).is_none());
+        let mut changed = raw.clone();
+        changed[40] ^= 1; // Unused record bytes still lie inside the eh_max checksum domain.
+        assert!(extent_node::parse_block(&changed, blocks, BlockChecksum::Crc32c(seed)).is_none());
+        seal(&mut changed, seed);
+        assert!(extent_node::parse_block(&changed, blocks, BlockChecksum::Crc32c(seed)).is_some());
+        if tail + 4 < size {
+            changed = raw.clone();
+            changed[size - 1] ^= 1; // Padding after the tail is outside that domain.
+            assert!(
+                extent_node::parse_block(&changed, blocks, BlockChecksum::Crc32c(seed)).is_some()
+            );
+        }
+        for (offset, value) in [
+            (0, 0u16),
+            (4, 0),
+            (4, maximum + 1),
+            (2, maximum + 1),
+            (6, 6),
+        ] {
+            changed = raw.clone();
+            changed[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+            if offset != 4 || value <= maximum {
+                seal(&mut changed, seed);
+            }
+            assert!(
+                extent_node::parse_block(&changed, blocks, BlockChecksum::Crc32c(seed)).is_none()
+            );
+        }
+        changed = raw.clone();
+        changed[24..28].copy_from_slice(&2u32.to_le_bytes()); // Overlap the first leaf extent.
+        seal(&mut changed, seed);
+        assert!(extent_node::parse_block(&changed, blocks, BlockChecksum::Crc32c(seed)).is_none());
+        for depth in 1..=5 {
+            let mut raw = header(size, depth, 2, maximum);
+            index(&mut raw, 0, 0, physical);
+            index(&mut raw, 1, 64, physical + 5);
+            seal(&mut raw, seed);
+            let node = extent_node::parse_block(&raw, blocks, BlockChecksum::Crc32c(seed)).unwrap();
+            assert_eq!(node.header_fields(), (2, maximum, depth));
+            let entry = node.index_entry(1).unwrap();
+            assert_eq!((entry.logical, entry.child), (64, physical + 5));
+            assert!(node.index_entry(2).is_none() && node.index_entry(usize::MAX).is_none());
+            assert!(node.leaf_extent(0).is_none());
+            for (logical, child) in [(0, physical + 5), (64, 0), (64, blocks)] {
+                let mut bad = raw.clone();
+                index(&mut bad, 1, logical, child);
+                seal(&mut bad, seed);
+                assert!(
+                    extent_node::parse_block(&bad, blocks, BlockChecksum::Crc32c(seed)).is_none()
+                );
+            }
+        }
+        let mut small = header(size, 0, 2, 2);
+        small[12..24].copy_from_slice(&first);
+        small[24..36].copy_from_slice(&second);
+        seal(&mut small, seed);
+        assert!(extent_node::parse_block(&small, blocks, BlockChecksum::Crc32c(seed)).is_some());
+    }
+    for depth in 1..=5 {
+        let mut raw = header(60, depth, 2, 4);
+        index(&mut raw, 0, 0, physical);
+        index(&mut raw, 1, 64, physical + 5);
+        assert!(extent_node::parse_inline_root(&raw, blocks).is_some());
+        assert!(extent_node::parse_block(&raw, blocks, BlockChecksum::Legacy).is_none());
+    }
+    let img = image();
+    let (sb, group, _) = metadata(&img);
+    for number in [2, 8, 11, 12] {
+        let raw = &inode_bytes(&img, group.inode_table, number)[40..100];
+        assert!(extent_node::parse_inline_root(raw, sb.blocks() as u64).is_some());
+    }
+    for length in [0usize, 59, 61, 1023, 65537] {
+        assert!(
+            extent_node::parse_block(&vec![0; length], blocks, BlockChecksum::Legacy).is_none()
+        );
+    }
+}
+
+#[test]
 fn codecs_handle_extremes_and_crc_streaming() {
     for v in [0, 1, 255, 256, 65535, 65536, 0x89abcdef, u32::MAX] {
         assert_eq!(

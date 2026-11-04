@@ -100,7 +100,9 @@
     "src/recovery_admission.rs",
     "src/block_range.rs",
     "src/extent_span.rs",
-    "src/block_lifetime.rs"
+    "src/block_lifetime.rs",
+    "src/block_size.rs",
+    "src/extent_node.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -611,6 +613,13 @@
     "extent_span::encode",
     "extent_span::split",
     "extent_span::parse",
-    "extent_span::merge"
+    "extent_span::merge",
+    "block_size::valid",
+    "extent_node::header_fields",
+    "extent_node::raw",
+    "extent_node::leaf_extent",
+    "extent_node::index_entry",
+    "extent_node::parse_inline_root",
+    "extent_node::parse_block"
   ]
 }

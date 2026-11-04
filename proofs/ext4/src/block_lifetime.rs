@@ -21,7 +21,7 @@ pub struct State {
 }
 
 pub open spec fn valid_block_size(bytes: u32) -> bool {
-    bytes == 1024 || bytes == 2048 || bytes == 4096 || bytes == 8192 || bytes == 16384 || bytes == 32768 || bytes == 65536
+    crate::block_size::accepted(bytes as nat)
 }
 
 pub open spec fn zeros(bytes: u32) -> Seq<u8> { Seq::new(bytes as nat, |i: int| 0u8) }

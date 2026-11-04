@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "license": "MPL-2.0",
-  "recorded_at": "2026-11-04T02:19:02.906268+00:00",
+  "recorded_at": "2026-11-04T02:36:06.912191+00:00",
   "scope": "Checked host core and specified abstract machines; not a complete or kernel-integrated ext4 filesystem",
   "verifier_version": {
     "verus": {
@@ -19,7 +19,7 @@
     "encountered-error": false,
     "encountered-vir-error": false,
     "success": true,
-    "verified": 709,
+    "verified": 722,
     "errors": 0,
     "is-verifying-entire-crate": true
   },
@@ -31,7 +31,7 @@
     "--crate-type=rlib"
   ],
   "source_sha256": {
-    "src/model.rs": "d29ca50d31accf7b0c3c1a19130d021d30399c4d805466ffd352d7e1ffbafccc",
+    "src/model.rs": "b17662ec860799969f2ea27c3c8d26a0456d61c4903cd4f8b5cb3900a43a2746",
     "src/redo.rs": "e964baa83ca170c3cc60dbc8df4bfc470a81549ac23a5cfe4526a9cb0edb7e7f",
     "src/journal.rs": "eef5dcc269f81cbc1c7e8c6a4daf0a58cf7015423657a9cfe1f0fff186b91834",
     "src/lease.rs": "37358276a3719454ddeaf16177a2ce058b5e382c57b0609cea97031da084b1aa",
@@ -114,9 +114,11 @@
     "src/recovery_admission.rs": "02999edfc1761994b65c549cfc96763bf4ada0cfda9c6188e6ee017046263392",
     "src/block_range.rs": "a6e3533805cb938ffd1b2677a7bfa975560f85fb9bb5429497e255ba440e1b0c",
     "src/extent_span.rs": "c5be075b23c101c6566e74f8fa6d277fb50ab7e1ff4d6a1cf6c169b2b4b5dadf",
-    "src/block_lifetime.rs": "af9bb37afd4dae722685e3f5ca1e450bd6e00674d25322f41218fad38d5623e4"
+    "src/block_lifetime.rs": "c6c9dbee3dbc2ee81867f0906704d2ee799c7a56db157df5b60b54b800cb1a15",
+    "src/block_size.rs": "83f09fc12aeca41e19756e35e2fe4893acdd63a5d3fef297ae90fb066b200cb6",
+    "src/extent_node.rs": "4944f6b585798d4926334948af583bec44481e83b1f67ee4f2e335e954bcf43f"
   },
-  "lock_sha256": "de399f9d5061154d4c560ecdebd8913f2ef1370a5320cd55b23efba156a277a3",
+  "lock_sha256": "13efb0f4287f11b9964439929d788702aafe8a9d50dbccbcd5058f962e1b2869",
   "runner_sha256": "de6b473ab50632068de9e7fc619591c7b4d5afbc0058a1fcd7f946c0198beb91",
   "named_proof_coverage": [
     "access::override_cannot_execute_a_nonexecutable_regular_file",
@@ -412,6 +414,7 @@
     "block_range::new",
     "block_range::split",
     "block_range::start",
+    "block_size::valid",
     "bootstrap::capture_journal",
     "bootstrap::group_count",
     "bootstrap::journal_inode_block",
@@ -465,6 +468,12 @@
     "extent::resolve",
     "extent::valid",
     "extent::validate_inline_root",
+    "extent_node::header_fields",
+    "extent_node::index_entry",
+    "extent_node::leaf_extent",
+    "extent_node::parse_block",
+    "extent_node::parse_inline_root",
+    "extent_node::raw",
     "extent_span::encode",
     "extent_span::info",
     "extent_span::merge",
@@ -623,14 +632,14 @@
     "write_io::pending_command",
     "write_io::prepare"
   ],
-  "host_library_sha256": "2ee1a40c8f9197352e30f4ea3c536067b7b3d857fc2e9b2ba462224980df7b6e",
+  "host_library_sha256": "6716a6e84ff276cb3687ae2a9ee293cf1559e0813fd6f76fd94f92be5245b5cd",
   "compatibility": {
     "schema": 1,
     "status": "passed",
     "scope": "host interoperability tests, not formal proof",
     "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
-    "proof_artifact_sha256": "2ee1a40c8f9197352e30f4ea3c536067b7b3d857fc2e9b2ba462224980df7b6e",
-    "image_sha256": "03642802426657059a69acfab6e77abab3ddc477cc06afe70a3f6e7fa254603e",
+    "proof_artifact_sha256": "6716a6e84ff276cb3687ae2a9ee293cf1559e0813fd6f76fd94f92be5245b5cd",
+    "image_sha256": "f8cf86da785cfd6f0261e9dd51c36b7436f947ef1c0631aef62286f72898b7fd",
     "request_boundary_rejections": [
       "reuse_request",
       "redirect_completion",
@@ -644,11 +653,11 @@
     ],
     "compatibility_runner_sha256": "2f6f5b5a4aec23fb701df2be9f42ce64a9c8a9cbea23a212ea44ac36fd39e866",
     "test_source_sha256": {
-      "compat": "c45e49595fc5387d494382d56d3c9d86ade54954c28fe2da0af2c81466a7ecaf",
+      "compat": "6dbffb40c261f0c52472ef83d83353784e1ebffbe42f254eaddb0b8e233315bf",
       "journal": "249e839c4d5197df757c39066cf518cfa98c2695dc5396e03688138d9b9cec9e"
     }
   },
-  "compatibility_test_count": 39,
+  "compatibility_test_count": 40,
   "e2fsprogs_version": "1.47.0",
   "negative_gate_checks": {
     "status": "passed",
@@ -706,5 +715,6 @@
   "recovery_image_admission": "checked_same_source_bootstrap_selected_homes_and_retired_tail_shadow_complete_allocation_namespace_validation_exact_bootstrap_identity_and_journal_mapping_preserved_through_owned_dispatch_abort_completion_no_kernel_mount_or_driver_claim",
   "wide_block_intervals": "checked_64_bit_overflow_safe_bounds_membership_disjointness_and_exact_split_partition_descriptions_not_capabilities",
   "wide_extent_intervals": "checked_Linux_48_bit_start_codec_64_bit_physical_arithmetic_written_unwritten_lengths_reserved_terminal_logical_block_and_pointwise_mapping_preservation_on_split_and_merge_no_tree_or_allocation_authority",
-  "concurrent_block_lifetime_model": "checked_all_finite_enabled_interleavings_shared_read_pins_per_block_writer_leases_volume_and_allocation_epochs_retired_IDs_stale_reacquisition_zeroing_publication_reuse_disjoint_write_commutation_nonempty_examples_1_to_64_KiB_runtime_extent_DMA_journal_refinement_open"
+  "concurrent_block_lifetime_model": "checked_all_finite_enabled_interleavings_shared_read_pins_per_block_writer_leases_volume_and_allocation_epochs_retired_IDs_stale_reacquisition_zeroing_publication_reuse_disjoint_write_commutation_nonempty_examples_1_to_64_KiB_runtime_extent_DMA_journal_refinement_open",
+  "local_extent_nodes": "checked_total_inline_and_external_1_to_64_KiB_depth_0_to_5_48_bit_children_header_capacity_ordering_leaf_intervals_and_eh_max_checksum_domain_legacy_mode_source_seed_and_complete_tree_ownership_refinement_open"
 }
