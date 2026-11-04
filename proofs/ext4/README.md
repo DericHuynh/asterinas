@@ -9,9 +9,9 @@ and a [concurrent block/extent/transaction protocol](CONCURRENCY.md).
 It is not a complete filesystem and is not registered with the kernel VFS.
 No mount or filesystem write path is enabled.
 
-The pinned Verus run checks **856 obligations with zero errors**, including
-290 named proof functions and 293 named executable functions.
-71 host interoperability/regression tests pass on Linux-created metadata.
+The pinned Verus run checks **890 obligations with zero errors**, including
+299 named proof functions and 307 named executable functions.
+76 host interoperability/regression tests pass on Linux-created metadata.
 [Proof status](proof-status.json) and [recorded evidence](verification-evidence.json)
 state the exact scope; tests do not discharge formal obligations.
 
@@ -59,6 +59,7 @@ state the exact scope; tests do not discharge formal obligations.
 | `recovery_io.rs`, `recovery_profile.rs`, `recovery_device.rs`, `recovery_closure.rs` | Owned immutable recovery command protocol, partition-confined emitted images, preserved scan certificates, checked sufficient preparation admission, stale/duplicate report rejection, sticky abort, two flushes, finite failure-free completion; terminal-ID recovery without allocating a fresh epoch; byte-valued persistence refinement, unchanged committed input before retirement, and admission preserved through arbitrary finite recovery crashes under an explicit 4 KiB atomicity contract. |
 | `recovery_request.rs` | An outstanding request owns its exact recovery machine; completion consumes that object. External callers cannot forge/reuse requests or redirect a completion using a recycled numeric ID. |
 | `transaction.rs`, `transaction_refinement.rs` | Owned unique after-images; exact canonical transaction encoding; concrete journal-map witness; returned scans recover every encoded original image. A candidate patch is not filesystem authority. |
+| `edit_handles.rs`, `edit_schedule.rs` | Sorted target/credit reservation, disjoint borrowed mutable handles, exact staged snapshots, sticky abort, consuming close/freeze and sealed canonical encoder composition. Every finite slot interleaving preserves invariants; disjoint events commute and retired slots cannot reopen. See [edit handles](EDIT_HANDLES.md). Shared journal space, filesystem operations, overlapping commit/checkpoint and CortenMM/runtime refinement remain open. |
 | `journal_view.rs` | Physical block-map projection equals scanner bytes; equal journal blocks have equal snapshots; a journal write splices exactly one image; nonjournal writes preserve the snapshot. |
 | `write_protocol.rs`, `write_io.rs` | Conservative serial dirty/activation/log/commit/checkpoint/retirement commands, six fences, owned requests, sticky abort, partition confinement and exact local preparation admission. |
 | `freshness.rs`, `write_device.rs`, `write_media.rs`, `write_recognition.rs`, `write_admission.rs`, `write_recovery.rs` | All finite ledger interleavings; exact per-event atomic-block byte refinement; finite flush refinement; fresh commit recognition without a checksum identity premise; before/after home-byte guarantees for actual scan plus recovery, safe tail clearing and finite failure-free success under the declared device contract. |

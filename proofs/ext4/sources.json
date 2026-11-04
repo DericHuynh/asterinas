@@ -208,6 +208,24 @@
       "url": "https://github.com/asterinas/asterinas/blob/e57e69819c5df349e1743a2c06578fb500c39890/ostd/src/sync/rwmutex.rs",
       "blob_sha": "f6e0375a8286aa6f5a16132631176720047e600a",
       "review_scope": "Sleeping shared/exclusive guards and wait queue semantics; not imported as a proved lock"
+    },
+    {
+      "path": "fs/jbd2/transaction.c",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/jbd2/transaction.c",
+      "blob_sha": "dca4b5d8aaaa3e1505b09fab42eb45bb201a8db8",
+      "review_scope": "handle start/stop, T_RUNNING admission, credits and live-update accounting; reference for bounded borrowed edit batches, not an imported implementation"
+    },
+    {
+      "path": "source/vstd/std_specs/slice.rs",
+      "url": "https://github.com/verus-lang/verus/blob/8bf68ee741df833ea5d0fe6a2255126fdea87e47/source/vstd/std_specs/slice.rs",
+      "blob_sha": "e51cb4c9ac98e9bd9c108d34c228408a60d0570c",
+      "review_scope": "pinned split_at_mut, mutable range indexing fixed final lengths and parent composition, and reverse specifications used by checked borrowed edit handles"
+    },
+    {
+      "path": "source/vstd/std_specs/vec.rs",
+      "url": "https://github.com/verus-lang/verus/blob/8bf68ee741df833ea5d0fe6a2255126fdea87e47/source/vstd/std_specs/vec.rs",
+      "blob_sha": "8ae237a21db0790f1fe82976fbdb96068272c03e",
+      "review_scope": "pinned Vec as_mut_slice, pop, push and element-reference models used by checked borrowed edit handles"
     }
   ]
 }

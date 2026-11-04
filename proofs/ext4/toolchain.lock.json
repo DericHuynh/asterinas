@@ -111,7 +111,9 @@
     "src/inode_size.rs",
     "src/inode_blocks.rs",
     "src/group_fields.rs",
-    "src/block_bitmap.rs"
+    "src/block_bitmap.rs",
+    "src/edit_handles.rs",
+    "src/edit_schedule.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -403,7 +405,16 @@
     "group_metadata::an_uninitialized_group_has_no_allocated_inode",
     "allocated_inode::a_lazy_group_cannot_make_an_inode_live",
     "block_bitmap::every_canonical_bit_has_the_exact_reserved_or_padding_meaning",
-    "block_bitmap::every_set_real_bit_has_a_reserved_metadata_claim"
+    "block_bitmap::every_set_real_bit_has_a_reserved_metadata_claim",
+    "edit_handles::closed_selection_has_bounded_disjoint_reserved_images",
+    "edit_schedule::a_slot_transition_preserves_its_target_and_image_domain",
+    "edit_schedule::every_edit_event_preserves_reservations_and_isolation",
+    "edit_schedule::distinct_slot_events_commute",
+    "edit_schedule::retired_slots_cannot_change_or_reopen",
+    "edit_schedule::every_finite_edit_interleaving_preserves_invariants",
+    "edit_schedule::frozen_selection_retains_only_reserved_targets",
+    "edit_schedule::an_open_or_aborted_slot_blocks_freezing",
+    "edit_schedule::nonempty_two_worker_close_and_freeze_example"
   ],
   "required_flags": [
     "--no-cheating",
@@ -704,6 +715,20 @@
     "group::parse_with_features",
     "group_index::flex_groups",
     "group_claims::reserve_with_features",
-    "block_bitmap::synthesize_with_features"
+    "block_bitmap::synthesize_with_features",
+    "edit_handles::reserved_count",
+    "edit_handles::borrow_parts",
+    "edit_handles::freeze",
+    "edit_handles::frozen_count",
+    "edit_handles::into_images",
+    "edit_handles::encode",
+    "edit_handles::part_count",
+    "edit_handles::partition",
+    "edit_handles::handle_at",
+    "edit_handles::target",
+    "edit_handles::stage",
+    "edit_handles::close",
+    "edit_handles::abort",
+    "edit_handles::reserve"
   ]
 }
