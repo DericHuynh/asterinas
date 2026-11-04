@@ -231,6 +231,34 @@ impl PatchSet {
     }
 
     pub fn into_images(self) -> (r: Vec<AfterImage>) ensures transaction::images(r@) == self.view() { self.images }
+
+    pub fn upsert(self, block: u32, bytes: &[u8]) -> (r: Result<Self, Self>)
+        ensures match r {
+            Ok(next) => next.wf() && (exists|position: int| 0 <= position < self.view().len()
+                && self.view()[position].block == block
+                && next.view() == self.view().update(position, ImageView { block, image: bytes@ }))
+                || next.wf() && (exists|position: int| 0 <= position <= self.view().len()
+                    && next.view() == self.view().insert(position, ImageView { block, image: bytes@ })),
+            Err(original) => original.view() == self.view() && (bytes.len() != 4096
+                || self.view().len() == MAX_PATCHES && selected(self.view(), block as int).is_none()),
+        },
+    {
+        proof { use_type_invariant(&self); reveal(valid); }
+        if bytes.len() != 4096 { return Err(self); }
+        match self.position(block) {
+            Err(_) => self.insert(block, bytes),
+            Ok(index) => {
+                let next = AfterImage::capture(block, bytes).unwrap();
+                let ghost before = self.view();
+                let ghost image = next.view();
+                assert(valid(before.update(index as int, image))) by { reveal(valid); }
+                let PatchSet { mut images } = self;
+                images.set(index, next);
+                assert(transaction::images(images@) =~= before.update(index as int, image));
+                Ok(PatchSet { images })
+            },
+        }
+    }
 }
 
 pub proof fn applying_patches_preserves_the_source_length(source: Seq<u8>, patches: Seq<ImageView>)

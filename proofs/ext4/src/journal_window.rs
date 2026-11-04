@@ -307,6 +307,11 @@ impl Engine {
 
     pub fn first_sequence(&self) -> (r: u32) ensures r == self.program().first { self.plan.first }
 
+    pub fn dirty_marker(&self) -> (r: &[u8]) ensures r@ == self.program().dirty, r.len() == 4096 {
+        proof { use_type_invariant(self); reveal(valid); }
+        self.plan.dirty.as_slice()
+    }
+
     pub fn transaction_count(&self) -> (r: usize) ensures self.wf(), r == self.program().txs.len(), 0 < r <= 64 {
         proof { use_type_invariant(self); a_window_retains_its_geometry_and_bounded_counts(self.program()); }
         self.plan.txs.len()
@@ -405,7 +410,7 @@ impl Pending {
             count_at(&self.engine.plan, self.engine.state.checkpoint), Ghost(counts(self.engine.program())))
     }
 
-    pub fn request_number(&self) -> (r: u64) ensures r == self.id(), r > 0 {
+    pub fn request_number(&self) -> (r: u64) ensures r == self.id(), r == self.owner().state().request, r > 0 {
         proof { use_type_invariant(self); }
         self.id
     }

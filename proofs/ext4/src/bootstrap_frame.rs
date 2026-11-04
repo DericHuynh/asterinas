@@ -157,4 +157,22 @@ pub proof fn complete_bootstrap_block_mixtures_keep_the_same_admitted_locator(be
     the_same_locator_inputs_give_an_admissible_source(before, source);
 }
 
+/// Concurrent checkpoints can expose a primary and descriptor from different
+/// validated prefixes. Neither block needs to come from one common endpoint.
+pub proof fn independently_admitted_bootstrap_blocks_keep_the_same_locator(before: BootstrapView,
+    primary: BootstrapView, descriptors: BootstrapView, source: Seq<u8>)
+    requires bootstrap::valid(before), bootstrap::valid(primary), bootstrap::valid(descriptors),
+        same_locator_geometry(before, primary), same_locator_geometry(before, descriptors),
+        bootstrap_identity::primary_fixed(before.source.subrange(0, 4096), primary.source.subrange(0, 4096)),
+        bootstrap_identity::primary_fixed(before.source.subrange(0, 4096), descriptors.source.subrange(0, 4096)),
+        source.len() == before.source.len(), source.subrange(0, 4096) == primary.source.subrange(0, 4096),
+        source.subrange(4096, 8192) == descriptors.source.subrange(4096, 8192),
+        source.subrange(before.table as int * 4096 + 1792, before.table as int * 4096 + 2048) == bootstrap::journal_inode(before),
+    ensures bootstrap::admissible(source), same_locator_geometry(before, bootstrap::projection(source)),
+{
+    mixed_primary_keeps_the_admitted_locator_inputs(before, primary, source);
+    mixed_descriptors_keep_the_admitted_locator_inputs(before, descriptors, source);
+    the_same_locator_inputs_give_an_admissible_source(before, source);
+}
+
 }

@@ -167,6 +167,39 @@ def main():
                                      "let _ = verified_ext4::journal_window::dispatch(e, verified_ext4::journal_program::Lane::Bootstrap); "
                                      "let _ = e.finished(); }\n", "E0382"),
     })
+    misuse.update({
+        "forge_admitted_window": ("pub fn misuse(w: verified_ext4::window_admission::CheckedWindow<'_, '_>) "
+                                  "{ let _ = verified_ext4::window_admission::CheckedWindow { ..w }; }\n", "E0451"),
+        "replace_admitted_window_engine": ("pub fn misuse(mut w: verified_ext4::window_admission::CheckedWindow<'_, '_>, "
+                                           "engine: verified_ext4::journal_window::Engine) { w.engine = engine; }\n", "E0616"),
+        "extract_admitted_window_engine": ("pub fn misuse(w: verified_ext4::window_admission::CheckedWindow<'_, '_>) "
+                                           "{ let _ = w.engine; }\n", "E0616"),
+        "replace_admitted_window_source": ("pub fn misuse<'s, 'a>(mut w: verified_ext4::window_admission::CheckedWindow<'s, 'a>, "
+                                           "source: &'s verified_ext4::snapshot::Snapshot<'a>) { w.source = source; }\n", "E0616"),
+        "forge_admitted_window_pending": ("pub fn misuse(p: verified_ext4::window_admission::Pending<'_, '_>) "
+                                          "{ let _ = verified_ext4::window_admission::Pending { ..p }; }\n", "E0451"),
+        "replace_admitted_window_pending": ("pub fn misuse(mut p: verified_ext4::window_admission::Pending<'_, '_>, "
+                                            "raw: verified_ext4::journal_window::Pending) { p.pending = raw; }\n", "E0616"),
+        "reuse_admitted_window_completion": ("pub fn misuse(p: verified_ext4::window_admission::Pending<'_, '_>) { "
+                                             "let _ = p.finish_pending(verified_ext4::recovery_request::Completion::Succeeded); "
+                                             "let _ = p.finish_pending(verified_ext4::recovery_request::Completion::Succeeded); }\n", "E0382"),
+        "reuse_dispatched_admitted_window": ("pub fn misuse(w: verified_ext4::window_admission::CheckedWindow<'_, '_>) "
+                                             "{ let _ = w.dispatch(verified_ext4::journal_program::Lane::Bootstrap); let _ = w.finished(); }\n", "E0382"),
+        "mutate_admitted_window_bytes": ("pub fn misuse(p: verified_ext4::window_admission::Pending<'_, '_>) { "
+                                         "if let verified_ext4::recovery_io::Command::Write { image, .. } = p.pending_command() "
+                                         "{ image[0] = 1; } }\n", "E0594"),
+        "finish_borrowed_admitted_window": ("pub fn misuse(p: verified_ext4::window_admission::Pending<'_, '_>) { "
+                                            "let command = p.pending_command(); "
+                                            "let _ = p.finish_pending(verified_ext4::recovery_request::Completion::Succeeded); "
+                                            "if let verified_ext4::recovery_io::Command::Write { image, .. } = command "
+                                            "{ let _ = image.len(); } }\n", "E0505"),
+    })
+    misuse.update({
+        "mutate_admitted_window_source_bytes": ("pub fn misuse(mut bytes: Vec<u8>, versions: &[verified_ext4::journal_queue::FrozenVersion]) { "
+                                               "let source = verified_ext4::snapshot::Snapshot::from_bytes(&bytes); "
+                                               "let window = verified_ext4::window_admission::prepare(&source, versions).unwrap(); "
+                                               "bytes[0] = 1; let _ = window.finished(); }\n", "E0502"),
+    })
     for name, (source, code) in misuse.items():
         path = BUILD / (name + ".rs")
         path.write_text(source)

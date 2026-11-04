@@ -148,7 +148,10 @@
     "src/window_recovery_profile.rs",
     "src/window_redo.rs",
     "src/window_recovery.rs",
-    "src/window_repeated_recovery.rs"
+    "src/window_repeated_recovery.rs",
+    "src/window_prefix.rs",
+    "src/window_admission.rs",
+    "src/window_bootstrap.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -625,7 +628,20 @@
     "window_recovery::successful_actual_recovery_from_every_window_cut_has_exact_prefix_bytes",
     "window_recovery::every_finite_lane_and_cache_interleaving_recovers_a_complete_acknowledged_prefix",
     "window_repeated_recovery::every_finite_recovery_crash_history_preserves_the_window_recovery_target",
-    "window_repeated_recovery::successful_recovery_after_any_finite_crash_history_has_exact_window_prefix_bytes"
+    "window_repeated_recovery::successful_recovery_after_any_finite_crash_history_has_exact_window_prefix_bytes",
+    "window_prefix::cumulative_prefixes_keep_the_exact_partition_length",
+    "window_prefix::upserting_an_owned_image_is_exactly_one_shadow_block_update",
+    "bootstrap_frame::independently_admitted_bootstrap_blocks_keep_the_same_locator",
+    "window_prefix::a_checkpoint_home_image_is_exactly_its_complete_prefix_block",
+    "window_bootstrap::each_admitted_prefix_has_a_complete_filesystem_and_the_same_fresh_locator",
+    "window_bootstrap::an_admitted_source_initializes_the_exact_window_device_context",
+    "window_bootstrap::each_non_journal_cut_block_is_one_complete_admitted_variant",
+    "window_bootstrap::every_admitted_window_cut_has_complete_fresh_bootstrap_discovery",
+    "window_bootstrap::every_finite_admitted_window_interleaving_keeps_fresh_bootstrap_discovery",
+    "window_bootstrap::fresh_bootstrap_scans_the_exact_actual_window_journal",
+    "window_bootstrap::an_admitted_cold_recovery_uses_fresh_discovery_and_validates_its_complete_result",
+    "window_bootstrap::every_crash_during_admitted_cold_recovery_keeps_the_original_window_locator",
+    "window_bootstrap::successful_admitted_cold_recovery_has_the_exact_complete_filesystem_image"
   ],
   "required_flags": [
     "--no-cheating",
@@ -998,6 +1014,21 @@
     "journal_window::prepare",
     "journal_window::operation",
     "journal_window::request_number",
-    "journal_window::pending_command"
+    "journal_window::pending_command",
+    "patch_set::upsert",
+    "journal_window::dirty_marker",
+    "window_admission::source_snapshot",
+    "window_admission::engine_ref",
+    "window_admission::progress",
+    "window_admission::finished",
+    "window_admission::can_dispatch",
+    "window_admission::abort",
+    "window_admission::dispatch",
+    "window_admission::operation",
+    "window_admission::request_number",
+    "window_admission::pending_command",
+    "window_admission::abort_pending",
+    "window_admission::finish_pending",
+    "window_admission::prepare"
   ]
 }
