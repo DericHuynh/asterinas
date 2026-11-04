@@ -3,13 +3,15 @@
 # Ext4 core and Verus proofs for Asterinas
 
 This package implements and verifies part of an independent, safe Rust
-implementation of a **Linux-compatible ext4 subset**.
+implementation of Linux-compatible ext4. The implemented profile is still a
+subset; the expanded target includes [full feature coverage](FEATURE_COVERAGE.md)
+and a [concurrent block/extent/transaction protocol](CONCURRENCY.md).
 It is not a complete filesystem and is not registered with the kernel VFS.
 No mount or filesystem write path is enabled.
 
-The pinned Verus run checks **666 obligations with zero errors**, including
-242 named proof functions and 224 named executable functions.
-37 host interoperability/regression tests pass on Linux-created metadata.
+The pinned Verus run checks **683 obligations with zero errors**, including
+244 named proof functions and 237 named executable functions.
+39 host interoperability/regression tests pass on Linux-created metadata.
 [Proof status](proof-status.json) and [recorded evidence](verification-evidence.json)
 state the exact scope; tests do not discharge formal obligations.
 
@@ -19,6 +21,7 @@ state the exact scope; tests do not discharge formal obligations.
 | --- | --- |
 | `bytes.rs`, `crc.rs` | Total endian codecs, checked ranges, CRC32C and streaming/zero-field checksum relations. |
 | `superblock.rs`, `group.rs`, `inode.rs` | Strict profile checks, geometry/ranges, Linux metadata checksums, typed field decoding. |
+| `block_range.rs`, `extent_span.rs` | 64-bit block interval bounds, disjointness and exact split partition; Linux 48-bit physical-start codec, reserved terminal logical block and pointwise logical/physical mapping preservation under splitting. Descriptors do not establish allocation, read initialization, concurrency or full-tree admission. |
 | `extent.rs` | Leaf extent codec, initialized/unwritten lengths, logical ordering and disjointness, bounded block resolution. |
 | `directory.rs` | Bounded linear dirent parsing, filename validation, directory checksum tails. |
 | `jbd2.rs`, `journal_superblock.rs` | Header/tag codecs, UUID binding, checksum primitives, counter bounds and superblock parsing. |

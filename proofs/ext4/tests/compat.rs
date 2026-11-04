@@ -293,6 +293,97 @@ fn static_image_certificates_and_bootstrap_identity_check_different_boundaries()
 }
 
 #[test]
+fn block_ranges_handle_64_bit_limits_and_split_into_disjoint_partitions() {
+    use core::block_range::BlockRange;
+    assert!(BlockRange::new(0, 0, u64::MAX).is_none());
+    assert!(BlockRange::new(u64::MAX, 1, u64::MAX).is_none());
+    assert!(BlockRange::new(u64::MAX - 1, 2, u64::MAX).is_none());
+    let range = BlockRange::new(u64::MAX - 1024, 1024, u64::MAX).unwrap();
+    assert_eq!(range.start(), u64::MAX - 1024);
+    assert_eq!(range.length(), 1024);
+    assert_eq!(range.limit(), u64::MAX);
+    assert!(range.split(0).is_none());
+    assert!(range.split(1024).is_none());
+    assert!(range.split(u64::MAX).is_none());
+    let (a, b) = range.split(511).unwrap();
+    assert!(a.is_disjoint(&b) && b.is_disjoint(&a));
+    assert!(!range.is_disjoint(&a));
+    for offset in 0..1024 {
+        let block = range.start() + offset;
+        assert!(range.has_block(block));
+        assert!(a.has_block(block) ^ b.has_block(block));
+    }
+    for block in [0, range.start() - 1, u64::MAX] {
+        assert!(!range.has_block(block));
+        assert!(!a.has_block(block) && !b.has_block(block));
+    }
+    let zero = BlockRange::new(0, 1, 1).unwrap();
+    assert!(zero.has_block(0)); // Geometry descriptions also represent block zero.
+}
+
+#[test]
+fn extent_spans_preserve_48_bit_addresses_and_every_mapping_across_splits() {
+    use core::extent_span::{self, ExtentSpan, ExtentState};
+    for physical in [1u64, 0xffff_ffff, 0x1_0000_0000, 0xffff_ffff_ffff] {
+        for (length, initialized) in [(1, true), (32768, true), (1, false), (32767, false)] {
+            let blocks = physical + length as u64;
+            let state = if initialized {
+                ExtentState::Written
+            } else {
+                ExtentState::Unwritten
+            };
+            let span = ExtentSpan::new(42, length, physical, state, blocks).unwrap();
+            let raw = span.encode().unwrap();
+            assert_eq!(&raw[6..8], &((physical >> 32) as u16).to_le_bytes());
+            assert_eq!(&raw[8..12], &(physical as u32).to_le_bytes());
+            let decoded = extent_span::parse(&raw, 0, blocks).unwrap();
+            let info = decoded.info();
+            assert_eq!(
+                (
+                    info.logical,
+                    info.length,
+                    info.physical,
+                    info.initialized,
+                    info.blocks
+                ),
+                (42, length, physical, initialized, blocks)
+            );
+            assert_eq!(decoded.physical_block(41), None);
+            assert_eq!(decoded.physical_block(42 + length), None);
+            assert_eq!(
+                decoded.physical_block(42 + length - 1),
+                Some(physical + length as u64 - 1)
+            );
+            assert!(decoded.split(0).is_none());
+            assert!(decoded.split(length).is_none());
+            if length > 1 {
+                let (left, right) = decoded.split(length / 2).unwrap();
+                assert_eq!(left.info().initialized, initialized);
+                assert_eq!(right.info().initialized, initialized);
+                for logical in 41..=42 + length {
+                    let a = left.physical_block(logical);
+                    let b = right.physical_block(logical);
+                    assert!(!(a.is_some() && b.is_some()));
+                    assert_eq!(a.or(b), decoded.physical_block(logical));
+                }
+            }
+            assert!(extent_span::parse(&raw, usize::MAX, blocks).is_none());
+            assert!(extent_span::parse(&raw[..11], 0, blocks).is_none());
+            assert!(extent_span::parse(&raw, 0, blocks - 1).is_none());
+        }
+    }
+    assert!(ExtentSpan::new(u32::MAX, 1, 1, ExtentState::Written, 2).is_none());
+    assert!(ExtentSpan::new(0, 32768, 1, ExtentState::Unwritten, 65536).is_none());
+    assert!(ExtentSpan::new(0, 1, 0, ExtentState::Written, 65536).is_none());
+    assert!(ExtentSpan::new(0, 2, u64::MAX - 1, ExtentState::Written, u64::MAX).is_none());
+    let description = ExtentSpan::new(0, 1, u64::MAX - 1, ExtentState::Written, u64::MAX).unwrap();
+    assert!(
+        description.encode().is_none(),
+        "a model range is not automatically an encodable 48-bit extent"
+    );
+}
+
+#[test]
 fn codecs_handle_extremes_and_crc_streaming() {
     for v in [0, 1, 255, 256, 65535, 65536, 0x89abcdef, u32::MAX] {
         assert_eq!(
@@ -1449,6 +1540,25 @@ fn extent_length_edges_and_unwritten_zero_semantics() {
         initialized: true,
     };
     assert!(overflow.encode(65536).is_none());
+    // Linux fs/ext4/extents.c: ext4_valid_extent rejects an exclusive end
+    // wrapping to zero, including the terminal logical block with length 1.
+    for length in [1, 2, 32768] {
+        let valid = core::extent::Extent {
+            logical: u32::MAX - length,
+            physical: 100,
+            length,
+            initialized: true,
+        };
+        let mut encoded = valid.encode(65536).unwrap();
+        assert!(core::extent::parse(&encoded, 0, 65536).is_some());
+        let invalid = core::extent::Extent {
+            logical: valid.logical + 1,
+            ..valid
+        };
+        assert!(invalid.encode(65536).is_none());
+        encoded[..4].copy_from_slice(&invalid.logical.to_le_bytes());
+        assert!(core::extent::parse(&encoded, 0, 65536).is_none());
+    }
     let mut root = [0u8; 60];
     root[0..2].copy_from_slice(&0xf30au16.to_le_bytes());
     root[2..4].copy_from_slice(&2u16.to_le_bytes());

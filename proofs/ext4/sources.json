@@ -45,7 +45,7 @@
       "path": "fs/ext4/ext4.h",
       "url": "https://github.com/torvalds/linux/blob/v7.0/fs/ext4/ext4.h",
       "blob_sha": "7617e2d454ea516fee9047366458c0bda568fddf",
-      "review_scope": "file or selected definitions"
+      "review_scope": "feature bit inventory and supported masks; block/logical limits and selected inode definitions"
     },
     {
       "path": "kernel/core/comps/block/src/lib.rs",
@@ -172,6 +172,18 @@
       "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/inode.c",
       "blob_sha": "1123d995494b588744ba47fcee88e9cd0cc992dd",
       "review_scope": "__ext4_get_inode_loc group/slot/block/offset arithmetic and inode-table validation; referenced behavior only"
+    },
+    {
+      "path": "fs/ext4/ext4_extents.h",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/ext4_extents.h",
+      "blob_sha": "ebaf7cc42430fa2c36c08dedfc6767f651431442",
+      "review_scope": "extent/index/header layouts, 48-bit physical start composition, written/unwritten length encoding and depth limit"
+    },
+    {
+      "path": "fs/ext4/extents.c",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/extents.c",
+      "blob_sha": "8cce1479be6d1e8d4f57428a0a0ed1088744e72e",
+      "review_scope": "ext4_valid_extent logical exclusive-end wrap rejection, ordered extent/index entry validation, tree header/depth/capacity checks"
     }
   ]
 }

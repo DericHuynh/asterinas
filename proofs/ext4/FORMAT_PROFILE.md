@@ -4,7 +4,9 @@
 
 Status: the following **structural parsers and canonical encoders are implemented
 and Verus-checked**.
-There is no admitted mount profile or production disk writer yet.
+There is no admitted mount profile or production disk writer yet. The expanded
+full-feature target is tracked in [FEATURE_COVERAGE.md](FEATURE_COVERAGE.md);
+this document describes only the currently admitted structural subset.
 The accepted byte structures do not certify the whole volume.
 
 ## Implemented structural subset
@@ -35,6 +37,7 @@ The accepted byte structures do not certify the whole volume.
 | Directory index | Complete canonical live-entry enumeration for all allocated directories, positive block-aligned sizes, initialized blocks, source and target inode types/generations, globally unique (directory,name) keys and exact complete lookup. At most 4096 directory blocks and the name-index limits above. Dot/parent rules, link counts and rooted topology are checked separately by the namespace certificate. |
 | Namespace certificate | Exact live-inode reference counts equal i_links_count; one dot at block 0/record 0 targets self, one dotdot at block 0/record 1 targets the live parent; root parent is self with no ordinary incoming directory link, every other directory has one ordinary incoming link matching dotdot. Finite depth ranks prove every directory reaches root. Regular file hard links allowed; directory hard links, orphaned live files and disconnected cycles rejected. Bounded nonrecursive graph traversal, depth at most 65536; no mount/VFS/recovery authority. |
 | Bootstrap journal discovery | Same-source primary superblock, group-zero descriptor and exact reserved inode 8; bounded journal capture before global allocation validation. Static layout preservation and recovered-shadow admission remain separate. |
+| Standalone wide interval helpers | Overflow-safe 64-bit block intervals and 48-bit extent-start codec with exact split mapping. These helpers do not widen whole-volume feature admission or implement extent trees. |
 | Recovery bounds | One initialized journal extent of 1024..32768 blocks; at most 4096 staged payload/revoke entries, with whole-record preflight; no transaction-ID wrap; a fully occupied ring without a proved stopping boundary is rejected. |
 
 Superblock reserved-GDT blocks and high block-count fields must be zero.

@@ -128,3 +128,14 @@ The checked composed theorem may not be used as a substitute for J-REVOKE,
 J-BOOT, D-ORDER/D-ATOMIC/D-DMA/D-QUIESCE, F-OPS/F-NAME/F-ORPHAN,
 S-LOCK/S-RECOVERY, or the remaining executable refinements.
 The full design and proof remain unfinished.
+
+## Expanded full-feature and concurrency target
+
+The target now includes full ext4 on-disk feature coverage and concurrent
+running/committing/checkpointing transactions. Existing checked theorems retain
+their original profile, serialization and device premises. The complete inventory of 40 named
+feature flags is in [FEATURE_COVERAGE.md](FEATURE_COVERAGE.md); the block,
+extent, lease, journal, publication and resize obligations C-BLOCK through
+C-FEATURES are in [CONCURRENCY.md](CONCURRENCY.md). Full feature support and
+concurrent transaction execution remain unimplemented. The wider block/extent
+descriptors and split proofs are a foundation, not their completion.

@@ -97,7 +97,9 @@
     "src/image_validation.rs",
     "src/bootstrap_identity.rs",
     "src/recovery_patch.rs",
-    "src/recovery_admission.rs"
+    "src/recovery_admission.rs",
+    "src/block_range.rs",
+    "src/extent_span.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -341,7 +343,9 @@
     "shadow_model::layering_matches_patch_application",
     "shadow_model::a_block_has_exact_selected_bytes",
     "recovery_patch::each_selected_image_is_the_exact_shadow_patch",
-    "recovery_patch::unselected_targets_have_no_shadow_patch"
+    "recovery_patch::unselected_targets_have_no_shadow_patch",
+    "block_range::split_is_an_exact_disjoint_partition",
+    "extent_span::splitting_preserves_every_mapping"
   ],
   "required_flags": [
     "--no-cheating",
@@ -573,6 +577,19 @@
     "recovery_admission::pending_command",
     "recovery_admission::abort_pending",
     "recovery_admission::finish_pending",
-    "recovery_admission::prepare"
+    "recovery_admission::prepare",
+    "block_range::new",
+    "block_range::start",
+    "block_range::length",
+    "block_range::limit",
+    "block_range::has_block",
+    "block_range::is_disjoint",
+    "block_range::split",
+    "extent_span::new",
+    "extent_span::info",
+    "extent_span::physical_block",
+    "extent_span::encode",
+    "extent_span::split",
+    "extent_span::parse"
   ]
 }

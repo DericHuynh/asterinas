@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "license": "MPL-2.0",
-  "recorded_at": "2026-11-04T01:40:56.075197+00:00",
+  "recorded_at": "2026-11-04T01:54:15.371472+00:00",
   "scope": "Checked host core and specified abstract machines; not a complete or kernel-integrated ext4 filesystem",
   "verifier_version": {
     "verus": {
@@ -19,7 +19,7 @@
     "encountered-error": false,
     "encountered-vir-error": false,
     "success": true,
-    "verified": 666,
+    "verified": 683,
     "errors": 0,
     "is-verifying-entire-crate": true
   },
@@ -31,7 +31,7 @@
     "--crate-type=rlib"
   ],
   "source_sha256": {
-    "src/model.rs": "17b1ae6162f322a6577d6cab12c9d5ca426c923ea80b53d533eb16a732949d00",
+    "src/model.rs": "9bc652810743623d8a845df58adb7dcf6d2a727f87297f4f39648b60fa170707",
     "src/redo.rs": "e964baa83ca170c3cc60dbc8df4bfc470a81549ac23a5cfe4526a9cb0edb7e7f",
     "src/journal.rs": "eef5dcc269f81cbc1c7e8c6a4daf0a58cf7015423657a9cfe1f0fff186b91834",
     "src/lease.rs": "37358276a3719454ddeaf16177a2ce058b5e382c57b0609cea97031da084b1aa",
@@ -39,7 +39,7 @@
     "src/bytes.rs": "bc7cd300cd5cb0a1c952ed21f95cbc82a274ff4e86e7f6a1a234f8cf23b35d2b",
     "src/crc.rs": "9ded90d409199506eb74450009e72e7dc94e07fb9438fa9439f15ecb7edd1891",
     "src/superblock.rs": "04ad00dc3665adae084095f328fd27e20eae4bcddaa0373cb45d1db7458e2b72",
-    "src/extent.rs": "eccf420838d08a6621b15df0666a2a9f21beccc6356522147750e752de4a1c61",
+    "src/extent.rs": "cb7f7560d12ed42a08e66cc218ad0540227f639f4cb213ded6cc95b23ad4de85",
     "src/directory.rs": "98e6ac96baa158c583a866e862df998ce0ce3d4ea86caa50fa0bedcbef97b980",
     "src/jbd2.rs": "41e608615520ad8a753de29706f2f50935c01ccdf3d9d1f074013ddcf275d313",
     "src/frozen.rs": "fc77ac2be5cf12adef82a5062f3ac479ce5ed1dc3a70905b2377c26f5a35d271",
@@ -111,9 +111,11 @@
     "src/image_validation.rs": "7323aac144673f43906b9fc26cd8759bcbd99456e347d1467056f3266eb8d8fe",
     "src/bootstrap_identity.rs": "d07f034becb57a654d7b5866975095ff884cddf846d24a60409eb999f487a706",
     "src/recovery_patch.rs": "340313f189ef3ade684fdc91b6adec4e0bff09b2cb347d316c68bb009229024e",
-    "src/recovery_admission.rs": "02999edfc1761994b65c549cfc96763bf4ada0cfda9c6188e6ee017046263392"
+    "src/recovery_admission.rs": "02999edfc1761994b65c549cfc96763bf4ada0cfda9c6188e6ee017046263392",
+    "src/block_range.rs": "a6e3533805cb938ffd1b2677a7bfa975560f85fb9bb5429497e255ba440e1b0c",
+    "src/extent_span.rs": "2374ff84c1ee9db8e9150954831037962ca3fd2313134bd8fdbec1b72263e270"
   },
-  "lock_sha256": "338ad240a83778344b11cdcfdfc824e5aad0f47e26312596bfe5c78860caa534",
+  "lock_sha256": "eeb19a21fd37a9abc79acbfa07486d859b5123745f48556c6ef343e84424fbb9",
   "runner_sha256": "de6b473ab50632068de9e7fc619591c7b4d5afbc0058a1fcd7f946c0198beb91",
   "named_proof_coverage": [
     "access::override_cannot_execute_a_nonexecutable_regular_file",
@@ -129,6 +131,7 @@
     "block_claims::occupied_preservation_keeps_mapped_claims",
     "block_claims::occupied_slot_preservation_is_transitive",
     "block_claims::two_recorded_claims_cannot_own_the_same_physical_block",
+    "block_range::split_is_an_exact_disjoint_partition",
     "bytes::splice_frame",
     "bytes::splice_word_frame",
     "crc::streaming",
@@ -142,6 +145,7 @@
     "directory_source::checked_mapping_and_records_are_the_canonical_source",
     "epoch::fresh_epoch_has_no_old_commit",
     "extent::disjoint_logical_ranges",
+    "extent_span::splitting_preserves_every_mapping",
     "file_read::an_initialized_mapping_has_exact_ownership",
     "file_read::initialized_mapping_is_unique",
     "freshness::an_encoded_payload_cannot_be_a_metadata_header",
@@ -381,6 +385,13 @@
     "block_claims::matches_bitmap",
     "block_claims::new",
     "block_claims::role_of",
+    "block_range::has_block",
+    "block_range::is_disjoint",
+    "block_range::length",
+    "block_range::limit",
+    "block_range::new",
+    "block_range::split",
+    "block_range::start",
     "bootstrap::capture_journal",
     "bootstrap::group_count",
     "bootstrap::journal_inode_block",
@@ -434,6 +445,12 @@
     "extent::resolve",
     "extent::valid",
     "extent::validate_inline_root",
+    "extent_span::encode",
+    "extent_span::info",
+    "extent_span::new",
+    "extent_span::parse",
+    "extent_span::physical_block",
+    "extent_span::split",
     "file_read::chunk",
     "file_read::resolve",
     "frozen::as_slice",
@@ -585,14 +602,14 @@
     "write_io::pending_command",
     "write_io::prepare"
   ],
-  "host_library_sha256": "ff285e3ca0109d0c6dd00172c91b0f2ecf32a9d0fecd8e92c51fd9e8abb9bb5f",
+  "host_library_sha256": "8ea3bd154e54a0ff3371f4895d9fce00a300ab063652646c279cb4046e7fab7c",
   "compatibility": {
     "schema": 1,
     "status": "passed",
     "scope": "host interoperability tests, not formal proof",
     "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
-    "proof_artifact_sha256": "ff285e3ca0109d0c6dd00172c91b0f2ecf32a9d0fecd8e92c51fd9e8abb9bb5f",
-    "image_sha256": "5fa3204966f1a55a7d29ee9bceff8eb1572b455302b3dd5d6beb1f849b6a45c4",
+    "proof_artifact_sha256": "8ea3bd154e54a0ff3371f4895d9fce00a300ab063652646c279cb4046e7fab7c",
+    "image_sha256": "e15797d4d0b5fd119cc1c9a01d18dcbc3889e9a28a4e24116dadabb919de0b98",
     "request_boundary_rejections": [
       "reuse_request",
       "redirect_completion",
@@ -606,11 +623,11 @@
     ],
     "compatibility_runner_sha256": "2f6f5b5a4aec23fb701df2be9f42ce64a9c8a9cbea23a212ea44ac36fd39e866",
     "test_source_sha256": {
-      "compat": "4915e789f139bda2dd90842811912d6286554f24929d51cdecddfd9afb20eaeb",
+      "compat": "643633a90cdc0bed59fbcd06958dc0cf96a0f9a01a811a5d11fddd80504d3b3c",
       "journal": "249e839c4d5197df757c39066cf518cfa98c2695dc5396e03688138d9b9cec9e"
     }
   },
-  "compatibility_test_count": 37,
+  "compatibility_test_count": 39,
   "e2fsprogs_version": "1.47.0",
   "negative_gate_checks": {
     "status": "passed",
@@ -665,5 +682,7 @@
   "bootstrap_bound_recovery_preparation": "checked_exact_same_source_journal_uuid_primary_layout_and_canonical_maximal_scan_certificate",
   "recovery_shadow_patch_selection": "checked_owned_sorted_patch_bijective_with_selected_latest_unrevoked_images_exact_targets_bytes_and_unselected_frame",
   "retained_static_image_certificate": "checked_actual_allocation_directory_namespace_validation_retained_immutable_source_not_mount_or_IO_authority",
-  "recovery_image_admission": "checked_same_source_bootstrap_selected_homes_and_retired_tail_shadow_complete_allocation_namespace_validation_exact_bootstrap_identity_and_journal_mapping_preserved_through_owned_dispatch_abort_completion_no_kernel_mount_or_driver_claim"
+  "recovery_image_admission": "checked_same_source_bootstrap_selected_homes_and_retired_tail_shadow_complete_allocation_namespace_validation_exact_bootstrap_identity_and_journal_mapping_preserved_through_owned_dispatch_abort_completion_no_kernel_mount_or_driver_claim",
+  "wide_block_intervals": "checked_64_bit_overflow_safe_bounds_membership_disjointness_and_exact_split_partition_descriptions_not_capabilities",
+  "wide_extent_intervals": "checked_Linux_48_bit_start_codec_64_bit_physical_arithmetic_written_unwritten_lengths_reserved_terminal_logical_block_and_pointwise_mapping_preservation_on_split_no_tree_or_allocation_authority"
 }

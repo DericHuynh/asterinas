@@ -2,20 +2,20 @@
   "schema": 1,
   "license": "MPL-2.0",
   "phase": "partial_implementation_and_checked_proofs",
-  "format_goal": "linux_compatible_ext4_subset",
+  "format_goal": "linux_compatible_ext4_full_on_disk_feature_coverage",
   "implementation_present": true,
   "full_filesystem_implementation_present": false,
   "kernel_integration_present": false,
   "writable_mount_enabled": false,
   "verification": {
     "status": "core_and_models_checked",
-    "verus_verified_units": 666,
+    "verus_verified_units": 683,
     "verification_errors": 0,
-    "checked_named_proof_functions": 242,
-    "checked_named_executable_functions": 224,
+    "checked_named_proof_functions": 244,
+    "checked_named_executable_functions": 237,
     "runner_validated": true,
     "negative_gate_checks_passed": 6,
-    "host_compatibility_tests_passed": 37,
+    "host_compatibility_tests_passed": 39,
     "evidence": "verification-evidence.json",
     "request_boundary_rejections_passed": 9
   },
@@ -77,9 +77,18 @@
     "bootstrap_bound_recovery_preparation": "checked_exact_same_source_journal_uuid_primary_layout_and_canonical_maximal_scan_certificate",
     "recovery_shadow_patch_selection": "checked_owned_sorted_patch_bijective_with_selected_latest_unrevoked_images_exact_targets_bytes_and_unselected_frame",
     "retained_static_image_certificate": "checked_actual_allocation_directory_namespace_validation_retained_immutable_source_not_mount_or_IO_authority",
-    "recovery_image_admission": "checked_same_source_bootstrap_selected_homes_and_retired_tail_shadow_complete_allocation_namespace_validation_exact_bootstrap_identity_and_journal_mapping_preserved_through_owned_dispatch_abort_completion_no_kernel_mount_or_driver_claim"
+    "recovery_image_admission": "checked_same_source_bootstrap_selected_homes_and_retired_tail_shadow_complete_allocation_namespace_validation_exact_bootstrap_identity_and_journal_mapping_preserved_through_owned_dispatch_abort_completion_no_kernel_mount_or_driver_claim",
+    "wide_block_intervals": "checked_64_bit_overflow_safe_bounds_membership_disjointness_and_exact_split_partition_descriptions_not_capabilities",
+    "wide_extent_intervals": "checked_Linux_48_bit_start_codec_64_bit_physical_arithmetic_written_unwritten_lengths_reserved_terminal_logical_block_and_pointwise_mapping_preservation_on_split_no_tree_or_allocation_authority"
   },
   "production_activation_gate": "All applicable obligations in PROOF_OBLIGATIONS.md must be discharged for the admitted profile.",
   "evidence_policy": "Only successful pinned entire-crate checking plus compilation produces a valid build report; it certifies only the declared source/model scope.",
-  "static_namespace_validation_present": true
+  "static_namespace_validation_present": true,
+  "implemented_profile": "initial_bounded_subset_FORMAT_PROFILE.md",
+  "full_feature_support_present": false,
+  "concurrent_transaction_implementation_present": false,
+  "expanded_design": [
+    "FEATURE_COVERAGE.md",
+    "CONCURRENCY.md"
+  ]
 }

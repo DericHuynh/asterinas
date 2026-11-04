@@ -143,3 +143,5 @@ pub mod bootstrap_identity;
 pub mod image_validation;
 pub mod recovery_patch;
 pub mod recovery_admission;
+pub mod block_range;
+pub mod extent_span;
