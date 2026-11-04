@@ -17,9 +17,9 @@ The accepted byte structures do not certify the whole volume.
 | Geometry | 32-bit block count, 32768 blocks/group, positive inodes/group <=32768 and divisible by 16, checked group/count/partition relationships. |
 | Feature COMPAT | Exactly HAS_JOURNAL (`0x0004`). |
 | Feature INCOMPAT | FILETYPE + EXTENTS (`0x0042`), optionally RECOVER (`0x0046`). Raw parsing surfaces RECOVER; recovery preparation requires it when the journal has a nonzero start. |
-| Feature RO_COMPAT | Exactly SPARSE_SUPER + LARGE_FILE + EXTRA_ISIZE + METADATA_CSUM (`0x0443`). |
+| Feature RO_COMPAT | SPARSE_SUPER + LARGE_FILE + EXTRA_ISIZE + METADATA_CSUM (`0x0443`), optionally HUGE_FILE (`0x044b`). |
 | Group descriptor | 32 bytes, bitmaps and inode table inside the group and locally disjoint, initialized bitmaps/table (`bg_flags=4`), bounded counters and metadata CRC32C truncation. |
-| Inode | 256 bytes, extra_isize 32, live regular file/directory, EXTENTS flag only, no ACL/xattr block, 64-bit regular-file i_size up to Linux's 2 TiB-minus-4 KiB bound without HUGE_FILE, low-only directory size with zero high field, Linux UID/GID high halves and inode CRC32C. |
+| Inode | 256 bytes, extra_isize 32, live regular file/directory, EXTENTS flag, optionally HUGE_FILE when the filesystem feature is present, no ACL/xattr block, 64-bit regular-file i_size up to Linux's 2 TiB-minus-4 KiB bound without HUGE_FILE or 16 TiB-minus-4 KiB with it, low-only directory size with zero high field, Linux UID/GID high halves and inode CRC32C. |
 | Ordinary inode extent tree | Inline root with up to four entries, external 4 KiB nodes at depth 0–5, exact parent/depth/key bounds and checksums; complete same-source metadata/data ownership census. Physical addresses must fit the bounded volume, despite the 48-bit codec. Written length up to 32768; unwritten length up to 32767; zero length rejected. |
 | Directory | Linear 4 KiB records with FILETYPE and metadata checksum tail; live entries limited to regular files/directories; no NUL or slash in a name. |
 | JBD2 superblock | Version 2, 4 KiB journal blocks, first log position 1, >=1024 journal blocks, one user, matching filesystem UUID, no stored error/dynamic copy/fast-commit blocks. |
@@ -27,7 +27,7 @@ The accepted byte structures do not certify the whole volume.
 | JBD2 records | Canonical v3 descriptors with 1..250 16-byte tags, first-tag UUID and later SAME_UUID, one terminator and checksum tail; 32-bit revoke blocks with 0..1019 records; checked full commit images and escaped payload CRCs. |
 | Allocation bitmap | Initialized 4 KiB block/inode bitmaps, LSB bit numbering, allocated padding, exact free counts; block checksum covers 4096 bytes, inode checksum covers `inodes_per_group / 8`, with the low 16 bits in 32-byte descriptors. |
 | Ownership census | Candidate census for 3..1,048,576 filesystem blocks (up to 4 GiB of 4 KiB blocks), disjoint physical claims, exact bitmap agreement and free counts. This resource bound applies to the new census component; no mount profile is enabled. |
-| Inode allocation binding | Root inode 2 and ordinary inodes >=11 use complete source-bound trees, inode generation and exact 512-byte `i_blocks` accounting for both data and external extent metadata, with zero high half and initialized directory extents. Journal inode 8 is reserved separately from file data. |
+| Inode allocation binding | Root inode 2 and ordinary inodes >=11 use complete source-bound trees, inode generation and exact 512-byte `i_blocks` accounting for both data and external extent metadata, normalizing the source 32/48-bit sector or HUGE_FILE block units; without the filesystem feature the high field stays zero. Directory extents must be initialized. Journal inode 8 is reserved separately from file data. |
 | Group source index | One immutable borrowed source; all groups in order, exact descriptor and bitmap byte provenance, aggregate free counters equal the superblock. Bounded to 32 groups; sparse-super backups reserve one superblock and one GDT block. Not a whole-volume certificate. |
 | Whole-image allocation | Complete same-source initialized-group/inode traversal; reserved inode bitmap markers 1..10 required, root inode 2 a directory, unused reserved inodes have no live mode/links/storage, no allocated inode in the declared unused table suffix, exact directory counts; metadata/journal/inode claims exactly match every valid block bitmap bit and global free counts. Namespace and recovery/mount admission remain separate. |
 | Structural host reads | Ordinary allocated inode lookup from the whole-image certificate; initialized logical mapping and source/owner/generation identity; chunks clipped to block boundaries and i_size, holes/unwritten extents return zeros. Not a VFS authorization API. |
@@ -46,7 +46,7 @@ Superblock reserved-GDT blocks and high block-count fields must be zero.
 The descriptor size is zero or 32; minimum/desired inode extra sizes are 32.
 Unknown feature masks are rejected even when Linux could ignore them.
 Indexed directories, legacy indirect block maps, inline data,
-64BIT, FLEX_BG, META_BG, BIGALLOC, huge files, encryption, verity,
+64BIT, FLEX_BG, META_BG, BIGALLOC, encryption, verity,
 external/async/fast journals and ORPHAN_FILE are outside the implemented subset.
 The target design may expand these restrictions only with corresponding proofs.
 

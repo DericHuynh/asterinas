@@ -6,7 +6,7 @@
 
 use vstd::prelude::*;
 use crate::{bitmap, block_claims::{self, Census, Claim, Slot}, bytes, crc, group,
-    group_index::{self, GroupIndex, IndexView}, group_metadata, inode, inode_claims, inode_table, extent_claims};
+    group_index::{self, GroupIndex, IndexView}, group_metadata, inode, inode_claims, inode_blocks, inode_table, extent_claims};
 
 verus! {
 
@@ -56,8 +56,8 @@ pub open spec fn ordinary_checked(v: IndexView, roles: Seq<Slot>, n: u32) -> boo
     let raw = inode_table::raw(v, n);
     &&& extent_claims::accepted(v, n)
     &&& n == 2 ==> (bytes::le16(raw, 0) as u16 & 0xf000) == 0x4000
-    &&& bytes::le16(raw, 116) == 0
-    &&& bytes::le32(raw, 28) == 8 * inode_claims::allocated(extent_claims::claims(v, n))
+    &&& !group_index::has_huge_files(v) ==> bytes::le16(raw, 116) == 0
+    &&& inode_blocks::sectors(raw, 4096, group_index::has_huge_files(v)) == 8 * inode_claims::allocated(extent_claims::claims(v, n))
     &&& block_claims::mapped_claims(roles, extent_claims::claims(v, n))
 }
 

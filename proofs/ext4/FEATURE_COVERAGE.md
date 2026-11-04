@@ -30,7 +30,7 @@ unsupported markers need Linux-compatible handling, not invented encodings.
 | RO_COMPAT | `0x0001` | `SPARSE_SUPER` | Partial: initial profile only | Backup placement over all supported group layouts |
 | RO_COMPAT | `0x0002` | `LARGE_FILE` | Partial: 64-bit regular sizes and reads in bounded profile | Source-bound high/low fields and Linux no-HUGE_FILE limits checked; other inode formats/feature combinations and mutations remain |
 | RO_COMPAT | `0x0004` | `BTREE_DIR` | Not implemented | Legacy/reserved directory marker and exact Linux acceptance semantics |
-| RO_COMPAT | `0x0008` | `HUGE_FILE` | Not implemented | 48-bit i_blocks accounting, unit changes, overflow and quota coupling |
+| RO_COMPAT | `0x0008` | `HUGE_FILE` | Partial: sizes/accounting in bounded read-only profile | Source feature and inode flag binding, 32/48-bit normalized counts, exact units/encoding and sparse limit checked; larger volumes, mutation and quota coupling remain |
 | RO_COMPAT | `0x0010` | `GDT_CSUM` | Not implemented | Legacy descriptor/bitmap checksums and lazy/uninitialized group states |
 | RO_COMPAT | `0x0020` | `DIR_NLINK` | Not implemented | Directory link overflow conventions and namespace accounting |
 | RO_COMPAT | `0x0040` | `EXTRA_ISIZE` | Partial: initial profile only | Variable inode size, extra fields and checksum coverage |

@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "license": "MPL-2.0",
-  "recorded_at": "2026-11-04T06:18:37.688448+00:00",
+  "recorded_at": "2026-11-04T06:38:33.837257+00:00",
   "scope": "Checked host core and specified abstract machines; not a complete or kernel-integrated ext4 filesystem",
   "verifier_version": {
     "verus": {
@@ -19,7 +19,7 @@
     "encountered-error": false,
     "encountered-vir-error": false,
     "success": true,
-    "verified": 801,
+    "verified": 809,
     "errors": 0,
     "is-verifying-entire-crate": true
   },
@@ -31,14 +31,14 @@
     "--crate-type=rlib"
   ],
   "source_sha256": {
-    "src/model.rs": "307f9e0463cf15e4f45976293ceddc4b23f4a396e3ce47790568eccb436689e5",
+    "src/model.rs": "16e3516fb17e7fac6b8d46feefc0df78c3c8051cb0a29cc68674a595712184bb",
     "src/redo.rs": "e964baa83ca170c3cc60dbc8df4bfc470a81549ac23a5cfe4526a9cb0edb7e7f",
     "src/journal.rs": "eef5dcc269f81cbc1c7e8c6a4daf0a58cf7015423657a9cfe1f0fff186b91834",
     "src/lease.rs": "37358276a3719454ddeaf16177a2ce058b5e382c57b0609cea97031da084b1aa",
     "src/history.rs": "33624bfc10d13c37b73af6d52446b38208ed869c31d7f9195ad239151b7a019e",
     "src/bytes.rs": "bc7cd300cd5cb0a1c952ed21f95cbc82a274ff4e86e7f6a1a234f8cf23b35d2b",
     "src/crc.rs": "9ded90d409199506eb74450009e72e7dc94e07fb9438fa9439f15ecb7edd1891",
-    "src/superblock.rs": "04ad00dc3665adae084095f328fd27e20eae4bcddaa0373cb45d1db7458e2b72",
+    "src/superblock.rs": "b666e6c80fa450be2340313216c1ce5b0a4684f833960b1c71913eafd88bbcec",
     "src/extent.rs": "cb7f7560d12ed42a08e66cc218ad0540227f639f4cb213ded6cc95b23ad4de85",
     "src/directory.rs": "98e6ac96baa158c583a866e862df998ce0ce3d4ea86caa50fa0bedcbef97b980",
     "src/jbd2.rs": "41e608615520ad8a753de29706f2f50935c01ccdf3d9d1f074013ddcf275d313",
@@ -50,7 +50,7 @@
     "src/ownership.rs": "cf06a497d7d84d590b117264fcea396d433169b3a8554de8962365308d4aaebd",
     "src/group.rs": "77b12052fd104941850fa11d10483b18993bf6831ab64859b7a6cce11fd6053a",
     "src/access.rs": "8a0ea5ca2f807438c80740e56359006f52e032c1c4fcdbdbb8039fe3c2220e1f",
-    "src/inode.rs": "01c1de1c7562bf7391f34e9bb36b1d6954b4f5b74e49be5d7c370e7f42c764e8",
+    "src/inode.rs": "2aac7d7f4747ca0da53607b141031010080085a723349c9d6339f8ddfaf5f332",
     "src/system.rs": "9fee18a8ce457db065dec5c09f13ef17e939c36c073cb604ff4838612e22208b",
     "src/descriptor.rs": "334aa73df2e0a9e9ecc9e0e8561f9157615fa9bcc99ac2bfd5cf4e5846568f06",
     "src/revoke.rs": "affe750a3c54dc7194eccf122a95ee37385e759f1228ad97af8971c405cc7a1c",
@@ -87,13 +87,13 @@
     "src/group_claims.rs": "db95c81b48e9d8c56e4682d30208fb5908dc48224f46e0512c85ef66c8731ad3",
     "src/snapshot.rs": "f98b3147751845846894da9c7fabe178c1957b071bddd99549ce8c25e95a80f9",
     "src/group_metadata.rs": "7dfb35dc3b021b9749ad22d4322d2e7aabb26a9ad4593e08d1e298a6f5e9f18d",
-    "src/group_index.rs": "6735f537dd656a047a5c1c743e808b1a876d2a0d5d27c2533221f610ac5902b1",
+    "src/group_index.rs": "b2262ef68bbf22e602e591e5b4a6b33427659f8179c82e0585afd83f6fee5390",
     "src/inode_table.rs": "9cc2d414a192524d5407ad6a32ed62c43c34b54408d4d6e2295a3115b740c3f9",
-    "src/inode_group.rs": "536d0eb13054c8199083e1d19c50794b671060298a28ecdaf2be7e41903a60e9",
+    "src/inode_group.rs": "ee0873248536a62f3ec32d3afe3243599bcf72e6a1f6718799bb327008dce6b1",
     "src/allocation_counts.rs": "dd7e5748966dec324fd174a96a3a35d6bb70929be3817e455e27fb162c0b896d",
     "src/allocation.rs": "7b040243b2628346ccf429005fc8ca20360da88ce72b40b5d9ac7fc167bd3f60",
-    "src/allocated_inode.rs": "24564f87cb1c73fd1ee7174bdb36439e8f8803b5d51cd594fdc33935b394d263",
-    "src/file_read.rs": "68ad14c284c4da5d88391bcae71a171cd9cfe6ebfc182a47d59e4ca078dd231a",
+    "src/allocated_inode.rs": "f321aeee815a9d1933ea2e48b49f1d0234ddd8c17ff10a2516260df045540c52",
+    "src/file_read.rs": "81d53fa1ddb252454539e017ccee0f53c34927a287c7c63d1bcadf5a205d8bf8",
     "src/directory_block.rs": "c082a12e593753c649f129f69de540a852cfda191bf481d440d90a81e7ce9339",
     "src/directory_file.rs": "c2c28c9bb4dabb4a1de6aa034e8ff3f4b87d68a67f0eed9f4881b9ef9302e7ce",
     "src/name_set.rs": "258cb5c328c7e73270a0d03895cbbad2376ab871fa88b5ed8e0c3b447263cada",
@@ -120,11 +120,12 @@
     "src/source_block.rs": "9edb498e7806a76f266bf6fecdda553ff002a5c83419fac445a7ba26f07b5cfa",
     "src/extent_tree.rs": "c18079ac6b75c80092cdb5d7168ca8b52f73a13fb6a938ad60f02c325828463e",
     "src/extent_tree_model.rs": "b87b5afcec7fb42ed2b1dbc3da1365b8d64a14c55dc8fa0f902dab317ebe9c25",
-    "src/extent_claims.rs": "975fb2e5cfd92e787177354686716834ea92c1f43df98de2e51090f13cc8f9db",
+    "src/extent_claims.rs": "d3a5714ebc8e863caf56b098e0a16add972bfad07130d390d412d9009e16fb06",
     "src/extent_ownership.rs": "c0d636390b2d2c62e84ee378143742881f18e215a4179aa31da78165a9ae82e4",
-    "src/inode_size.rs": "b6dd7611df74db2850884c9150b1aaaf45f95b3612b462087b3ebf14b803ea6c"
+    "src/inode_size.rs": "b6dd7611df74db2850884c9150b1aaaf45f95b3612b462087b3ebf14b803ea6c",
+    "src/inode_blocks.rs": "f79664689eef5fb9e82bfbabbffd5a0ae654d09dbda2839517144c5727d01185"
   },
-  "lock_sha256": "5fd019067a2cd97c5c5e4f467afb9ee695bd5165f78cf57bf3134c8f93a51a46",
+  "lock_sha256": "be92fa286a8a6c4ab39932d8eb79ee8566837144f740d2b1c2b3985ecf24e84a",
   "runner_sha256": "de6b473ab50632068de9e7fc619591c7b4d5afbc0058a1fcd7f946c0198beb91",
   "named_proof_coverage": [
     "access::override_cannot_execute_a_nonexecutable_regular_file",
@@ -534,6 +535,7 @@
     "group_claims::reserve",
     "group_index::get",
     "group_index::group_count",
+    "group_index::huge_files",
     "group_index::parameters",
     "group_index::parse",
     "group_index::source",
@@ -549,6 +551,9 @@
     "inode::inode_seed",
     "inode::parse",
     "inode::parse_metadata",
+    "inode::parse_metadata_with_features",
+    "inode_blocks::decode",
+    "inode_blocks::encode",
     "inode_claims::collect",
     "inode_claims::reserve_journal",
     "inode_group::collect",
@@ -683,14 +688,14 @@
     "write_io::pending_command",
     "write_io::prepare"
   ],
-  "host_library_sha256": "74f1a623512a77c224e1b82ae699202d9e379594acd2bf755c805a1c48574dca",
+  "host_library_sha256": "31f14135603da8b400eea24a2499786dd98109292c180d5db02ee009a3846e82",
   "compatibility": {
     "schema": 1,
     "status": "passed",
     "scope": "host interoperability tests, not formal proof",
     "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
-    "proof_artifact_sha256": "74f1a623512a77c224e1b82ae699202d9e379594acd2bf755c805a1c48574dca",
-    "image_sha256": "d4a3644ef261297186c73877181035aa296d3b65d1382f8c11bb8efc248a9a16",
+    "proof_artifact_sha256": "31f14135603da8b400eea24a2499786dd98109292c180d5db02ee009a3846e82",
+    "image_sha256": "d0df4ee7671dfa6238fae396ae5304b9ccb4878b0857296810c7147fd592084b",
     "request_boundary_rejections": [
       "reuse_request",
       "redirect_completion",
@@ -708,11 +713,11 @@
     ],
     "compatibility_runner_sha256": "554f942df0d87b2011abde804645a1189e65176ece8869cddde106a42cc57dc2",
     "test_source_sha256": {
-      "compat": "55e8c17a3ba2326fac5504c65a4543849bd54e1f98acfedc3893f5087bdef5d5",
+      "compat": "e6a664c56c9b8cd9af51b3b3c46ac4cb2e0c722e0f280424d5fa25e6e5616714",
       "journal": "249e839c4d5197df757c39066cf518cfa98c2695dc5396e03688138d9b9cec9e"
     }
   },
-  "compatibility_test_count": 53,
+  "compatibility_test_count": 57,
   "e2fsprogs_version": "1.47.0",
   "negative_gate_checks": {
     "status": "passed",
