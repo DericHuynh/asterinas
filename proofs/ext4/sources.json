@@ -226,6 +226,18 @@
       "url": "https://github.com/verus-lang/verus/blob/8bf68ee741df833ea5d0fe6a2255126fdea87e47/source/vstd/std_specs/vec.rs",
       "blob_sha": "8ae237a21db0790f1fe82976fbdb96068272c03e",
       "review_scope": "pinned Vec as_mut_slice, pop, push and element-reference models used by checked borrowed edit handles"
+    },
+    {
+      "path": "source/vstd/seq_lib.rs",
+      "url": "https://github.com/verus-lang/verus/blob/8bf68ee741df833ea5d0fe6a2255126fdea87e47/source/vstd/seq_lib.rs",
+      "blob_sha": "68b7f9e643c29a161d0c21cf6f7f6eb2c3c2e574",
+      "review_scope": "pinned no-duplicate concatenation, finite sequence membership/set projection and unique sequence-to-set cardinality used to bound disjoint physical claim lengths"
+    },
+    {
+      "path": "source/vstd/set_lib.rs",
+      "url": "https://github.com/verus-lang/verus/blob/8bf68ee741df833ea5d0fe6a2255126fdea87e47/source/vstd/set_lib.rs",
+      "blob_sha": "eb078cf700c7d501b3c285c091b1ec0593a92e75",
+      "review_scope": "pinned finite-set subset cardinality used to bound claimed blocks by the physical volume"
     }
   ]
 }
