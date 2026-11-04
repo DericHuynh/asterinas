@@ -5441,7 +5441,7 @@ mod feature_coverage {
             let incompat = 0x42 | (1u32 << bit);
             assert_eq!(
                 feature_policy::incompatible_flags(incompat),
-                matches!(bit, 1 | 2 | 6 | 7 | 9 | 13),
+                matches!(bit, 1 | 2 | 6 | 7 | 9 | 13 | 14),
                 "INCOMPAT bit {bit}"
             );
             let ro = 0x443 | (1u32 << bit);
@@ -6076,7 +6076,7 @@ mod htree_indexes {
     }
 
     #[test]
-    fn linux_e2fsck_created_htree_root_matches_crc_edges_and_leaf_records() {
+    fn linux_indexed_directories_validate_source_names_ranges_namespace_and_deep_largedir_writes() {
         let mkfs = std::env::var("MKE2FS_BIN").unwrap_or_else(|_| "mke2fs".into());
         let debugfs = std::env::var("DEBUGFS_BIN").unwrap_or_else(|_| "debugfs".into());
         let fsck = std::env::var("E2FSCK_BIN").unwrap_or_else(|_| "e2fsck".into());
@@ -6103,12 +6103,15 @@ mod htree_indexes {
             false,
         );
         std::fs::write("build/htree-empty.bin", b"").unwrap();
+        std::fs::write("build/htree-payload.bin", [0x3au8; 128]).unwrap();
         let mut script = String::from("mkdir /indexed\n");
         for n in 0..300 {
-            script += &format!(
-                "write build/htree-empty.bin /indexed/{n:04}-{}\n",
-                "x".repeat(210)
-            );
+            let input = if n == 0 {
+                "build/htree-payload.bin"
+            } else {
+                "build/htree-empty.bin"
+            };
+            script += &format!("write {input} /indexed/{n:04}-{}\n", "x".repeat(210));
         }
         std::fs::write("build/htree-debugfs.txt", script).unwrap();
         command(
@@ -6233,9 +6236,147 @@ mod htree_indexes {
             core::allocation::parse(core::snapshot::Snapshot::from_bytes(&no_feature)).is_none(),
             "INDEX inode requires source DIR_INDEX feature"
         );
-        for file in [path, "build/htree-empty.bin", "build/htree-debugfs.txt"] {
+        let deep = deepen_indexed_image(&img, table, physical, 12, blocks, seed);
+        let deep_path = "build/htree-linux-deep.img";
+        std::fs::write(deep_path, &deep).unwrap();
+        command(&fsck, &["-fn", deep_path], false);
+        let deep_volume =
+            core::allocation::parse(core::snapshot::Snapshot::from_bytes(&deep)).unwrap();
+        let deep_node = core::allocated_inode::get(&deep_volume, 12).unwrap();
+        assert!(core::directory_htree::validate(&deep_node));
+        let deep_catalog = core::directory_index::build(&deep_volume).unwrap();
+        let deep_namespace = core::namespace::validate(&deep_catalog).unwrap();
+        let mut deep_source = Vec::new();
+        for logical in 0..blocks + 2 {
+            match core::file_read::chunk(&deep_node, logical as u64 * 4096, 4096) {
+                core::file_read::Chunk::Data(raw) => deep_source.push(raw),
+                _ => panic!("every deep directory block must be initialized"),
+            }
+        }
+        for n in 0..300 {
+            let name = format!("{n:04}-{}", "x".repeat(210));
+            assert_eq!(
+                linux_frame_walk(
+                    &deep_source,
+                    inodes,
+                    seed,
+                    hash_seed,
+                    le32(&deep, 1376) & 2 != 0,
+                    name.as_bytes()
+                )
+                .0,
+                Some(13 + n)
+            );
+            assert_eq!(
+                deep_namespace
+                    .lookup(12, name.as_bytes())
+                    .unwrap()
+                    .identity()
+                    .1,
+                13 + n
+            );
+        }
+        assert_eq!(deep_namespace.parent(12), Some(2));
+        assert!(
+            core::image_validation::inspect(core::snapshot::Snapshot::from_bytes(&deep)).is_some()
+        );
+        exercise_timed_tree_write(&deep, 13, 0);
+        let mut missing_large = deep.clone();
+        let incompat = le32(&missing_large, 1120) & !0x4000;
+        missing_large[1120..1124].copy_from_slice(&incompat.to_le_bytes());
+        seal_single_group_allocation(&mut missing_large);
+        assert!(
+            core::allocation::parse(core::snapshot::Snapshot::from_bytes(&missing_large)).is_some()
+        );
+        assert!(
+            core::image_validation::inspect(core::snapshot::Snapshot::from_bytes(&missing_large))
+                .is_none(),
+            "depth two requires the actual source LARGEDIR bit"
+        );
+        let mut too_deep = deep.clone();
+        let raw = &mut too_deep[physical * 4096..(physical + 1) * 4096];
+        raw[30] = 3;
+        seal(raw, 32, seed);
+        assert!(
+            core::image_validation::inspect(core::snapshot::Snapshot::from_bytes(&too_deep))
+                .is_none()
+        );
+        for file in [
+            path,
+            "build/htree-empty.bin",
+            "build/htree-payload.bin",
+            "build/htree-debugfs.txt",
+            deep_path,
+        ] {
             let _ = std::fs::remove_file(file);
         }
+    }
+
+    fn deepen_indexed_image(
+        img: &[u8],
+        table: u32,
+        root_physical: usize,
+        inode_number: u32,
+        old_blocks: u32,
+        seed: u32,
+    ) -> Vec<u8> {
+        let mut deep = img.to_vec();
+        let total = le32(img, 1028);
+        let bitmap = le32(img, 4096) as usize * 4096;
+        let free: Vec<u32> = (1..total)
+            .rev()
+            .filter(|&b| img[bitmap + b as usize / 8] & (1 << (b % 8)) == 0)
+            .take(2)
+            .collect();
+        assert_eq!(free.len(), 2);
+        let root = &img[root_physical * 4096..(root_physical + 1) * 4096];
+        let count = core::bytes::read_le16(root, 34).unwrap();
+        let mut lower = block(4096, false, true);
+        lower[8..].fill(0);
+        lower[8..10].copy_from_slice(&510u16.to_le_bytes());
+        lower[10..12].copy_from_slice(&count.to_le_bytes());
+        lower[12..16].copy_from_slice(&root[36..40]);
+        lower[16..8 + count as usize * 8].copy_from_slice(&root[40..32 + count as usize * 8]);
+        seal(&mut lower, 8, seed);
+        let mut upper = block(4096, false, true);
+        upper[8..].fill(0);
+        upper[8..10].copy_from_slice(&510u16.to_le_bytes());
+        upper[10..12].copy_from_slice(&1u16.to_le_bytes());
+        upper[12..16].copy_from_slice(&(old_blocks + 1).to_le_bytes());
+        seal(&mut upper, 8, seed);
+        let mut new_root = root.to_vec();
+        new_root[30] = 2;
+        new_root[34..36].copy_from_slice(&1u16.to_le_bytes());
+        new_root[36..40].copy_from_slice(&old_blocks.to_le_bytes());
+        seal(&mut new_root, 32, seed);
+        deep[root_physical * 4096..(root_physical + 1) * 4096].copy_from_slice(&new_root);
+        for (physical, raw) in [(free[0], &upper), (free[1], &lower)] {
+            deep[physical as usize * 4096..(physical as usize + 1) * 4096].copy_from_slice(raw);
+            deep[bitmap + physical as usize / 8] |= 1 << (physical % 8);
+        }
+        let at = table as usize * 4096 + (inode_number as usize - 1) * 256;
+        let extents = core::bytes::read_le16(img, at + 42).unwrap() as usize;
+        assert_eq!(core::bytes::read_le16(img, at + 46).unwrap(), 0);
+        assert!(
+            extents <= 2,
+            "two free inode extent entries for additional logical index blocks"
+        );
+        for (i, physical) in free.iter().enumerate() {
+            let e = at + 52 + (extents + i) * 12;
+            deep[e..e + 4].copy_from_slice(&(old_blocks + i as u32).to_le_bytes());
+            deep[e + 4..e + 6].copy_from_slice(&1u16.to_le_bytes());
+            deep[e + 6..e + 8].fill(0);
+            deep[e + 8..e + 12].copy_from_slice(&physical.to_le_bytes());
+        }
+        deep[at + 42..at + 44].copy_from_slice(&((extents + 2) as u16).to_le_bytes());
+        deep[at + 4..at + 8].copy_from_slice(&((old_blocks + 2) * 4096).to_le_bytes());
+        deep[at + 28..at + 32].copy_from_slice(&(le32(img, at + 28) + 16).to_le_bytes());
+        let uuid_seed = core::superblock::metadata_checksum_seed(&img[1024..2048]).unwrap();
+        seal_inode_image(&mut deep, table, inode_number, uuid_seed);
+        let flags = le32(&deep, 1120) | 0x4000;
+        deep[1120..1124].copy_from_slice(&flags.to_le_bytes());
+        seal_single_group_allocation(&mut deep);
+        deep
     }
 
     fn empty_leaf(seed: u32) -> Vec<u8> {
@@ -6492,6 +6633,129 @@ mod htree_indexes {
             )
             .is_none(),
             "keyed hashing needs fscrypt authority"
+        );
+    }
+    // Independent control-flow reference: initial descent probes each frame;
+    // continued descent enters every newly read frame at entry zero.
+    fn linux_frame_walk(
+        blocks: &[&[u8]],
+        inodes: u32,
+        seed: u32,
+        hash_seed: core::dir_hash::State,
+        unsigned: bool,
+        name: &[u8],
+    ) -> (Option<u32>, Vec<u32>) {
+        let root = blocks[0];
+        let levels = root[30] as usize + 1;
+        let hash =
+            core::dir_hash::calculate(name, hash_seed, root[28] + if unsigned { 3 } else { 0 })
+                .unwrap()
+                .major;
+        let count = |n: u32| {
+            core::bytes::read_le16(blocks[n as usize], if n == 0 { 34 } else { 10 }).unwrap()
+                as usize
+        };
+        let word = |n: u32, i: usize, child: bool| {
+            le32(
+                blocks[n as usize],
+                if n == 0 { 32 } else { 8 } + i * 8 + if child { 4 } else { 0 },
+            )
+        };
+        let mut frames: Vec<(u32, usize)> = Vec::new();
+        let mut number = 0u32;
+        while frames.len() < levels {
+            let at = (1..count(number))
+                .rfind(|&i| word(number, i, false) <= hash)
+                .unwrap_or(0);
+            frames.push((number, at));
+            number = word(number, at, true) & 0x0fffffff;
+        }
+        let mut visited = Vec::new();
+        loop {
+            visited.push(number);
+            let leaf = core::directory_block::parse(blocks[number as usize], inodes, seed).unwrap();
+            for i in 0..leaf.len() {
+                if leaf.get(i).unwrap().inode != 0 && leaf.name(i).unwrap() == name {
+                    return (Some(leaf.get(i).unwrap().inode), visited);
+                }
+            }
+            loop {
+                let (parent, at) = match frames.pop() {
+                    Some(frame) => frame,
+                    None => {
+                        return (None, visited);
+                    }
+                };
+                if at + 1 == count(parent) {
+                    continue;
+                }
+                if word(parent, at + 1, false) & !1 != hash {
+                    return (None, visited);
+                }
+                frames.push((parent, at + 1));
+                number = word(parent, at + 1, true) & 0x0fffffff;
+                break;
+            }
+            while frames.len() < levels {
+                frames.push((number, 0));
+                number = word(number, 0, true) & 0x0fffffff;
+            }
+        }
+    }
+
+    #[test]
+    fn collisions_across_subtrees_follow_linux_first_entry_continuation_descent() {
+        let seed = 0x12345678;
+        let hash_seed = core::dir_hash::State {
+            a: 0,
+            b: 0,
+            c: 0,
+            d: 0,
+        };
+        let hash = 0x80bd17e8u32;
+        let mut root = block(4096, true, true);
+        root[28] = 0;
+        root[30] = 1;
+        root[34..36].copy_from_slice(&2u16.to_le_bytes());
+        root[40..44].copy_from_slice(&(hash | 1).to_le_bytes());
+        root[44..48].copy_from_slice(&2u32.to_le_bytes());
+        seal(&mut root, 32, seed);
+        let mut first_node = block(4096, false, true);
+        first_node[10..12].copy_from_slice(&1u16.to_le_bytes());
+        first_node[12..16].copy_from_slice(&3u32.to_le_bytes());
+        seal(&mut first_node, 8, seed);
+        let mut continued_node = block(4096, false, true);
+        continued_node[10..12].copy_from_slice(&2u16.to_le_bytes());
+        continued_node[12..16].copy_from_slice(&4u32.to_le_bytes());
+        continued_node[16..20].copy_from_slice(&hash.to_le_bytes());
+        continued_node[20..24].copy_from_slice(&5u32.to_le_bytes());
+        seal(&mut continued_node, 8, seed);
+        let left = named_leaf(seed, 13, b"collision-012141");
+        let middle = empty_leaf(seed);
+        let right = named_leaf(seed, 14, b"collision-012441");
+        let source: [&[u8]; 6] = [&root, &first_node, &continued_node, &left, &middle, &right];
+        let directory =
+            core::htree_names::build(&source, 4096, seed, hash_seed, false, false).unwrap();
+        assert_eq!(
+            directory.lookup(b"collision-012141").unwrap().identity().2,
+            13
+        );
+        assert_eq!(
+            directory.lookup(b"collision-012441").unwrap().identity().2,
+            14
+        );
+        assert_eq!(
+            linux_frame_walk(&source, 4096, seed, hash_seed, false, b"collision-012141"),
+            (Some(13), vec![3])
+        );
+        assert_eq!(
+            linux_frame_walk(&source, 4096, seed, hash_seed, false, b"collision-012441"),
+            (Some(14), vec![3, 4, 5])
+        );
+        assert!(directory.lookup(b"collision-012441-").is_none());
+        assert_eq!(
+            linux_frame_walk(&source, 4096, seed, hash_seed, false, b"collision-012441-").0,
+            None
         );
     }
 }

@@ -96,6 +96,13 @@ pub proof fn a_checked_node_retains_its_header_and_every_source_child(c: Context
     a_checked_prefix_contains_each_child(c, number, depth, count(c, number), i);
 }
 
+pub proof fn a_checked_subtree_retains_its_source_header(c: Context, number: u32, depth: u8)
+    requires subtree(c, number, depth),
+    ensures local(c, number, depth),
+{
+    a_checked_prefix_retains_its_header(c, number, depth, count(c, number));
+}
+
 fn collect<'a>(blocks: &[&'a [u8]], census: Census, index: &Index<'a>, number: u32, depth: u8,
     inodes: u32, seed: u32, Ghost(c): Ghost<Context>) -> (r: Option<Census>)
     requires geometry(c), c.source == source_views(blocks@), c.inodes == inodes, c.seed == seed,
