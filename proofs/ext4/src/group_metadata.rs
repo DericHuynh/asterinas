@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! A group descriptor and its initialized bitmaps from one immutable source.
+//! A same-source group descriptor and logical allocation bitmaps.
+//! INODE_UNINIT selects Linux's synthesized empty inode bitmap; initialized
+//! inode bitmaps retain their exact physical source bytes.
 //! Address provenance is a checked byte-range relation, not CRC injectivity.
 //! This is metadata admission, not a complete filesystem or mount authority.
 
@@ -37,12 +39,15 @@ pub open spec fn valid(v: GroupView) -> bool {
     &&& bitmap::accepted(v.allocation.raw, v.allocation.valid, v.allocation.meaningful, v.allocation.free, v.allocation.checksum, v.seed)
     &&& (v.descriptor.len() == 64 ==> crc::fold(v.seed, v.allocation.raw)
         == group_fields::counter(v.descriptor, 24, 56, true))
-    &&& v.inodes.raw == v.source.subrange(v.inode_bitmap as int * 4096, (v.inode_bitmap as int + 1) * 4096)
+    &&& v.inodes.raw == if group::inode_uninitialized(v.descriptor) { bitmap::empty_inode_bytes(v.ipg as nat) }
+        else { v.source.subrange(v.inode_bitmap as int * 4096, (v.inode_bitmap as int + 1) * 4096) }
     &&& v.inodes.valid == v.ipg && v.inodes.meaningful == v.ipg
-    &&& v.inodes.free as nat == bytes::le16(v.descriptor, 14) && v.inodes.checksum as nat == bytes::le16(v.descriptor, 26)
+    &&& v.inodes.free as nat == bytes::le16(v.descriptor, 14) && v.inodes.checksum == if group::inode_uninitialized(v.descriptor) {
+        (crc::fold(v.seed, bitmap::empty_inode_bytes(v.ipg as nat).take(v.ipg as int / 8)) & 0xffffu32) as u16
+    } else { bytes::le16(v.descriptor, 26) as u16 }
     &&& v.inodes.seed == v.seed
     &&& bitmap::accepted(v.inodes.raw, v.inodes.valid, v.inodes.meaningful, v.inodes.free, v.inodes.checksum, v.seed)
-    &&& (v.descriptor.len() == 64 ==> crc::fold(v.seed, v.inodes.raw.take(v.ipg as int / 8))
+    &&& (v.descriptor.len() == 64 && !group::inode_uninitialized(v.descriptor) ==> crc::fold(v.seed, v.inodes.raw.take(v.ipg as int / 8))
         == group_fields::counter(v.descriptor, 26, 58, true))
 }
 
@@ -135,20 +140,28 @@ pub fn parse(source: &Snapshot<'_>, number: u32) -> (r: Option<GroupMetadata>)
     let inode_bitmap = match source.block(group.inode_bitmap) { Some(block) => block, None => { return None; } };
     let available = blocks - number * 32768;
     let valid_blocks = if available < 32768 { available } else { 32768 };
+    let lazy = bytes::read_le16(raw, 18).unwrap() & 1 != 0;
     if length == 64 {
         let block_checksum = group_fields::read_counter(raw, 24, 56, true).unwrap();
         let inode_checksum = group_fields::read_counter(raw, 26, 58, true).unwrap();
         if crc::crc32c(seed, block_bitmap.as_slice()) != block_checksum
-            || crc::crc32c(seed, &inode_bitmap.as_slice()[..(ipg / 8) as usize]) != inode_checksum { return None; }
+            || (!lazy && crc::crc32c(seed, &inode_bitmap.as_slice()[..(ipg / 8) as usize]) != inode_checksum) { return None; }
     }
     let allocation = match bitmap::parse(block_bitmap.as_slice(), valid_blocks, 32768,
         bytes::read_le16(raw, 12).unwrap() as u32, bytes::read_le16(raw, 24).unwrap(), seed) {
         Some(bitmap) => bitmap, None => { return None; }
     };
-    let inodes = match bitmap::parse(inode_bitmap.as_slice(), ipg, ipg,
-        bytes::read_le16(raw, 14).unwrap() as u32, bytes::read_le16(raw, 26).unwrap(), seed) {
-        Some(bitmap) => bitmap, None => { return None; }
+    let inodes = if lazy {
+        assert(bytes::le16(raw@, 14) == ipg) by { reveal(group::accepted); }
+        bitmap::synthesize_free_inodes(ipg, seed).unwrap()
+    } else {
+        match bitmap::parse(inode_bitmap.as_slice(), ipg, ipg,
+            bytes::read_le16(raw, 14).unwrap() as u32, bytes::read_le16(raw, 26).unwrap(), seed) {
+            Some(bitmap) => bitmap, None => { return None; }
+        }
     };
+    assert(inodes.view().free as nat == bytes::le16(raw@, 14));
+    assert(bitmap::accepted(inodes.view().raw, ipg, ipg, inodes.view().free, inodes.view().checksum, seed));
     let descriptor = capture_descriptor(raw);
     let ghost assembled = GroupView { source: source.view(), descriptor: descriptor@, number: group.number,
         blocks, ipg, seed, block_bitmap: group.block_bitmap, inode_bitmap: group.inode_bitmap,
@@ -158,6 +171,16 @@ pub fn parse(source: &Snapshot<'_>, number: u32) -> (r: Option<GroupMetadata>)
     let meta = GroupMetadata { source: Ghost(source.view()), descriptor, group, blocks, ipg, seed, allocation, inodes };
     assert(meta.view() == assembled);
     Some(meta)
+}
+
+/// Uninitialized groups cannot grant access through stale physical inode
+/// bitmap bits or inode-table contents.
+pub proof fn an_uninitialized_group_has_no_allocated_inode(v: GroupView, slot: u32)
+    requires valid(v), group::inode_uninitialized(v.descriptor), slot < v.ipg,
+    ensures !bitmap::set(v.inodes.raw, slot as int), v.inodes.free == v.ipg,
+{
+    reveal(valid);
+    bitmap::empty_inode_bitmap_has_only_allocated_padding(v.ipg, slot as int);
 }
 
 }

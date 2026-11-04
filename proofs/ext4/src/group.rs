@@ -36,6 +36,8 @@ pub open spec fn bounded_high_fields(s: Seq<u8>) -> bool {
         && le16(s, 44) == 0 && le16(s, 46) == 0 && le16(s, 48) == 0 && le16(s, 50) == 0
 }
 
+pub open spec fn inode_uninitialized(raw: Seq<u8>) -> bool { le16(raw, 18) as u16 & 1 != 0 }
+
 pub open spec fn accepted(s: Seq<u8>, group: u32, blocks: u32, ipg: u32, uuid_seed: u32) -> bool {
     &&& bounded_high_fields(s)
     &&& blocks > 2 && 0 < ipg <= 32768 && ipg % 16 == 0
@@ -49,7 +51,8 @@ pub open spec fn accepted(s: Seq<u8>, group: u32, blocks: u32, ipg: u32, uuid_se
     &&& !(le32(s, 8) <= le32(s, 4) < le32(s, 8) + ipg as nat / 16)
     &&& le16(s, 12) <= end(blocks, group) - group as nat * 32768
     &&& le16(s, 14) <= ipg && le16(s, 16) <= ipg && le16(s, 28) <= ipg
-    &&& le16(s, 18) == 4
+    &&& (le16(s, 18) == 0 || le16(s, 18) == 1 || le16(s, 18) == 4 || le16(s, 18) == 5)
+    &&& (inode_uninitialized(s) ==> group > 0 && le16(s, 14) == ipg && le16(s, 16) == 0 && le16(s, 28) == ipg)
     &&& le16(s, 30) == (crc::fold(crc::fold(uuid_seed, encoded_le(group)),
         checksum_bytes(s)) & 0xffffu32) as nat
 }
@@ -82,8 +85,12 @@ pub fn parse(s: &[u8], group: u32, blocks: u32, ipg: u32, uuid_seed: u32) -> (r:
         || (inode_table <= inode_bitmap && (inode_bitmap as u64) < table_end)
         || read_le16(s, 12).unwrap() as u64 > limit - first
         || read_le16(s, 14).unwrap() as u32 > ipg || read_le16(s, 16).unwrap() as u32 > ipg
-        || read_le16(s, 28).unwrap() as u32 > ipg || read_le16(s, 18).unwrap() != 4
+        || read_le16(s, 28).unwrap() as u32 > ipg
     { return None; }
+    let flags = read_le16(s, 18).unwrap();
+    if flags != 0 && flags != 1 && flags != 4 && flags != 5 { return None; }
+    if flags & 1 != 0 && (group == 0 || read_le16(s, 14).unwrap() as u32 != ipg
+        || read_le16(s, 16).unwrap() != 0 || read_le16(s, 28).unwrap() as u32 != ipg) { return None; }
     let number = encode_le32(group);
     proof { assert(number@ =~= encoded_le(group)); }
     let seed = crc::crc32c(uuid_seed, &number);
