@@ -25,7 +25,7 @@ pub open spec fn valid(v: GroupView) -> bool {
     &&& superblock::accepted(v.source.subrange(1024, 2048), v.source.len() as u64)
     &&& 2 < v.blocks <= block_claims::MAX_BLOCKS && v.number < 32
     &&& v.blocks as nat == bytes::le32(v.source, 1028) && v.ipg as nat == bytes::le32(v.source, 1064)
-    &&& v.seed == crc::fold(0xffffffff, v.source.subrange(1128, 1144))
+    &&& v.seed == superblock::metadata_seed(v.source.subrange(1024, 2048))
     &&& v.descriptor == v.source.subrange(4096 + v.number as int * 32, 4096 + (v.number as int + 1) * 32)
     &&& group::accepted(v.descriptor, v.number, v.blocks, v.ipg, v.seed)
     &&& v.block_bitmap as nat == bytes::le32(v.descriptor, 0) && v.inode_bitmap as nat == bytes::le32(v.descriptor, 4)
@@ -122,7 +122,7 @@ pub fn parse(source: &Snapshot<'_>, number: u32) -> (r: Option<GroupMetadata>)
     let blocks = superblock.blocks();
     if blocks > block_claims::MAX_BLOCKS || number * 32768 >= blocks { return None; }
     let ipg = bytes::read_le32(boot, 40).unwrap();
-    let seed = crc::crc32c(0xffffffff, primary.range(1128, 16).unwrap());
+    let seed = superblock::metadata_checksum_seed(boot).unwrap();
     let gdt = match source.block(1) { Some(block) => block, None => { return None; } };
     let raw = gdt.range(number as usize * 32, 32).unwrap();
     let group = match group::parse(raw, number, blocks, ipg, seed) { Some(g) => g, None => { return None; } };

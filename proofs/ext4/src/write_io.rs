@@ -23,13 +23,12 @@ pub open spec fn valid_images(v: Images) -> bool {
     &&& v.initial_journal.len() == v.tx.layout.journal_blocks as nat * 4096
     &&& superblock::accepted(v.initial_primary.subrange(1024, 2048), v.partition_bytes)
     &&& bytes::le32(v.initial_primary, 1028) == v.tx.layout.fs_blocks
-    &&& v.initial_primary.subrange(1128, 1144) == v.tx.uuid
     &&& journal_superblock::accepted(v.initial_journal.subrange(0, 1024), v.tx.uuid, v.tx.layout.journal_blocks)
     &&& bytes::be32(v.initial_journal, 28) == 0
     &&& epoch::newer(v.initial_journal, bytes::be32(v.initial_journal, 24) as u32, v.tx.sequence)
     &&& super_state::preserves(v.initial_primary, v.dirty)
     &&& v.dirty == super_state::recovery_bytes(v.initial_primary, true)
-    &&& superblock::accepted(v.dirty.subrange(1024, 2048), v.partition_bytes) && bytes::le32(v.dirty, 1120) == 0x46
+    &&& superblock::accepted(v.dirty.subrange(1024, 2048), v.partition_bytes) && super_state::is_dirty(v.dirty)
     &&& v.tx.primary == v.dirty && v.tx.partition_bytes == v.partition_bytes
     &&& journal_state::preserves(v.initial_journal.subrange(0, 4096), v.activation)
     &&& journal_superblock::accepted(v.activation.subrange(0, 1024), v.tx.uuid, v.tx.layout.journal_blocks)
@@ -195,7 +194,6 @@ pub open spec fn can_prepare(journal: Seq<u8>, uuid: Seq<u8>, layout: &JournalLa
     &&& journal.len() == layout.view().journal_blocks as nat * 4096
     &&& superblock::accepted(primary.subrange(1024, 2048), partition_bytes)
     &&& layout.view().fs_blocks as nat == bytes::le32(primary, 1028)
-    &&& primary.subrange(1128, 1144) == uuid
     &&& journal_superblock::accepted(journal.subrange(0, 1024), uuid, layout.view().journal_blocks)
     &&& bytes::be32(journal, 28) == 0
     &&& epoch::admissible(journal, bytes::be32(journal, 24) as u32)
@@ -218,7 +216,7 @@ pub fn prepare(journal: &[u8], uuid: &[u8], layout: JournalLayout, primary: &[u8
     hide(journal_superblock::accepted);
     if !layout.valid() || primary.len() != 4096 || journal.len() as u64 != layout.blocks() as u64 * 4096 { return None; }
     let boot = match superblock::parse(&primary[1024..2048], partition_bytes) { Some(s) => s, None => { return None; } };
-    if boot.blocks() != layout.filesystem_blocks() || !bytes::equal(&primary[1128..1144], uuid) { return None; }
+    if boot.blocks() != layout.filesystem_blocks() { return None; }
     assert(layout.view().fs_blocks as nat * 4096 <= partition_bytes) by { reveal(superblock::accepted); }
     let info = match journal_superblock::parse(&journal[..1024], uuid, layout.blocks()) { Some(s) => s, None => { return None; } };
     if info.start != 0 { return None; }

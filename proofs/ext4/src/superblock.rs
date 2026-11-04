@@ -9,6 +9,24 @@ use crate::crc;
 
 verus! {
 
+/// ext4 metadata checksums use the stored seed when CSUM_SEED is enabled.
+/// The superblock's own checksum always starts from ~0; JBD2 has a separate
+/// UUID-derived checksum domain.
+#[verifier::opaque]
+pub open spec fn metadata_seed(s: Seq<u8>) -> u32 {
+    if le32(s, 96) as u32 & 0x2000 != 0 { le32(s, 624) as u32 }
+    else { crc::fold(0xffffffff, s.subrange(104, 120)) }
+}
+
+pub fn metadata_checksum_seed(s: &[u8]) -> (r: Option<u32>)
+    ensures match r { Some(seed) => s.len() == 1024 && seed == metadata_seed(s@), None => s.len() != 1024 },
+{
+    proof { reveal(metadata_seed); }
+    if s.len() != 1024 { return None; }
+    if read_le32(s, 96).unwrap() & 0x2000 != 0 { read_le32(s, 624) }
+    else { Some(crc::crc32c(0xffffffff, &s[104..120])) }
+}
+
 pub struct Superblock {
     blocks: u32,
     inodes: u32,
@@ -32,7 +50,7 @@ pub open spec fn accepted(s: Seq<u8>, partition_bytes: u64) -> bool {
     &&& le32(s, 84) == 11
     &&& le16(s, 88) == 256
     &&& le32(s, 92) == 4
-    &&& (le32(s, 96) == 0x42 || le32(s, 96) == 0x46)
+    &&& (le32(s, 96) == 0x42 || le32(s, 96) == 0x46 || le32(s, 96) == 0x2042 || le32(s, 96) == 0x2046)
     &&& (le32(s, 100) == 0x443 || le32(s, 100) == 0x44b)
     &&& (le16(s, 254) == 0 || le16(s, 254) == 32)
     &&& le16(s, 206) == 0
@@ -85,7 +103,7 @@ impl Superblock {
         &&& self.view().inodes as nat == le32(s, 0)
         &&& self.view().inodes_per_group as nat == le32(s, 40)
         &&& self.view().journal_inode as nat == le32(s, 224)
-        &&& self.view().needs_recovery == (le32(s, 96) == 0x46)
+        &&& self.view().needs_recovery == (le32(s, 96) as u32 & 4 != 0)
     }
 
     pub fn blocks(&self) -> (r: u32) ensures r == self.view().blocks { self.blocks }
@@ -122,7 +140,7 @@ pub fn parse(s: &[u8], partition_bytes: u64) -> (r: Option<Superblock>)
     let incompat = read_le32(s, 96).unwrap();
     let desc_size = read_le16(s, 254).unwrap();
     let ro_compat = read_le32(s, 100).unwrap();
-    if (incompat != 0x42 && incompat != 0x46) || (ro_compat != 0x443 && ro_compat != 0x44b)
+    if (incompat != 0x42 && incompat != 0x46 && incompat != 0x2042 && incompat != 0x2046) || (ro_compat != 0x443 && ro_compat != 0x44b)
         || (desc_size != 0 && desc_size != 32) || read_le16(s, 206).unwrap() != 0
         || read_le32(s, 228).unwrap() != 0 || read_le32(s, 232).unwrap() != 0
         || read_le16(s, 348).unwrap() != 32 || read_le16(s, 350).unwrap() != 32
@@ -145,7 +163,7 @@ pub fn parse(s: &[u8], partition_bytes: u64) -> (r: Option<Superblock>)
     let checksum = crc::crc32c(0xffffffff, &s[0..1020]);
     if read_le32(s, 1020).unwrap() != checksum { return None; }
     Some(Superblock { blocks, inodes, groups, inodes_per_group: ipg,
-        journal_inode, needs_recovery: incompat == 0x46 })
+        journal_inode, needs_recovery: incompat & 4 != 0 })
 }
 
 }

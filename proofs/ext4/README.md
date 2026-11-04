@@ -9,9 +9,9 @@ and a [concurrent block/extent/transaction protocol](CONCURRENCY.md).
 It is not a complete filesystem and is not registered with the kernel VFS.
 No mount or filesystem write path is enabled.
 
-The pinned Verus run checks **809 obligations with zero errors**, including
-282 named proof functions and 275 named executable functions.
-57 host interoperability/regression tests pass on Linux-created metadata.
+The pinned Verus run checks **820 obligations with zero errors**, including
+283 named proof functions and 277 named executable functions.
+60 host interoperability/regression tests pass on Linux-created metadata.
 [Proof status](proof-status.json) and [recorded evidence](verification-evidence.json)
 state the exact scope; tests do not discharge formal obligations.
 
@@ -20,7 +20,7 @@ state the exact scope; tests do not discharge formal obligations.
 | Component | Checked behavior |
 | --- | --- |
 | `bytes.rs`, `crc.rs` | Total endian codecs, checked ranges, CRC32C and streaming/zero-field checksum relations. |
-| `superblock.rs`, `group.rs`, `inode.rs` | Strict profile checks, geometry/ranges, Linux metadata checksums, typed field decoding. |
+| `superblock.rs`, `group.rs`, `inode.rs` | Strict profile checks, geometry/ranges, Linux metadata checksums, typed field decoding, source-selected CSUM_SEED or UUID-derived metadata seeds. [Checksum domains](CSUM_SEED.md) remain separate from the internal journal UUID and JBD2 seed. |
 | `inode_size.rs` | Total Linux high/low size codecs and feature-dependent maximum sizes over seven block sizes; 64-bit regular inode sizes with source-bound optional HUGE_FILE policy in the current 4 KiB profile; exact source metadata and nontruncating logical offsets with EOF/data/hole clipping. See [inode sizes](INODE_SIZES.md). Mutations, other feature combinations and runtime authority remain open. |
 | `inode_blocks.rs` | Linux 32/48-bit i_blocks fields and sector/filesystem-block units, exact canonical encoding with aligned huge-unit inputs, checked overflow bounds, and source-bound HUGE_FILE composition with complete data/extent-metadata accounting. See [inode accounting](INODE_BLOCKS.md). |
 | `block_range.rs`, `extent_span.rs` | 64-bit block interval bounds, disjointness and exact split partition; Linux 48-bit physical-start codec, reserved terminal logical block and pointwise logical/physical mapping preservation under splitting and merging. Descriptors do not establish allocation, read initialization, concurrency or full-tree admission. |
@@ -28,7 +28,7 @@ state the exact scope; tests do not discharge formal obligations.
 | `block_size.rs`, `extent_node.rs` | Shared geometry checks and total local extent-node validation: inline roots, external 1–64 KiB nodes, depth 0–5, 48-bit index children, bounded entries/capacity, ordered nonoverlapping records, legacy/checksummed blocks and the Linux eh_max checksum domain. Strict-key and interval ordering, binary-search partitions, unique covering leaf records and inherited branch bounds are checked. Bounded 4 KiB inode/feature and ownership composition is checked by extent_claims.rs; wider geometry and runtime refinement remain open. |
 | `source_block.rs`, `snapshot.rs`, `shadow_model.rs` | Exact bounded byte capture across shadow-page boundaries and owned 64-bit-addressed 1–64 KiB filesystem blocks. Checked multiplication/division binds each block and extent-node buffer to its exact source range and partition bounds, without truncating high page addresses. Bounded 4 KiB inode seed/feature/ownership binding composes through extent_claims.rs. Wider geometry and CortenMM/device origin remain open. |
 | `extent_tree.rs`, `extent_tree_model.rs` | Source-bound lookup paths, exact decreasing depths and cycle exclusion; complete recursive structural audits with a separate visit-budget error; audited lookup agrees with every covering leaf record in the entire tree. Written/unwritten/hole results are descriptions. Bounded 4 KiB allocation and inode/feature binding compose with the volume validator. Mutations, other geometries/features and runtime authority remain open. See [extent trees](EXTENT_TREES.md). |
-| `extent_claims.rs`, `extent_ownership.rs` | Actual source inode/root/UUID-generation checksum seed, complete depth-0..5 metadata/data claims, distinct inode-owned metadata roles, disjoint census composition and exact sector accounting. Every stored mapping has its exact source claim; complete-tree lookup is unique. Whole-image allocation, namespace/image validation and structural reads use these results in the bounded 4 KiB profile. No mutation or runtime authority is produced. |
+| `extent_claims.rs`, `extent_ownership.rs` | Actual source inode/root/metadata-generation checksum seed, complete depth-0..5 metadata/data claims, distinct inode-owned metadata roles, disjoint census composition and exact sector accounting. Every stored mapping has its exact source claim; complete-tree lookup is unique. Whole-image allocation, namespace/image validation and structural reads use these results in the bounded 4 KiB profile. No mutation or runtime authority is produced. |
 | `extent.rs` | Leaf extent codec, initialized/unwritten lengths, logical ordering and disjointness, bounded block resolution. |
 | `directory.rs` | Bounded linear dirent parsing, filename validation, directory checksum tails. |
 | `jbd2.rs`, `journal_superblock.rs` | Header/tag codecs, UUID binding, checksum primitives, counter bounds and superblock parsing. |
@@ -52,7 +52,7 @@ state the exact scope; tests do not discharge formal obligations.
 | `layout.rs` | Checked mapping of a single initialized journal extent; journal blocks excluded from replay targets. |
 | `replay.rs`, `replay_refinement.rs` | Linux same/later revoke suppression and reallocation, latest-image selection, exact chronological redo equivalence, arbitrary partial replay restart. |
 | `scan.rs`, `scan_trace.rs`, `scan_stop.rs`, `scan_budget.rs` | Bounded ring scan, contiguous exact record coverage, complete descriptor payloads, committed cut, actual source/commit provenance, checked stopping witnesses, unique canonical maximal prefix and recovered input. Clean snapshots and active snapshots satisfying the declared resource profile are admitted. Every writer crash snapshot satisfies that scan profile. |
-| `epoch.rs`, `journal_state.rs`, `super_state.rs` | Conservative fresh IDs independent of checksums; exact superblock state images; immutable geometry/UUID/boot framing; recovery flag retained during replay. |
+| `epoch.rs`, `journal_state.rs`, `super_state.rs` | Conservative fresh IDs independent of checksums; exact superblock state images; immutable geometry/UUID/boot framing; only RECOVER changes during state-image construction; other incompatibility bits and the stored checksum seed remain fixed during replay. |
 | `recovery_io.rs`, `recovery_profile.rs`, `recovery_device.rs`, `recovery_closure.rs` | Owned immutable recovery command protocol, partition-confined emitted images, preserved scan certificates, checked sufficient preparation admission, stale/duplicate report rejection, sticky abort, two flushes, finite failure-free completion; terminal-ID recovery without allocating a fresh epoch; byte-valued persistence refinement, unchanged committed input before retirement, and admission preserved through arbitrary finite recovery crashes under an explicit 4 KiB atomicity contract. |
 | `recovery_request.rs` | An outstanding request owns its exact recovery machine; completion consumes that object. External callers cannot forge/reuse requests or redirect a completion using a recycled numeric ID. |
 | `transaction.rs`, `transaction_refinement.rs` | Owned unique after-images; exact canonical transaction encoding; concrete journal-map witness; returned scans recover every encoded original image. A candidate patch is not filesystem authority. |

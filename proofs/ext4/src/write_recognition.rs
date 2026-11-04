@@ -195,7 +195,7 @@ pub proof fn recovery_without_a_persisted_commit_cannot_publish_a_transaction(m:
 pub proof fn journal_activation_always_has_a_valid_recovery_marked_superblock(m: Machine, before: Disk, v: write_io::Images)
     requires context(before, v), write_device::inv(m, v.tx.payloads.len()), m.stable.contains(2),
     ensures write_media::disk(m, before, v)[0].len() == 4096,
-        bytes::le32(write_media::disk(m, before, v)[0], 1120) == 0x46,
+        super_state::is_dirty(write_media::disk(m, before, v)[0]),
         superblock::accepted(write_media::disk(m, before, v)[0].subrange(1024, 2048), v.partition_bytes),
 {
     initial_epoch(before, v);
@@ -239,7 +239,7 @@ pub proof fn every_writer_primary_image_retains_the_validated_volume_identity(m:
     ensures write_media::disk(m, before, v)[0].len() == 4096,
         superblock::accepted(write_media::disk(m, before, v)[0].subrange(1024, 2048), v.partition_bytes),
         bytes::le32(write_media::disk(m, before, v)[0], 1028) == v.tx.layout.fs_blocks,
-        write_media::disk(m, before, v)[0].subrange(1128, 1144) == v.tx.uuid,
+        write_media::disk(m, before, v)[0].subrange(1128, 1144) == v.initial_primary.subrange(1128, 1144),
         m.stable.contains(2) ==> super_state::replay_ok(v.dirty, write_media::disk(m, before, v)[0], v.partition_bytes),
 {
     hide(crate::crc::fold);

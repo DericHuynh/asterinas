@@ -52,7 +52,7 @@ unsupported markers need Linux-compatible handling, not invented encodings.
 | INCOMPAT | `0x0200` | `FLEX_BG` | Not implemented | Cross-group bitmap/table placement and globally disjoint ownership |
 | INCOMPAT | `0x0400` | `EA_INODE` | Not implemented | Value inode lifetime, references, deduplication and quota coupling |
 | INCOMPAT | `0x1000` | `DIRDATA` | Not implemented | Non-mainline/legacy marker; match pinned Linux rejection policy |
-| INCOMPAT | `0x2000` | `CSUM_SEED` | Not implemented | Stored checksum seed and correct domain selection for every metadata type |
+| INCOMPAT | `0x2000` | `CSUM_SEED` | Partial: bounded metadata and journal domain composition | Stored or UUID-derived ext4 seed, independent internal-journal UUID, exact recovery flag preservation and native UUID-change interoperability checked; remaining metadata types, mutation and runtime refinement remain |
 | INCOMPAT | `0x4000` | `LARGEDIR` | Not implemented | Large directories, additional HTree depth and record/size bounds |
 | INCOMPAT | `0x8000` | `INLINE_DATA` | Not implemented | Inline file/directory storage, xattr coupling and crash-safe conversion |
 | INCOMPAT | `0x10000` | `ENCRYPT` | Not implemented | Key/credential boundary, encrypted names/data, nonce lifetime and explicit crypto assumptions |

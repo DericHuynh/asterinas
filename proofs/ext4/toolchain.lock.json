@@ -393,7 +393,8 @@
     "extent_tree_model::audited_route_equals_complete_tree_mapping",
     "extent_tree_model::complete_tree_has_unique_covering_extent",
     "extent_ownership::a_stored_mapping_has_its_source_bound_claim",
-    "inode_size::offsets_never_truncate_to_a_different_logical_block"
+    "inode_size::offsets_never_truncate_to_a_different_logical_block",
+    "super_state::recovery_preserves_the_metadata_checksum_domain"
   ],
   "required_flags": [
     "--no-cheating",
@@ -676,6 +677,8 @@
     "inode_blocks::decode",
     "inode_blocks::encode",
     "group_index::huge_files",
-    "inode::parse_metadata_with_features"
+    "inode::parse_metadata_with_features",
+    "superblock::metadata_checksum_seed",
+    "bootstrap::journal_uuid"
   ]
 }

@@ -15,7 +15,7 @@ fn le32(s: &[u8], o: usize) -> u32 {
 
 fn metadata(img: &[u8]) -> (core::superblock::Superblock, core::group::Group, u32) {
     let sb = core::superblock::parse(&img[1024..2048], img.len() as u64).expect("Linux superblock");
-    let seed = core::crc::crc32c(0xffffffff, &img[1128..1144]);
+    let seed = core::superblock::metadata_checksum_seed(&img[1024..2048]).unwrap();
     let ipg = le32(&img[1024..2048], 40);
     let g =
         core::group::parse(&img[4096..4128], 0, sb.blocks(), ipg, seed).expect("Linux descriptor");
@@ -38,7 +38,7 @@ fn seal_inode_image(img: &mut [u8], table: u32, number: u32, seed: u32) {
 fn seal_single_group_allocation(img: &mut [u8]) {
     let blocks = le32(img, 1028);
     assert!(blocks <= 32768);
-    let seed = core::crc::crc32c(0xffffffff, &img[1128..1144]);
+    let seed = core::superblock::metadata_checksum_seed(&img[1024..2048]).unwrap();
     let offset = le32(img, 4096) as usize * 4096;
     let bitmap = &img[offset..offset + 4096];
     let free = (0..blocks)
@@ -3376,4 +3376,342 @@ fn dac_owner_precedence_and_root_execute_rule() {
     assert!(core::access::allowed(0, 41, &c, 5, true));
     assert!(!core::access::allowed(0, 41, &c, 2, true));
     assert!(!core::access::allowed(0o777, 41, &c, 8, false));
+}
+
+mod checksum_seed_tests {
+    use core::{snapshot::Snapshot, super_state, superblock};
+
+    use super::{core, image, le32, metadata};
+
+    fn seal_primary(primary: &mut [u8]) {
+        let checksum = core::crc::crc32c(0xffffffff, &primary[1024..2044]);
+        primary[2044..2048].copy_from_slice(&checksum.to_le_bytes());
+    }
+
+    #[test]
+    fn stored_checksum_seed_selection_is_exact_and_total() {
+        let image = image();
+        let mut raw = image[1024..2048].to_vec();
+        let uuid_seed = core::crc::crc32c(0xffffffff, &raw[104..120]);
+        for stored in [0, 1, 0x12345678, u32::MAX] {
+            raw[624..628].copy_from_slice(&stored.to_le_bytes());
+            for flags in [0x42u32, 0x46, 0x2042, 0x2046] {
+                raw[96..100].copy_from_slice(&flags.to_le_bytes());
+                assert_eq!(
+                    superblock::metadata_checksum_seed(&raw),
+                    Some(if flags & 0x2000 != 0 {
+                        stored
+                    } else {
+                        uuid_seed
+                    })
+                );
+            }
+        }
+        for length in [0, 1, 96, 624, 627, 1023, 1025, 4096] {
+            assert!(superblock::metadata_checksum_seed(&vec![0; length]).is_none());
+        }
+    }
+
+    #[test]
+    fn recovery_changes_only_recover_and_rejects_other_feature_bit_changes() {
+        let mut image = image();
+        let seed = superblock::metadata_checksum_seed(&image[1024..2048]).unwrap();
+        image[1648..1652].copy_from_slice(&seed.to_le_bytes());
+        for flags in [0x42u32, 0x46, 0x2042, 0x2046] {
+            image[1120..1124].copy_from_slice(&flags.to_le_bytes());
+            seal_primary(&mut image);
+            let source = Snapshot::from_bytes(&image);
+            let boot = core::bootstrap::locate(&source).unwrap();
+            for dirty in [false, true] {
+                let updated =
+                    super_state::recovery_image(&image[..4096], image.len() as u64, dirty).unwrap();
+                let expected = if dirty { flags | 4 } else { flags & !4 };
+                assert_eq!(le32(updated.as_slice(), 1120), expected);
+                assert_eq!(
+                    superblock::parse(&updated.as_slice()[1024..2048], image.len() as u64)
+                        .unwrap()
+                        .needs_recovery(),
+                    dirty
+                );
+                assert_eq!(le32(updated.as_slice(), 1648), seed);
+                assert_eq!(
+                    super_state::valid_replay(
+                        &image[..4096],
+                        updated.as_slice(),
+                        image.len() as u64
+                    ),
+                    dirty
+                );
+            }
+            let mut changed = super_state::recovery_image(&image[..4096], image.len() as u64, true)
+                .unwrap()
+                .as_slice()
+                .to_vec();
+            changed[1120..1124].copy_from_slice(&((flags | 4) ^ 0x2000).to_le_bytes());
+            seal_primary(&mut changed);
+            assert!(superblock::parse(&changed[1024..2048], image.len() as u64).is_some());
+            assert!(!super_state::valid_replay(
+                &image[..4096],
+                &changed,
+                image.len() as u64
+            ));
+            let patches = core::patch_set::PatchSet::new()
+                .insert(0, &changed)
+                .ok()
+                .unwrap();
+            let switched = source.overlay(&patches).unwrap();
+            assert!(
+                core::image_validation::inspect(switched.duplicate()).is_some(),
+                "the equal seed makes both format interpretations statically valid"
+            );
+            assert!(
+                !core::bootstrap_identity::check(&boot, &switched),
+                "recovery must retain the feature's interpretation even when both seeds coincide"
+            );
+        }
+    }
+
+    fn command(executable: &str, arguments: &[&str]) -> std::process::Output {
+        let result = std::process::Command::new(executable)
+            .args(arguments)
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{} {:?}: {}\n{}",
+            executable,
+            arguments,
+            String::from_utf8_lossy(&result.stdout),
+            String::from_utf8_lossy(&result.stderr)
+        );
+        result
+    }
+
+    #[test]
+    fn linux_uuid_changes_keep_ext4_metadata_and_jbd2_checksum_domains_distinct() {
+        struct ScratchFiles(Vec<String>);
+        impl Drop for ScratchFiles {
+            fn drop(&mut self) {
+                for path in &self.0 {
+                    let _ = std::fs::remove_file(path);
+                }
+            }
+        }
+        for huge in [false, true] {
+            let prefix = format!("build/native-csum-seed-{}-{huge}", std::process::id());
+            let image_path = format!("{prefix}.img");
+            let commands_path = format!("{prefix}.commands");
+            let _cleanup = ScratchFiles(vec![image_path.clone(), commands_path.clone()]);
+            let mke2fs = std::env::var("MKE2FS_BIN").unwrap_or_else(|_| "mke2fs".into());
+            let features = format!(
+                "none,has_journal,extent,filetype,sparse_super,large_file,extra_isize,metadata_csum,metadata_csum_seed{}",
+                if huge { ",huge_file" } else { "" }
+            );
+            command(
+                &mke2fs,
+                &[
+                    "-q",
+                    "-F",
+                    "-t",
+                    "ext4",
+                    "-b",
+                    "4096",
+                    "-I",
+                    "256",
+                    "-O",
+                    &features,
+                    "-E",
+                    "lazy_itable_init=0,lazy_journal_init=0",
+                    &image_path,
+                    "16384",
+                ],
+            );
+            let mut requests = String::from(
+                "write build/fixture-file.bin /payload\nwrite /dev/null /fragmented\n",
+            );
+            for logical in (0..16).step_by(2) {
+                requests.push_str(&format!("fallocate /fragmented {logical} {logical}\n"));
+            }
+            requests.push_str("set_inode_field /fragmented size 65536\n");
+            std::fs::write(&commands_path, requests).unwrap();
+            let debugfs = std::env::var("DEBUGFS_BIN").unwrap_or_else(|_| "debugfs".into());
+            command(&debugfs, &["-w", "-f", &commands_path, &image_path]);
+            let original = std::fs::read(&image_path).unwrap();
+            let stored = le32(&original, 1648);
+            let tune2fs = std::env::var("TUNE2FS_BIN").unwrap_or_else(|_| "tune2fs".into());
+            command(
+                &tune2fs,
+                &["-U", "be647bc8-42bf-4831-ad30-8d6393f021c6", &image_path],
+            );
+            let changed_uuid = std::fs::read(&image_path).unwrap();
+            assert_ne!(&original[1128..1144], &changed_uuid[1128..1144]);
+            assert_eq!(le32(&changed_uuid, 1648), stored);
+            // Native feature transitions rewrite ext4 checksums using the
+            // changed UUID, while leaving the internal journal UUID alone.
+            command(&tune2fs, &["-O", "^metadata_csum_seed", &image_path]);
+            command(&tune2fs, &["-O", "metadata_csum_seed", &image_path]);
+            command(
+                &tune2fs,
+                &["-U", "3dfd547c-8f5e-42bf-8954-138c35be1393", &image_path],
+            );
+            let mut image = std::fs::read(&image_path).unwrap();
+            let stored = le32(&image, 1648);
+            let (_, group, seed) = metadata(&image);
+            assert_eq!(seed, stored);
+            let journal_base =
+                le32(super::inode_bytes(&image, group.inode_table, 8), 60) as usize * 4096;
+            let uuid = image[journal_base + 48..journal_base + 64].to_vec();
+            let journal_seed = core::crc::crc32c(0xffffffff, &uuid);
+            assert_ne!(&uuid, &image[1128..1144]);
+            assert_ne!(
+                stored, journal_seed,
+                "the test must distinguish checksum domains"
+            );
+            assert_ne!(stored, core::crc::crc32c(0xffffffff, &image[1128..1144]));
+            let volume = core::allocation::parse(Snapshot::from_bytes(&image)).unwrap();
+            assert_eq!(volume.index().parameters().3, stored);
+            assert_eq!(volume.index().huge_files(), huge);
+            let node = core::allocated_inode::get(&volume, 12).unwrap();
+            let target = match core::file_read::resolve(&node, 0) {
+                core::file_read::Resolution::Data(block) => block,
+                _ => panic!("Linux payload must map to initialized data"),
+            };
+            let bound = core::extent_claims::bind(volume.index(), 13, 16).unwrap();
+            assert!(bound.tree().checked_nodes() > 1);
+            assert!(core::image_validation::inspect(Snapshot::from_bytes(&image)).is_some());
+            super::exercise_complete_owned_tree_depths(&image, 13);
+            let source = Snapshot::from_bytes(&image);
+            let boot = core::bootstrap::locate(&source).unwrap();
+            assert_eq!(boot.uuid(), &image[1128..1144]);
+            assert_eq!(boot.journal_uuid(), uuid);
+            assert!(boot.prepare_recovery().is_some());
+            let layout = boot.layout().duplicate();
+            let base = layout.physical_start() as usize * 4096;
+            let journal_info =
+                core::journal_superblock::parse(&image[base..base + 1024], &uuid, layout.blocks())
+                    .unwrap();
+            assert_eq!(journal_info.uuid_seed, journal_seed);
+            assert!(
+                core::journal_superblock::parse(
+                    &image[base..base + 1024],
+                    &image[1128..1144],
+                    layout.blocks()
+                )
+                .is_none()
+            );
+            let writer = core::write_io::prepare(
+                &image[base..base + layout.blocks() as usize * 4096],
+                &uuid,
+                layout.duplicate(),
+                &image[..4096],
+                image.len() as u64,
+                vec![core::transaction::AfterImage::capture(target, &vec![0x19; 4096]).unwrap()],
+            );
+            assert!(
+                writer.is_some(),
+                "writer admission uses the journal UUID and preserves the separate filesystem UUID"
+            );
+            assert!(
+                core::layout::from_inode(
+                    super::inode_bytes(&image, group.inode_table, 8),
+                    volume.index().parameters().1,
+                    volume.index().parameters().0,
+                    journal_seed
+                )
+                .is_none(),
+                "the journal inode itself belongs to the ext4 metadata checksum domain"
+            );
+            let e2fsck = std::env::var("E2FSCK_BIN").unwrap_or_else(|_| "e2fsck".into());
+            command(&e2fsck, &["-fn", &image_path]);
+            let mut wrong = image.clone();
+            wrong[1648] ^= 1;
+            seal_primary(&mut wrong);
+            assert!(superblock::parse(&wrong[1024..2048], wrong.len() as u64).is_some());
+            assert!(core::group_index::parse(Snapshot::from_bytes(&wrong)).is_none());
+            assert!(core::bootstrap::locate(&Snapshot::from_bytes(&wrong)).is_none());
+            drop(bound);
+            drop(node);
+            drop(volume);
+            drop(boot);
+            drop(source);
+            let header = core::journal_state::encode(
+                &image[base..base + 4096],
+                &uuid,
+                layout.blocks(),
+                9,
+                1,
+            )
+            .unwrap();
+            image[base..base + 4096].copy_from_slice(header.as_slice());
+            let dirty =
+                super_state::recovery_image(&image[..4096], image.len() as u64, true).unwrap();
+            image[..4096].copy_from_slice(dirty.as_slice());
+            let payload = vec![0x6b; 4096];
+            let tx = core::transaction::encode(
+                vec![core::transaction::AfterImage::capture(target, &payload).unwrap()],
+                &uuid,
+                9,
+                &layout,
+                &image[..4096],
+                image.len() as u64,
+            )
+            .unwrap();
+            assert!(core::jbd2::valid_commit(tx.commit_bytes(), 9, journal_seed));
+            assert!(!core::jbd2::valid_commit(tx.commit_bytes(), 9, stored));
+            for (slot, bytes) in [
+                (1, tx.descriptor_bytes()),
+                (2, tx.payload_at(0).unwrap()),
+                (3, tx.commit_bytes()),
+            ] {
+                let offset = layout.offset(slot, image.len() as u64).unwrap() as usize;
+                image[offset..offset + 4096].copy_from_slice(bytes);
+            }
+            let source = Snapshot::from_bytes(&image);
+            let engine = core::bootstrap::locate(&source)
+                .unwrap()
+                .prepare_recovery()
+                .unwrap();
+            assert_eq!(engine.replay_plan().len(), 1);
+            assert_eq!(engine.replay_plan().get(0).unwrap().image(), payload);
+            let mut admitted = core::recovery_admission::prepare(&source).unwrap();
+            let mut recovered = image.clone();
+            while !admitted.finished() {
+                let pending = admitted.dispatch().ok().unwrap();
+                match pending.pending_command() {
+                    core::recovery_io::Command::Write { block, image } => {
+                        recovered[block as usize * 4096..(block as usize + 1) * 4096]
+                            .copy_from_slice(image);
+                    }
+                    core::recovery_io::Command::Flush => {}
+                }
+                admitted = pending.finish_pending(core::recovery_request::Completion::Succeeded);
+            }
+            assert_eq!(
+                &recovered[target as usize * 4096..(target as usize + 1) * 4096],
+                payload
+            );
+            assert_eq!(le32(&recovered, 1120), 0x2046);
+            assert_eq!(le32(&recovered, 1648), stored);
+            assert!(core::image_validation::inspect(Snapshot::from_bytes(&recovered)).is_some());
+            std::fs::write(&image_path, &image).unwrap();
+            let checked = std::process::Command::new(&e2fsck)
+                .args(["-fy", &image_path])
+                .output()
+                .unwrap();
+            assert!(
+                matches!(checked.status.code(), Some(0 | 1)),
+                "{}\n{}",
+                String::from_utf8_lossy(&checked.stdout),
+                String::from_utf8_lossy(&checked.stderr)
+            );
+            let linux = std::fs::read(&image_path).unwrap();
+            assert_eq!(
+                &linux[target as usize * 4096..(target as usize + 1) * 4096],
+                payload
+            );
+            assert_eq!(le32(&linux, 1120), 0x2042);
+            assert_eq!(le32(&linux, 1648), stored);
+            assert!(core::image_validation::inspect(Snapshot::from_bytes(&linux)).is_some());
+        }
+    }
 }

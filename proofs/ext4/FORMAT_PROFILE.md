@@ -16,13 +16,13 @@ The accepted byte structures do not certify the whole volume.
 | ext4 superblock | 1024 bytes, Linux creator OS, revision 1, 4 KiB blocks/clusters, 256-byte inodes, first data block 0, first ordinary inode 11, internal journal inode 8. |
 | Geometry | 32-bit block count, 32768 blocks/group, positive inodes/group <=32768 and divisible by 16, checked group/count/partition relationships. |
 | Feature COMPAT | Exactly HAS_JOURNAL (`0x0004`). |
-| Feature INCOMPAT | FILETYPE + EXTENTS (`0x0042`), optionally RECOVER (`0x0046`). Raw parsing surfaces RECOVER; recovery preparation requires it when the journal has a nonzero start. |
+| Feature INCOMPAT | FILETYPE + EXTENTS (`0x0042`), optionally RECOVER (`0x4`) and CSUM_SEED (`0x2000`), admitting `0x42`, `0x46`, `0x2042` or `0x2046`. Raw parsing surfaces RECOVER; recovery preparation requires it when the journal has a nonzero start. |
 | Feature RO_COMPAT | SPARSE_SUPER + LARGE_FILE + EXTRA_ISIZE + METADATA_CSUM (`0x0443`), optionally HUGE_FILE (`0x044b`). |
 | Group descriptor | 32 bytes, bitmaps and inode table inside the group and locally disjoint, initialized bitmaps/table (`bg_flags=4`), bounded counters and metadata CRC32C truncation. |
 | Inode | 256 bytes, extra_isize 32, live regular file/directory, EXTENTS flag, optionally HUGE_FILE when the filesystem feature is present, no ACL/xattr block, 64-bit regular-file i_size up to Linux's 2 TiB-minus-4 KiB bound without HUGE_FILE or 16 TiB-minus-4 KiB with it, low-only directory size with zero high field, Linux UID/GID high halves and inode CRC32C. |
 | Ordinary inode extent tree | Inline root with up to four entries, external 4 KiB nodes at depth 0–5, exact parent/depth/key bounds and checksums; complete same-source metadata/data ownership census. Physical addresses must fit the bounded volume, despite the 48-bit codec. Written length up to 32768; unwritten length up to 32767; zero length rejected. |
 | Directory | Linear 4 KiB records with FILETYPE and metadata checksum tail; live entries limited to regular files/directories; no NUL or slash in a name. |
-| JBD2 superblock | Version 2, 4 KiB journal blocks, first log position 1, >=1024 journal blocks, one user, matching filesystem UUID, no stored error/dynamic copy/fast-commit blocks. |
+| JBD2 superblock | Version 2, 4 KiB journal blocks, first log position 1, >=1024 journal blocks, one user, the internal journal's own UUID, no stored error/dynamic copy/fast-commit blocks. |
 | Journal features | No feature bits for a clean mke2fs journal, or CSUM_V3 with optional REVOKE. A dirty journal without v3 is rejected. Unknown bits, 64-bit tags and async commit rejected. |
 | JBD2 records | Canonical v3 descriptors with 1..250 16-byte tags, first-tag UUID and later SAME_UUID, one terminator and checksum tail; 32-bit revoke blocks with 0..1019 records; checked full commit images and escaped payload CRCs. |
 | Allocation bitmap | Initialized 4 KiB block/inode bitmaps, LSB bit numbering, allocated padding, exact free counts; block checksum covers 4096 bytes, inode checksum covers `inodes_per_group / 8`, with the low 16 bits in 32-byte descriptors. |
@@ -32,7 +32,7 @@ The accepted byte structures do not certify the whole volume.
 | Whole-image allocation | Complete same-source initialized-group/inode traversal; reserved inode bitmap markers 1..10 required, root inode 2 a directory, unused reserved inodes have no live mode/links/storage, no allocated inode in the declared unused table suffix, exact directory counts; metadata/journal/inode claims exactly match every valid block bitmap bit and global free counts. Namespace and recovery/mount admission remain separate. |
 | Structural host reads | Ordinary allocated inode lookup from the whole-image certificate; initialized logical mapping and source/owner/generation identity; chunks clipped to block boundaries and i_size, holes/unwritten extents return zeros. Not a VFS authorization API. |
 | Complete directory blocks | Exact contiguous record chain from offset 0 through 4084, including deleted records; unique complete stream, checksum tail, bounded name access, at most 510 records/block. Source/target and topology checks are composed by the namespace certificate. |
-| Source-bound directory reads | Directory blocks must be initialized, fit a positive block-aligned i_size, pass the UUID/inode/generation-derived checksum and have complete canonical records. The actual mapped source bytes and canonical record stream are proved equal. Whole-directory/namespace enumeration is separate. |
+| Source-bound directory reads | Directory blocks must be initialized, fit a positive block-aligned i_size, pass the source-selected ext4 metadata/inode/generation checksum and have complete canonical records. The actual mapped source bytes and canonical record stream are proved equal. Whole-directory/namespace enumeration is separate. |
 | Name index | Full (directory inode, byte-name) equality; 1..255 byte names, no NUL or slash, owned snapshots, 4096 CRC buckets, at most 64 keys/bucket and 65536 total. Limit exhaustion rejects admission; CRC equality is never name equality. These are helper resource bounds, not an enabled mount profile. |
 | Directory index | Complete canonical live-entry enumeration for all allocated directories, positive block-aligned sizes, initialized blocks, source and target inode types/generations, globally unique (directory,name) keys and exact complete lookup. At most 4096 directory blocks and the name-index limits above. Dot/parent rules, link counts and rooted topology are checked separately by the namespace certificate. |
 | Namespace certificate | Exact live-inode reference counts equal i_links_count; one dot at block 0/record 0 targets self, one dotdot at block 0/record 1 targets the live parent; root parent is self with no ordinary incoming directory link, every other directory has one ordinary incoming link matching dotdot. Finite depth ranks prove every directory reaches root. Regular file hard links allowed; directory hard links, orphaned live files and disconnected cycles rejected. Bounded nonrecursive graph traversal, depth at most 65536; no mount/VFS/recovery authority. |
@@ -68,10 +68,14 @@ This command creates test input, not a volume safe to mount with this package.
 ext4 fields are little endian; JBD2 fields are big endian.
 CRC32C follows Linux's raw accumulator convention, without an implicit complement.
 The superblock checksum uses seed `~0` through offset 1020.
-Group checksums include the UUID seed and LE group number with the checksum field zero.
-Inode checksums include the UUID seed, LE inode number and generation,
+The ext4 metadata seed is the stored superblock field at offset 624 when
+CSUM_SEED is enabled, or CRC32C(`~0`, filesystem UUID) otherwise.
+Group checksums include that seed and LE group number with the checksum field zero.
+Inode checksums include that seed, LE inode number and generation,
 with both checksum halves zero.
 Directory checksums use the inode seed and exclude the 12-byte tail.
+JBD2 independently derives its seed from the journal superblock UUID, which may
+differ from the filesystem UUID. See [checksum domains](CSUM_SEED.md).
 JBD2 tag checksums cover the BE sequence and the **escaped** payload.
 JBD2 superblock and commit checksums zero their respective checksum fields.
 
@@ -98,7 +102,8 @@ allocate a new epoch. Writer admission still refuses exhausted generations.
 
 Recovery allows filesystem block zero as a target, but excludes the journal.
 Its block-zero after-image must retain RECOVER, pass the ext4 checksum/profile
-checks, and preserve UUID, geometry, journal identity and boot/reserved bytes.
+checks, and preserve filesystem UUID, geometry, journal identity, stored metadata
+seed, all incompatibility bits other than RECOVER, and boot/reserved bytes.
 Mutable counters, timestamps, mount bookkeeping and the label may change.
 This local policy is not global inode/bitmap/ownership validation.
 

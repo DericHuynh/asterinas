@@ -56,7 +56,7 @@ pub proof fn partial_recovery_keeps_the_primary_volume_identity(m: Machine, befo
     requires context(before, uuid, layout, partition_bytes, result, tail),
         recovery_device::inv(m, before, result.plan(), layout.view().start, tail),
     ensures m.stable[0].len() == 4096 && superblock::accepted(m.stable[0].subrange(1024, 2048), partition_bytes),
-        bytes::le32(m.stable[0], 1028) == layout.view().fs_blocks && m.stable[0].subrange(1128, 1144) == uuid,
+        bytes::le32(m.stable[0], 1028) == layout.view().fs_blocks && m.stable[0].subrange(1128, 1144) == before[0].subrange(1128, 1144),
         bytes::be32(journal_view::snapshot(before, layout.view()), 28) != 0 ==>
             super_state::replay_ok(before[0], m.stable[0], partition_bytes),
 {
