@@ -1,0 +1,186 @@
+// SPDX-License-Identifier: MPL-2.0
+
+//! Whole-image allocation validation for the bounded initialized-group profile.
+//! This certifies physical ownership and counters, not namespace consistency,
+//! permissions, recovery completion, a mount, or an OSTD/device snapshot.
+
+use vstd::prelude::*;
+use crate::{allocation_counts, block_claims::{self, Census, CensusView, Claim, Slot}, bytes,
+    group_claims, group_index::{self, GroupIndex, IndexView}, inode_claims, inode_group, inode_table,
+    layout::{self, JournalLayout, LayoutView}, snapshot::Snapshot};
+
+verus! {
+
+#[verifier::opaque]
+pub open spec fn reserved(v: IndexView, count: nat) -> Seq<Claim>
+    decreases count,
+{
+    if count == 0 { Seq::empty() }
+    else { reserved(v, (count - 1) as nat) + group_claims::claims(v.groups[count as int - 1].descriptor, (count - 1) as u32, v.ipg) }
+}
+
+#[verifier::opaque]
+pub open spec fn data(v: IndexView, count: nat) -> Seq<Claim>
+    decreases count,
+{
+    if count == 0 { Seq::empty() }
+    else { data(v, (count - 1) as nat) + inode_group::claims(v, (count - 1) as u32, v.ipg as nat) }
+}
+
+pub open spec fn journal_claim(j: LayoutView) -> Claim {
+    Claim { start: j.start, length: j.journal_blocks, kind: 2, inode: 0, generation: 0, logical: 0, initialized: false }
+}
+
+#[verifier::opaque]
+pub open spec fn journal_matches(v: IndexView, j: LayoutView) -> bool {
+    let raw = inode_table::raw(v, 8);
+    &&& layout::admitted(raw, v.inodes, v.blocks, v.seed)
+    &&& j.fs_blocks == v.blocks && j.start > 1 && 1024 <= j.journal_blocks <= 32768
+    &&& j.start as nat + j.journal_blocks <= v.blocks
+    &&& j.start as nat == bytes::le32(raw, 60) && j.journal_blocks as nat == bytes::le32(raw, 4) / 4096
+    &&& bytes::le16(raw, 116) == 0 && bytes::le32(raw, 28) == j.journal_blocks as nat * 8
+}
+
+#[verifier::opaque]
+pub open spec fn checked_groups(v: IndexView, roles: Seq<Slot>, count: nat) -> bool {
+    forall|g: nat| g < count ==> #[trigger] inode_group::checked_prefix(v, roles, g as u32, v.ipg as nat)
+        && inode_group::directory_count(v, g as u32, v.ipg as nat) == bytes::le16(v.groups[g as int].descriptor, 16)
+}
+
+proof fn append_checked_group(v: IndexView, before: Seq<Slot>, after: Seq<Slot>, count: u32)
+    requires checked_groups(v, before, count as nat), block_claims::preserves_occupied(before, after),
+        count < 32, count < v.groups.len(), inode_group::checked_prefix(v, after, count, v.ipg as nat),
+        inode_group::directory_count(v, count, v.ipg as nat) == bytes::le16(v.groups[count as int].descriptor, 16),
+    ensures checked_groups(v, after, count as nat + 1),
+{
+    reveal(checked_groups);
+    assert forall|g: nat| g < count as nat + 1 implies #[trigger] inode_group::checked_prefix(v, after, g as u32, v.ipg as nat)
+        && inode_group::directory_count(v, g as u32, v.ipg as nat) == bytes::le16(v.groups[g as int].descriptor, 16) by {
+        if g < count as nat {
+            assert(inode_group::checked_prefix(v, before, g as u32, v.ipg as nat));
+            assert(inode_group::directory_count(v, g as u32, v.ipg as nat) == bytes::le16(v.groups[g as int].descriptor, 16));
+            inode_group::occupied_preservation_keeps_checked_nodes(v, before, after, g as u32, v.ipg as nat);
+        } else { assert(g == count as nat && g as u32 == count); }
+    }
+}
+
+pub struct AllocationView { pub index: IndexView, pub census: CensusView, pub journal: LayoutView }
+
+#[verifier::opaque]
+pub open spec fn valid(v: AllocationView) -> bool {
+    &&& group_index::valid(v.index)
+    &&& block_claims::ledger(v.census.roles, v.census.claims) && v.census.roles.len() == v.index.blocks
+    &&& journal_matches(v.index, v.journal)
+    &&& v.census.claims == reserved(v.index, v.index.groups.len()) + seq![journal_claim(v.journal)] + data(v.index, v.index.groups.len())
+    &&& checked_groups(v.index, v.census.roles, v.index.groups.len())
+    &&& allocation_counts::bitmaps_match(v.index, v.census.roles, v.index.groups.len())
+    &&& block_claims::free_roles(v.census.roles, 0, v.census.roles.len()) == bytes::le32(v.index.source, 1036)
+}
+
+pub struct Allocation<'a> { index: GroupIndex<'a>, census: Census, journal: JournalLayout }
+
+impl<'a> Allocation<'a> {
+    pub closed spec fn view(&self) -> AllocationView {
+        AllocationView { index: self.index.view(), census: self.census.view(), journal: self.journal.view() }
+    }
+    pub open spec fn wf(&self) -> bool { valid(self.view()) }
+
+    #[verifier::type_invariant]
+    spec fn invariant(self) -> bool { self.wf() }
+
+    pub fn index(&self) -> (r: &GroupIndex<'a>) ensures self.wf(), r.view() == self.view().index {
+        proof { use_type_invariant(self); }
+        &self.index
+    }
+
+    pub fn census(&self) -> (r: &Census) ensures self.wf(), r.view() == self.view().census {
+        proof { use_type_invariant(self); }
+        &self.census
+    }
+
+    pub fn journal(&self) -> (r: &JournalLayout) ensures self.wf(), r.view() == self.view().journal, r.wf() {
+        proof { use_type_invariant(self); reveal(valid); reveal(journal_matches); }
+        &self.journal
+    }
+}
+
+pub fn parse<'a>(source: Snapshot<'a>) -> (r: Option<Allocation<'a>>)
+    ensures match r { Some(volume) => volume.wf() && volume.view().index.source == source.view(), None => true },
+{
+    let index = match group_index::parse(source) { Some(index) => index, None => { return None; } };
+    let (blocks, inodes, ipg, seed) = index.parameters();
+    let count = index.group_count() as u32;
+    assert(2 < blocks <= block_claims::MAX_BLOCKS && inodes >= 11) by { reveal(group_index::valid); }
+    let mut census = Census::new(blocks).unwrap();
+    let mut g = 0u32;
+    assert(reserved(index.view(), 0) == Seq::<Claim>::empty()) by { reveal(reserved); }
+    while g < count
+        invariant index.wf(), count == index.view().groups.len(), count <= 32, g <= count,
+            (blocks, inodes, ipg, seed) == (index.view().blocks, index.view().inodes, index.view().ipg, index.view().seed),
+            census.wf(), census.view().roles.len() == blocks, census.view().claims == reserved(index.view(), g as nat),
+        decreases count - g,
+    {
+        let meta = index.get(g).unwrap();
+        census = match group_claims::reserve(census, meta.descriptor(), g, blocks, ipg, seed) {
+            Some(next) => next, None => { return None; }
+        };
+        assert(reserved(index.view(), g as nat + 1) == reserved(index.view(), g as nat)
+            + group_claims::claims(index.view().groups[g as int].descriptor, g, ipg)) by { reveal(reserved); }
+        g += 1;
+    }
+    let raw = inode_table::read(&index, 8).unwrap();
+    let (mut census, journal) = match inode_claims::reserve_journal(census, raw, inodes, blocks, seed) {
+        Some(pair) => pair, None => { return None; }
+    };
+    assert(journal_matches(index.view(), journal.view())) by { reveal(journal_matches); }
+    let ghost base = reserved(index.view(), count as nat) + seq![journal_claim(journal.view())];
+    assert(census.view().claims == base);
+    assert(data(index.view(), 0) == Seq::<Claim>::empty()) by { reveal(data); }
+    assert(checked_groups(index.view(), census.view().roles, 0)) by { reveal(checked_groups); }
+    g = 0;
+    while g < count
+        invariant index.wf(), count == index.view().groups.len(), count <= 32, g <= count,
+            census.wf(), census.view().roles.len() == index.view().blocks,
+            journal_matches(index.view(), journal.view()),
+            base == reserved(index.view(), count as nat) + seq![journal_claim(journal.view())],
+            census.view().claims == base + data(index.view(), g as nat),
+            checked_groups(index.view(), census.view().roles, g as nat),
+        decreases count - g,
+    {
+        let ghost before = census.view().roles;
+        census = match inode_group::collect(&index, census, g) { Some(next) => next, None => { return None; } };
+        proof {
+            append_checked_group(index.view(), before, census.view().roles, g);
+            assert(data(index.view(), g as nat + 1) == data(index.view(), g as nat)
+                + inode_group::claims(index.view(), g, index.view().ipg as nat)) by { reveal(data); }
+        }
+        g += 1;
+    }
+    g = 0;
+    assert(allocation_counts::bitmaps_match(index.view(), census.view().roles, 0)) by { reveal(allocation_counts::bitmaps_match); }
+    while g < count
+        invariant index.wf(), count == index.view().groups.len(), count <= 32, g <= count,
+            census.wf(), census.view().roles.len() == index.view().blocks,
+            journal_matches(index.view(), journal.view()),
+            census.view().claims == reserved(index.view(), count as nat) + seq![journal_claim(journal.view())] + data(index.view(), count as nat),
+            checked_groups(index.view(), census.view().roles, count as nat),
+            allocation_counts::bitmaps_match(index.view(), census.view().roles, g as nat),
+        decreases count - g,
+    {
+        let meta = index.get(g).unwrap();
+        let (bitmap, _) = meta.bitmaps();
+        if !census.matches_bitmap(g * 32768, bitmap) { return None; }
+        assert(allocation_counts::bitmaps_match(index.view(), census.view().roles, g as nat + 1)) by {
+            reveal(allocation_counts::bitmaps_match);
+            assert forall|n: nat| n < g as nat + 1 implies #[trigger] block_claims::bitmap_matches(
+                census.view().roles, (n * 32768) as u32, index.view().groups[n as int].allocation) by { }
+        }
+        g += 1;
+    }
+    proof { allocation_counts::all_matching_groups_have_the_exact_superblock_free_count(index.view(), census.view().roles); }
+    let ghost assembled = AllocationView { index: index.view(), census: census.view(), journal: journal.view() };
+    assert(valid(assembled)) by { reveal(valid); }
+    Some(Allocation { index, census, journal })
+}
+
+}

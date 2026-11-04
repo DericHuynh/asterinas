@@ -82,6 +82,96 @@
       "url": "https://github.com/verus-lang/verus/blob/release/0.2026.11.02.8bf68ee/source/docs/guide/src/tcb.md",
       "blob_sha": "6666cf14ad11c4f8c9c87017019d3e31f31d1a3e",
       "review_scope": "file or selected definitions"
+    },
+    {
+      "path": "include/linux/jbd2.h",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/include/linux/jbd2.h",
+      "blob_sha": "a53a00d36228ce281e31f94fddb50246da62bb32",
+      "review_scope": "selected relevant definitions; reference only, not imported as proved code"
+    },
+    {
+      "path": "fs/jbd2/journal.c",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/jbd2/journal.c",
+      "blob_sha": "cb2c529a8f1bea33df6d4135e5782b9a77792732",
+      "review_scope": "selected relevant definitions; reference only, not imported as proved code"
+    },
+    {
+      "path": "fs/namei.c",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/namei.c",
+      "blob_sha": "9e5500dad14f59caad5e79c57c97410d1900171a",
+      "review_scope": "selected relevant definitions; reference only, not imported as proved code"
+    },
+    {
+      "path": "source/vstd/resource/combinators/exclusive.rs",
+      "url": "https://github.com/verus-lang/verus/blob/8bf68ee741df833ea5d0fe6a2255126fdea87e47/source/vstd/resource/combinators/exclusive.rs",
+      "blob_sha": "ea1764d754b15d8953b8ccb8fe7c53075b76051b",
+      "review_scope": "selected relevant definitions; reference only, not imported as proved code"
+    },
+    {
+      "path": "source/vstd/resource/lib.rs",
+      "url": "https://github.com/verus-lang/verus/blob/8bf68ee741df833ea5d0fe6a2255126fdea87e47/source/vstd/resource/lib.rs",
+      "blob_sha": "88acb1656a2ce7928450ebb2ebc3a9c717101630",
+      "review_scope": "selected relevant definitions; reference only, not imported as proved code"
+    },
+    {
+      "path": "source/vstd/resource/pcm.rs",
+      "url": "https://github.com/verus-lang/verus/blob/8bf68ee741df833ea5d0fe6a2255126fdea87e47/source/vstd/resource/pcm.rs",
+      "blob_sha": "c3bbcc43d7cf4425dae3131b87d0100c7d20edbb",
+      "review_scope": "selected relevant definitions; reference only, not imported as proved code"
+    },
+    {
+      "path": "source/vstd/resource/combinators/option.rs",
+      "url": "https://github.com/verus-lang/verus/blob/8bf68ee741df833ea5d0fe6a2255126fdea87e47/source/vstd/resource/combinators/option.rs",
+      "blob_sha": "ae7a4eeabfbfa5753185c740166b7f6d618dea46",
+      "review_scope": "selected relevant definitions; reference only, not imported as proved code"
+    },
+    {
+      "path": "fs/jbd2/revoke.c",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/jbd2/revoke.c",
+      "blob_sha": "9016ddb824474d4e85ba6712c18f122734efd9af",
+      "review_scope": "revoke suppression, cancellation and sequence ordering; independently implemented"
+    },
+    {
+      "path": "source/docs/guide/src/container_bst_type_invariant.md",
+      "url": "https://github.com/verus-lang/verus/blob/8bf68ee741df833ea5d0fe6a2255126fdea87e47/source/docs/guide/src/container_bst_type_invariant.md",
+      "blob_sha": "f20217a5c7da26bfcd8edffc576b9ada8024a39e",
+      "review_scope": "checked type invariant encapsulation and public APIs without preconditions"
+    },
+    {
+      "path": "fs/ext4/bitmap.c",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/bitmap.c",
+      "blob_sha": "87760fabdd2eba8a59673de6258fdb7ef6c340ed",
+      "review_scope": "bitmap checksum inputs and truncated checksum fields"
+    },
+    {
+      "path": "fs/ext4/balloc.c",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/balloc.c",
+      "blob_sha": "8040c731b3e45d1c54fda8bb5493604e03c969bd",
+      "review_scope": "block bitmap reserved regions and padding; sparse-super power rule and non-META_BG base superblock/GDT reservations"
+    },
+    {
+      "path": "fs/ext4/ialloc.c",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/ialloc.c",
+      "blob_sha": "b1bc1950c9f03b9dca9729cfac532ff95d504948",
+      "review_scope": "initialized inode bitmap semantics and padding; reserved inode markers, group/slot addressing, inode-table unused high-water count and used-directory counter updates"
+    },
+    {
+      "path": "fs/ext4/namei.c",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/namei.c",
+      "blob_sha": "c4b5e252af0efbfcbaf83688a32d445327a74a02",
+      "review_scope": "selected dot/dotdot placement and target checks, directory parent lookup, link-count updates and zero-link orphan handling; independent Rust implementation"
+    },
+    {
+      "path": "fs/ext4/super.c",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/super.c",
+      "blob_sha": "a34efb44e73d70d034aa2ed1b4011a6851235f22",
+      "review_scope": "journal inode discovery, nonzero links/regular type, internal-journal open and mapping; referenced behavior only"
+    },
+    {
+      "path": "fs/ext4/inode.c",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/inode.c",
+      "blob_sha": "1123d995494b588744ba47fcee88e9cd0cc992dd",
+      "review_scope": "__ext4_get_inode_loc group/slot/block/offset arithmetic and inode-table validation; referenced behavior only"
     }
   ]
 }

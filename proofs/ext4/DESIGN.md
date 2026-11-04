@@ -2,8 +2,9 @@
 
 # Design: a Linux-compatible ext4 subset proved with Verus
 
-Status: proposal and unchecked formal-model candidates. This document defines
-the work to prove; it does not certify the implementation or the models.
+Status: target design, partially implemented and checked.
+The current evidence is in README.md and proof-status.json.
+This document does not certify the unfinished filesystem or kernel integration.
 
 ## Decisions and scope
 
@@ -41,8 +42,8 @@ flowchart TD
 ~~~
 
 The arrows are required refinement obligations, not existing verified calls.
-Proof code initially lives independently in proofs/ext4 and is not a member of
-the kernel workspace. A later component should remain outside aster-core where
+The checked core and proof code live independently in proofs/ext4 and are not
+members of the kernel workspace. A later component should remain outside aster-core where
 the repository's component/layer rules allow it. Public VFS interfaces and
 lock order must be audited before selecting the concrete integration location.
 
@@ -172,12 +173,20 @@ until replayed home writes are durable and retirement is durable. Reapplying
 the same after-images must be idempotent. Tail advancement is not permitted
 merely because replay writes were submitted.
 
-The current journal.rs models one transaction and partial checkpointing.
-Its "committed" and "retired" bits mean recognized durable facts for the current
-generation. They are not a concrete record decoder. M1/M2 must prove trace
-induction, physical-record recognition, bounded log/ring mapping, tail updates,
-revoke semantics, and finite transaction-ID behavior. The initial policy must
-stop safely before an unproved counter wrap; mathematical nat is not u32.
+The checked journal.rs models one transaction and partial checkpointing.
+history.rs, persistence.rs and system.rs compose arbitrary finite histories,
+per-unit completion/persistence events, quiescent reuse and bounded u32 IDs.
+The "committed" and "retired" bits still mean semantic durable facts;
+they are not a concrete record recognizer.
+Single-transaction physical record recognition, tail ordering, revoke replay
+and fresh epoch selection are now checked under the explicit device contract.
+The active scanner and recovery preparation admit every legal writer crash
+snapshot under their resource profile. Serialized physical writer generations
+compose over actual durable maps, and arbitrary finite recovery crashes preserve
+admission; an uncleared journal retains its committed input. Actual runtime
+serialization, driver refinement and unmount remain open. Ring position injectivity and counter arithmetic helpers
+do not discharge those obligations. The model stops before counter wrap and
+reserves room for a representable next-tail sequence.
 
 Recovery of a foreign dirty Linux journal is admitted only after the relevant
 transaction/revoke/feature profile has been proved. A clean-volume subset is

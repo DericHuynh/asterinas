@@ -1,84 +1,190 @@
 <!-- SPDX-License-Identifier: MPL-2.0 -->
 
-# Ext4 design and Verus models
+# Ext4 core and Verus proofs for Asterinas
 
-This package starts the design of an independent, safe Rust implementation of a
-**Linux-compatible ext4 subset for Asterinas**. Linux ext4 and JBD2 are format and
-behavior references. The selected scope is compatibility with a restricted,
-explicitly admitted profile, rather than a new disk format.
+This package implements and verifies part of an independent, safe Rust
+implementation of a **Linux-compatible ext4 subset**.
+It is not a complete filesystem and is not registered with the kernel VFS.
+No mount or filesystem write path is enabled.
 
-**Status: design/model candidates; NOT VERIFIED; no filesystem implementation.**
-The executor was unavailable during authoring. None of the Verus proof bodies,
-the proof runner, or the proposed device/format refinements has been checked.
-A function named "proof" is not evidence that the verifier accepted it.
-This package does not register an ext4 driver or enable any disk writes.
+The pinned Verus run checks **666 obligations with zero errors**, including
+242 named proof functions and 224 named executable functions.
+37 host interoperability/regression tests pass on Linux-created metadata.
+[Proof status](proof-status.json) and [recorded evidence](verification-evidence.json)
+state the exact scope; tests do not discharge formal obligations.
 
-The first proposed writable profile uses full data journaling, one transaction
-in flight, and a sleeping operation gate held through checkpoint and retirement.
-This intentionally limits the initial concurrency and durability protocol. It
-does not promise Linux feature completeness or production performance.
+## Implemented and checked
 
-## Read in this order
+| Component | Checked behavior |
+| --- | --- |
+| `bytes.rs`, `crc.rs` | Total endian codecs, checked ranges, CRC32C and streaming/zero-field checksum relations. |
+| `superblock.rs`, `group.rs`, `inode.rs` | Strict profile checks, geometry/ranges, Linux metadata checksums, typed field decoding. |
+| `extent.rs` | Leaf extent codec, initialized/unwritten lengths, logical ordering and disjointness, bounded block resolution. |
+| `directory.rs` | Bounded linear dirent parsing, filename validation, directory checksum tails. |
+| `jbd2.rs`, `journal_superblock.rs` | Header/tag codecs, UUID binding, checksum primitives, counter bounds and superblock parsing. |
+| `descriptor.rs`, `revoke.rs` | Complete canonical v3 descriptor/revoke parsing and encoding, UUIDs, tag terminators, target bounds, checksum tails and capacity limits. |
+| `bitmap.rs` | Owned initialized block/inode bitmaps, exact free counts, allocated padding, bounded lookup, and Linux checksum ranges. |
+| `block_claims.rs`, `inode_claims.rs` | Bounded disjoint ownership census; failed claims preserve the original; bitmap/role and free-counter equivalence; inode/journal byte binding, exact physical slots, initialized directory extents and `i_blocks` accounting. These are validation components, not a whole-volume certificate or file-access authority. |
+| `group_claims.rs` | Sparse-super backup locations match the Linux power rule over the bounded profile; reserve superblock/GDT, bitmaps and inode tables with exact disjoint claims. |
+| `snapshot.rs`, `group_metadata.rs`, `group_index.rs` | Exact immutable source ranges bind each group descriptor and bitmap to its declared address; complete ordered group enumeration and equality of aggregate free counters with the primary superblock. No whole-volume inode/namespace authority is produced. |
+| `inode_table.rs`, `inode_group.rs`, `allocation_counts.rs`, `allocation.rs` | Complete source-bound allocated-inode traversal, mandatory reserved inode markers, root type, empty unused reserved inodes, inode-table high-water bounds and directory counts; exact composition of metadata/journal/inode claims, all block bitmaps and global free-block accounting. This allocation certificate omits namespace, operation, recovery/mount and device authority. |
+| `allocated_inode.rs`, `file_read.rs` | Ordinary inode lookup inherits the whole-image source/ownership certificate; initialized logical mapping is unique and has exact owner/generation/slot identity; block/file-size clipped chunks return source bytes or zeros for holes/unwritten extents. Structural host helpers, not VFS/credential authority. |
+| `directory_block.rs` | Complete canonical linear-record coverage including deleted records, unique complete stream, checksum tail and bounded read-only record/name access. Source/target, link and topology checks are composed by the namespace layer. |
+| `directory_file.rs`, `directory_source.rs` | Directory bytes and checksum seed come from the actual allocated inode and initialized mapping; executable records equal the unique canonical source stream. Gaps and malformed blocks fail closed. Whole-directory enumeration is composed by directory_index.rs. |
+| `name_set.rs` | Owned directory/name keys; exact membership, duplicate rejection and unchanged failed insertion; full byte comparison across CRC bucket collisions. At most 65536 keys, 64/bucket and 255 bytes/name. This is a bounded namespace-admission helper, not a complete namespace certificate. |
+| `namespace_model.rs`, `directory_index.rs` | Complete canonical enumeration of every allocated directory/block and live record, including empty preallocation; source/target inode types and target generations, global unique names, exact source entries and complete lookup via proved name-index positions. Bounded to 4096 directory blocks. Link counts and rooted parent topology are composed by namespace.rs. |
+| `namespace_counts.rs`, `parent_table.rs`, `tree_model.rs`, `namespace_tree.rs`, `namespace.rs` | Exact source-reference accounting, inode link counts, canonical first-block dot/dotdot placement and targets, unique ordinary directory parents and matching dotdot, root rules, bounded nonrecursive traversal and a theorem that every accepted directory reaches root. Regular file hard links are admitted; disconnected cycles and directory hard links are rejected. This is a static image certificate, not recovery/mount/VFS authority. |
+| `patch_set.rs`, `shadow_model.rs`, `snapshot.rs` | Owned exact after-images in a sorted unique target set, binary lookup, 4096-block credit and unchanged rejection. Immutable shadow sources share the original bytes and at most 32 bounded patch layers; later patches take precedence with exact block and byte provenance. The existing allocation/namespace validators read the shadow directly. Recovery admission is composed by recovery_admission.rs. |
+| `bootstrap.rs`, `snapshot.rs` | Locate journal inode 8 through the same primary superblock and group-zero descriptor before global bitmap validation; exact reserved-inode byte range and bounded complete journal capture. Discovery alone gives no recovery, mount or write authority. |
+| `bootstrap_identity.rs`, `image_validation.rs` | Exact immutable primary bytes, all group bitmap/table addresses and entire journal inode remain fixed; other inodes sharing the block may change. Retained-source static-image inspection runs actual allocation/directory/namespace validation; identity alone does not establish filesystem validity. Recovery I/O admission is composed by recovery_admission.rs. |
+| `recovery_patch.rs` | Owned sorted shadow patches contain exactly the replay plan's selected latest unrevoked images, with the same target identities and bytes; unselected targets have no patch. Bootstrap recovery preparation binds the maximal scan certificate to the exact retained source journal, UUID, primary and layout. |
+| `recovery_admission.rs` | Before issuing any wrapped request, build the selected-home and retired-tail shadow, validate the complete static filesystem, enforce bootstrap identity and the same journal mapping, then retain that exact certificate through owned dispatch, completion and abort. Inconsistent home metadata may be repaired by committed redo; a valid journal containing an invalid filesystem patch is rejected. This host-core wrapper does not establish actual device state or mount authority. |
+| `layout.rs` | Checked mapping of a single initialized journal extent; journal blocks excluded from replay targets. |
+| `replay.rs`, `replay_refinement.rs` | Linux same/later revoke suppression and reallocation, latest-image selection, exact chronological redo equivalence, arbitrary partial replay restart. |
+| `scan.rs`, `scan_trace.rs`, `scan_stop.rs`, `scan_budget.rs` | Bounded ring scan, contiguous exact record coverage, complete descriptor payloads, committed cut, actual source/commit provenance, checked stopping witnesses, unique canonical maximal prefix and recovered input. Clean snapshots and active snapshots satisfying the declared resource profile are admitted. Every writer crash snapshot satisfies that scan profile. |
+| `epoch.rs`, `journal_state.rs`, `super_state.rs` | Conservative fresh IDs independent of checksums; exact superblock state images; immutable geometry/UUID/boot framing; recovery flag retained during replay. |
+| `recovery_io.rs`, `recovery_profile.rs`, `recovery_device.rs`, `recovery_closure.rs` | Owned immutable recovery command protocol, partition-confined emitted images, preserved scan certificates, checked sufficient preparation admission, stale/duplicate report rejection, sticky abort, two flushes, finite failure-free completion; terminal-ID recovery without allocating a fresh epoch; byte-valued persistence refinement, unchanged committed input before retirement, and admission preserved through arbitrary finite recovery crashes under an explicit 4 KiB atomicity contract. |
+| `recovery_request.rs` | An outstanding request owns its exact recovery machine; completion consumes that object. External callers cannot forge/reuse requests or redirect a completion using a recycled numeric ID. |
+| `transaction.rs`, `transaction_refinement.rs` | Owned unique after-images; exact canonical transaction encoding; concrete journal-map witness; returned scans recover every encoded original image. A candidate patch is not filesystem authority. |
+| `journal_view.rs` | Physical block-map projection equals scanner bytes; equal journal blocks have equal snapshots; a journal write splices exactly one image; nonjournal writes preserve the snapshot. |
+| `write_protocol.rs`, `write_io.rs` | Conservative serial dirty/activation/log/commit/checkpoint/retirement commands, six fences, owned requests, sticky abort, partition confinement and exact local preparation admission. |
+| `freshness.rs`, `write_device.rs`, `write_media.rs`, `write_recognition.rs`, `write_admission.rs`, `write_recovery.rs` | All finite ledger interleavings; exact per-event atomic-block byte refinement; finite flush refinement; fresh commit recognition without a checksum identity premise; before/after home-byte guarantees for actual scan plus recovery, safe tail clearing and finite failure-free success under the declared device contract. |
+| `write_history.rs` | Induction over actual byte-valued successful writer generations; acknowledged home-image composition; no late ledger persistence; recovery after a final cut includes every acknowledged generation. |
+| `frozen.rs` | Owned immutable snapshots, JBD2 escape/restore, snapshot contents independent of the source buffer. |
+| `ring.rs` | Bounded credits and injective circular-log position mapping. |
+| `gate.rs` | Affine writer capability backed by vstd's exclusive resource algebra; no local trusted token generator. |
+| `ownership.rs` | Abstract role separation, zero initialization, stale-generation rejection and no disclosure across block reuse. |
+| `journal.rs`, `history.rs`, `persistence.rs`, `system.rs` | Transaction invariants, per-unit completion/persistence interleavings, quiescent reuse, bounded generations, arbitrary finite histories and acknowledged-prefix recovery. |
 
-1. [Design and crash model](DESIGN.md).
-2. [Compatibility profile and parser boundary](FORMAT_PROFILE.md).
-3. [Security, concurrency, and durability obligations](PROOF_OBLIGATIONS.md).
-4. [Trust and adapter contracts](TRUST_BOUNDARY.md).
-5. [Proof status](proof-status.json) and [pinned toolchain](toolchain.lock.json).
-6. [Abstract model entry point](src/model.rs) and [source references](sources.json).
+The top-level model theorem is
+`system::crash_at_every_interleaving_preserves_the_acknowledged_prefix`.
+Its premise is an execution of the specified device/transaction machine.
+Commit and retirement are semantic durable facts in that machine;
+**serialized physical writer-history composition is also checked under the stated
+device contract; actual driver and runtime gate refinement remain open**.
+The proof does not establish durability of a mounted Asterinas filesystem.
 
-## What is modeled now
+The recovery theorem `recovery_device::success_image_equals_linux_redo` proves
+that the stable image equals chronological redo plus the retired journal tail.
+Its machine permits persistence before completion and after abort, and proves
+that a persisted clear tail implies durable home data. It is conditional on a
+correct, complete replay plan, a quiescent device and the stated atomicity/flush
+contract. The single-transaction writer now has a checked byte/persistence link:
+old headers cannot acquire a fresh ID, escaped payloads cannot impersonate
+metadata, and a recognized fresh commit implies the complete encoded log is
+stable. Before commit the home image is unchanged except recovery marking;
+retirement requires durable exact home after-images. A successful flush has a
+finite refinement into issued atomic writes, and a failure-free ledger has a
+finite successful execution. These results use explicit device assumptions,
+not a claim about any actual Asterinas driver.
 
-- Abstract after-image replay, including replay over a partial checkpoint.
-- A single transaction with separately issued and persistent writes, preparation,
-  commit submission, durable commit, acknowledgement, partial checkpoint, and
-  durable retirement.
-- An abort that does not magically cancel already submitted I/O.
-- An abstract operation-gate owner and generation, including stale-lease rejection.
-- Concrete witnesses for missing preparation and premature checkpointing.
+Active scanning has a checked sufficient resource profile. Every writer crash snapshot
+satisfies it, including partial log persistence, without CRC injectivity. Recovery
+retirement uses the recognized next sequence, including the terminal value MAX;
+new writer epochs still require a fresh nonwrapping ID. Recovery preparation
+admits a checked sufficient profile, and every legal writer
+crash snapshot satisfies it. The selected replay and a successful modeled recovery
+produce complete before/after home bytes outside block zero and the journal.
+Block zero separately preserves validated volume identity and the replay policy.
+Serialized physical histories compose over actual durable maps, including later
+overwrites and a final unacknowledged transaction if its commit persisted.
+Every modeled recovery crash snapshot remains admitted for another attempt;
+uncleared journals retain the same committed input. Admission survives arbitrary
+finite sequences of recovery crashes. These results require the stated atomicity,
+flush and quiescent-start contracts. Whole-image allocation validation is checked for the bounded initialized-group
+profile, and complete static namespace validation now composes source names,
+targets, link counts and rooted topology. Filesystem operations, recovery/mount
+admission, unmount and actual gate/device refinement remain open.
 
-The durable commit/retirement fields are **semantic storage predicates**. They
-are not a parser that trusts a magic number or CRC. Proving their relationship
-to real JBD2 bytes, torn sectors, sequence numbers, and flush completions is a
-required later refinement. The model is not a proof of a filesystem, a driver,
-all histories, or all races. The registry makes those gaps explicit.
+All public executable entry points validate their inputs without `requires`
+clauses that an unverified caller could bypass.
+A successful structural parse or allocation certificate is not an authorization
+or mount certificate. The allocation builder binds every reserved region,
+allocated inode and bitmap to the same borrowed frozen image. Namespace validation
+composes that certificate; recovery/mount admission remains separate.
+CRC checks do not authenticate a disk or prove freshness.
 
-## Verification gate
+## Reproduce
 
-The only accepted proof checker for this work is Verus. Tests, crash injection,
-Linux mounting, and fsck will be useful implementation validation, but cannot
-discharge any formal obligation.
-
-The runner is a draft, too. Once an executor is available, install the exact
-release and Rust toolchain in toolchain.lock.json, validate the release archive
-digest, and run:
+Install the Rust toolchain and the digest-pinned Verus release:
 
 ~~~sh
-VERUS_BIN=/absolute/path/to/pinned/verus python3 proofs/ext4/tools/verify.py
+rustup toolchain install 1.99.1 --profile minimal
+export RUSTUP_TOOLCHAIN=1.99.1
+python3 proofs/ext4/tools/install_verus.py /absolute/path/to/new-verus-directory
+export VERUS_BIN=/absolute/path/to/new-verus-directory/verus
+export VERUS_LIB_DIR=/absolute/path/to/new-verus-directory
+python3 proofs/ext4/tools/verify.py
+python3 proofs/ext4/tools/check_gate.py
+python3 proofs/ext4/tools/check_compat.py
 ~~~
 
-It supplies "--no-cheating" and "--output-json", allows no verification filters,
-requires a successful entire-crate result, checks named proof coverage, and
-records source hashes. It rejects local proof escapes. The pinned Verus/vstd
-trusted foundation is still part of the trust boundary.
+The compatibility check requires `mke2fs`, `debugfs` and `e2fsck` from e2fsprogs,
+and `rustc` from the pinned toolchain.
+`RUSTC_BIN`, `MKE2FS_BIN`, `DEBUGFS_BIN` and `E2FSCK_BIN` may select executable paths.
+The installer accepts `--archive` for an offline, digest-checked installation.
 
-A successful result for these models would discharge only their scoped abstract
-lemmas. It would not turn the compatibility, security, concurrent refinement,
-device, or writable-mount gates green. There is no current successful result.
+The runner checks the entire crate with `--no-cheating --no-external-by-default --output-json --compile`.
+It rejects local proof escapes, extra flags, omitted modules and source-inventory drift;
+requires named proof and executable coverage; invalidates stale artifacts on failure;
+and records source, runner, manifest, verifier and emitted-library hashes.
+The negative checks include an actual failing Verus assertion in a disposable copy.
+Nine additional negative Rust compilation checks reject recovery/writer request
+reuse and forgery, external completion redirection, writer-state replacement and admitted-recovery request/engine substitution.
+[CI](../../.github/workflows/verify_ext4.yml) runs the same checks.
 
-## Proposed milestone order
+The emitted host library exercises proof erasure and Linux byte compatibility.
+The journal tests compare checked replay with Linux recovery for seven histories,
+including revokes, reallocation, same-transaction revokes, an incomplete tail,
+ring wrap and block-zero metadata. They also exercise retired images and five
+recovery interruption cuts with `e2fsck`; these examples are not formal proofs.
+The complete transaction encoder is tested at 1, 2 and 250 payloads. The serial
+writer is checked against Linux recovery at all fifteen command cuts for a
+two-payload transaction, with abort injection at each position. Additional cases
+exercise 4096/4097 replay credits, reserved revoke targets, and terminal-ID replay
+and retirement against Linux recovery. Three completed overlapping writer
+generations are followed by all thirteen command cuts of a final writer. Four
+repeated recovery crashes include a journaled primary-superblock update. Allocation
+checks use Linux bitmaps and census all allocated blocks in the controlled fixture;
+checksummed inode aliases, inconsistent sector counts and unwritten directory
+extents are rejected. Sparse-super reservations are exercised across all 32 groups;
+checksummed global counter mismatches and bitmap source substitution are rejected.
+Whole-image checks additionally reject missing root/journal bitmap markers, hidden
+reserved-inode storage, inconsistent directory/high-water counts, allocated blocks
+without a source claim, claimed blocks marked free, and journal/file aliases.
+Read tests cover exact fixture bytes, block/file boundaries, extreme offsets and
+requests, holes and unwritten extents backed by nonzero storage. Complete directory
+parsing rejects checksummed malformed suffixes and invalid names. Directory reads
+bind the inode generation and reject holes; name-index tests accept 64 distinct
+colliding keys, reject the next without changing state, and retain owned names
+after caller mutation. Whole-directory indexing additionally rejects dangling/journal
+targets, type mismatches, duplicate names, malformed empty directory blocks and
+directory-credit exhaustion. Namespace tests additionally cover link counts,
+dot/parent mismatches, swapped dot/dotdot records, directory hard links, orphaned
+files, a locally consistent disconnected cycle, and valid regular-file hard links.
+Do not link it into the kernel: its target and toolchain differ from the kernel's.
+A kernel source build and its OSTD adapter refinement remain necessary.
 
-- M0: check and repair the abstract replay/journal/gate candidates.
-- M1: arbitrary finite traces, multiple transactions, physical persistence and
-  crashes at every I/O boundary, journal reuse, and repeated recovery.
-- M2: checked ext4/JBD2 parsers and encoders, feature admission, CRC computation,
-  sequence/wrap policy, and byte-format refinement.
-- M3: ownership, initialization, namespace/handle authorization, and filesystem
-  operation preservation.
-- M4: linear tracked capabilities and OSTD lock/frame/DMA/device refinements.
-- M5: prove a read-only Linux-compatible mount and bounded traversal.
-- M6: prove and enable the restricted writable profile.
-- M7: separately prove higher concurrency, ordered-data mode, mmap, direct I/O,
-  allocation optimizations, and additional ext4 features.
+## Remaining acceptance gates
 
-No milestone is complete in this change.
+[DESIGN.md](DESIGN.md) remains the target design.
+[PROOF_OBLIGATIONS.md](PROOF_OBLIGATIONS.md) distinguishes checked abstractions
+from the missing implementation/refinement work.
+The full design is **not implemented or proved**.
+In particular, these are still missing:
+
+- Filesystem operation implementations,
+  including allocation, create/unlink/rename, orphan handling, permissions integration and fsync.
+- Unmount ordering and actual device atomicity, quiescence and reuse refinement.
+  The checked physical history is serialized; a runtime gate must enforce it.
+- CortenMM/OSTD frame, sleeping-lock, BIO, DMA and device-persistence adapters,
+  with verified callback generations, snapshot loans, quiescence and ingress contracts.
+- Read-only/writable mount integration and end-to-end progress proofs.
+
+The framekernel boundary remains unchanged.
+Future kernel code must use CortenMM/OSTD ownership, `VmReader`/`VmWriter` and submitted BIOs;
+Linux `struct page`, `buffer_head` and folio ownership are not imported.
+The host snapshot type does not certify an OSTD frame or DMA loan.
+
+Read [FORMAT_PROFILE.md](FORMAT_PROFILE.md), [TRUST_BOUNDARY.md](TRUST_BOUNDARY.md)
+and [sources.json](sources.json) before extending the implementation.

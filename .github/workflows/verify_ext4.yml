@@ -1,0 +1,56 @@
+# SPDX-License-Identifier: MPL-2.0
+name: Verify ext4 core and models
+
+on:
+  pull_request:
+    paths:
+      - proofs/ext4/**
+      - .github/workflows/verify_ext4.yml
+  push:
+    branches: [main, design/verus-ext4, feat/verus-ext4-core]
+    paths:
+      - proofs/ext4/**
+      - .github/workflows/verify_ext4.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ext4-verus-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verus:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      RUSTUP_TOOLCHAIN: 1.99.1
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Install Rust and Linux format tools
+        run: |
+          rustup toolchain install 1.99.1 --profile minimal
+          sudo apt-get update
+          sudo apt-get install -y e2fsprogs
+      - name: Install digest-pinned Verus
+        run: |
+          python3 proofs/ext4/tools/install_verus.py "$RUNNER_TEMP/ext4-verus"
+          echo "VERUS_BIN=$RUNNER_TEMP/ext4-verus/verus" >> "$GITHUB_ENV"
+          echo "VERUS_LIB_DIR=$RUNNER_TEMP/ext4-verus" >> "$GITHUB_ENV"
+      - name: Check the entire crate and compile it
+        run: python3 proofs/ext4/tools/verify.py
+      - name: Check rejection of invalid verification inputs
+        run: python3 proofs/ext4/tools/check_gate.py
+      - name: Exercise the emitted code on Linux ext4 metadata
+        run: python3 proofs/ext4/tools/check_compat.py
+      - name: Save verification evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ext4-verification-evidence
+          path: |
+            proofs/ext4/build/proof-report.json
+            proofs/ext4/build/verus.stdout
+            proofs/ext4/build/verus.stderr
+            proofs/ext4/build/compat-report.json
+            proofs/ext4/build/compat.stdout

@@ -1,9 +1,8 @@
 # SPDX-License-Identifier: MPL-2.0
-"""Draft fail-closed runner for the abstract models, not an ext4 certificate.
+"""Check and compile the verified core; never issue a filesystem certificate.
 
-This runner has not been executed or validated in the authoring environment.
-Validate the official release archive digest from toolchain.lock.json before
-installing it. The selected compiler/verifier and Python runtime are trusted.
+Validate the official archive against toolchain.lock.json before installing it.
+The selected compiler/verifier, its vstd foundation, and Python are trusted.
 """
 import hashlib
 import json
@@ -15,7 +14,9 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILD = ROOT / "build"
-LOCK = json.loads((ROOT / "toolchain.lock.json").read_text())
+LOCK_BYTES = (ROOT / "toolchain.lock.json").read_bytes()
+LOCK = json.loads(LOCK_BYTES)
+RUNNER_BYTES = Path(__file__).read_bytes()
 REPORT = BUILD / "proof-report.json"
 
 def write_report(data):
@@ -28,24 +29,34 @@ def main():
     report = {
         "schema": 1,
         "status": "not_run",
-        "scope": "abstract models only; no filesystem/driver/refinement claim",
+        "scope": "declared models and executable core; no kernel filesystem claim",
         "writable_mount_enabled": False,
         "required_proofs": LOCK["required_proofs"],
+        "required_executable_functions": LOCK["required_executable_functions"],
         "source_sha256": {},
     }
     write_report(report)  # Remove any stale success before checking prerequisites.
+    (BUILD / "libverified_ext4.rlib").unlink(missing_ok=True)
     try:
         if len(sys.argv) != 1:
             raise RuntimeError("No extra verifier flags or filters are accepted.")
         forbidden = [
-            r"\b(?:assume|admit)\s*\(",
-            r"verifier\s*::\s*(?:external|external_body|external_fn_specification)\b",
+            r"\b(?:assume|admit)\s*[!(]",
+            r"\bassume_specification\b",
+            r"verifier\s*::\s*external(?:_[A-Za-z0-9_]+)?\b",
             r"\b(?:axiom|unsafe|inline_air)\b",
             r"#\s*!?\s*\[\s*cfg(?:_attr)?\b",
             r"#\s*!?\s*\[\s*path\s*=",
             r"\binclude(?:_str|_bytes)?\s*!",
+            r"\bexec_allows_no_decreases_clause\b",
+            r"\btokenized_state_machine\s*!",  # Would add trusted generated APIs.
         ]
         actual = []
+        actual_exec = []
+        if sorted(LOCK["model_files"]) != sorted(
+            str(p.relative_to(ROOT)) for p in (ROOT / "src").rglob("*.rs")
+        ):
+            raise RuntimeError("Every Rust source must be in the pinned source manifest.")
         for relative in LOCK["model_files"]:
             path = ROOT / relative
             contents = path.read_text()
@@ -55,10 +66,18 @@ def main():
                 raise RuntimeError("Disallowed model escape/filter in " + relative)
             module = path.stem
             actual += [module + "::" + name for name in re.findall(r"pub proof fn (\w+)", contents)]
+            actual_exec += [module + "::" + name for name in re.findall(r"pub fn (\w+)", contents)]
+            macro_start = contents.find("verus! {")
+            if macro_start < 0 or any(
+                m.start() < macro_start for m in re.finditer(r"\bfn\s+\w+", contents)
+            ):
+                raise RuntimeError("Function definition outside the verified body: " + relative)
         if sorted(actual) != sorted(LOCK["required_proofs"]):
             raise RuntimeError("Named proof inventory differs from the pinned manifest.")
+        if sorted(actual_exec) != sorted(LOCK["required_executable_functions"]):
+            raise RuntimeError("Executable function inventory differs from the pinned manifest.")
         root_text = (ROOT / LOCK["model_root"]).read_text()
-        for module in ["redo", "journal", "lease"]:
+        for module in [Path(p).stem for p in LOCK["model_files"] if p != LOCK["model_root"]]:
             if not re.search(r"\bmod\s+" + module + r"\s*;", root_text):
                 raise RuntimeError("Required model module is missing: " + module)
         binary = os.environ.get("VERUS_BIN")
@@ -66,17 +85,19 @@ def main():
             raise RuntimeError("Set VERUS_BIN to the pinned verifier executable.")
         version = subprocess.run(
             [binary, "--version", "--output-json"],
-            capture_output=True, text=True, check=True,
+            capture_output=True, text=True, check=True, timeout=30,
         )
         version_text = version.stdout + version.stderr
         if LOCK["verus"]["commit"] not in version_text:
             raise RuntimeError("Verifier version did not report the pinned full commit.")
         report["verifier_version"] = json.loads(version.stdout)
         report["command"] = [
-            binary, "--no-cheating", "--output-json", LOCK["model_root"],
+            binary, "--no-cheating", "--no-external-by-default", "--output-json", "--compile",
+            "--crate-type=rlib", "--crate-name=verified_ext4", "--out-dir=build",
+            LOCK["model_root"],
         ]
         process = subprocess.run(
-            report["command"], cwd=ROOT, capture_output=True, text=True,
+            report["command"], cwd=ROOT, capture_output=True, text=True, timeout=300,
         )
         (BUILD / "verus.stdout").write_text(process.stdout)
         (BUILD / "verus.stderr").write_text(process.stderr)
@@ -91,27 +112,48 @@ def main():
             and results.get("errors") == 0
             and results.get("encountered-error") is False
             and results.get("encountered-vir-error") is False
-            and results.get("verified", 0) >= len(LOCK["required_proofs"])
+            and results.get("verified", 0) >= len(actual) + len(actual_exec)
         ):
             raise RuntimeError("Missing successful full-crate verification coverage.")
         details = output.get("func-details", {})
-        for name in LOCK["required_proofs"]:
-            if not any(key == name or key.endswith("::" + name) for key in details):
+        coverage = {}
+        for name in actual + actual_exec:
+            module, function = name.split("::")
+            # Associated methods have an additional type segment in Verus JSON.
+            matches = [key for key in details if (key == name or key.endswith("::" + name)
+                or ("::" + module + "::" in key and key.endswith("::" + function)))]
+            if len(matches) != 1:
                 raise RuntimeError("Verifier function coverage missing " + name)
-        report["status"] = "abstract_models_checked"
+            coverage[name] = matches[0]
+        artifact = BUILD / "libverified_ext4.rlib"
+        if not artifact.is_file():
+            raise RuntimeError("Verified executable library was not emitted.")
+        for relative, digest in report["source_sha256"].items():
+            if hashlib.sha256((ROOT / relative).read_bytes()).hexdigest() != digest:
+                raise RuntimeError("Source changed during verification: " + relative)
+        if (ROOT / "toolchain.lock.json").read_bytes() != LOCK_BYTES or Path(__file__).read_bytes() != RUNNER_BYTES:
+            raise RuntimeError("Verifier manifest or runner changed during verification.")
+        report["status"] = "core_and_models_checked"
         report["verification_results"] = results
         report["named_proof_coverage"] = sorted(LOCK["required_proofs"])
+        report["named_executable_coverage"] = sorted(LOCK["required_executable_functions"])
+        report["verifier_symbols"] = coverage
+        report["artifact_sha256"] = hashlib.sha256(artifact.read_bytes()).hexdigest()
+        report["lock_sha256"] = hashlib.sha256(LOCK_BYTES).hexdigest()
+        report["runner_sha256"] = hashlib.sha256(RUNNER_BYTES).hexdigest()
         report["not_proved"] = [
             "physical device/flush/DMA behavior",
-            "JBD2/ext4 byte decoding and recovery recognition",
-            "multiple transactions and circular-log reuse",
-            "VFS permissions, OSTD concurrency, and executable refinement",
+            "complete ext4/JBD2 decoding, disk-history recognition, and recovery",
+            "physical circular-log reuse, revokes, and quiescence",
+            "filesystem operations, VFS permissions, and OSTD adapter refinement",
             "a functioning or durable ext4 filesystem",
         ]
         write_report(report)
-        print("Abstract models checked. Filesystem and integration gates remain closed.")
+        print(f"Verus checked {results['verified']} obligations and compiled the core. "
+              "Kernel mount gates remain closed.")
     except Exception as error:
         report["status"] = "failed_or_not_run"
+        (BUILD / "libverified_ext4.rlib").unlink(missing_ok=True)
         report["error"] = str(error)
         write_report(report)
         print(str(error), file=sys.stderr)

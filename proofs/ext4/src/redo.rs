@@ -5,6 +5,7 @@
 //! It is a mathematical value, not a checksum. Codec refinement is separate.
 
 use vstd::prelude::*;
+use vstd::assert_maps_equal;
 
 verus! {
 
@@ -32,7 +33,7 @@ pub proof fn overlay_is_idempotent(home: Disk, patch: Disk)
     ensures overlay(overlay(home, patch), patch) == overlay(home, patch),
 {
     assert_maps_equal!(
-        overlay(overlay(home, patch), patch) == overlay(home, patch),
+        overlay(overlay(home, patch), patch), overlay(home, patch),
         unit => { }
     );
 }
@@ -44,7 +45,7 @@ pub proof fn complete_redo_overrides_partial_checkpoint(
     ensures overlay(partial, patch) == overlay(before, patch),
 {
     assert_maps_equal!(
-        overlay(partial, patch) == overlay(before, patch),
+        overlay(partial, patch), overlay(before, patch),
         unit => {
             if before.dom().contains(unit) && !patch.dom().contains(unit) {
                 assert(partial[unit] == before[unit]);
