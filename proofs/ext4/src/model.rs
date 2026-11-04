@@ -183,3 +183,4 @@ pub mod inode_projection;
 pub mod write_result;
 pub mod bootstrap_frame;
 pub mod recovery_bootstrap;
+pub mod claim_admission;

@@ -5,7 +5,7 @@
 //! and one descriptor block. META_BG and reserved-GDT growth are not admitted.
 
 use vstd::prelude::*;
-use crate::{block_claims::{self, Census, Claim}, bytes, crc, group};
+use crate::{block_claims::{self, Census, CensusView, Claim}, bytes, claim_admission, crc, group};
 
 verus! {
 
@@ -62,30 +62,39 @@ pub open spec fn claims(raw: Seq<u8>, number: u32, ipg: u32) -> Seq<Claim> {
     else { ordinary }
 }
 
+pub open spec fn reservation_admissible(census: CensusView, raw: Seq<u8>, number: u32, blocks: u32, ipg: u32, seed: u32, flex: bool) -> bool {
+    &&& census.roles.len() == blocks && number < 32
+    &&& group::accepted_with_features(raw, number, blocks, ipg, seed, flex)
+    &&& claim_admission::appendable(census.roles, claims(raw, number, ipg))
+}
+
 pub fn reserve(census: Census, raw: &[u8], number: u32, blocks: u32, ipg: u32, seed: u32) -> (r: Option<Census>)
     ensures match r {
         Some(next) => group::accepted(raw@, number, blocks, ipg, seed) && number < 32
             && next.wf() && next.view().roles.len() == census.view().roles.len() && next.view().roles.len() == blocks
             && next.view().claims == census.view().claims + claims(raw@, number, ipg)
             && block_claims::mapped_claims(next.view().roles, claims(raw@, number, ipg))
-            && block_claims::preserves_occupied(census.view().roles, next.view().roles),
-        None => true,
+            && block_claims::preserves_occupied(census.view().roles, next.view().roles)
+            && reservation_admissible(census.view(), raw@, number, blocks, ipg, seed, false),
+        None => !reservation_admissible(census.view(), raw@, number, blocks, ipg, seed, false),
     },
 { reserve_with_features(census, raw, number, blocks, ipg, seed, false) }
 
-pub fn reserve_with_features(mut census: Census, raw: &[u8], number: u32, blocks: u32, ipg: u32, seed: u32, flex: bool) -> (r: Option<Census>)
+pub fn reserve_with_features(initial: Census, raw: &[u8], number: u32, blocks: u32, ipg: u32, seed: u32, flex: bool) -> (r: Option<Census>)
     ensures match r {
         Some(next) => group::accepted_with_features(raw@, number, blocks, ipg, seed, flex) && number < 32
-            && next.wf() && next.view().roles.len() == census.view().roles.len() && next.view().roles.len() == blocks
-            && next.view().claims == census.view().claims + claims(raw@, number, ipg)
+            && next.wf() && next.view().roles.len() == initial.view().roles.len() && next.view().roles.len() == blocks
+            && next.view().claims == initial.view().claims + claims(raw@, number, ipg)
             && block_claims::mapped_claims(next.view().roles, claims(raw@, number, ipg))
-            && block_claims::preserves_occupied(census.view().roles, next.view().roles),
-        None => true,
+            && block_claims::preserves_occupied(initial.view().roles, next.view().roles)
+            && reservation_admissible(initial.view(), raw@, number, blocks, ipg, seed, flex),
+        None => !reservation_admissible(initial.view(), raw@, number, blocks, ipg, seed, flex),
     },
 {
     hide(crc::fold);
     hide(group::accepted_with_features);
-    let ghost original = census.view();
+    let ghost original = initial.view();
+    let mut census = initial;
     if census.block_count() != blocks { return None; }
     let desc = match group::parse_with_features(raw, number, blocks, ipg, seed, flex) { Some(desc) => desc, None => { return None; } };
     let backup = match backup_group(number) { Some(backup) => backup, None => { return None; } };
@@ -100,21 +109,45 @@ pub fn reserve_with_features(mut census: Census, raw: &[u8], number: u32, blocks
     let mut index = 0usize;
     while index < input.len()
         invariant index <= input.len() <= 4, input@ == source,
+            original == initial.view(),
             census.wf(), census.view().roles.len() == blocks,
+            block_claims::ledger(original.roles, original.claims),
             census.view().claims == original.claims + source.take(index as int),
             block_claims::preserves_occupied(original.roles, census.view().roles),
+            reservation_admissible(original, raw@, number, blocks, ipg, seed, flex)
+                ==> claim_admission::appendable(census.view().roles, source.skip(index as int)),
         decreases input.len() - index,
     {
         let ghost before = census.view().roles;
-        census = match census.claim(input[index]) { Ok(next) => next, Err(_) => { return None; } };
+        proof {
+            if reservation_admissible(original, raw@, number, blocks, ipg, seed, flex) {
+                assert(source.skip(index as int)[0] == input@[index as int]);
+                assert(claim_admission::available(before, input@[index as int]));
+            }
+        }
+        census = match census.claim(input[index]) {
+            Ok(next) => next,
+            Err(rejected) => {
+                assert(rejected.view().roles == before);
+                assert(!claim_admission::available(before, input@[index as int]));
+                assert(!reservation_admissible(original, raw@, number, blocks, ipg, seed, flex));
+                return None;
+            },
+        };
         proof {
             block_claims::occupied_slot_preservation_is_transitive(original.roles, before, census.view().roles);
+            if reservation_admissible(original, raw@, number, blocks, ipg, seed, flex) {
+                assert(source.skip(index as int)[0] == source[index as int]);
+                claim_admission::appending_one_claim_keeps_the_remaining_claims_appendable(before, census.view().roles, source.skip(index as int));
+                assert(source.skip(index as int).skip(1) =~= source.skip(index as int + 1));
+            }
             assert(source.take(index as int + 1) =~= source.take(index as int).push(source[index as int]));
         }
         index += 1;
     }
     assert(source.take(source.len() as int) =~= source);
     proof { block_claims::every_appended_claim_has_its_exact_physical_slots(&census, original.claims, source); }
+    proof { claim_admission::every_valid_ledger_extension_was_appendable(original, census.view(), source); }
     Some(census)
 }
 

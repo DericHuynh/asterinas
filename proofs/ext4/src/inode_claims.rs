@@ -5,7 +5,7 @@
 //! complete volume, namespace or file-access capability.
 
 use vstd::prelude::*;
-use crate::{block_claims::{self, Census, Claim}, bytes, crc, extent, inode, layout::{self, JournalLayout}};
+use crate::{block_claims::{self, Census, CensusView, Claim}, bytes, claim_admission, crc, extent, inode, layout::{self, JournalLayout}};
 
 verus! {
 
@@ -88,6 +88,17 @@ pub fn collect(mut census: Census, raw: &[u8], number: u32, inodes: u32, blocks:
     Some(census)
 }
 
+pub open spec fn journal_claim(raw: Seq<u8>) -> Claim {
+    Claim { start: bytes::le32(raw, 60) as u32, length: (bytes::le32(raw, 4) / 4096) as u32,
+        kind: 2, inode: 0, generation: 0, logical: 0, initialized: false }
+}
+
+pub open spec fn journal_reservation_admissible(census: CensusView, raw: Seq<u8>, inodes: u32, blocks: u32, seed: u32) -> bool {
+    &&& census.roles.len() == blocks && layout::admitted(raw, inodes, blocks, seed)
+    &&& bytes::le16(raw, 116) == 0 && bytes::le32(raw, 28) == journal_claim(raw).length as nat * 8
+    &&& claim_admission::available(census.roles, journal_claim(raw))
+}
+
 pub fn reserve_journal(census: Census, raw: &[u8], inodes: u32, blocks: u32, seed: u32) -> (r: Option<(Census, JournalLayout)>)
     ensures match r {
         Some((next, journal)) => layout::admitted(raw@, inodes, blocks, seed) && journal.wf()
@@ -97,17 +108,37 @@ pub fn reserve_journal(census: Census, raw: &[u8], inodes: u32, blocks: u32, see
             && journal.view().journal_blocks as nat == bytes::le32(raw@, 4) / 4096
             && next.view().claims == census.view().claims.push(Claim { start: journal.view().start,
                 length: journal.view().journal_blocks, kind: 2, inode: 0, generation: 0, logical: 0, initialized: false })
-            && bytes::le16(raw@, 116) == 0 && bytes::le32(raw@, 28) == journal.view().journal_blocks as nat * 8,
-        None => true,
+            && bytes::le16(raw@, 116) == 0 && bytes::le32(raw@, 28) == journal.view().journal_blocks as nat * 8
+            && journal_reservation_admissible(census.view(), raw@, inodes, blocks, seed),
+        None => !journal_reservation_admissible(census.view(), raw@, inodes, blocks, seed),
     },
 {
+    hide(crc::fold);
+    hide(layout::admitted);
+    hide(inode::accepted);
+    let ghost original = census.view();
     if census.block_count() != blocks { return None; }
     let journal = match layout::from_inode(raw, inodes, blocks, seed) { Some(j) => j, None => { return None; } };
+    assert(raw.len() == 256) by { reveal(inode::accepted); }
     if bytes::read_le16(raw, 116).unwrap() != 0
         || bytes::read_le32(raw, 28).unwrap() != journal.blocks() * 8 { return None; }
     let claim = Claim { start: (journal.offset(0, 18446744073709551615).unwrap() / 4096) as u32,
         length: journal.blocks(), kind: 2, inode: 0, generation: 0, logical: 0, initialized: false };
-    match census.claim(claim) { Ok(next) => Some((next, journal)), Err(_) => None }
+    assert(claim == journal_claim(raw@));
+    match census.claim(claim) {
+        Ok(next) => {
+            proof {
+                assert(next.view().claims =~= original.claims + seq![claim]);
+                claim_admission::every_valid_ledger_extension_was_appendable(original, next.view(), seq![claim]);
+                reveal(claim_admission::appendable);
+                assert(seq![claim][0] == claim);
+                assert(claim_admission::available(original.roles, seq![claim][0]));
+                assert(claim_admission::available(original.roles, claim));
+            }
+            Some((next, journal))
+        },
+        Err(_) => None,
+    }
 }
 
 }
