@@ -77,12 +77,12 @@ in sources.json.
 | Concurrency obligation | Accomplished | Remaining |
 | --- | --- | --- |
 | C-RUN | Bounded shared window accounting, actual disjoint borrowed handles, exact close/seal, unused-credit release and arbitrary finite reservation/edit interleavings | Running transaction extension/restart, wait queues, mount ownership and full operation closure |
-| C-COMMIT | Older immutable and newer private candidate versions overlap; sealed log spans and bytes remain isolated | Ordered commit dispatch, durable acknowledgements, source epoch/admission and the physical persistence refinement |
-| C-CHECKPOINT | Sealed reservations remain pinned and cannot be cancelled or recycled through this API | Checkpoint queues, conflicting home-write dependencies, tail fences and quiescent reclamation |
+| C-COMMIT | Older/newer candidate versions remain isolated; the separate [closed-window core](DURABLE_JOURNAL_WINDOWS.md) now owns encodings, sequences and durable commit requests with byte-level persistence proofs | Actual concurrent crash-scan/recovery composition, full filesystem admission and runtime refinement |
+| C-CHECKPOINT | Sealed reservations remain pinned; the separate closed-window core now checks FIFO home checkpoints, conflicting-version fences and fenced tail-prefix retirement | Circular log/credit reclamation, fresh-source restart and hardware quiescence |
 | C-LOCK | Rust loans prevent cancellation or sealing while work parts remain live | Actual OSTD guard ranks, waits, callbacks, reset/unmount and deadlock/progress refinement |
 
 There is no sealed-credit reclamation API. This conservatively prevents reuse
-before the missing checkpoint/tail/quiescence proof exists. Native tests of
+before physical quiescence and reusable-log admission are established. Closed-window checkpoint/tail proofs are now separate in DURABLE_JOURNAL_WINDOWS.md. Native tests of
 completed records do not establish concurrent crash recovery or filesystem
 durability. The actual adapter must retain CortenMM/OSTD frame, mapping and DMA
 loans; owned host snapshots do not prove that boundary. No Linux page, folio or

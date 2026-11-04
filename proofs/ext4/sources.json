@@ -15,13 +15,13 @@
       "path": "fs/jbd2/commit.c",
       "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/jbd2/commit.c",
       "blob_sha": "7203d2d2624d7afd0d7a3fe7f830845665dd4c14",
-      "review_scope": "jbd2_journal_commit_transaction waits for live updates before T_SWITCH, separates running/committing transactions and preserves b_frozen_data/b_committed_data versions; ordering/persistence integration remains open"
+      "review_scope": "jbd2_journal_commit_transaction waits for live updates before T_SWITCH, preserves frozen versions, waits for log IO before the non-async commit record (lines 790-879), establishes commit/cache ordering and flushes before tail updates (lines 872-900); independently implemented safe Rust window uses explicit log, commit, home and tail fences"
     },
     {
       "path": "fs/jbd2/checkpoint.c",
       "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/jbd2/checkpoint.c",
       "blob_sha": "1508e2f544621120f4ce212fa5b73360dc46c711",
-      "review_scope": "checkpoint transaction lists, conflicting committing transactions, buffer locks/writeback waits and dropping checkpoint_mutex around commit waits; actual overlapping checkpoint/tail/quiescence proof remains open"
+      "review_scope": "checkpoint transaction lists and conflict waits, dropping checkpoint_mutex around commit waits; jbd2_cleanup_journal_tail explicitly flushes checkpointed home writes before updating the tail (lines 326-352); safe Rust window adds FIFO home-generation and tail-header fences, with runtime locks and quiescence still open"
     },
     {
       "path": "fs/jbd2/recovery.c",

@@ -148,6 +148,24 @@ def main():
                                               "{ q.frozen_versions()[0] = v; }\n", "E0594"),
         "mutate_frozen_journal_bytes": ("pub fn misuse(v: &verified_ext4::journal_queue::FrozenVersion) "
                                          "{ v.image_at(0).unwrap().1[0] = 1; }\n", "E0594"),
+        "forge_window_request": ("pub fn misuse(engine: verified_ext4::journal_window::Engine) "
+                                   "{ let _ = verified_ext4::journal_window::Pending { engine, id: 1 }; }\n", "E0451"),
+        "reuse_window_request": ("pub fn misuse(p: verified_ext4::journal_window::Pending) { "
+                                  "let _ = p.finish_pending(verified_ext4::recovery_request::Completion::Succeeded); "
+                                  "let _ = p.finish_pending(verified_ext4::recovery_request::Completion::Succeeded); }\n", "E0382"),
+        "replace_window_state": ("pub fn misuse(mut e: verified_ext4::journal_window::Engine, "
+                                   "s: verified_ext4::journal_program::State) { e.state = s; }\n", "E0616"),
+        "mutate_window_command": ("pub fn misuse(p: verified_ext4::journal_window::Pending) { "
+                                    "if let verified_ext4::recovery_io::Command::Write { image, .. } = p.pending_command() "
+                                    "{ image[0] = 1; } }\n", "E0594"),
+        "finish_borrowed_window_request": ("pub fn misuse(p: verified_ext4::journal_window::Pending) { "
+                                            "let command = p.pending_command(); "
+                                            "let _ = p.finish_pending(verified_ext4::recovery_request::Completion::Succeeded); "
+                                            "if let verified_ext4::recovery_io::Command::Write { image, .. } = command "
+                                            "{ let _ = image.len(); } }\n", "E0505"),
+        "reuse_dispatched_window": ("pub fn misuse(e: verified_ext4::journal_window::Engine) { "
+                                     "let _ = verified_ext4::journal_window::dispatch(e, verified_ext4::journal_program::Lane::Bootstrap); "
+                                     "let _ = e.finished(); }\n", "E0382"),
     })
     for name, (source, code) in misuse.items():
         path = BUILD / (name + ".rs")

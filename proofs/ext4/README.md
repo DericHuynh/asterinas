@@ -9,9 +9,9 @@ and a [concurrent block/extent/transaction protocol](CONCURRENCY.md).
 It is not a complete filesystem and is not registered with the kernel VFS.
 No mount or filesystem write path is enabled.
 
-The pinned Verus run checks **1112 obligations with zero errors**, including
-393 named proof functions and 351 named executable functions.
-104 host interoperability/regression tests pass on Linux-created metadata.
+The pinned Verus run checks **1206 obligations with zero errors**, including
+433 named proof functions and 365 named executable functions.
+109 host interoperability/regression tests pass on Linux-created metadata.
 [Proof status](proof-status.json) and [recorded evidence](verification-evidence.json)
 state the exact scope; tests do not discharge formal obligations.
 
@@ -30,7 +30,8 @@ state the exact scope; tests do not discharge formal obligations.
 | `inode_time.rs`, `inode_time_fields.rs` | Exact Linux signed base/epoch/nanosecond words, canonical encoding/decoding, legacy clamping, field presence from actual extra size, total range checks, exact read-after-write and unchanged rejection/unrelated bytes. See [inode times](INODE_TIMES.md). Current-profile ctime/mtime and checksum closure composes through inode_touch.rs; other time operations, wider inode admission and runtime clock/VFS authority remain open. |
 | `inode_touch.rs`, `content_write::begin_timed` | Exact source-domain ctime/mtime update and inode checksum reseal, unchanged inode identity/extents and unrelated bytes, actual inode group/slot table-block splice and two-image handle/close/freeze plus complete writer admission. See [write metadata](WRITE_METADATA.md). Successful serialized image equality composes through writer_image.rs; full operation/crash closure, allocation/conversion, VFS authority and CortenMM/runtime refinement remain open. |
 | `block_range.rs`, `extent_span.rs` | 64-bit block interval bounds, disjointness and exact split partition; Linux 48-bit physical-start codec, reserved terminal logical block and pointwise logical/physical mapping preservation under splitting and merging. Descriptors do not establish allocation, read initialization, concurrency or full-tree admission. |
-| `journal_queue.rs`, `journal_queue_trace.rs` | Bounded shared journal reservations, unused-credit compaction, cancelled-serial freshness and disjoint sealed log spans; actual newer edit parts overlap immutable older versions with exact frozen-byte preservation over all finite modeled interleavings. See [journal reservations](JOURNAL_RESERVATIONS.md). Ordered durable commit/checkpoint, tail reclamation and CortenMM/OSTD integration remain open. |
+| `journal_queue.rs`, `journal_queue_trace.rs` | Bounded shared journal reservations, unused-credit compaction, cancelled-serial freshness and disjoint sealed log spans; actual newer edit parts overlap immutable older versions with exact frozen-byte preservation over all finite modeled interleavings. See [journal reservations](JOURNAL_RESERVATIONS.md). Durable closed-window scheduling now composes separately below; circular reuse, tail reclamation and CortenMM/OSTD integration remain open. |
+| `journal_program.rs`, `journal_window.rs`, `journal_window_device.rs`, `journal_window_media.rs`, `journal_window_progress.rs` | Owned reserved-window encodings and independently scheduled commit/checkpoint/tail lanes; FIFO fenced home versions, exact durable acknowledged log bytes and latest final home/tail images, every finite modeled persistence/abort interleaving, finite flush refinement and scheduler progress. See [durable journal windows](DURABLE_JOURNAL_WINDOWS.md). One pending request; actual scanner crash-prefix composition, operation/mount admission, circular reuse and runtime refinement remain open. |
 | `block_lifetime.rs` | Abstract per-block shared read pins, exclusive volume/block/epoch-bound writer leases, initialization/publication and reuse. All finite enabled interleavings preserve the invariant; retired pin IDs stay retired, stale requests/leases are rejected, disjoint writes commute, and nonempty reader/writer examples cover modeled block sizes 1 through 64 KiB. No runtime thread, extent-map, DMA or concurrent journal refinement is claimed. |
 | `block_size.rs`, `extent_node.rs` | Shared geometry checks and total local extent-node validation: inline roots, external 1–64 KiB nodes, depth 0–5, 48-bit index children, bounded entries/capacity, ordered nonoverlapping records, legacy/checksummed blocks and the Linux eh_max checksum domain. Strict-key and interval ordering, binary-search partitions, unique covering leaf records and inherited branch bounds are checked. Bounded 4 KiB inode/feature and ownership composition is checked by extent_claims.rs; wider geometry and runtime refinement remain open. |
 | `source_block.rs`, `snapshot.rs`, `shadow_model.rs` | Exact bounded byte capture across shadow-page boundaries and owned 64-bit-addressed 1–64 KiB filesystem blocks. Checked multiplication/division binds each block and extent-node buffer to its exact source range and partition bounds, without truncating high page addresses. Bounded 4 KiB inode seed/feature/ownership binding composes through extent_claims.rs. Wider geometry and CortenMM/device origin remain open. |
@@ -105,7 +106,13 @@ stable. Before commit the home image is unchanged except recovery marking;
 retirement requires durable exact home after-images. A successful flush has a
 finite refinement into issued atomic writes, and a failure-free ledger has a
 finite successful execution. These results use explicit device assumptions,
-not a claim about any actual Asterinas driver.
+not a claim about any actual Asterinas driver. The additional closed-window core
+permits independently scheduled commit/checkpoint/tail lanes with one pending
+request, preserves FIFO home and tail fences, and proves exact durable reported
+log bytes and latest final home/tail images. Its native tests compare actual
+Linux recovery at all 27 cuts of a two-transaction schedule with three cache
+persistence patterns each. Full concurrent scanner/recovery closure and actual
+CortenMM/OSTD/device refinement remain open.
 
 Active scanning has a checked sufficient resource profile. Every writer crash snapshot
 satisfies it, including partial log persistence, without CRC injectivity. Recovery
@@ -158,8 +165,7 @@ It rejects local proof escapes, extra flags, omitted modules and source-inventor
 requires named proof and executable coverage; invalidates stale artifacts on failure;
 and records source, runner, manifest, verifier and emitted-library hashes.
 The negative checks include an actual failing Verus assertion in a disposable copy.
-Thirteen additional negative Rust compilation checks reject extent-tree and bound-inode certificate/source substitution and recovery/writer request
-reuse and forgery, external completion redirection, writer-state replacement and admitted-recovery request/engine substitution.
+Forty-four negative Rust compilation checks reject certificate/source substitution, edit/queue ownership violations, request reuse/forgery, completion redirection, state replacement, command mutation and finishing through a live command loan.
 [CI](../../.github/workflows/verify_ext4.yml) runs the same checks.
 
 The emitted host library exercises proof erasure and Linux byte compatibility.
@@ -205,7 +211,7 @@ In particular, these are still missing:
 - Filesystem operation implementations,
   including allocation, create/unlink/rename, orphan handling, permissions integration and fsync.
 - Unmount ordering and actual device atomicity, quiescence and reuse refinement.
-  The checked physical history is serialized; a runtime gate must enforce it.
+  The complete admitted writer history remains serialized; the additional closed-window model permits interleaved commit/checkpoint lanes with one pending request. Actual runtime exclusion and device refinement remain open.
 - CortenMM/OSTD frame, sleeping-lock, BIO, DMA and device-persistence adapters,
   with verified callback generations, snapshot loans, quiescence and ingress contracts.
 - Read-only/writable mount integration and end-to-end progress proofs.

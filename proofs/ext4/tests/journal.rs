@@ -504,6 +504,365 @@ mod journal_reservations {
     }
 }
 
+mod durable_windows {
+    use core::{
+        journal_program::Lane,
+        journal_queue::{Queue, Seal},
+        journal_window::{self, Engine, Operation, Pending},
+        recovery_io::Command,
+    };
+
+    use super::*;
+
+    fn staged(image: &[u8], target: u32, generations: usize) -> Queue {
+        let mut queue = Queue::new(geometry(image).0).unwrap();
+        for generation in 0..generations {
+            assert!(queue.reserve(&[target, target + 1]));
+            {
+                let (_, mut part, _) = queue.borrow_work(2).unwrap();
+                for index in 0..2 {
+                    let mut handle = part.handle_at(index).unwrap();
+                    let mut bytes = value(generation, index);
+                    assert!(handle.stage(&bytes));
+                    bytes.fill(0xee);
+                    assert!(handle.close());
+                }
+            }
+            assert!(matches!(queue.seal(), Seal::Frozen(_)));
+        }
+        queue
+    }
+
+    fn value(generation: usize, index: usize) -> Vec<u8> {
+        let mut bytes = vec![0x41 + generation as u8 * 2 + index as u8; 4096];
+        if index == 0 {
+            bytes[..4].copy_from_slice(&core::jbd2::MAGIC.to_be_bytes());
+        }
+        bytes
+    }
+
+    fn prepare(image: &[u8], queue: &Queue) -> Option<Engine> {
+        let layout = geometry(image).0;
+        let begin = layout.physical_start() as usize * 4096;
+        let end = begin + layout.blocks() as usize * 4096;
+        journal_window::prepare(
+            queue.frozen_versions(),
+            &image[begin..end],
+            &image[1128..1144],
+            layout,
+            &image[..4096],
+            image.len() as u64,
+        )
+    }
+
+    fn script() -> Vec<Lane> {
+        let mut lanes = vec![Lane::Bootstrap; 4];
+        lanes.extend([Lane::Commit; 6]);
+        lanes.extend([Lane::Checkpoint; 2]);
+        lanes.extend([Lane::Commit; 6]);
+        lanes.push(Lane::Checkpoint);
+        lanes.push(Lane::Tail);
+        lanes.extend([Lane::Checkpoint; 2]);
+        lanes.push(Lane::Tail);
+        lanes.push(Lane::Checkpoint);
+        lanes.extend([Lane::Tail; 2]);
+        lanes
+    }
+
+    struct Cache {
+        stable: Vec<u8>,
+        writes: Vec<(u64, u32, Vec<u8>, bool)>,
+        last_request: u64,
+    }
+
+    impl Cache {
+        fn new(image: &[u8]) -> Self {
+            Self {
+                stable: image.to_vec(),
+                writes: Vec::new(),
+                last_request: 0,
+            }
+        }
+
+        fn capture(&mut self, pending: &Pending) -> bool {
+            let id = pending.request_number();
+            assert!(id > self.last_request);
+            self.last_request = id;
+            match pending.pending_command() {
+                Command::Write { block, image } => {
+                    assert_eq!(image.len(), 4096);
+                    assert!((block as usize + 1) * 4096 <= self.stable.len());
+                    assert!(
+                        self.writes
+                            .iter()
+                            .all(|(_, older, _, stable)| *older != block || *stable),
+                        "new same-address write escaped its predecessor's fence"
+                    );
+                    self.writes.push((id, block, image.to_vec(), false));
+                    true
+                }
+                Command::Flush => false,
+            }
+        }
+
+        fn persist(&mut self, index: usize) {
+            let (_, block, bytes, stable) = &mut self.writes[index];
+            assert!(!*stable);
+            let begin = *block as usize * 4096;
+            self.stable[begin..begin + 4096].copy_from_slice(bytes);
+            *stable = true;
+        }
+
+        fn drain(&mut self) {
+            for index in (0..self.writes.len()).rev() {
+                if !self.writes[index].3 {
+                    self.persist(index);
+                }
+            }
+        }
+
+        fn complete(&mut self, engine: Engine, lane: Lane) -> Engine {
+            let pending = journal_window::dispatch(engine, lane).ok().unwrap();
+            if !self.capture(&pending) {
+                self.drain();
+            }
+            pending.finish_pending(Completion::Succeeded)
+        }
+    }
+
+    #[test]
+    fn newer_commit_overlaps_older_checkpoint_and_each_home_generation_is_fenced() {
+        let (image, layout, _, target) = fixture();
+        let queue = staged(&image, target, 2);
+        let mut engine = prepare(&image, &queue).unwrap();
+        let first = engine.first_sequence();
+        assert_eq!(engine.transaction_count(), 2);
+        drop(queue); // The I/O owner retains independent encoded snapshots.
+        let mut cache = Cache::new(&image);
+        for (index, lane) in script().into_iter().enumerate() {
+            engine = cache.complete(engine, lane);
+            if index == 17 {
+                assert_eq!(engine.progress(), (2, 0, 0, false));
+            }
+            if index == 21 {
+                assert_eq!(engine.progress(), (2, 1, 0, false));
+            }
+            if index == 22 {
+                assert_eq!(engine.progress(), (2, 1, 1, false));
+            }
+        }
+        assert!(engine.finished());
+        assert_eq!(engine.progress(), (2, 2, 2, false));
+        assert!(cache.writes.iter().all(|write| write.3));
+        let begin = layout.physical_start() as usize * 4096;
+        let header = core::journal_superblock::parse(
+            &cache.stable[begin..begin + 1024],
+            &image[1128..1144],
+            layout.blocks(),
+        )
+        .unwrap();
+        assert_eq!((header.sequence, header.start), (first + 2, 0));
+        for index in 0..2 {
+            let begin = (target as usize + index) * 4096;
+            assert_eq!(&cache.stable[begin..begin + 4096], value(1, index));
+        }
+        let recovered = linux_recover("build/window-success.img", &cache.stable);
+        for index in 0..2 {
+            let begin = (target as usize + index) * 4096;
+            assert_eq!(&recovered[begin..begin + 4096], value(1, index));
+        }
+    }
+
+    #[test]
+    fn every_window_cut_recovers_the_acknowledged_prefix_with_late_cache_writes() {
+        let (image, layout, _, target) = fixture();
+        let queue = staged(&image, target, 2);
+        let lanes = script();
+        let begin = layout.physical_start() as usize * 4096;
+        let end = begin + layout.blocks() as usize * 4096;
+        for cut in 0..=lanes.len() {
+            for persistence in 0..3 {
+                let mut engine = prepare(&image, &queue).unwrap();
+                let first = engine.first_sequence();
+                let mut cache = Cache::new(&image);
+                for lane in &lanes[..cut] {
+                    engine = cache.complete(engine, *lane);
+                }
+                let acknowledged = engine.progress().0;
+                if cut < lanes.len() {
+                    let pending = journal_window::dispatch(engine, lanes[cut]).ok().unwrap();
+                    cache.capture(&pending);
+                    let pending = pending.abort_pending();
+                    engine = pending.finish_pending(Completion::Succeeded);
+                    assert_eq!(engine.progress().0, acknowledged);
+                    assert!(engine.progress().3);
+                    for lane in [Lane::Bootstrap, Lane::Commit, Lane::Checkpoint, Lane::Tail] {
+                        assert!(!engine.can_dispatch(lane));
+                    }
+                }
+                // Abort does not cancel submitted writes. The cache may persist
+                // them after the request owner has accepted the abort report.
+                for index in (0..cache.writes.len()).rev() {
+                    if !cache.writes[index].3
+                        && (persistence == 1 || persistence == 2 && index % 2 == 0)
+                    {
+                        cache.persist(index);
+                    }
+                }
+                let header = core::journal_superblock::parse(
+                    &cache.stable[begin..begin + 1024],
+                    &image[1128..1144],
+                    layout.blocks(),
+                )
+                .unwrap();
+                let retired = if header.sequence < first {
+                    0
+                } else {
+                    (header.sequence - first) as usize
+                };
+                let scanned = core::scan::recover(
+                    &cache.stable[begin..end],
+                    &image[1128..1144],
+                    layout.duplicate(),
+                )
+                .unwrap();
+                let recovered_prefix = retired + scanned.committed_transactions() as usize;
+                assert!(
+                    acknowledged <= recovered_prefix && recovered_prefix <= 2,
+                    "cut={cut}, persistence={persistence}, ack={acknowledged}, recovered={recovered_prefix}"
+                );
+                let mut checked = cache.stable.clone();
+                for index in 0..scanned.replay_plan().len() {
+                    let write = scanned.replay_plan().get(index).unwrap();
+                    let at = write.block() as usize * 4096;
+                    checked[at..at + 4096].copy_from_slice(write.image());
+                }
+                for index in 0..2 {
+                    let at = (target as usize + index) * 4096;
+                    let expected = if recovered_prefix == 0 {
+                        image[at..at + 4096].to_vec()
+                    } else {
+                        value(recovered_prefix - 1, index)
+                    };
+                    assert_eq!(
+                        &checked[at..at + 4096],
+                        expected,
+                        "cut={cut}, persistence={persistence}"
+                    );
+                }
+                let linux = linux_recover(
+                    &format!("build/window-cut-{cut}-{persistence}.img"),
+                    &cache.stable,
+                );
+                let at = target as usize * 4096;
+                assert_eq!(&linux[at..at + 8192], &checked[at..at + 8192]);
+            }
+        }
+    }
+
+    #[test]
+    fn failure_reports_never_acknowledge_or_retire_and_pending_requests_can_move_threads() {
+        let (image, _, _, target) = fixture();
+        let queue = staged(&image, target, 2);
+        let lanes = script();
+        for cut in 0..lanes.len() {
+            let mut engine = prepare(&image, &queue).unwrap();
+            let mut cache = Cache::new(&image);
+            for lane in &lanes[..cut] {
+                engine = cache.complete(engine, *lane);
+            }
+            let before = engine.progress();
+            let pending = journal_window::dispatch(engine, lanes[cut]).ok().unwrap();
+            cache.capture(&pending);
+            engine = std::thread::spawn(move || pending.finish_pending(Completion::Failed))
+                .join()
+                .unwrap();
+            assert_eq!(engine.progress(), (before.0, before.1, before.2, true));
+            cache.drain();
+            for lane in [Lane::Bootstrap, Lane::Commit, Lane::Checkpoint, Lane::Tail] {
+                engine = journal_window::dispatch(engine, lane).err().unwrap();
+            }
+            assert!(!engine.finished());
+        }
+    }
+
+    #[test]
+    fn preparation_rejects_active_headers_nonprefix_reservations_and_sequence_exhaustion() {
+        let (mut image, layout, _, target) = fixture();
+        let queue = staged(&image, target, 2);
+        let begin = layout.physical_start() as usize * 4096;
+        let end = begin + layout.blocks() as usize * 4096;
+        let uuid = image[1128..1144].to_vec();
+        assert!(
+            journal_window::prepare(
+                &queue.frozen_versions()[1..],
+                &image[begin..end],
+                &uuid,
+                layout.duplicate(),
+                &image[..4096],
+                image.len() as u64
+            )
+            .is_none()
+        );
+        assert!(
+            journal_window::prepare(
+                &[],
+                &image[begin..end],
+                &uuid,
+                layout.duplicate(),
+                &image[..4096],
+                image.len() as u64
+            )
+            .is_none()
+        );
+        let active = core::journal_state::encode(
+            &image[begin..begin + 4096],
+            &uuid,
+            layout.blocks(),
+            100,
+            1,
+        )
+        .unwrap();
+        image[begin..begin + 4096].copy_from_slice(active.as_slice());
+        assert!(prepare(&image, &queue).is_none());
+        let exhausted = core::journal_state::encode(
+            &image[begin..begin + 4096],
+            &uuid,
+            layout.blocks(),
+            u32::MAX - 2,
+            0,
+        )
+        .unwrap();
+        image[begin..begin + 4096].copy_from_slice(exhausted.as_slice());
+        assert!(prepare(&image, &queue).is_none());
+    }
+
+    #[test]
+    fn coalesced_tail_skips_only_checkpointed_transactions() {
+        let (image, _, _, target) = fixture();
+        let queue = staged(&image, target, 2);
+        let mut engine = prepare(&image, &queue).unwrap();
+        let mut cache = Cache::new(&image);
+        for _ in 0..4 {
+            engine = cache.complete(engine, Lane::Bootstrap);
+        }
+        for _ in 0..12 {
+            engine = cache.complete(engine, Lane::Commit);
+        }
+        assert!(!engine.can_dispatch(Lane::Tail));
+        for _ in 0..6 {
+            engine = cache.complete(engine, Lane::Checkpoint);
+        }
+        let pending = journal_window::dispatch(engine, Lane::Tail).ok().unwrap();
+        assert!(matches!(pending.operation(), Operation::Tail(2)));
+        cache.capture(&pending);
+        engine = pending.finish_pending(Completion::Succeeded);
+        assert_eq!(engine.progress(), (2, 2, 0, false));
+        engine = cache.complete(engine, Lane::Tail);
+        assert!(engine.finished());
+    }
+}
+
 fn fixture() -> (Vec<u8>, core::layout::JournalLayout, u32, u32) {
     let img = std::fs::read(std::env::var("EXT4_TEST_IMAGE").unwrap()).unwrap();
     let (layout, seed, target) = geometry(&img);
