@@ -126,7 +126,9 @@
     "src/extent_frame.rs",
     "src/write_frame.rs",
     "src/inode_projection.rs",
-    "src/write_result.rs"
+    "src/write_result.rs",
+    "src/bootstrap_frame.rs",
+    "src/recovery_bootstrap.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -493,7 +495,18 @@
     "write_result::a_timed_write_has_the_exact_logical_file_byte_result",
     "write_result::a_successful_timed_writer_has_exact_durable_logical_file_bytes",
     "bootstrap::every_valid_bootstrap_is_the_unique_source_projection",
-    "bootstrap::valid_bootstraps_of_identical_bytes_have_identical_fields"
+    "bootstrap::valid_bootstraps_of_identical_bytes_have_identical_fields",
+    "bootstrap_identity::fixed_primary_identity_keeps_bootstrap_geometry_and_checksum_domain",
+    "bootstrap_identity::preserved_group_zero_addresses_keep_the_journal_inode_coordinate",
+    "bootstrap_frame::a_bootstrap_preserving_allocation_image_has_an_admissible_journal_locator",
+    "bootstrap_frame::complete_bootstrap_block_mixtures_keep_the_same_admitted_locator",
+    "disk_image::a_flat_projection_reads_every_complete_present_block",
+    "disk_image::a_flat_projection_has_the_exact_mapped_journal",
+    "recovery_bootstrap::each_non_journal_cut_block_has_complete_old_or_validated_redo_bytes",
+    "recovery_bootstrap::every_admitted_recovery_cut_has_an_admissible_fresh_bootstrap",
+    "recovery_bootstrap::every_finite_admitted_recovery_trace_keeps_fresh_bootstrap_discovery",
+    "recovery_bootstrap::unchanged_tail_cuts_have_the_same_fresh_canonical_scan_source",
+    "journal_view::a_mapped_logical_block_has_complete_physical_bytes"
   ],
   "required_flags": [
     "--no-cheating",

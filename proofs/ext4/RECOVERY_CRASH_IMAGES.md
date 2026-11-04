@@ -38,13 +38,14 @@ request or authorize immediate log reuse: an old pending tail write could affect
 a later generation. Existing quiescence, owned-completion and retirement rules
 must still be respected by a runtime adapter.
 
-The theorem does not prove that a fresh process reconstructs a complete new
-bootstrap/filesystem admission from every crash source. That requires additional
-source/identity/admission closure and resource-completeness proofs. It also does
+Fresh bootstrap discovery now composes for every admitted recovery-model cut;
+see [RECOVERY_BOOTSTRAP.md](RECOVERY_BOOTSTRAP.md). Construction of a complete
+new filesystem/recovery admission still requires additional admission and
+resource-completeness proofs. It also does
 not establish writer-crash filesystem closure, concurrent commit/checkpoint,
 actual CortenMM/BIO/driver behavior or complete ext4 feature support. Kernel
 mount/write gates remain closed.
 
 [Bootstrap completeness](BOOTSTRAP_COMPLETENESS.md) now ensures that every source
-satisfying the locator predicate is actually located. Proving that every physical
-crash source satisfies that predicate is a separate remaining obligation.
+satisfying the locator predicate is actually located. The recovery bootstrap proof now establishes that predicate for every admitted
+recovery-model cut; writer cuts and actual source capture remain open.

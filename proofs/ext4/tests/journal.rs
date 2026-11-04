@@ -2045,6 +2045,29 @@ fn constructed_transactions_recover_exact_owned_afterimages() {
 fn repeated_recovery_crashes_keep_admission_and_committed_superblock_updates() {
     let (mut stable, layout, _, target) = fixture();
     let uuid = stable[1128..1144].to_vec();
+    let metadata_seed = core::superblock::metadata_checksum_seed(&stable[1024..2048]).unwrap();
+    let bitmap = core::bytes::read_le32(&stable, 4096).unwrap();
+    let table = core::bytes::read_le32(&stable, 4104).unwrap();
+    let bitmap_image = stable[bitmap as usize * 4096..(bitmap as usize + 1) * 4096].to_vec();
+    let mut table_image = stable[table as usize * 4096..(table as usize + 1) * 4096].to_vec();
+    assert!(core::inode_touch::touch(
+        &mut table_image[11 * 256..12 * 256],
+        12,
+        core::bytes::read_le32(&stable, 1024).unwrap(),
+        metadata_seed,
+        false,
+        2147483648,
+        123456789,
+    ));
+    let mut gdt = stable[4096..8192].to_vec();
+    let flags = core::bytes::read_le16(&gdt, 18).unwrap();
+    gdt[18..20].copy_from_slice(&(flags ^ 4).to_le_bytes());
+    gdt[30..32].fill(0);
+    let width = core::superblock::descriptor_length(&stable[1024..2048]).unwrap();
+    let group_seed = core::crc::crc32c(metadata_seed, &0u32.to_le_bytes());
+    let group_crc = core::crc::crc32c(group_seed, &gdt[..width]) as u16;
+    gdt[30..32].copy_from_slice(&group_crc.to_le_bytes());
+    stable[bitmap as usize * 4096] ^= 1; // Recovery must repair inconsistent homes.
     let base = layout.offset(0, stable.len() as u64).unwrap() as usize;
     let mut primary = core::super_state::recovery_image(&stable[..4096], stable.len() as u64, true)
         .unwrap()
@@ -2056,6 +2079,9 @@ fn repeated_recovery_crashes_keep_admission_and_committed_superblock_updates() {
     let data = vec![0xabu8; 4096];
     let input = vec![
         core::transaction::AfterImage::capture(0, &primary).unwrap(),
+        core::transaction::AfterImage::capture(1, &gdt).unwrap(),
+        core::transaction::AfterImage::capture(bitmap, &bitmap_image).unwrap(),
+        core::transaction::AfterImage::capture(table, &table_image).unwrap(),
         core::transaction::AfterImage::capture(target, &data).unwrap(),
     ];
     let mut writer = core::write_io::prepare(
@@ -2096,16 +2122,27 @@ fn repeated_recovery_crashes_keep_admission_and_committed_superblock_updates() {
     )
     .unwrap();
     assert_eq!(scan.committed_transactions(), 1);
-    assert_eq!(scan.replay_plan().len(), 2);
-    for (attempt, commands) in [1usize, 2, 3, 4].into_iter().enumerate() {
-        let mut recovery = core::recovery_io::prepare(
-            &stable[base..base + layout.blocks() as usize * 4096],
-            &uuid,
-            geometry(&stable).0,
-            &stable[..4096],
-            stable.len() as u64,
-        )
-        .expect("an interrupted recovery must remain admissible");
+    assert_eq!(scan.replay_plan().len(), 5);
+    let canonical_journal = stable[base..base + layout.blocks() as usize * 4096].to_vec();
+    {
+        let source = core::snapshot::Snapshot::from_bytes(&stable);
+        assert!(core::allocation::parse(source.duplicate()).is_none());
+        assert!(core::recovery_admission::prepare(&source).is_some());
+    }
+    for (attempt, commands) in [1usize, 2, 3, 4, 5, 6, 7].into_iter().enumerate() {
+        let mut recovery = {
+            let source = core::snapshot::Snapshot::from_bytes(&stable);
+            let boot =
+                core::bootstrap::locate(&source).expect("rediscover from the actual crash source");
+            assert_eq!(boot.journal_inode_block(), table);
+            assert_eq!(boot.journal_uuid(), uuid);
+            let journal = boot.capture_journal();
+            if core::bytes::read_be32(&journal, 28).unwrap() != 0 {
+                assert_eq!(journal, canonical_journal);
+            }
+            boot.prepare_recovery()
+                .expect("fresh recovery must remain admissible")
+        };
         for _ in 0..commands {
             let pending = core::recovery_request::dispatch(recovery).ok().unwrap();
             match pending.pending_command() {
@@ -2118,6 +2155,13 @@ fn repeated_recovery_crashes_keep_admission_and_committed_superblock_updates() {
         }
         assert!(!recovery.finished());
         persist(&mut stable, &mut cache); // A crash may persist all queued writes.
+        {
+            let source = core::snapshot::Snapshot::from_bytes(&stable);
+            let boot =
+                core::bootstrap::locate(&source).expect("every tested cut preserves bootstrap");
+            assert_eq!(boot.journal_inode_block(), table);
+            assert_eq!(boot.layout().physical_start(), layout.physical_start());
+        }
         let linux = linux_recover(&format!("build/repeated-recovery-{attempt}.img"), &stable);
         assert_eq!(
             &linux[target as usize * 4096..(target as usize + 1) * 4096],
@@ -2125,14 +2169,13 @@ fn repeated_recovery_crashes_keep_admission_and_committed_superblock_updates() {
         );
         assert_eq!(&linux[1144..1160], b"verus-repeat-sb0");
     }
-    let mut recovery = core::recovery_io::prepare(
-        &stable[base..base + layout.blocks() as usize * 4096],
-        &uuid,
-        geometry(&stable).0,
-        &stable[..4096],
-        stable.len() as u64,
-    )
-    .unwrap();
+    let mut recovery = {
+        let source = core::snapshot::Snapshot::from_bytes(&stable);
+        core::bootstrap::locate(&source)
+            .unwrap()
+            .prepare_recovery()
+            .unwrap()
+    };
     loop {
         let pending = match core::recovery_request::dispatch(recovery) {
             Ok(pending) => pending,
@@ -2156,6 +2199,11 @@ fn repeated_recovery_crashes_keep_admission_and_committed_superblock_updates() {
         data
     );
     assert_eq!(&stable[1144..1160], b"verus-repeat-sb0");
+    assert_eq!(&stable[4096..8192], gdt);
+    assert_eq!(
+        &stable[table as usize * 4096..(table as usize + 1) * 4096],
+        table_image
+    );
 }
 
 #[test]
