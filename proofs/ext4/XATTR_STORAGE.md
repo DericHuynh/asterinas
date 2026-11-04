@@ -4,7 +4,7 @@
 
 The bounded host profile admits EXT_ATTR with immutable inode-body values and
 single external blocks, including shared external blocks. This is structural
-storage and lookup support. It does not implement setxattr/removexattr, ACL-aware
+storage and lookup support. It does not implement setxattr/removexattr, authenticated
 VFS authorization, LSM policy, EA_INODE lifetime, or a mounted filesystem.
 
 The independent Rust implementation references Linux v7.0 commit
@@ -20,7 +20,7 @@ CortenMM/OSTD source capture, locking, DMA and device refinement remain required
 | `xattr_inode.rs` | Same-source inode/body/external-block binding, cross-location key separation, exact get and absent results, uniqueness of selected value | VFS namespace/credential/LSM policy |
 | `xattr_source.rs` | Complete active-inode scan, exact shared-block reference count, one canonical claim per shared block, occupied-role preservation | Concurrent CortenMM lifetime and incremental census maintenance |
 | `allocation.rs` | Attribute claims composed after data/extent/journal claims, exact bitmap/free counters, per-inode sectors include the external attribute block | Full allocation and mutation semantics |
-| `content_write.rs` | Existing mode-only write candidates reject a present POSIX access ACL | ACL-aware writes and full security policy |
+| `content_write.rs` | Existing mode-only write candidates reject a present POSIX access ACL | Source-bound ACL-aware candidates are in POSIX_ACL.md; VFS/idmap/LSM policy remains open |
 
 The block checksum covers little-endian 64-bit physical identity followed by the
 entire block with only the checksum word zeroed. Inline value offsets are based

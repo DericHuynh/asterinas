@@ -250,6 +250,24 @@
       "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/xattr.h",
       "blob_sha": "1fedf44d4fb65ec89093016401bfc9aa07adf8ce",
       "review_scope": "Linux xattr magic, 32-byte external header, 16-byte entry, four-byte padding, value limit and namespace indices."
+    },
+    {
+      "path": "fs/ext4/acl.c",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/acl.c",
+      "blob_sha": "3bffe862f9549919a4ac38fe301becd3ac846775",
+      "review_scope": "Compact version-1 four/eight-byte ACL disk entries, exact conversion and access/default namespace coupling. Independent safe Rust parser and source-bound access decisions; ACL mutations and VFS idmaps remain open."
+    },
+    {
+      "path": "fs/ext4/acl.h",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/acl.h",
+      "blob_sha": "0c5a79c3b5d4806f9a76241c7fd1ee5a971b9dba",
+      "review_scope": "EXT4_ACL_VERSION=1 and variable-width compact ACL entry/header sizes."
+    },
+    {
+      "path": "fs/posix_acl.c",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/posix_acl.c",
+      "blob_sha": "12591c95c9256185b6fdbf7f32929dfdf70fc54b",
+      "review_scope": "posix_acl_valid tag-state and mask rules; posix_acl_permission owner/named-user precedence, single matching group complete request, mask and no denied-group OTHER fallback; posix_acl_equiv_mode group mask replacement. VFS authentication/idmap/LSM refinement remains open."
     }
   ]
 }

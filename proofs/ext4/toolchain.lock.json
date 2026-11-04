@@ -159,7 +159,9 @@
     "src/xattr_table.rs",
     "src/xattr.rs",
     "src/xattr_source.rs",
-    "src/xattr_inode.rs"
+    "src/xattr_inode.rs",
+    "src/acl.rs",
+    "src/acl_access.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -668,7 +670,16 @@
     "xattr_table::every_local_value_is_disjoint_from_all_entry_and_terminator_bytes",
     "xattr::block_checksums_cover_all_bytes_except_the_checksum_word",
     "xattr_source::every_referenced_external_block_has_one_canonical_claim",
-    "xattr_inode::a_full_xattr_key_cannot_select_two_different_values"
+    "xattr_inode::a_full_xattr_key_cannot_select_two_different_values",
+    "acl::decoded_acl_permissions_never_introduce_non_permission_bits",
+    "acl::every_accepted_acl_ends_with_other",
+    "acl::owner_acl_entry_takes_precedence_over_all_group_entries",
+    "acl::a_matching_named_user_is_masked_before_any_group_or_other",
+    "acl::denied_group_class_never_falls_through_to_other",
+    "acl_access::an_acl_grant_binds_the_exact_source_inode_and_access_value",
+    "acl_access::unprivileged_acl_grants_require_the_actual_acl_decision",
+    "write_frame::a_timed_write_preserves_every_external_xattr_block",
+    "write_frame::a_timed_write_preserves_inline_xattr_bytes_and_the_external_pointer"
   ],
   "required_flags": [
     "--no-cheating",
@@ -1093,6 +1104,15 @@
     "xattr::inode_pointer",
     "xattr_inode::distinct_keys",
     "xattr_inode::get",
-    "xattr_inode::inspect"
+    "xattr_inode::inspect",
+    "acl::count",
+    "acl::entry",
+    "acl::parse",
+    "acl::allows",
+    "acl_access::authorized_node",
+    "acl_access::requested_bits",
+    "acl_access::authorize",
+    "content_write::prepare_authorized",
+    "acl::mode_matches"
   ]
 }

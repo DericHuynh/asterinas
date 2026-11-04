@@ -200,6 +200,22 @@ def main():
                                                "let window = verified_ext4::window_admission::prepare(&source, versions).unwrap(); "
                                                "bytes[0] = 1; let _ = window.finished(); }\n", "E0502"),
     })
+    misuse.update({
+        "forge_xattr_attributes": ("pub fn misuse(a: verified_ext4::xattr_inode::Attributes<'_>) "
+                                    "{ let _ = verified_ext4::xattr_inode::Attributes { ..a }; }\n", "E0451"),
+        "mutate_xattr_value": ("pub fn misuse(a: verified_ext4::xattr_inode::Attributes<'_>) "
+                                 "{ if let Some(verified_ext4::xattr_table::ValueRef::Bytes(value)) = a.get(1, b\"name\") "
+                                 "{ value[0] = 1; } }\n", "E0594"),
+        "forge_parsed_acl": ("pub fn misuse(a: verified_ext4::acl::Acl<'_>) "
+                              "{ let _ = verified_ext4::acl::Acl { ..a }; }\n", "E0451"),
+        "forge_acl_authorization": ("pub fn misuse(a: verified_ext4::acl_access::Authorization<'_, '_, '_>) "
+                                     "{ let _ = verified_ext4::acl_access::Authorization { ..a }; }\n", "E0451"),
+        "redirect_acl_authorization": ("pub fn misuse<'n, 'v, 'a>(mut a: verified_ext4::acl_access::Authorization<'n, 'v, 'a>, "
+                                        "n: &'n verified_ext4::allocated_inode::AllocatedInode<'v, 'a>) { a.node = n; }\n", "E0616"),
+        "reuse_consumed_acl_authorization": ("pub fn misuse(a: verified_ext4::acl_access::Authorization<'_, '_, '_>) "
+                                             "{ let _ = verified_ext4::content_write::prepare_authorized(a, 0, b\"x\"); "
+                                             "let _ = a.requested_bits(); }\n", "E0382"),
+    })
     for name, (source, code) in misuse.items():
         path = BUILD / (name + ".rs")
         path.write_text(source)

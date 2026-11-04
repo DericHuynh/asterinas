@@ -142,4 +142,4 @@ clean journal, selects a fresh nonwrapping epoch and stages dirty/activation/
 log/commit/checkpoint/retirement commands. These host commands do not authorize
 filesystem operations or enable a production disk writer.
 
-The EXT_ATTR storage/lookup extension is specified in [XATTR_STORAGE.md](XATTR_STORAGE.md). Mode-only content writers reject a present access ACL; mutation and ACL/LSM authorization remain open.
+The EXT_ATTR storage/lookup extension is specified in [XATTR_STORAGE.md](XATTR_STORAGE.md). Mode-only content writers reject a present access ACL; source-bound ACL-aware host candidates are covered in [POSIX_ACL.md](POSIX_ACL.md). Mutations and authenticated VFS/idmap/LSM authorization remain open.

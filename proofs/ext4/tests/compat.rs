@@ -5662,3 +5662,250 @@ mod feature_coverage {
         }
     }
 }
+
+mod posix_acl {
+    use core::acl;
+
+    use super::*;
+
+    fn disk(entries: &[(u16, u16, u32)]) -> Vec<u8> {
+        let mut raw = 1u32.to_le_bytes().to_vec();
+        for &(tag, bits, id) in entries {
+            raw.extend(tag.to_le_bytes());
+            raw.extend(bits.to_le_bytes());
+            if tag == 2 || tag == 8 {
+                raw.extend(id.to_le_bytes());
+            }
+        }
+        raw
+    }
+
+    #[test]
+    fn compact_acl_codec_checks_width_order_mask_permission_and_identifier_boundaries() {
+        let raw = disk(&[
+            (1, 7, 0),
+            (2, 4, 1234),
+            (4, 0, 0),
+            (8, 6, 100),
+            (16, 4, 0),
+            (32, 0, 0),
+        ]);
+        let parsed = acl::parse(&raw).unwrap();
+        assert_eq!(parsed.count(), 6);
+        assert_eq!(parsed.entry(1).unwrap().id, 1234);
+        assert_eq!(parsed.entry(3).unwrap().offset, 20);
+        assert!(parsed.mode_matches(0o740));
+        assert!(!parsed.mode_matches(0o777));
+        assert!(parsed.entry(6).is_none());
+        for end in 0..raw.len() {
+            assert!(acl::parse(&raw[..end]).is_none(), "truncated ACL at {end}");
+        }
+        let mut wrong_version = raw.clone();
+        wrong_version[..4].copy_from_slice(&2u32.to_le_bytes());
+        assert!(
+            acl::parse(&wrong_version).is_none(),
+            "VFS ACL encoding is not the compact ext4 encoding"
+        );
+        for invalid in [
+            vec![(4, 7, 0), (32, 7, 0)],
+            vec![(1, 7, 0), (32, 7, 0)],
+            vec![(1, 7, 0), (2, 7, 1234), (4, 7, 0), (32, 7, 0)],
+            vec![(1, 7, 0), (4, 7, 0), (8, 7, 10), (32, 7, 0)],
+            vec![(1, 7, 0), (4, 7, 0), (16, 7, 0), (16, 7, 0), (32, 7, 0)],
+            vec![(1, 7, 0), (4, 7, 0), (2, 7, 1234), (16, 7, 0), (32, 7, 0)],
+            vec![(1, 8, 0), (4, 7, 0), (32, 7, 0)],
+            vec![
+                (1, 7, 0),
+                (2, 7, u32::MAX),
+                (4, 7, 0),
+                (16, 7, 0),
+                (32, 7, 0),
+            ],
+            vec![(1, 7, 0), (4, 7, 0), (64, 7, 0), (32, 7, 0)],
+        ] {
+            assert!(acl::parse(&disk(&invalid)).is_none(), "{invalid:?}");
+        }
+        let simple = disk(&[(1, 6, 0), (4, 4, 0), (32, 0, 0)]);
+        assert!(acl::parse(&simple).is_some(), "base ACL needs no mask");
+    }
+
+    #[test]
+    fn permission_order_masks_named_users_and_never_combines_distinct_group_grants() {
+        for mask in 0..8u16 {
+            let raw = disk(&[
+                (1, 6, 0),
+                (2, 6, 1234),
+                (4, 4, 0),
+                (8, 2, 200),
+                (16, mask, 0),
+                (32, 7, 0),
+            ]);
+            let parsed = acl::parse(&raw).unwrap();
+            for request in 0..8u8 {
+                assert_eq!(
+                    parsed.allows(1000, 100, 1000, &[100, 200], request),
+                    6 & request == request,
+                    "owner precedes every other entry"
+                );
+                assert_eq!(
+                    parsed.allows(1000, 100, 1234, &[100, 200], request),
+                    (6 & mask as u8) & request == request,
+                    "named user does not fall through"
+                );
+                assert_eq!(
+                    parsed.allows(1000, 100, 3000, &[100, 200], request),
+                    (4 & request == request || 2 & request == request)
+                        && mask as u8 & request == request,
+                    "one group entry must satisfy the complete request"
+                );
+                assert_eq!(
+                    parsed.allows(1000, 100, 3000, &[], request),
+                    true,
+                    "other applies only without a matching group"
+                );
+            }
+            assert!(!parsed.allows(1000, 100, 3000, &[100, 200], 6));
+            assert!(!parsed.allows(1000, 100, 1234, &[], 1));
+            assert!(!parsed.allows(1000, 100, 3000, &[], 8));
+        }
+        let raw = disk(&[(1, 0, 0), (2, 7, 1000), (4, 7, 0), (16, 7, 0), (32, 7, 0)]);
+        let parsed = acl::parse(&raw).unwrap();
+        assert!(
+            !parsed.allows(1000, 100, 1000, &[100], 4),
+            "owner wins even over a matching named-user ID"
+        );
+    }
+
+    fn command(binary: &str, args: &[&str]) {
+        let result = std::process::Command::new(binary)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+    }
+
+    #[test]
+    fn linux_acl_bytes_bind_authorization_and_the_actual_content_write_candidate() {
+        use core::{
+            access::Credentials, acl_access, allocated_inode, allocation, content_write,
+            snapshot::Snapshot, xattr_inode, xattr_table::ValueRef,
+        };
+        let path = "build/acl-linux-source.img";
+        let value_path = "build/acl-linux-uapi.bin";
+        std::fs::write(path, image()).unwrap();
+        let mut uapi = 2u32.to_le_bytes().to_vec();
+        for (tag, bits, id) in [
+            (1u16, 6u16, u32::MAX),
+            (2, 4, 1234),
+            (4, 0, u32::MAX),
+            (16, 4, u32::MAX),
+            (32, 0, u32::MAX),
+        ] {
+            uapi.extend(tag.to_le_bytes());
+            uapi.extend(bits.to_le_bytes());
+            uapi.extend(id.to_le_bytes());
+        }
+        std::fs::write(value_path, uapi).unwrap();
+        let debugfs = std::env::var("DEBUGFS_BIN").unwrap_or_else(|_| "debugfs".into());
+        let fsck = std::env::var("E2FSCK_BIN").unwrap_or_else(|_| "e2fsck".into());
+        command(&debugfs, &["-w", "-R", "feature ext_attr", path]);
+        command(
+            &debugfs,
+            &[
+                "-w",
+                "-R",
+                "ea_set -f build/acl-linux-uapi.bin /payload system.posix_acl_access",
+                path,
+            ],
+        );
+        command(&debugfs, &["-w", "-R", "sif /payload mode 0100640", path]);
+        command(&fsck, &["-fn", path]);
+        let img = std::fs::read(path).unwrap();
+        let volume = allocation::parse(Snapshot::from_bytes(&img)).unwrap();
+        let node = allocated_inode::get(&volume, 12).unwrap();
+        let attrs = xattr_inode::inspect(volume.index(), 12).unwrap();
+        let raw = match attrs.get(2, b"").unwrap() {
+            ValueRef::Bytes(raw) => raw,
+            _ => panic!("compact local ACL"),
+        };
+        assert_eq!(le32(raw, 0), 1);
+        assert_eq!(acl::parse(raw).unwrap().count(), 5);
+        let named = Credentials {
+            fsuid: 1234,
+            in_inode_group: false,
+            dac_override: false,
+            dac_read_search: false,
+        };
+        assert!(acl_access::authorize(&node, &named, &[], 4).is_some());
+        assert!(acl_access::authorize(&node, &named, &[], 2).is_none());
+        assert!(content_write::prepare_chunk(&node, 0, b"x", &named).is_none());
+        let owner = Credentials {
+            fsuid: node.info().uid,
+            in_inode_group: false,
+            dac_override: false,
+            dac_read_search: false,
+        };
+        let grant = acl_access::authorize(&node, &owner, &[], 2).unwrap();
+        let candidate = content_write::prepare_authorized(grant, 0, b"verified ACL").unwrap();
+        assert_eq!(&candidate.after_image().as_slice()[..12], b"verified ACL");
+        assert!(
+            candidate.begin_timed(123, 456).is_some(),
+            "ACL-authorized data/time closure uses complete writer admission"
+        );
+        let privileged = Credentials {
+            fsuid: 1234,
+            in_inode_group: false,
+            dac_override: true,
+            dac_read_search: false,
+        };
+        assert!(acl_access::authorize(&node, &privileged, &[], 2).is_some());
+        assert!(
+            acl_access::authorize(&node, &privileged, &[], 1).is_none(),
+            "override cannot execute an inode without execute mode bits"
+        );
+        let mismatch = Credentials {
+            fsuid: 1234,
+            in_inode_group: true,
+            dac_override: false,
+            dac_read_search: false,
+        };
+        assert!(
+            acl_access::authorize(&node, &mismatch, &[], 4).is_none(),
+            "mode fallback membership must match the supplied mapped group set"
+        );
+        let (_, group, seed) = metadata(&img);
+        let position = group.inode_table as usize * 4096 + 11 * 256;
+        let mut inconsistent = img.clone();
+        inconsistent[position..position + 2].copy_from_slice(&0o100644u16.to_le_bytes());
+        seal_inode_image(&mut inconsistent, group.inode_table, 12, seed);
+        let volume = allocation::parse(Snapshot::from_bytes(&inconsistent)).unwrap();
+        let inconsistent_node = allocated_inode::get(&volume, 12).unwrap();
+        assert!(
+            acl_access::authorize(&inconsistent_node, &privileged, &[], 2).is_none(),
+            "mode/ACL disagreement is not bypassed by a capability"
+        );
+        let body =
+            core::xattr::parse_body(inode_bytes(&img, group.inode_table, 12), false, 4096).unwrap();
+        let table = body.entry_table().unwrap();
+        let value_offset = table
+            .metadata(table.find(2, b"").unwrap())
+            .unwrap()
+            .value_offset;
+        let mut malformed = img.clone();
+        malformed[position + value_offset..position + value_offset + 4]
+            .copy_from_slice(&2u32.to_le_bytes());
+        seal_inode_image(&mut malformed, group.inode_table, 12, seed);
+        let volume = allocation::parse(Snapshot::from_bytes(&malformed)).unwrap();
+        let malformed_node = allocated_inode::get(&volume, 12).unwrap();
+        assert!(
+            acl_access::authorize(&malformed_node, &privileged, &[], 2).is_none(),
+            "malformed ACLs are rejected before capability evaluation"
+        );
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_file(value_path);
+    }
+}
