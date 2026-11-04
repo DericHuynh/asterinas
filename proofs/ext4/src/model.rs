@@ -239,3 +239,5 @@ pub mod xattr_inode;
 pub mod acl;
 
 pub mod acl_access;
+
+pub mod htree;

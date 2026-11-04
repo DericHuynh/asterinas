@@ -5909,3 +5909,263 @@ mod posix_acl {
         let _ = std::fs::remove_file(value_path);
     }
 }
+
+mod htree_indexes {
+    use core::htree;
+
+    use super::*;
+
+    fn seal(raw: &mut [u8], first: usize, seed: u32) {
+        let count = core::bytes::read_le16(raw, first + 2).unwrap() as usize;
+        let limit = core::bytes::read_le16(raw, first).unwrap() as usize;
+        let tail = first + limit * 8;
+        let prefix = core::crc::crc32c(seed, &raw[..first + count * 8]);
+        let reserved = core::crc::crc32c(prefix, &raw[tail..tail + 4]);
+        let checksum = core::crc::crc32c(reserved, &[0, 0, 0, 0]);
+        raw[tail + 4..tail + 8].copy_from_slice(&checksum.to_le_bytes());
+    }
+
+    fn block(size: usize, root: bool, checksummed: bool) -> Vec<u8> {
+        let mut raw = vec![0u8; size];
+        let first = if root { 32 } else { 8 };
+        if root {
+            raw[0..4].copy_from_slice(&12u32.to_le_bytes());
+            raw[4..6].copy_from_slice(&12u16.to_le_bytes());
+            raw[6] = 1;
+            raw[7] = 2;
+            raw[8] = b'.';
+            raw[12..16].copy_from_slice(&2u32.to_le_bytes());
+            raw[16..18].copy_from_slice(&((size - 12) as u16).to_le_bytes());
+            raw[18] = 2;
+            raw[19] = 2;
+            raw[20] = b'.';
+            raw[21] = b'.';
+            raw[28] = 1;
+            raw[29] = 8;
+        } else {
+            let record = if size == 65536 { u16::MAX } else { size as u16 };
+            raw[4..6].copy_from_slice(&record.to_le_bytes());
+        }
+        let limit = (size - first - if checksummed { 8 } else { 0 }) / 8;
+        raw[first..first + 2].copy_from_slice(&(limit as u16).to_le_bytes());
+        raw[first + 2..first + 4].copy_from_slice(&5u16.to_le_bytes());
+        for (i, (hash, logical)) in [
+            (0u32, 1u32),
+            (100, 2),
+            (101, 0xa0000003),
+            (101, 4),
+            (200, 5),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            if i > 0 {
+                raw[first + i * 8..first + i * 8 + 4].copy_from_slice(&hash.to_le_bytes());
+            }
+            raw[first + i * 8 + 4..first + i * 8 + 8].copy_from_slice(&logical.to_le_bytes());
+        }
+        if checksummed {
+            seal(&mut raw, first, 0x12345678);
+        }
+        raw
+    }
+
+    #[test]
+    fn htree_tables_route_hash_boundaries_and_all_collision_continuations_across_geometries() {
+        for size in [1024, 2048, 4096, 8192, 16384, 32768, 65536] {
+            for checksummed in [false, true] {
+                let raw = block(size, true, checksummed);
+                let root =
+                    htree::parse_root(&raw, 100, 4096, 0x12345678, checksummed, false).unwrap();
+                assert_eq!(root.hash_and_levels(), (1, 0));
+                let index = root.routing_index();
+                assert_eq!(index.child_count(), 5);
+                assert_eq!(
+                    index.child(2).unwrap().block,
+                    3,
+                    "high coalesce bits are masked"
+                );
+                assert!(index.child(5).is_none());
+                for (hash, expected) in [
+                    (0, 0),
+                    (99, 0),
+                    (100, 1),
+                    (101, 3),
+                    (199, 3),
+                    (200, 4),
+                    (u32::MAX, 4),
+                ] {
+                    assert_eq!(
+                        index.probe(hash),
+                        expected,
+                        "{size}, checksum={checksummed}, hash={hash}"
+                    );
+                }
+                assert!(index.continues(100, 2));
+                assert!(index.continues(100, 3));
+                assert!(!index.continues(100, 0));
+                assert!(!index.continues(100, 4));
+                assert!(!index.continues(100, usize::MAX));
+                let raw = block(size, false, checksummed);
+                let index = htree::parse_node(&raw, 100, 0x12345678, checksummed).unwrap();
+                assert_eq!(index.probe(100), 1);
+                assert!(index.continues(100, 2));
+            }
+        }
+    }
+
+    #[test]
+    fn htree_checksums_headers_sorted_keys_and_logical_child_bounds_are_checked() {
+        let raw = block(4096, true, true);
+        for (offset, byte) in [
+            (8usize, b'/'),
+            (24, 1),
+            (28, 3),
+            (29, 0),
+            (30, 2),
+            (31, 1),
+            (32, 0),
+            (34, 0),
+        ] {
+            let mut invalid = raw.clone();
+            invalid[offset] = byte;
+            seal(&mut invalid, 32, 0x12345678);
+            assert!(
+                htree::parse_root(&invalid, 100, 4096, 0x12345678, true, false).is_none(),
+                "header offset {offset}"
+            );
+        }
+        let mut deep = raw.clone();
+        deep[30] = 2;
+        seal(&mut deep, 32, 0x12345678);
+        assert!(htree::parse_root(&deep, 100, 4096, 0x12345678, true, true).is_some());
+        let mut wrong = raw.clone();
+        wrong[44] ^= 1;
+        assert!(htree::parse_root(&wrong, 100, 4096, 0x12345678, true, false).is_none());
+        assert!(htree::parse_root(&raw, 100, 4096, 0x12345679, true, false).is_none());
+        let mut unused = raw.clone();
+        unused[1000] = 1;
+        assert!(
+            htree::parse_root(&unused, 100, 4096, 0x12345678, true, false).is_some(),
+            "Linux checksum omits unused table slots"
+        );
+        let mut unsorted = raw.clone();
+        unsorted[56..60].copy_from_slice(&99u32.to_le_bytes());
+        seal(&mut unsorted, 32, 0x12345678);
+        assert!(htree::parse_root(&unsorted, 100, 4096, 0x12345678, true, false).is_none());
+        for pointer in [0u32, 100, 0xf0000000, 0xffffffff] {
+            let mut invalid = raw.clone();
+            invalid[36..40].copy_from_slice(&pointer.to_le_bytes());
+            seal(&mut invalid, 32, 0x12345678);
+            assert!(htree::parse_root(&invalid, 100, 4096, 0x12345678, true, false).is_none());
+        }
+    }
+
+    fn command(binary: &str, args: &[&str], modified: bool) -> Vec<u8> {
+        let result = std::process::Command::new(binary)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success() || modified && result.status.code() == Some(1),
+            "{args:?}: {} {}",
+            String::from_utf8_lossy(&result.stdout),
+            String::from_utf8_lossy(&result.stderr)
+        );
+        result.stdout
+    }
+
+    #[test]
+    fn linux_e2fsck_created_htree_root_matches_crc_edges_and_leaf_records() {
+        let mkfs = std::env::var("MKE2FS_BIN").unwrap_or_else(|_| "mke2fs".into());
+        let debugfs = std::env::var("DEBUGFS_BIN").unwrap_or_else(|_| "debugfs".into());
+        let fsck = std::env::var("E2FSCK_BIN").unwrap_or_else(|_| "e2fsck".into());
+        let path = "build/htree-linux.img";
+        let _ = std::fs::remove_file(path);
+        command(
+            &mkfs,
+            &[
+                "-q",
+                "-F",
+                "-t",
+                "ext4",
+                "-b",
+                "4096",
+                "-I",
+                "256",
+                "-O",
+                "none,has_journal,extent,filetype,sparse_super,large_file,extra_isize,metadata_csum,dir_index",
+                "-E",
+                "lazy_itable_init=0,lazy_journal_init=0",
+                path,
+                "16384",
+            ],
+            false,
+        );
+        std::fs::write("build/htree-empty.bin", b"").unwrap();
+        let mut script = String::from("mkdir /indexed\n");
+        for n in 0..300 {
+            script += &format!(
+                "write build/htree-empty.bin /indexed/{n:04}-{}\n",
+                "x".repeat(210)
+            );
+        }
+        std::fs::write("build/htree-debugfs.txt", script).unwrap();
+        command(
+            &debugfs,
+            &["-w", "-f", "build/htree-debugfs.txt", path],
+            false,
+        );
+        command(&fsck, &["-fyD", path], true);
+        command(&fsck, &["-fn", path], false);
+        let img = std::fs::read(path).unwrap();
+        let inodes = le32(&img, 1024);
+        let table = le32(&img, 4104);
+        let inode = inode_bytes(&img, table, 12);
+        assert_ne!(
+            le32(inode, 32) & 0x1000,
+            0,
+            "e2fsck actually enabled the inode index"
+        );
+        let blocks = le32(inode, 4) / 4096;
+        let seed = core::superblock::metadata_checksum_seed(&img[1024..2048]).unwrap();
+        let seed = core::inode::inode_seed(seed, 12, le32(inode, 100));
+        let mapped = command(&debugfs, &["-R", "bmap /indexed 0", path], false);
+        let physical = String::from_utf8(mapped)
+            .unwrap()
+            .trim()
+            .parse::<usize>()
+            .unwrap();
+        let raw = &img[physical * 4096..(physical + 1) * 4096];
+        let root = htree::parse_root(raw, blocks, inodes, seed, true, false).unwrap();
+        assert_eq!(root.hash_and_levels().1, 0);
+        let index = root.routing_index();
+        assert!(index.child_count() > 1);
+        for i in 0..index.child_count() {
+            let edge = index.child(i).unwrap();
+            let hash = edge.hash & !1u32;
+            let expected = (0..index.child_count())
+                .rfind(|&j| index.child(j).unwrap().hash <= hash)
+                .unwrap();
+            assert_eq!(index.probe(hash), expected);
+            let query = format!("bmap /indexed {}", edge.block);
+            let mapped = command(&debugfs, &["-R", &query, path], false);
+            let physical = String::from_utf8(mapped)
+                .unwrap()
+                .trim()
+                .parse::<usize>()
+                .unwrap();
+            assert!(core::directory::valid_tail(
+                &img[physical * 4096..(physical + 1) * 4096],
+                seed
+            ));
+        }
+        assert!(
+            core::image_validation::inspect(core::snapshot::Snapshot::from_bytes(&img)).is_none(),
+            "standalone HTree codecs do not open full filesystem feature admission"
+        );
+        for file in [path, "build/htree-empty.bin", "build/htree-debugfs.txt"] {
+            let _ = std::fs::remove_file(file);
+        }
+    }
+}

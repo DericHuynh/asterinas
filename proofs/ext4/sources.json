@@ -159,7 +159,7 @@
       "path": "fs/ext4/namei.c",
       "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/namei.c",
       "blob_sha": "c4b5e252af0efbfcbaf83688a32d445327a74a02",
-      "review_scope": "selected dot/dotdot placement and target checks, directory parent lookup, link-count updates and zero-link orphan handling; independent Rust implementation; ext4_inc_count/ext4_dec_count (2748-2768): indexed directory overflow at EXT4_LINK_MAX=65000 and persistent unknown-count sentinel 1; independent source-bound namespace admission retains exact regular counts and full parent/root checks"
+      "review_scope": "selected dot/dotdot placement and target checks, directory parent lookup, link-count updates and zero-link orphan handling; independent Rust implementation; ext4_inc_count/ext4_dec_count (2748-2768): indexed directory overflow at EXT4_LINK_MAX=65000 and persistent unknown-count sentinel 1; independent source-bound namespace admission retains exact regular counts and full parent/root checks; HTree dx_root/dx_node/countlimit/entry layouts, inode-seeded used-entry-prefix plus tail checksum, geometry capacities, dx_probe greatest raw boundary and ext4_htree_next_block collision-base comparison. Independent standalone safe Rust codecs/routing; full DIR_INDEX source/tree/name admission and operations remain open."
     },
     {
       "path": "fs/ext4/super.c",
