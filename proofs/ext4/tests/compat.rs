@@ -6169,3 +6169,129 @@ mod htree_indexes {
         }
     }
 }
+
+mod directory_hashes {
+    use core::dir_hash::{self, State};
+
+    use super::*;
+
+    #[test]
+    fn unkeyed_hashes_are_total_bounded_and_reserve_collision_and_eof_bits() {
+        let zero = State {
+            a: 0,
+            b: 0,
+            c: 0,
+            d: 0,
+        };
+        let custom = State {
+            a: 1,
+            b: 2,
+            c: 3,
+            d: 4,
+        };
+        for version in 0..=5 {
+            for length in [0, 1, 3, 4, 15, 16, 17, 31, 32, 33, 254, 255] {
+                let name: Vec<u8> = (0..length).map(|i| (i * 37) as u8).collect();
+                for seed in [zero, custom] {
+                    let hash = dir_hash::calculate(&name, seed, version).unwrap();
+                    assert_eq!(hash.major & 1, 0);
+                    assert!(hash.major < 0xfffffffe);
+                }
+            }
+            assert!(dir_hash::calculate(&vec![b'x'; 256], zero, version).is_none());
+        }
+        for version in 6..=255 {
+            assert!(dir_hash::calculate(b"test", zero, version).is_none());
+        }
+        let test = dir_hash::calculate(b"test", zero, 0).unwrap();
+        assert_eq!((test.major, test.minor), (0x802cf52c, 0));
+        for name in [
+            b"test".as_slice(),
+            b"a-byte-string-with-no-high-bits".as_slice(),
+        ] {
+            for version in 0..3 {
+                let a = dir_hash::calculate(name, custom, version).unwrap();
+                let b = dir_hash::calculate(name, custom, version + 3).unwrap();
+                assert_eq!((a.major, a.minor), (b.major, b.minor));
+            }
+        }
+    }
+
+    #[test]
+    fn all_six_directory_hashes_match_linux_tools_across_seeds_signed_bytes_and_round_boundaries() {
+        let debugfs = std::env::var("DEBUGFS_BIN").unwrap_or_else(|_| "debugfs".into());
+        let path = "build/hash-debugfs.txt";
+        let mut script = String::new();
+        let mut expected = Vec::new();
+        let names = [
+            "test".to_string(),
+            "café".to_string(),
+            "x".repeat(15),
+            "x".repeat(16),
+            "x".repeat(17),
+            "x".repeat(31),
+            "x".repeat(32),
+            "x".repeat(33),
+            "x".repeat(255),
+            format!("{}z", "é".repeat(127)),
+        ];
+        for (uuid, seed) in [
+            (
+                "00000000-0000-0000-0000-000000000000",
+                State {
+                    a: 0,
+                    b: 0,
+                    c: 0,
+                    d: 0,
+                },
+            ),
+            (
+                "00112233-4455-6677-8899-aabbccddeeff",
+                State {
+                    a: 0x33221100,
+                    b: 0x77665544,
+                    c: 0xbbaa9988,
+                    d: 0xffeeddcc,
+                },
+            ),
+        ] {
+            for version in 0..6 {
+                for name in &names {
+                    script += &format!("dx_hash -h {version} -s {uuid} {name}\n");
+                    let hash = dir_hash::calculate(name.as_bytes(), seed, version).unwrap();
+                    expected.push((version, name, hash));
+                }
+            }
+        }
+        std::fs::write(path, script).unwrap();
+        let output = std::process::Command::new(debugfs)
+            .args(["-f", path, "build/linux.img"])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let text = String::from_utf8(output.stdout).unwrap();
+        let actual: Vec<_> = text
+            .lines()
+            .filter(|line| line.starts_with("Hash of "))
+            .collect();
+        assert_eq!(actual.len(), expected.len(), "{text}");
+        for ((version, name, hash), line) in expected.into_iter().zip(actual) {
+            let words: Vec<u32> = line
+                .split_whitespace()
+                .filter_map(|word| word.strip_prefix("0x"))
+                .map(|word| u32::from_str_radix(word.trim_end_matches(')'), 16).unwrap())
+                .collect();
+            assert_eq!(
+                words,
+                [hash.major, hash.minor],
+                "version {version}, name length {}: {line}",
+                name.len()
+            );
+        }
+        let _ = std::fs::remove_file(path);
+    }
+}

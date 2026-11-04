@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "license": "MPL-2.0",
-  "recorded_at": "2026-11-04T21:22:53.794570+00:00",
+  "recorded_at": "2026-11-04T21:31:30.786496+00:00",
   "scope": "Checked host core and specified abstract machines; not a complete or kernel-integrated ext4 filesystem",
   "verifier_version": {
     "verus": {
@@ -19,7 +19,7 @@
     "encountered-error": false,
     "encountered-vir-error": false,
     "success": true,
-    "verified": 1476,
+    "verified": 1503,
     "errors": 0,
     "is-verifying-entire-crate": true
   },
@@ -31,7 +31,7 @@
     "--crate-type=rlib"
   ],
   "source_sha256": {
-    "src/model.rs": "f223c9acfc50a0b432f43c87b80ef7cfaaa720f2ac113634958a020cb67877d2",
+    "src/model.rs": "67cae2e66faab811d1b4b0ef0b4259a89172b3e2b54d58cf65dbe683e5478f5f",
     "src/redo.rs": "e964baa83ca170c3cc60dbc8df4bfc470a81549ac23a5cfe4526a9cb0edb7e7f",
     "src/journal.rs": "eef5dcc269f81cbc1c7e8c6a4daf0a58cf7015423657a9cfe1f0fff186b91834",
     "src/lease.rs": "37358276a3719454ddeaf16177a2ce058b5e382c57b0609cea97031da084b1aa",
@@ -176,9 +176,10 @@
     "src/xattr_inode.rs": "dfb7ba3e50626080506f116493fa0a0ea43ce65636cb8efe2624c2b500d207e3",
     "src/acl.rs": "23c8fb4405852319a6c9a4cc64f2dafd7b41604eff25a3acd6a3ecacc16fb2df",
     "src/acl_access.rs": "62de30f1ffc47a54cf8b9700abfabec1c69f4bc68face5725d3ee1d1f85de35d",
-    "src/htree.rs": "9b09a04a9384673bdca2f0a97a765356e6a78a8c6c06ffd15ab07155c8405adb"
+    "src/htree.rs": "9b09a04a9384673bdca2f0a97a765356e6a78a8c6c06ffd15ab07155c8405adb",
+    "src/dir_hash.rs": "d39d5a32335771576758ac69fe1d945894f2bbb134e6db46c9fbe4858458610e"
   },
-  "lock_sha256": "3b462031586c91373df413a24b12061d3e132ccdd42d0967733c0a72b5f4ad26",
+  "lock_sha256": "7e591397a6f4709649ac5cc674d11c5ef16393cabd9c0910c477cd2b223f0a3e",
   "runner_sha256": "de6b473ab50632068de9e7fc619591c7b4d5afbc0058a1fcd7f946c0198beb91",
   "named_proof_coverage": [
     "access::override_cannot_execute_a_nonexecutable_regular_file",
@@ -263,6 +264,7 @@
     "descriptor::descriptor_length_is_unique",
     "descriptor::descriptor_representation_is_unique",
     "descriptor::prefix_is_shorter_than_any_candidate",
+    "dir_hash::every_unkeyed_hash_reserves_the_collision_bit_and_eof_value",
     "directory_block::checked_block_has_canonical_records",
     "directory_block::complete_record_coverage_is_unique",
     "directory_source::checked_mapping_and_records_are_the_canonical_source",
@@ -783,6 +785,7 @@
     "descriptor::parse",
     "descriptor::tags",
     "descriptor::valid_input",
+    "dir_hash::calculate",
     "directory::parse",
     "directory::valid_tail",
     "directory_block::get",
@@ -1136,14 +1139,14 @@
     "xattr_table::source_bytes",
     "xattr_table::value"
   ],
-  "host_library_sha256": "c95250b4c4cfb36f0c42c44d0d066d8c8f8c749faa3d01a6a8a799c6e518674b",
+  "host_library_sha256": "9b8bda0ee65abb4d5391aa75480924974dce898773211705293611d64aa364f7",
   "compatibility": {
     "schema": 1,
     "status": "passed",
     "scope": "host interoperability tests, not formal proof",
     "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
-    "proof_artifact_sha256": "c95250b4c4cfb36f0c42c44d0d066d8c8f8c749faa3d01a6a8a799c6e518674b",
-    "image_sha256": "43094929c84a81ef1ad8f4db21c9875ac26d6f1e84b8c1e1a29b75c977b22612",
+    "proof_artifact_sha256": "9b8bda0ee65abb4d5391aa75480924974dce898773211705293611d64aa364f7",
+    "image_sha256": "1574aab4ee5320167cf0a7927ba5b699c683dbdc36debe3ca59b322e189a2c93",
     "request_boundary_rejections": [
       "reuse_request",
       "redirect_completion",
@@ -1209,11 +1212,11 @@
     ],
     "compatibility_runner_sha256": "cc7b864641b0c474b11ab4815f2bf294c3e35a88df7aca2cf575e40935fb1e10",
     "test_source_sha256": {
-      "compat": "d2e3cd3eea5936eb4a19dc50b0bc53c28dd0bb3d9ea4a0e1ddea7a8168d99632",
+      "compat": "c5b858cc7f0026935744772babeef03d853e08cf3a26bcdd45bf40fd584cc5e7",
       "journal": "ba305b89c3bd732b3e2794c6e1be43a810328433d9c4aaf1297ada866256d73a"
     }
   },
-  "compatibility_test_count": 138,
+  "compatibility_test_count": 140,
   "e2fsprogs_version": "1.47.0",
   "negative_gate_checks": {
     "status": "passed",

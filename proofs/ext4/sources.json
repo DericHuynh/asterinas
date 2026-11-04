@@ -268,6 +268,12 @@
       "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/posix_acl.c",
       "blob_sha": "12591c95c9256185b6fdbf7f32929dfdf70fc54b",
       "review_scope": "posix_acl_valid tag-state and mask rules; posix_acl_permission owner/named-user precedence, single matching group complete request, mask and no denied-group OTHER fallback; posix_acl_equiv_mode group mask replacement. VFS authentication/idmap/LSM refinement remains open."
+    },
+    {
+      "path": "fs/ext4/hash.c",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/hash.c",
+      "blob_sha": "48483cd015d3c70d44ba26fa09a0d1619d03f1dd",
+      "review_scope": "All six unkeyed legacy/half-MD4/TEA signed/unsigned byte variants; default/nonzero seeds, remaining-length padding, word permutations/rotations/rounds/feed-forward and collision/EOF normalization. Independent safe Rust modular-word state models and executable refinement; keyed SipHash/fscrypt and Unicode casefold are not enabled."
     }
   ]
 }
