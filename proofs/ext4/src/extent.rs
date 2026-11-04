@@ -8,6 +8,10 @@ use crate::bytes::{le16, le32, read_le16, read_le32, encode_le16, encode_le32};
 
 verus! {
 
+// Linux ext4_valid_extent rejects a u32 exclusive end that wraps to zero.
+// Logical block MAX is reserved; the largest accepted exclusive end is MAX.
+pub const MAX_LOGICAL_END: u64 = 4294967295;
+
 pub struct Extent {
     pub logical: u32,
     pub length: u32,
@@ -25,7 +29,7 @@ pub open spec fn accepted(s: Seq<u8>, o: int, blocks: u32) -> bool {
     &&& 0 <= o && o + 12 <= s.len()
     &&& le16(s, o + 6) == 0
     &&& le16(s, o + 4) > 0
-    &&& le32(s, o) + length(le16(s, o + 4)) <= 4294967296
+    &&& le32(s, o) + length(le16(s, o + 4)) <= MAX_LOGICAL_END
     &&& le32(s, o + 8) > 0
     &&& le32(s, o + 8) + length(le16(s, o + 4)) <= blocks
 }
@@ -33,7 +37,7 @@ pub open spec fn accepted(s: Seq<u8>, o: int, blocks: u32) -> bool {
 impl Extent {
     pub open spec fn wf(&self, blocks: u32) -> bool {
         &&& 0 < self.length <= if self.initialized { 32768u32 } else { 32767u32 }
-        &&& self.logical as int + self.length <= 4294967296
+        &&& self.logical as int + self.length <= MAX_LOGICAL_END
         &&& 0 < self.physical
         &&& self.physical as int + self.length <= blocks
     }
@@ -49,7 +53,7 @@ impl Extent {
         ensures r == self.wf(blocks),
     {
         self.length > 0 && self.length <= (if self.initialized { 32768 } else { 32767 })
-            && self.logical as u64 + self.length as u64 <= 4294967296
+            && self.logical as u64 + self.length as u64 <= MAX_LOGICAL_END
             && self.physical > 0 && self.physical as u64 + self.length as u64 <= blocks as u64
     }
 

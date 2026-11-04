@@ -1,6 +1,6 @@
 <!-- SPDX-License-Identifier: MPL-2.0 -->
 
-# Design: a Linux-compatible ext4 subset proved with Verus
+# Design: Linux-compatible ext4 proved with Verus
 
 Status: target design, partially implemented and checked.
 The current evidence is in README.md and proof-status.json.
@@ -8,10 +8,15 @@ This document does not certify the unfinished filesystem or kernel integration.
 
 ## Decisions and scope
 
-The user selected a Linux-compatible ext4 subset. Propose an initial 4 KiB
+The target now includes full ext4 on-disk feature coverage and a concurrent
+read/write/journal/recovery protocol. [FEATURE_COVERAGE.md](FEATURE_COVERAGE.md)
+and [CONCURRENCY.md](CONCURRENCY.md) track the expanded target and open proofs.
+The existing checked implementation remains an initial Linux-compatible subset.
+Its first profile uses 4 KiB
 filesystem-block profile with an internal JBD2 journal, extents, bounded
 transactions, full data journaling ("data=journal"), and one transaction in
-flight. There is no new journal or filesystem byte format.
+flight. Those serialized proofs are a scoped foundation, not the concurrent
+protocol proof. There is no new journal or filesystem byte format.
 
 Every feature and inode representation must be explicitly admitted. The
 profile is intentionally narrower than a default mke2fs filesystem.

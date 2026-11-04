@@ -293,6 +293,972 @@ fn static_image_certificates_and_bootstrap_identity_check_different_boundaries()
 }
 
 #[test]
+fn block_ranges_handle_64_bit_limits_and_split_into_disjoint_partitions() {
+    use core::block_range::BlockRange;
+    assert!(BlockRange::new(0, 0, u64::MAX).is_none());
+    assert!(BlockRange::new(u64::MAX, 1, u64::MAX).is_none());
+    assert!(BlockRange::new(u64::MAX - 1, 2, u64::MAX).is_none());
+    let range = BlockRange::new(u64::MAX - 1024, 1024, u64::MAX).unwrap();
+    assert_eq!(range.start(), u64::MAX - 1024);
+    assert_eq!(range.length(), 1024);
+    assert_eq!(range.limit(), u64::MAX);
+    assert!(range.split(0).is_none());
+    assert!(range.split(1024).is_none());
+    assert!(range.split(u64::MAX).is_none());
+    let (a, b) = range.split(511).unwrap();
+    assert!(a.is_disjoint(&b) && b.is_disjoint(&a));
+    assert!(!range.is_disjoint(&a));
+    for offset in 0..1024 {
+        let block = range.start() + offset;
+        assert!(range.has_block(block));
+        assert!(a.has_block(block) ^ b.has_block(block));
+    }
+    for block in [0, range.start() - 1, u64::MAX] {
+        assert!(!range.has_block(block));
+        assert!(!a.has_block(block) && !b.has_block(block));
+    }
+    let zero = BlockRange::new(0, 1, 1).unwrap();
+    assert!(zero.has_block(0)); // Geometry descriptions also represent block zero.
+}
+
+#[test]
+fn extent_spans_preserve_48_bit_addresses_and_every_mapping_across_splits() {
+    use core::extent_span::{self, ExtentSpan, ExtentState};
+    for physical in [1u64, 0xffff_ffff, 0x1_0000_0000, 0xffff_ffff_ffff] {
+        for (length, initialized) in [(1, true), (32768, true), (1, false), (32767, false)] {
+            let blocks = physical + length as u64;
+            let state = if initialized {
+                ExtentState::Written
+            } else {
+                ExtentState::Unwritten
+            };
+            let span = ExtentSpan::new(42, length, physical, state, blocks).unwrap();
+            let raw = span.encode().unwrap();
+            assert_eq!(&raw[6..8], &((physical >> 32) as u16).to_le_bytes());
+            assert_eq!(&raw[8..12], &(physical as u32).to_le_bytes());
+            let decoded = extent_span::parse(&raw, 0, blocks).unwrap();
+            let info = decoded.info();
+            assert_eq!(
+                (
+                    info.logical,
+                    info.length,
+                    info.physical,
+                    info.initialized,
+                    info.blocks
+                ),
+                (42, length, physical, initialized, blocks)
+            );
+            assert_eq!(decoded.physical_block(41), None);
+            assert_eq!(decoded.physical_block(42 + length), None);
+            assert_eq!(
+                decoded.physical_block(42 + length - 1),
+                Some(physical + length as u64 - 1)
+            );
+            assert!(decoded.split(0).is_none());
+            assert!(decoded.split(length).is_none());
+            if length > 1 {
+                let (left, right) = decoded.split(length / 2).unwrap();
+                assert_eq!(left.info().initialized, initialized);
+                assert_eq!(right.info().initialized, initialized);
+                assert_eq!(left.merge(&right).unwrap().encode().unwrap(), raw);
+                assert!(right.merge(&left).is_none());
+                for logical in 41..=42 + length {
+                    let a = left.physical_block(logical);
+                    let b = right.physical_block(logical);
+                    assert!(!(a.is_some() && b.is_some()));
+                    assert_eq!(a.or(b), decoded.physical_block(logical));
+                }
+            }
+            assert!(extent_span::parse(&raw, usize::MAX, blocks).is_none());
+            assert!(extent_span::parse(&raw[..11], 0, blocks).is_none());
+            assert!(extent_span::parse(&raw, 0, blocks - 1).is_none());
+        }
+    }
+    assert!(ExtentSpan::new(u32::MAX, 1, 1, ExtentState::Written, 2).is_none());
+    assert!(ExtentSpan::new(0, 32768, 1, ExtentState::Unwritten, 65536).is_none());
+    assert!(ExtentSpan::new(0, 1, 0, ExtentState::Written, 65536).is_none());
+    assert!(ExtentSpan::new(0, 2, u64::MAX - 1, ExtentState::Written, u64::MAX).is_none());
+    let description = ExtentSpan::new(0, 1, u64::MAX - 1, ExtentState::Written, u64::MAX).unwrap();
+    assert!(
+        description.encode().is_none(),
+        "a model range is not automatically an encodable 48-bit extent"
+    );
+    let first = ExtentSpan::new(0, 1, 100, ExtentState::Written, 65536).unwrap();
+    for incompatible in [
+        ExtentSpan::new(1, 1, 101, ExtentState::Unwritten, 65536).unwrap(),
+        ExtentSpan::new(2, 1, 101, ExtentState::Written, 65536).unwrap(),
+        ExtentSpan::new(1, 1, 102, ExtentState::Written, 65536).unwrap(),
+        ExtentSpan::new(1, 1, 101, ExtentState::Written, 65537).unwrap(),
+    ] {
+        assert!(first.merge(&incompatible).is_none());
+    }
+    let a = ExtentSpan::new(0, 20000, 100, ExtentState::Written, 65536).unwrap();
+    let b = ExtentSpan::new(20000, 20000, 20100, ExtentState::Written, 65536).unwrap();
+    assert!(
+        a.merge(&b).is_none(),
+        "a merged extent must fit the Linux length encoding"
+    );
+}
+
+#[test]
+fn extent_nodes_check_full_capacity_checksums_depth_and_48_bit_children() {
+    use core::{
+        extent_node::{self, BlockChecksum},
+        extent_span::{ExtentSpan, ExtentState},
+    };
+    fn header(size: usize, depth: u16, count: u16, maximum: u16) -> Vec<u8> {
+        let mut raw = vec![0; size];
+        raw[..2].copy_from_slice(&0xf30au16.to_le_bytes());
+        raw[2..4].copy_from_slice(&count.to_le_bytes());
+        raw[4..6].copy_from_slice(&maximum.to_le_bytes());
+        raw[6..8].copy_from_slice(&depth.to_le_bytes());
+        raw[8..12].copy_from_slice(&0x789abcdeu32.to_le_bytes());
+        raw
+    }
+    fn seal(raw: &mut [u8], seed: u32) {
+        let maximum = u16::from_le_bytes(raw[4..6].try_into().unwrap()) as usize;
+        let tail = 12 + maximum * 12;
+        let checksum = core::crc::crc32c(seed, &raw[..tail]);
+        raw[tail..tail + 4].copy_from_slice(&checksum.to_le_bytes());
+    }
+    fn index(raw: &mut [u8], ordinal: usize, logical: u32, child: u64) {
+        let offset = 12 + ordinal * 12;
+        raw[offset..offset + 4].copy_from_slice(&logical.to_le_bytes());
+        raw[offset + 4..offset + 8].copy_from_slice(&(child as u32).to_le_bytes());
+        raw[offset + 8..offset + 10].copy_from_slice(&((child >> 32) as u16).to_le_bytes());
+        raw[offset + 10..offset + 12].copy_from_slice(&0xabcdu16.to_le_bytes()); // Linux's unused field.
+    }
+    let seed = 0x9abcdef0;
+    let physical = 0x1234_5678_9010u64;
+    let blocks = physical + 100;
+    let first = ExtentSpan::new(1, 3, physical, ExtentState::Written, blocks)
+        .unwrap()
+        .encode()
+        .unwrap();
+    let second = ExtentSpan::new(8, 2, physical + 10, ExtentState::Unwritten, blocks)
+        .unwrap()
+        .encode()
+        .unwrap();
+    for size in [1024usize, 2048, 4096, 8192, 16384, 32768, 65536] {
+        let maximum = ((size - 12) / 12) as u16;
+        let tail = 12 + maximum as usize * 12;
+        let mut raw = header(size, 0, 2, maximum);
+        raw[12..24].copy_from_slice(&first);
+        raw[24..36].copy_from_slice(&second);
+        seal(&mut raw, seed);
+        let node = extent_node::parse_block(&raw, blocks, BlockChecksum::Crc32c(seed)).unwrap();
+        assert_eq!(node.header_fields(), (2, maximum, 0));
+        assert_eq!(node.raw(), &raw);
+        assert_eq!(node.leaf_extent(0).unwrap().info().physical, physical);
+        assert!(!node.leaf_extent(1).unwrap().info().initialized);
+        assert!(node.leaf_extent(2).is_none() && node.leaf_extent(usize::MAX).is_none());
+        assert!(node.index_entry(0).is_none());
+        assert!(extent_node::parse_block(&raw, blocks, BlockChecksum::Crc32c(seed ^ 1)).is_none());
+        let mut changed = raw.clone();
+        changed[40] ^= 1; // Unused record bytes still lie inside the eh_max checksum domain.
+        assert!(extent_node::parse_block(&changed, blocks, BlockChecksum::Crc32c(seed)).is_none());
+        seal(&mut changed, seed);
+        assert!(extent_node::parse_block(&changed, blocks, BlockChecksum::Crc32c(seed)).is_some());
+        if tail + 4 < size {
+            changed = raw.clone();
+            changed[size - 1] ^= 1; // Padding after the tail is outside that domain.
+            assert!(
+                extent_node::parse_block(&changed, blocks, BlockChecksum::Crc32c(seed)).is_some()
+            );
+        }
+        for (offset, value) in [
+            (0, 0u16),
+            (4, 0),
+            (4, maximum + 1),
+            (2, maximum + 1),
+            (6, 6),
+        ] {
+            changed = raw.clone();
+            changed[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+            if offset != 4 || value <= maximum {
+                seal(&mut changed, seed);
+            }
+            assert!(
+                extent_node::parse_block(&changed, blocks, BlockChecksum::Crc32c(seed)).is_none()
+            );
+        }
+        changed = raw.clone();
+        changed[24..28].copy_from_slice(&2u32.to_le_bytes()); // Overlap the first leaf extent.
+        seal(&mut changed, seed);
+        assert!(extent_node::parse_block(&changed, blocks, BlockChecksum::Crc32c(seed)).is_none());
+        for depth in 1..=5 {
+            let mut raw = header(size, depth, 2, maximum);
+            index(&mut raw, 0, 0, physical);
+            index(&mut raw, 1, 64, physical + 5);
+            seal(&mut raw, seed);
+            let node = extent_node::parse_block(&raw, blocks, BlockChecksum::Crc32c(seed)).unwrap();
+            assert_eq!(node.header_fields(), (2, maximum, depth));
+            let entry = node.index_entry(1).unwrap();
+            assert_eq!((entry.logical, entry.child), (64, physical + 5));
+            assert!(node.index_entry(2).is_none() && node.index_entry(usize::MAX).is_none());
+            assert!(node.leaf_extent(0).is_none());
+            for (logical, child) in [(0, physical + 5), (64, 0), (64, blocks)] {
+                let mut bad = raw.clone();
+                index(&mut bad, 1, logical, child);
+                seal(&mut bad, seed);
+                assert!(
+                    extent_node::parse_block(&bad, blocks, BlockChecksum::Crc32c(seed)).is_none()
+                );
+            }
+        }
+        let mut small = header(size, 0, 2, 2);
+        small[12..24].copy_from_slice(&first);
+        small[24..36].copy_from_slice(&second);
+        seal(&mut small, seed);
+        assert!(extent_node::parse_block(&small, blocks, BlockChecksum::Crc32c(seed)).is_some());
+    }
+    for depth in 1..=5 {
+        let mut raw = header(60, depth, 2, 4);
+        index(&mut raw, 0, 0, physical);
+        index(&mut raw, 1, 64, physical + 5);
+        assert!(extent_node::parse_inline_root(&raw, blocks).is_some());
+        assert!(extent_node::parse_block(&raw, blocks, BlockChecksum::Legacy).is_none());
+    }
+    let img = image();
+    let (sb, group, _) = metadata(&img);
+    for number in [2, 8, 11, 12] {
+        let raw = &inode_bytes(&img, group.inode_table, number)[40..100];
+        assert!(extent_node::parse_inline_root(raw, sb.blocks() as u64).is_some());
+    }
+    for length in [0usize, 59, 61, 1023, 65537] {
+        assert!(
+            extent_node::parse_block(&vec![0; length], blocks, BlockChecksum::Legacy).is_none()
+        );
+    }
+}
+
+#[test]
+fn source_blocks_capture_exact_shadow_ranges_across_filesystem_block_sizes() {
+    use core::{extent_node::BlockChecksum, patch_set::PatchSet, snapshot::Snapshot, source_block};
+    fn empty_node(size: usize, seed: u32) -> Vec<u8> {
+        let mut bytes = vec![0; size];
+        let maximum = ((size - 12) / 12) as u16;
+        bytes[..2].copy_from_slice(&0xf30au16.to_le_bytes());
+        bytes[4..6].copy_from_slice(&maximum.to_le_bytes());
+        let tail = 12 + maximum as usize * 12;
+        let checksum = core::crc::crc32c(seed, &bytes[..tail]);
+        bytes[tail..tail + 4].copy_from_slice(&checksum.to_le_bytes());
+        bytes
+    }
+    let mut base = (0..131405).map(|i| (i % 251) as u8).collect::<Vec<_>>();
+    let mut expected = base.clone();
+    let seed = 0x12345678;
+    let small_node = empty_node(1024, seed);
+    let wide_node = empty_node(65536, seed);
+    let mut first = vec![0x55; 4096];
+    first[1024..2048].copy_from_slice(&small_node);
+    let mut patches = PatchSet::new().insert(0, &first).ok().unwrap();
+    expected[..4096].copy_from_slice(&first);
+    patches = patches.insert(2, &[0xa7; 4096]).ok().unwrap();
+    expected[8192..12288].fill(0xa7);
+    for index in 0..16 {
+        let bytes = &wide_node[index * 4096..(index + 1) * 4096];
+        patches = patches.insert(16 + index as u32, bytes).ok().unwrap();
+    }
+    expected[65536..131072].copy_from_slice(&wide_node);
+    let owned = {
+        let source = Snapshot::from_bytes(&base);
+        let shadow = source.overlay(&patches).unwrap();
+        for start in [
+            0usize,
+            1,
+            1024,
+            4095,
+            4096,
+            8191,
+            65535,
+            131072,
+            expected.len(),
+        ] {
+            for length in [0usize, 1, 256, 1024, 2048, 4096, 8192, 65536] {
+                let actual = shadow.capture_bytes(start as u64, length);
+                if start + length <= expected.len() {
+                    assert_eq!(actual.unwrap(), &expected[start..start + length]);
+                } else {
+                    assert!(actual.is_none());
+                }
+            }
+        }
+        assert!(shadow.capture_bytes(0, 65537).is_none());
+        assert!(shadow.capture_bytes(u64::MAX, 0).is_none());
+        assert!(shadow.capture_bytes(u64::MAX, 1).is_none());
+        for size in [1024u32, 2048, 4096, 8192, 16384, 32768, 65536] {
+            let count = expected.len() as u64 / size as u64;
+            for number in [0, 1, count - 1] {
+                let block = source_block::capture(&shadow, number, size).unwrap();
+                assert_eq!(block.identity(), (number, size));
+                let start = number as usize * size as usize;
+                assert_eq!(block.raw(), &expected[start..start + size as usize]);
+            }
+            assert!(source_block::capture(&shadow, count, size).is_none());
+            assert!(source_block::capture(&shadow, u64::MAX, size).is_none());
+        }
+        for size in [0u32, 60, 512, 4097, 131072, u32::MAX] {
+            assert!(source_block::capture(&shadow, 0, size).is_none());
+        }
+        for size in [1024u32, 65536] {
+            let block = source_block::capture(&shadow, 1, size).unwrap();
+            let count = expected.len() as u64 / size as u64;
+            assert!(
+                block
+                    .parse_extent_node(count, BlockChecksum::Crc32c(seed))
+                    .is_some()
+            );
+            assert!(
+                block
+                    .parse_extent_node(count, BlockChecksum::Crc32c(seed ^ 1))
+                    .is_none()
+            );
+            assert!(
+                block
+                    .parse_extent_node(count + 1, BlockChecksum::Crc32c(seed))
+                    .is_none()
+            );
+            assert!(
+                block
+                    .parse_extent_node(0, BlockChecksum::Crc32c(seed))
+                    .is_none()
+            );
+        }
+        source_block::capture(&shadow, 1, 65536).unwrap()
+    };
+    base.fill(0);
+    assert_eq!(
+        owned.raw(),
+        wide_node,
+        "the returned source block owns its frozen bytes"
+    );
+}
+
+#[test]
+fn linux_created_external_extent_nodes_match_source_capture_and_inode_checksum_seed() {
+    use core::{
+        extent_node::{self, BlockChecksum},
+        snapshot::Snapshot,
+        source_block,
+    };
+    struct ScratchFiles(Vec<String>);
+    impl Drop for ScratchFiles {
+        fn drop(&mut self) {
+            for path in &self.0 {
+                let _ = std::fs::remove_file(path);
+            }
+        }
+    }
+    let prefix = format!("build/native-extents-{}", std::process::id());
+    let image_path = format!("{prefix}.img");
+    let commands_path = format!("{prefix}.commands");
+    let _cleanup = ScratchFiles(vec![image_path.clone(), commands_path.clone()]);
+    std::fs::write(&image_path, image()).unwrap();
+    let mut commands = String::from("write /dev/null /extent-native\n");
+    for logical in (0..16).step_by(2) {
+        commands.push_str(&format!("fallocate /extent-native {logical} {logical}\n"));
+    }
+    commands.push_str("set_inode_field /extent-native size 65536\nstat /extent-native\n");
+    std::fs::write(&commands_path, commands).unwrap();
+    let debugfs = std::env::var("DEBUGFS_BIN").unwrap_or_else(|_| "debugfs".into());
+    let output = std::process::Command::new(debugfs)
+        .args(["-w", "-f", &commands_path, &image_path])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stat = String::from_utf8_lossy(&output.stdout);
+    let number = stat
+        .lines()
+        .find_map(|line| {
+            line.strip_prefix("Inode:")?
+                .split_whitespace()
+                .next()?
+                .parse::<u32>()
+                .ok()
+        })
+        .expect("debugfs inode number");
+    let img = std::fs::read(&image_path).unwrap();
+    let (sb, group, uuid_seed) = metadata(&img);
+    let raw = inode_bytes(&img, group.inode_table, number);
+    let inode_seed = core::inode::inode_seed(uuid_seed, number, le32(raw, 100));
+    let root = extent_node::parse_inline_root(&raw[40..100], sb.blocks() as u64).unwrap();
+    let (entries, _, depth) = root.header_fields();
+    assert_eq!(
+        depth, 1,
+        "eight separated logical extents require an external leaf"
+    );
+    assert!(entries > 0);
+    let source = Snapshot::from_bytes(&img);
+    let root_offset = group.inode_table as u64 * 4096 + (number as u64 - 1) * 256 + 40;
+    let tree = core::extent_tree::audit(
+        &source,
+        root_offset,
+        sb.blocks() as u64,
+        4096,
+        BlockChecksum::Crc32c(inode_seed),
+        16,
+    )
+    .ok()
+    .expect("complete Linux-created extent-tree audit");
+    assert_eq!(tree.checked_nodes(), entries as u64 + 1);
+    let mut logicals = Vec::new();
+    for index in 0..entries as usize {
+        let entry = root.index_entry(index).unwrap();
+        let block = source_block::capture(&source, entry.child, 4096).unwrap();
+        let node = block
+            .parse_extent_node(sb.blocks() as u64, BlockChecksum::Crc32c(inode_seed))
+            .expect(
+                "Linux extent-block checksum uses the UUID/inode/generation seed and eh_max domain",
+            );
+        let (count, _, child_depth) = node.header_fields();
+        assert_eq!(child_depth, depth - 1);
+        assert_eq!(node.leaf_extent(0).unwrap().info().logical, entry.logical);
+        for ordinal in 0..count as usize {
+            let span = node.leaf_extent(ordinal).unwrap();
+            assert!(!span.info().initialized);
+            for logical in span.info().logical..span.info().logical + span.info().length {
+                logicals.push(logical);
+            }
+        }
+    }
+    assert_eq!(logicals, (0..16).step_by(2).collect::<Vec<u32>>());
+    for logical in 0..18 {
+        let path = tree
+            .find(logical)
+            .expect("audited Linux extent-tree traversal");
+        assert_eq!(path.visited_nodes(), depth + 1);
+        match path.resolved() {
+            core::extent_tree::Mapping::Unwritten(block) => {
+                assert!(logical < 16 && logical % 2 == 0);
+                assert!(block > 0 && block < sb.blocks() as u64);
+            }
+            core::extent_tree::Mapping::Hole => assert!(logical >= 16 || logical % 2 == 1),
+            core::extent_tree::Mapping::Written(_) => {
+                panic!("fallocate produced unwritten extents")
+            }
+        }
+    }
+    assert!(
+        core::allocation::parse(source).is_none(),
+        "local wide-node support must not silently widen the initial whole-image admission profile"
+    );
+}
+
+mod extent_tree_tests {
+    use super::core::{
+        crc,
+        extent_node::{self, BlockChecksum},
+        extent_span::{ExtentSpan, ExtentState},
+        extent_tree::{self, LookupError, Mapping},
+        snapshot::Snapshot,
+    };
+
+    const SEED: u32 = 0x8a94b27d;
+    const ROOT: u64 = 100;
+    const BLOCKS: u64 = 128;
+
+    fn header(length: usize, depth: u16, count: u16) -> Vec<u8> {
+        let mut raw = vec![0; length];
+        raw[..2].copy_from_slice(&0xf30au16.to_le_bytes());
+        raw[2..4].copy_from_slice(&count.to_le_bytes());
+        let maximum = if length == 60 {
+            4
+        } else {
+            ((length - 12) / 12) as u16
+        };
+        raw[4..6].copy_from_slice(&maximum.to_le_bytes());
+        raw[6..8].copy_from_slice(&depth.to_le_bytes());
+        raw
+    }
+
+    fn seal(raw: &mut [u8]) {
+        if raw.len() == 60 {
+            return;
+        }
+        let maximum = u16::from_le_bytes(raw[4..6].try_into().unwrap()) as usize;
+        let tail = 12 + 12 * maximum;
+        let checksum = crc::crc32c(SEED, &raw[..tail]);
+        raw[tail..tail + 4].copy_from_slice(&checksum.to_le_bytes());
+    }
+
+    fn index(raw: &mut [u8], ordinal: usize, logical: u32, child: u64) {
+        let offset = 12 + ordinal * 12;
+        raw[offset..offset + 4].copy_from_slice(&logical.to_le_bytes());
+        raw[offset + 4..offset + 8].copy_from_slice(&(child as u32).to_le_bytes());
+        raw[offset + 8..offset + 10].copy_from_slice(&((child >> 32) as u16).to_le_bytes());
+    }
+
+    fn span(
+        raw: &mut [u8],
+        ordinal: usize,
+        logical: u32,
+        length: u32,
+        physical: u64,
+        initialized: bool,
+        blocks: u64,
+    ) {
+        let state = if initialized {
+            ExtentState::Written
+        } else {
+            ExtentState::Unwritten
+        };
+        let encoded = ExtentSpan::new(logical, length, physical, state, blocks)
+            .unwrap()
+            .encode()
+            .unwrap();
+        raw[12 + ordinal * 12..24 + ordinal * 12].copy_from_slice(&encoded);
+    }
+
+    fn chain(size: usize, depth: u16) -> Vec<u8> {
+        let mut image = vec![0; size * BLOCKS as usize];
+        for level in 0..=depth {
+            let remaining = depth - level;
+            let mut raw = header(
+                if level == 0 { 60 } else { size },
+                remaining,
+                if remaining == 0 { 2 } else { 1 },
+            );
+            if remaining == 0 {
+                span(&mut raw, 0, 10, 2, 100, true, BLOCKS);
+                span(&mut raw, 1, 20, 3, 110, false, BLOCKS);
+            } else {
+                index(&mut raw, 0, 10, level as u64 + 2);
+            }
+            seal(&mut raw);
+            let start = if level == 0 {
+                ROOT as usize
+            } else {
+                (level as usize + 1) * size
+            };
+            image[start..start + raw.len()].copy_from_slice(&raw);
+        }
+        image
+    }
+
+    #[test]
+    fn binary_search_matches_complete_linear_oracle_at_full_node_capacity() {
+        for size in [1024, 2048, 4096, 8192, 16384, 32768, 65536] {
+            let count = ((size - 12) / 12) as u16;
+            let mut raw = header(size, 0, count);
+            let keys: Vec<u32> = (0..count as u32).map(|i| 10 + 3 * i).collect();
+            for (i, &logical) in keys.iter().enumerate() {
+                span(&mut raw, i, logical, 1, 10000 + i as u64, true, 65536);
+            }
+            seal(&mut raw);
+            let node = extent_node::parse_block(&raw, 65536, BlockChecksum::Crc32c(SEED)).unwrap();
+            for query in (0..keys.last().unwrap() + 3).chain([u32::MAX - 1, u32::MAX]) {
+                let expected = keys.partition_point(|&key| key <= query);
+                assert_eq!(node.upper_bound(query), expected);
+                let found = node.find_leaf(query);
+                if let Ok(index) = keys.binary_search(&query) {
+                    assert_eq!(
+                        found.unwrap().physical_block(query),
+                        Some(10000 + index as u64)
+                    );
+                } else {
+                    assert!(found.is_none());
+                }
+            }
+            assert!(node.key_at(count as usize).is_none());
+            assert!(node.key_at(usize::MAX).is_none());
+        }
+    }
+
+    #[test]
+    fn source_paths_cover_all_block_sizes_and_depths_without_exposing_unwritten_as_written() {
+        for size in [1024, 2048, 4096, 8192, 16384, 32768, 65536] {
+            for depth in 0..=5 {
+                let image = chain(size, depth);
+                let source = Snapshot::from_bytes(&image);
+                let tree = extent_tree::audit(
+                    &source,
+                    ROOT,
+                    BLOCKS,
+                    size as u32,
+                    BlockChecksum::Crc32c(SEED),
+                    depth as u64 + 1,
+                )
+                .ok()
+                .unwrap();
+                assert_eq!(tree.checked_nodes(), depth as u64 + 1);
+                assert!(tree.find(u32::MAX).is_none());
+                for budget in 0..=depth as u64 {
+                    assert!(matches!(
+                        extent_tree::audit(
+                            &source,
+                            ROOT,
+                            BLOCKS,
+                            size as u32,
+                            BlockChecksum::Crc32c(SEED),
+                            budget
+                        ),
+                        Err(extent_tree::AuditError::Budget)
+                    ));
+                }
+                for query in [0, 9, 10, 11, 12, 19, 20, 21, 22, 23, u32::MAX - 1] {
+                    let path = tree.find(query).unwrap();
+                    assert_eq!(path.visited_nodes(), depth + 1);
+                    match path.resolved() {
+                        Mapping::Written(block) => {
+                            assert!((10..12).contains(&query));
+                            assert_eq!(block, 100 + (query - 10) as u64);
+                        }
+                        Mapping::Unwritten(block) => {
+                            assert!((20..23).contains(&query));
+                            assert_eq!(block, 110 + (query - 20) as u64);
+                        }
+                        Mapping::Hole => {
+                            assert!(!(10..12).contains(&query) && !(20..23).contains(&query))
+                        }
+                    }
+                }
+                assert!(matches!(
+                    extent_tree::lookup(
+                        &source,
+                        ROOT,
+                        BLOCKS,
+                        size as u32,
+                        BlockChecksum::Legacy,
+                        u32::MAX
+                    ),
+                    Err(LookupError::Geometry)
+                ));
+            }
+        }
+    }
+
+    #[test]
+    fn parent_bounds_depth_keys_checksums_and_cycles_fail_as_corruption() {
+        let size = 4096;
+        let mut image = chain(size, 1);
+        let mut root = header(60, 1, 2);
+        index(&mut root, 0, 10, 2);
+        index(&mut root, 1, 20, 3);
+        image[ROOT as usize..ROOT as usize + 60].copy_from_slice(&root);
+        let mut left = header(size, 0, 1);
+        span(&mut left, 0, 10, 2, 100, true, BLOCKS);
+        seal(&mut left);
+        image[2 * size..3 * size].copy_from_slice(&left);
+        let mut right = header(size, 0, 1);
+        span(&mut right, 0, 20, 3, 110, false, BLOCKS);
+        seal(&mut right);
+        image[3 * size..4 * size].copy_from_slice(&right);
+        let source = Snapshot::from_bytes(&image);
+        assert_eq!(
+            extent_tree::audit(
+                &source,
+                ROOT,
+                BLOCKS,
+                size as u32,
+                BlockChecksum::Crc32c(SEED),
+                3
+            )
+            .ok()
+            .unwrap()
+            .checked_nodes(),
+            3
+        );
+        assert!(matches!(
+            extent_tree::audit(
+                &source,
+                ROOT,
+                BLOCKS,
+                size as u32,
+                BlockChecksum::Crc32c(SEED),
+                2
+            ),
+            Err(extent_tree::AuditError::Budget)
+        ));
+        for query in [0, 10, 19, 20, 22, 23] {
+            assert!(
+                extent_tree::lookup(
+                    &source,
+                    ROOT,
+                    BLOCKS,
+                    size as u32,
+                    BlockChecksum::Crc32c(SEED),
+                    query
+                )
+                .is_ok()
+            );
+        }
+        for mutation in 0..6 {
+            let mut broken = image.clone();
+            let raw = &mut broken[2 * size..3 * size];
+            match mutation {
+                0 => raw[6..8].copy_from_slice(&1u16.to_le_bytes()), // wrong child depth
+                1 => raw[12..16].copy_from_slice(&11u32.to_le_bytes()), // wrong first key
+                2 => raw[16..18].copy_from_slice(&11u16.to_le_bytes()), // crosses sibling key 20
+                3 => raw[6..8].copy_from_slice(&5u16.to_le_bytes()), // plausible cyclic node
+                4 => {
+                    raw[6..8].copy_from_slice(&1u16.to_le_bytes());
+                    raw[2..4].fill(0);
+                }
+                _ => {}
+            }
+            seal(raw);
+            if mutation == 5 {
+                raw[100] ^= 1;
+            } // damaged unused entry is still checksummed
+            let source = Snapshot::from_bytes(&broken);
+            assert!(
+                matches!(
+                    extent_tree::audit(
+                        &source,
+                        ROOT,
+                        BLOCKS,
+                        size as u32,
+                        BlockChecksum::Crc32c(SEED),
+                        3
+                    ),
+                    Err(extent_tree::AuditError::Corrupt)
+                ),
+                "the audit must reject corruption even outside a requested lookup path"
+            );
+            assert!(matches!(
+                extent_tree::lookup(
+                    &source,
+                    ROOT,
+                    BLOCKS,
+                    size as u32,
+                    BlockChecksum::Crc32c(SEED),
+                    10
+                ),
+                Err(LookupError::Corrupt)
+            ));
+            assert!(
+                extent_tree::lookup(
+                    &source,
+                    ROOT,
+                    BLOCKS,
+                    size as u32,
+                    BlockChecksum::Crc32c(SEED),
+                    20
+                )
+                .is_ok(),
+                "a path certificate does not claim validation of unvisited subtrees"
+            );
+        }
+        let mut cyclic = chain(size, 2);
+        index(&mut cyclic[2 * size..3 * size], 0, 10, 2);
+        seal(&mut cyclic[2 * size..3 * size]);
+        assert!(matches!(
+            extent_tree::lookup(
+                &Snapshot::from_bytes(&cyclic),
+                ROOT,
+                BLOCKS,
+                size as u32,
+                BlockChecksum::Crc32c(SEED),
+                10
+            ),
+            Err(LookupError::Corrupt)
+        ));
+        for (root, blocks, size) in [
+            (u64::MAX, BLOCKS, size as u32),
+            (ROOT, u64::MAX, size as u32),
+            (ROOT, BLOCKS, 0),
+            (ROOT, BLOCKS, 3072),
+        ] {
+            assert!(matches!(
+                extent_tree::lookup(&source, root, blocks, size, BlockChecksum::Legacy, 0),
+                Err(LookupError::Geometry)
+            ));
+        }
+    }
+
+    #[test]
+    fn complete_audit_visits_every_branch_and_separates_budget_from_corruption() {
+        fn build(
+            image: &mut [u8],
+            size: usize,
+            depth: u16,
+            low: u32,
+            width: u32,
+            address: Option<u64>,
+            next: &mut u64,
+        ) {
+            let mut raw = header(
+                if address.is_none() { 60 } else { size },
+                depth,
+                if depth == 0 { 1 } else { 2 },
+            );
+            if depth == 0 {
+                span(
+                    &mut raw,
+                    0,
+                    low,
+                    1,
+                    100 + (low - 10) as u64 / 10,
+                    low % 20 == 10,
+                    BLOCKS,
+                );
+            } else {
+                for ordinal in 0..2 {
+                    let child = *next;
+                    *next += 1;
+                    let first = low + ordinal as u32 * width / 2;
+                    index(&mut raw, ordinal, first, child);
+                    build(image, size, depth - 1, first, width / 2, Some(child), next);
+                }
+            }
+            seal(&mut raw);
+            let start = address.map_or(ROOT as usize, |number| number as usize * size);
+            image[start..start + raw.len()].copy_from_slice(&raw);
+        }
+        for size in [1024, 4096, 65536] {
+            let mut image = vec![0; size * BLOCKS as usize];
+            let mut next = 2;
+            build(&mut image, size, 3, 10, 80, None, &mut next);
+            assert_eq!(next, 16);
+            let source = Snapshot::from_bytes(&image);
+            let tree = extent_tree::audit(
+                &source,
+                ROOT,
+                BLOCKS,
+                size as u32,
+                BlockChecksum::Crc32c(SEED),
+                15,
+            )
+            .ok()
+            .unwrap();
+            assert_eq!(tree.checked_nodes(), 15);
+            for query in 0..90 {
+                let result = tree.find(query).unwrap().resolved();
+                if (10..90).contains(&query) && query % 10 == 0 {
+                    let block = match result {
+                        Mapping::Written(block) | Mapping::Unwritten(block) => block,
+                        Mapping::Hole => panic!("missing leaf"),
+                    };
+                    assert_eq!(block, 100 + (query - 10) as u64 / 10);
+                } else {
+                    assert!(matches!(result, Mapping::Hole));
+                }
+            }
+            assert!(matches!(
+                extent_tree::audit(
+                    &source,
+                    ROOT,
+                    BLOCKS,
+                    size as u32,
+                    BlockChecksum::Crc32c(SEED),
+                    14
+                ),
+                Err(extent_tree::AuditError::Budget)
+            ));
+            image[15 * size + 6..15 * size + 8].copy_from_slice(&1u16.to_le_bytes());
+            seal(&mut image[15 * size..16 * size]);
+            let source = Snapshot::from_bytes(&image);
+            assert!(
+                extent_tree::lookup(
+                    &source,
+                    ROOT,
+                    BLOCKS,
+                    size as u32,
+                    BlockChecksum::Crc32c(SEED),
+                    10
+                )
+                .is_ok()
+            );
+            assert!(matches!(
+                extent_tree::audit(
+                    &source,
+                    ROOT,
+                    BLOCKS,
+                    size as u32,
+                    BlockChecksum::Crc32c(SEED),
+                    15
+                ),
+                Err(extent_tree::AuditError::Corrupt)
+            ));
+        }
+    }
+
+    #[test]
+    fn audited_trees_retain_exact_shadow_source_and_allow_empty_leaves() {
+        use super::core::patch_set::PatchSet;
+        let size = 1024;
+        let image = chain(size, 1);
+        let base = Snapshot::from_bytes(&image);
+        let original = extent_tree::audit(
+            &base,
+            ROOT,
+            BLOCKS,
+            size as u32,
+            BlockChecksum::Crc32c(SEED),
+            2,
+        )
+        .ok()
+        .unwrap();
+        let mut page = image[..4096].to_vec();
+        span(&mut page[2 * size..3 * size], 0, 10, 2, 105, true, BLOCKS);
+        seal(&mut page[2 * size..3 * size]);
+        let patches = PatchSet::new().insert(0, &page).ok().unwrap();
+        page.fill(0);
+        let shadow = base.overlay(&patches).unwrap();
+        let modified = extent_tree::audit(
+            &shadow,
+            ROOT,
+            BLOCKS,
+            size as u32,
+            BlockChecksum::Crc32c(SEED),
+            2,
+        )
+        .ok()
+        .unwrap();
+        assert!(matches!(
+            original.find(10).unwrap().resolved(),
+            Mapping::Written(100)
+        ));
+        assert!(matches!(
+            modified.find(10).unwrap().resolved(),
+            Mapping::Written(105)
+        ));
+        assert!(matches!(
+            modified.find(20).unwrap().resolved(),
+            Mapping::Unwritten(110)
+        ));
+        assert_eq!(modified.checked_nodes(), 2);
+
+        let mut empty_external = image.clone();
+        empty_external[2 * size..3 * size].copy_from_slice(&header(size, 0, 0));
+        seal(&mut empty_external[2 * size..3 * size]);
+        let source = Snapshot::from_bytes(&empty_external);
+        let empty = extent_tree::audit(
+            &source,
+            ROOT,
+            BLOCKS,
+            size as u32,
+            BlockChecksum::Crc32c(SEED),
+            2,
+        )
+        .ok()
+        .unwrap();
+        assert_eq!(empty.checked_nodes(), 2);
+        for query in [0, 10, 20, u32::MAX - 1] {
+            assert!(matches!(
+                empty.find(query).unwrap().resolved(),
+                Mapping::Hole
+            ));
+        }
+        let mut empty_root = image;
+        empty_root[ROOT as usize..ROOT as usize + 60].copy_from_slice(&header(60, 0, 0));
+        let source = Snapshot::from_bytes(&empty_root);
+        let empty =
+            extent_tree::audit(&source, ROOT, BLOCKS, size as u32, BlockChecksum::Legacy, 1)
+                .ok()
+                .unwrap();
+        assert_eq!(empty.checked_nodes(), 1);
+        assert!(matches!(empty.find(0).unwrap().resolved(), Mapping::Hole));
+        assert!(empty.find(u32::MAX).is_none());
+    }
+}
+
+#[test]
 fn codecs_handle_extremes_and_crc_streaming() {
     for v in [0, 1, 255, 256, 65535, 65536, 0x89abcdef, u32::MAX] {
         assert_eq!(
@@ -1449,6 +2415,25 @@ fn extent_length_edges_and_unwritten_zero_semantics() {
         initialized: true,
     };
     assert!(overflow.encode(65536).is_none());
+    // Linux fs/ext4/extents.c: ext4_valid_extent rejects an exclusive end
+    // wrapping to zero, including the terminal logical block with length 1.
+    for length in [1, 2, 32768] {
+        let valid = core::extent::Extent {
+            logical: u32::MAX - length,
+            physical: 100,
+            length,
+            initialized: true,
+        };
+        let mut encoded = valid.encode(65536).unwrap();
+        assert!(core::extent::parse(&encoded, 0, 65536).is_some());
+        let invalid = core::extent::Extent {
+            logical: valid.logical + 1,
+            ..valid
+        };
+        assert!(invalid.encode(65536).is_none());
+        encoded[..4].copy_from_slice(&invalid.logical.to_le_bytes());
+        assert!(core::extent::parse(&encoded, 0, 65536).is_none());
+    }
     let mut root = [0u8; 60];
     root[0..2].copy_from_slice(&0xf30au16.to_le_bytes());
     root[2..4].copy_from_slice(&2u16.to_le_bytes());

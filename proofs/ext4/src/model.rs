@@ -143,3 +143,13 @@ pub mod bootstrap_identity;
 pub mod image_validation;
 pub mod recovery_patch;
 pub mod recovery_admission;
+pub mod block_range;
+pub mod extent_span;
+mod block_lifetime;
+pub mod block_size;
+pub mod extent_node;
+pub mod source_block;
+
+pub mod extent_tree;
+
+pub mod extent_tree_model;
