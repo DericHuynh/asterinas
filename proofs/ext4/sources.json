@@ -171,7 +171,7 @@
       "path": "fs/ext4/inode.c",
       "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/inode.c",
       "blob_sha": "1123d995494b588744ba47fcee88e9cd0cc992dd",
-      "review_scope": "__ext4_get_inode_loc group/slot/block/offset arithmetic and inode-table validation; referenced behavior only; ext4_inode_blocks and ext4_inode_blocks_set distinguish 512-byte sector counts, high fields and HUGE_FILE units; bounded profile counts data and external extent metadata"
+      "review_scope": "__ext4_get_inode_loc group/slot/block/offset arithmetic and inode-table validation; referenced behavior only; ext4_inode_blocks and ext4_inode_blocks_set distinguish 512-byte sector counts, high fields and HUGE_FILE units; bounded profile counts data and external extent metadata; source-bound HUGE_FILE feature/flag unit decoding and exact canonical encoder with explicit alignment domain"
     },
     {
       "path": "fs/ext4/ext4_extents.h",

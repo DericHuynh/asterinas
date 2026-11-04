@@ -27,6 +27,8 @@ pub struct IndexView {
     pub source: Seq<u8>, pub groups: Seq<GroupView>, pub blocks: u32, pub inodes: u32, pub ipg: u32, pub seed: u32,
 }
 
+pub open spec fn has_huge_files(v: IndexView) -> bool { bytes::le32(v.source, 1124) as u32 & 8 != 0 }
+
 #[verifier::opaque]
 pub open spec fn records_match(groups: Seq<GroupView>, source: Seq<u8>, blocks: u32, ipg: u32, seed: u32) -> bool {
     forall|i: int| 0 <= i < groups.len() ==> #[trigger] group_metadata::valid(groups[i])
@@ -87,6 +89,12 @@ impl<'a> GroupIndex<'a> {
     {
         proof { use_type_invariant(self); }
         (self.blocks, self.inodes, self.ipg, self.seed)
+    }
+
+    pub fn huge_files(&self) -> (r: bool) ensures self.wf(), r == has_huge_files(self.view()) {
+        proof { use_type_invariant(self); reveal(valid); }
+        let primary = self.source.block(0).unwrap();
+        bytes::read_le32(primary.as_slice(), 1124).unwrap() & 8 != 0
     }
 
     pub fn group_count(&self) -> (r: usize) ensures self.wf(), r == self.view().groups.len(), 0 < r <= 32 {

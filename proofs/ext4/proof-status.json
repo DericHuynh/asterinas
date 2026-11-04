@@ -9,13 +9,13 @@
   "writable_mount_enabled": false,
   "verification": {
     "status": "core_and_models_checked",
-    "verus_verified_units": 801,
+    "verus_verified_units": 809,
     "verification_errors": 0,
     "checked_named_proof_functions": 282,
-    "checked_named_executable_functions": 271,
+    "checked_named_executable_functions": 275,
     "runner_validated": true,
     "negative_gate_checks_passed": 6,
-    "host_compatibility_tests_passed": 53,
+    "host_compatibility_tests_passed": 57,
     "evidence": "verification-evidence.json",
     "request_boundary_rejections_passed": 13
   },
@@ -87,12 +87,13 @@
     "extent_tree_paths": "checked_exact_same_source_root_and_external_nodes_depth_decrease_no_successful_path_cycles_parent_first_key_and_inherited_upper_bounds_unique_leaf_selection_written_unwritten_holes",
     "complete_structural_extent_trees": "checked_all_reachable_children_exact_visit_counts_sufficient_budget_completion_sound_error_classification_and_complete_mapping_equivalence_bounded_4KiB_inode_feature_global_ownership_read_composition_checked_mutations_other_geometries_features_and_runtime_open",
     "bound_extent_inode_certificate": "checked_actual_initialized_source_inode_bitmap_group_slot_root_checksum_generation_UUID_inode_seed_binding_sealed_index_ownership_and_negative_Rust_forgery_substitution_checks",
-    "large_regular_inode_sizes": "checked_Linux_high_low_size_decoding_feature_parameterized_limits_exact_encoding_and_current_4KiB_no_HUGE_FILE_source_binding_2TiB_minus_4KiB_cap_sparse_reads_EOF_and_no_logical_offset_truncation_directory_and_journal_policy_separate"
+    "large_regular_inode_sizes": "checked_Linux_high_low_size_decoding_feature_parameterized_limits_exact_encoding_and_current_4KiB_no_HUGE_FILE_source_binding_2TiB_minus_4KiB_cap_sparse_reads_EOF_and_no_logical_offset_truncation_directory_and_journal_policy_separate",
+    "huge_file_accounting": "checked_source_superblock_feature_and_inode_flag_binding_32_48_bit_counts_sector_and_filesystem_block_units_exact_encoding_alignment_and_overflow_bounded_global_data_tree_accounting_and_16TiB_minus_4KiB_sparse_reads_runtime_and_mutations_open"
   },
   "production_activation_gate": "All applicable obligations in PROOF_OBLIGATIONS.md must be discharged for the admitted profile.",
   "evidence_policy": "Only successful pinned entire-crate checking plus compilation produces a valid build report; it certifies only the declared source/model scope.",
   "static_namespace_validation_present": true,
-  "implemented_profile": "bounded_initialized_groups_owned_extent_trees_64_bit_regular_sizes_FORMAT_PROFILE.md",
+  "implemented_profile": "bounded_initialized_groups_owned_trees_64_bit_sizes_optional_HUGE_FILE_FORMAT_PROFILE.md",
   "full_feature_support_present": false,
   "concurrent_transaction_implementation_present": false,
   "expanded_design": [

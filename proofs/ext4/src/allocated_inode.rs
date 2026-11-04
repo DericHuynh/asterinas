@@ -54,7 +54,7 @@ pub open spec fn valid(v: NodeView) -> bool {
     let raw = inode_table::raw(v.volume.index, v.number);
     &&& allocation::valid(v.volume) && live(v.volume.index, v.number)
     &&& inode_group::ordinary_checked(v.volume.index, v.volume.census.roles, v.number)
-    &&& inode::metadata_accepted(raw, v.number, v.volume.index.inodes, v.volume.index.seed)
+    &&& inode::metadata_accepted_with_features(raw, v.number, v.volume.index.inodes, v.volume.index.seed, group_index::has_huge_files(v.volume.index))
     &&& v.mode as nat == bytes::le16(raw, 0) && v.size as nat == inode_size::value(raw, false)
     &&& v.generation as nat == bytes::le32(raw, 100) && v.links as nat == bytes::le16(raw, 26)
     &&& v.uid as nat == bytes::le16(raw, 2) + 65536 * bytes::le16(raw, 120)
@@ -92,7 +92,7 @@ impl<'v, 'a> AllocatedInode<'v, 'a> {
 
     pub fn info(&self) -> (r: &Inode)
         ensures self.wf(), r.mode == self.view().mode, r.uid == self.view().uid, r.gid == self.view().gid,
-            r.size == self.view().size, r.size <= inode_size::linux_max(4096, false), r.generation == self.view().generation, r.links == self.view().links,
+            r.size == self.view().size, r.size <= inode_size::linux_max(4096, group_index::has_huge_files(self.view().volume.index)), r.generation == self.view().generation, r.links == self.view().links,
     {
         proof { use_type_invariant(self); }
         proof { reveal(valid); }
@@ -132,8 +132,9 @@ pub fn get<'v, 'a>(volume: &'v Allocation<'a>, n: u32) -> (r: Option<AllocatedIn
     if !bitmap.is_set(slot).unwrap() { return None; }
     proof { every_live_inode_has_source_bound_claims(volume.view(), n); }
     let raw = inode_table::read(index, n).unwrap();
-    assert(inode::metadata_accepted(raw@, n, inodes, seed)) by { reveal(inode_group::ordinary_checked); reveal(extent_claims::accepted); }
-    let info = inode::parse_metadata(raw, n, inodes, seed).unwrap();
+    let huge_file = index.huge_files();
+    assert(inode::metadata_accepted_with_features(raw@, n, inodes, seed, huge_file)) by { reveal(inode_group::ordinary_checked); reveal(extent_claims::accepted); }
+    let info = inode::parse_metadata_with_features(raw, n, inodes, seed, huge_file).unwrap();
     let ghost assembled = NodeView { volume: volume.view(), number: n, mode: info.mode, uid: info.uid,
         gid: info.gid, size: info.size, generation: info.generation, links: info.links };
     assert(valid(assembled)) by { reveal(valid); }

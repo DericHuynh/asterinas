@@ -108,7 +108,8 @@
     "src/extent_tree_model.rs",
     "src/extent_claims.rs",
     "src/extent_ownership.rs",
-    "src/inode_size.rs"
+    "src/inode_size.rs",
+    "src/inode_blocks.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -671,6 +672,10 @@
     "extent_tree::lookup_allocated",
     "inode_size::limit",
     "inode_size::decode",
-    "inode_size::encode"
+    "inode_size::encode",
+    "inode_blocks::decode",
+    "inode_blocks::encode",
+    "group_index::huge_files",
+    "inode::parse_metadata_with_features"
   ]
 }

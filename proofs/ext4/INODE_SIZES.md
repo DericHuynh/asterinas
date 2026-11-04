@@ -4,7 +4,7 @@
 
 Ordinary regular-file metadata, allocated inode views and structural reads use
 64-bit sizes. The initialized-group profile still requires 4 KiB blocks and
-does not admit HUGE_FILE or LARGEDIR. Sparse files may exceed the physical image
+admits optional HUGE_FILE and still rejects LARGEDIR. Sparse files may exceed the physical image
 size; ownership and allocation account for their actual stored extents.
 
 The reference is Linux v7.0 commit
@@ -24,7 +24,7 @@ enlarging ordinary file sizes cannot reinterpret its bootstrap mapping.
 | Rule | Checked result | Remaining scope |
 | --- | --- | --- |
 | Field codec | Total high/low decoding and encoding with exact values; seven block sizes; explicit HUGE_FILE/LARGEDIR policy inputs | Standalone policy inputs grant no volume or inode authority |
-| Maximum size | Linux's extent bound and, without HUGE_FILE, the 32-bit sector-count bound | Enabling HUGE_FILE or other geometries requires actual feature/accounting composition |
+| Maximum size | Linux's extent bound and, without HUGE_FILE, the 32-bit sector-count bound | HUGE_FILE now composes with bounded 4 KiB admission; other geometries and feature combinations remain open |
 | Bound metadata | Size, UID, GID, mode, generation and links refer to the exact checked source inode | VFS credentials and runtime mutation are separate |
 | Structural read | Offsets below i_size fit the logical-block type without truncation; data retain physical owner/generation/logical identity; holes/unwritten extents give zeros; reads stop at EOF | CortenMM, concurrent cache/DMA and device refinement remain open |
 
@@ -32,8 +32,9 @@ For block size B, the extent limit is `(2^32 - 1) * B`. Without HUGE_FILE,
 Linux also limits the file to `floor((2^32 - 1)/(B/512)) * B`. For the supported
 power-of-two sizes this is `2^41 - B`. Thus the current 4 KiB profile's maximum
 is **2,199,023,251,456 bytes (2 TiB minus 4 KiB)**, including sparse files.
-The HUGE_FILE helper policy models the larger extent limit; its presence does
-not enable that feature in whole-volume admission.
+With the checked HUGE_FILE bit present, whole-volume admission uses the larger
+extent limit. See [INODE_BLOCKS.md](INODE_BLOCKS.md) for its accounting and
+feature-binding rules.
 
 The logical file offset never becomes a physical source address. A sparse read
 resolves the extent relation, then uses its checked physical block and the

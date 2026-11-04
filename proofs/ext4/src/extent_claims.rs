@@ -8,7 +8,7 @@ use vstd::prelude::*;
 use crate::{allocated_inode, block_claims::{self, Census, Claim}, bytes, crc,
     extent, extent_node::{self, Node, NodeView, BlockChecksum}, extent_span,
     extent_tree::{self, Context, CheckedTree}, group, group_index::{self, GroupIndex, IndexView},
-    group_metadata, inode::{self, Inode}, inode_claims, inode_table, snapshot::Snapshot, source_block};
+    group_metadata, inode::{self, Inode}, inode_claims, inode_blocks, inode_table, snapshot::Snapshot, source_block};
 
 verus! {
 
@@ -35,7 +35,7 @@ pub open spec fn accepted(index: IndexView, number: u32) -> bool {
     let c = context(index, number);
     let raw = inode_table::raw(index, number);
     &&& group_index::valid(index) && allocated_inode::live(index, number)
-    &&& inode::metadata_accepted(raw, number, index.inodes, index.seed)
+    &&& inode::metadata_accepted_with_features(raw, number, index.inodes, index.seed, group_index::has_huge_files(index))
     &&& number == 2 ==> bytes::le16(raw, 0) as u16 & 0xf000 == 0x4000
     &&& extent_tree::context_valid(c)
     &&& extent_tree::subtree_valid(c, extent_tree::root_node(c), None, depth(index, number), None, extent::MAX_LOGICAL_END)
@@ -152,7 +152,8 @@ pub fn bind<'v, 'image>(index: &'v GroupIndex<'image>, number: u32, budget: u64)
     proof { reveal(group_index::records_match); reveal(group_metadata::valid); }
     if !bitmap.is_set(slot).unwrap() { return None; }
     let raw = inode_table::read(index, number).unwrap();
-    let info = match inode::parse_metadata(raw, number, inodes, seed) { Some(info) => info, None => { return None; } };
+    let huge_file = index.huge_files();
+    let info = match inode::parse_metadata_with_features(raw, number, inodes, seed, huge_file) { Some(info) => info, None => { return None; } };
     if number == 2 && info.mode & 0xf000 != 0x4000 { return None; }
     let root = inode_table::position(index, number).unwrap() + 40;
     let checksum_seed = inode::inode_seed(seed, number, info.generation);
@@ -285,8 +286,9 @@ pub fn collect(census: Census, inode: &BoundInode<'_, '_>) -> (r: Option<Census>
             && next.view().claims == census.view().claims + claims(inode.index_view(), inode.inode_number())
             && block_claims::preserves_occupied(census.view().roles, next.view().roles)
             && block_claims::mapped_claims(next.view().roles, claims(inode.index_view(), inode.inode_number()))
-            && bytes::le16(inode_table::raw(inode.index_view(), inode.inode_number()), 116) == 0
-            && bytes::le32(inode_table::raw(inode.index_view(), inode.inode_number()), 28) == 8 * inode_claims::allocated(claims(inode.index_view(), inode.inode_number())),
+            && (!group_index::has_huge_files(inode.index_view()) ==> bytes::le16(inode_table::raw(inode.index_view(), inode.inode_number()), 116) == 0)
+            && inode_blocks::sectors(inode_table::raw(inode.index_view(), inode.inode_number()), 4096, group_index::has_huge_files(inode.index_view()))
+                == 8 * inode_claims::allocated(claims(inode.index_view(), inode.inode_number())),
         None => true,
     },
 {
@@ -309,7 +311,9 @@ pub fn collect(census: Census, inode: &BoundInode<'_, '_>) -> (r: Option<Census>
     let (next, total) = match collect_node(census, inode.index.source(), &p, root, None, depth, None, extent::MAX_LOGICAL_END) {
         Some(pair) => pair, None => { return None; },
     };
-    if bytes::read_le16(raw, 116).unwrap() != 0 || bytes::read_le32(raw, 28).unwrap() as u64 != total * 8 { return None; }
+    let huge_file = inode.index.huge_files();
+    let sectors = inode_blocks::decode(raw, 4096, huge_file).unwrap();
+    if (!huge_file && bytes::read_le16(raw, 116).unwrap() != 0) || sectors != total * 8 { return None; }
     proof { block_claims::every_appended_claim_has_its_exact_physical_slots(&next, census.view().claims, claims(inode.index_view(), inode.number)); }
     Some(next)
 }

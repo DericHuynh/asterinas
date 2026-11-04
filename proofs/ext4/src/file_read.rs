@@ -149,7 +149,8 @@ pub fn chunk<'a>(node: &AllocatedInode<'_, 'a>, offset: u64, wanted: usize) -> (
 {
     let info = node.info();
     if wanted == 0 || offset >= info.size as u64 { return Chunk::End; }
-    proof { inode_size::offsets_never_truncate_to_a_different_logical_block(4096, false, info.size, offset); }
+    let huge_file = node.volume().index().huge_files();
+    proof { inode_size::offsets_never_truncate_to_a_different_logical_block(4096, huge_file, info.size, offset); }
     let logical = (offset / 4096) as u32;
     let within = (offset % 4096) as usize;
     let remaining = info.size as u64 - offset;

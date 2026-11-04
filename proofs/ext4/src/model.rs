@@ -159,3 +159,5 @@ pub mod extent_claims;
 pub mod extent_ownership;
 
 pub mod inode_size;
+
+pub mod inode_blocks;

@@ -33,7 +33,7 @@ pub open spec fn accepted(s: Seq<u8>, partition_bytes: u64) -> bool {
     &&& le16(s, 88) == 256
     &&& le32(s, 92) == 4
     &&& (le32(s, 96) == 0x42 || le32(s, 96) == 0x46)
-    &&& le32(s, 100) == 0x443
+    &&& (le32(s, 100) == 0x443 || le32(s, 100) == 0x44b)
     &&& (le16(s, 254) == 0 || le16(s, 254) == 32)
     &&& le16(s, 206) == 0
     &&& le32(s, 228) == 0
@@ -121,7 +121,8 @@ pub fn parse(s: &[u8], partition_bytes: u64) -> (r: Option<Superblock>)
     { return None; }
     let incompat = read_le32(s, 96).unwrap();
     let desc_size = read_le16(s, 254).unwrap();
-    if (incompat != 0x42 && incompat != 0x46) || read_le32(s, 100).unwrap() != 0x443
+    let ro_compat = read_le32(s, 100).unwrap();
+    if (incompat != 0x42 && incompat != 0x46) || (ro_compat != 0x443 && ro_compat != 0x44b)
         || (desc_size != 0 && desc_size != 32) || read_le16(s, 206).unwrap() != 0
         || read_le32(s, 228).unwrap() != 0 || read_le32(s, 232).unwrap() != 0
         || read_le16(s, 348).unwrap() != 32 || read_le16(s, 350).unwrap() != 32
