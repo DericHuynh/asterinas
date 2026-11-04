@@ -462,4 +462,57 @@ pub fn audit<'s, 'image>(source: &'s Snapshot<'image>, root: u64, blocks: u64, s
     Ok(CheckedTree { source, geometry, nodes })
 }
 
+// Restore lookup from the sealed whole-image certificate. Its allocation
+// validator already checked every branch; reads need only a bounded path.
+pub fn lookup_allocated(inode: &crate::allocated_inode::AllocatedInode<'_, '_>, logical: u32) -> (r: Option<CheckedPath>)
+    ensures inode.wf(), match r {
+        Some(path) => path.wf() && path.query() == logical
+            && path.source() == crate::extent_claims::context(inode.view().volume.index, inode.view().number)
+            && forall|span: SpanView| #[trigger] crate::extent_tree_model::stored_mapping(path.source(), root_node(path.source()),
+                crate::extent_claims::depth(inode.view().volume.index, inode.view().number), logical, span) == (path.result() == Some(span)),
+        None => logical >= extent::MAX_LOGICAL_END
+            && !exists|span: SpanView| #[trigger] crate::extent_tree_model::stored_mapping(crate::extent_claims::context(inode.view().volume.index, inode.view().number),
+                root_node(crate::extent_claims::context(inode.view().volume.index, inode.view().number)),
+                crate::extent_claims::depth(inode.view().volume.index, inode.view().number), logical, span),
+    },
+{
+    hide(crate::crc::fold);
+    let index = inode.volume().index();
+    let (blocks, _, _, seed) = index.parameters();
+    let number = inode.number();
+    let info = inode.info();
+    proof {
+        reveal(crate::allocated_inode::valid);
+        reveal(crate::inode_group::ordinary_checked);
+        reveal(crate::extent_claims::accepted);
+    }
+    let ghost c = crate::extent_claims::context(index.view(), number);
+    let ghost depth = crate::extent_claims::depth(index.view(), number);
+    if logical as u64 >= extent::MAX_LOGICAL_END {
+        assert(!exists|span: SpanView| #[trigger] crate::extent_tree_model::stored_mapping(c, root_node(c), depth, logical, span)) by {
+            if exists|span: SpanView| #[trigger] crate::extent_tree_model::stored_mapping(c, root_node(c), depth, logical, span) {
+                let span = choose|span: SpanView| #[trigger] crate::extent_tree_model::stored_mapping(c, root_node(c), depth, logical, span);
+                crate::extent_tree_model::every_stored_mapping_respects_the_subtree_interval(c, root_node(c), None, depth, None, extent::MAX_LOGICAL_END, logical, span);
+            }
+        }
+        return None;
+    }
+    let raw = inode.raw();
+    let position = crate::inode_table::position(index, number).unwrap();
+    proof {
+        assert(raw@.subrange(40, 100) =~= index.view().source.subrange(position as int + 40, position as int + 100));
+        assert(raw@.subrange(40, 100) == root_node(c).raw);
+    }
+    let node = extent_node::parse_inline_root(&raw[40..100], blocks as u64).unwrap();
+    let expected_depth = node.header_fields().2;
+    proof { reveal(extent_node::valid); }
+    let geometry = Geometry { root: position + 40, blocks: blocks as u64, size: 4096,
+        checksum: BlockChecksum::Crc32c(crate::inode::inode_seed(seed, number, info.generation)) };
+    let walked = match walk(index.source(), &geometry, node, None, logical, expected_depth, None, extent::MAX_LOGICAL_END) {
+        Ok(walked) => walked, Err(_) => { assert(false); return None; },
+    };
+    proof { crate::extent_tree_model::audited_route_equals_complete_tree_mapping(c, walked.path@, logical, expected_depth, None, extent::MAX_LOGICAL_END, span_view(walked.span)); }
+    Some(CheckedPath { span: walked.span, nodes: walked.nodes, logical, context: Ghost(c), path: walked.path })
+}
+
 }

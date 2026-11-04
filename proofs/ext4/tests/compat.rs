@@ -27,6 +27,98 @@ fn inode_bytes(img: &[u8], table: u32, number: u32) -> &[u8] {
     &img[offset..offset + 256]
 }
 
+fn seal_inode_image(img: &mut [u8], table: u32, number: u32, seed: u32) {
+    let start = table as usize * 4096 + (number as usize - 1) * 256;
+    let raw = &mut img[start..start + 256];
+    let checksum = core::inode::calculated_checksum(raw, number, seed).unwrap();
+    raw[124..126].copy_from_slice(&(checksum as u16).to_le_bytes());
+    raw[130..132].copy_from_slice(&((checksum >> 16) as u16).to_le_bytes());
+}
+
+fn seal_single_group_allocation(img: &mut [u8]) {
+    let blocks = le32(img, 1028);
+    assert!(blocks <= 32768);
+    let seed = core::crc::crc32c(0xffffffff, &img[1128..1144]);
+    let offset = le32(img, 4096) as usize * 4096;
+    let bitmap = &img[offset..offset + 4096];
+    let free = (0..blocks)
+        .filter(|&b| bitmap[b as usize / 8] & (1 << (b % 8)) == 0)
+        .count() as u32;
+    let bitmap_checksum = core::crc::crc32c(seed, bitmap) as u16;
+    img[1036..1040].copy_from_slice(&free.to_le_bytes());
+    img[4108..4110].copy_from_slice(&(free as u16).to_le_bytes());
+    img[4120..4122].copy_from_slice(&bitmap_checksum.to_le_bytes());
+    let group_seed = core::crc::crc32c(seed, &0u32.to_le_bytes());
+    let partial = core::crc::crc32c(group_seed, &img[4096..4126]);
+    let checksum = core::crc::crc32c(partial, &[0, 0]) as u16;
+    img[4126..4128].copy_from_slice(&checksum.to_le_bytes());
+    let checksum = core::crc::crc32c(0xffffffff, &img[1024..2044]);
+    img[2044..2048].copy_from_slice(&checksum.to_le_bytes());
+}
+
+fn exercise_complete_owned_tree_depths(img: &[u8], number: u32) {
+    use core::{extent_claims, extent_tree, snapshot::Snapshot};
+    let (sb, group, uuid_seed) = metadata(img);
+    assert_eq!(sb.groups(), 1);
+    let start = group.inode_table as usize * 4096 + (number as usize - 1) * 256;
+    let first_key = le32(img, start + 52);
+    let first_child = le32(img, start + 56);
+    let generation = le32(img, start + 100);
+    let seed = core::inode::inode_seed(uuid_seed, number, generation);
+    for depth in 2..=5u16 {
+        let mut deep = img.to_vec();
+        let addresses: Vec<u32> = (1..depth).map(|i| sb.blocks() - i as u32).collect();
+        let bitmap = group.block_bitmap as usize * 4096;
+        for (level, &address) in addresses.iter().enumerate() {
+            let bit = address as usize;
+            assert_eq!(deep[bitmap + bit / 8] & (1 << (bit % 8)), 0);
+            deep[bitmap + bit / 8] |= 1 << (bit % 8);
+            let child = addresses.get(level + 1).copied().unwrap_or(first_child);
+            let node = &mut deep[address as usize * 4096..(address as usize + 1) * 4096];
+            node.fill(0);
+            node[..2].copy_from_slice(&0xf30au16.to_le_bytes());
+            node[2..4].copy_from_slice(&1u16.to_le_bytes());
+            node[4..6].copy_from_slice(&340u16.to_le_bytes());
+            node[6..8].copy_from_slice(&(depth - level as u16 - 1).to_le_bytes());
+            node[12..16].copy_from_slice(&first_key.to_le_bytes());
+            node[16..20].copy_from_slice(&child.to_le_bytes());
+            let checksum = core::crc::crc32c(seed, &node[..4092]);
+            node[4092..].copy_from_slice(&checksum.to_le_bytes());
+        }
+        deep[start + 46..start + 48].copy_from_slice(&depth.to_le_bytes());
+        deep[start + 56..start + 60].copy_from_slice(&addresses[0].to_le_bytes());
+        let sectors = le32(img, start + 28) + (depth as u32 - 1) * 8;
+        deep[start + 28..start + 32].copy_from_slice(&sectors.to_le_bytes());
+        seal_inode_image(&mut deep, group.inode_table, number, uuid_seed);
+        seal_single_group_allocation(&mut deep);
+        let source = Snapshot::from_bytes(&deep);
+        let index = core::group_index::parse(source.duplicate()).unwrap();
+        let bound = extent_claims::bind(&index, number, depth as u64 + 1).unwrap();
+        assert_eq!(bound.tree().checked_nodes(), depth as u64 + 1);
+        let volume = core::allocation::parse(source)
+            .expect("every extent metadata level enters the complete ownership census");
+        for address in addresses.iter().copied().chain([first_child]) {
+            let role = volume.census().role_of(address).unwrap();
+            assert_eq!(
+                (role.kind, role.inode, role.generation),
+                (6, number, generation)
+            );
+        }
+        let node = core::allocated_inode::get(&volume, number).unwrap();
+        assert_eq!(
+            extent_tree::lookup_allocated(&node, 0)
+                .unwrap()
+                .visited_nodes(),
+            depth + 1
+        );
+        assert!(matches!(
+            core::file_read::chunk(&node, 0, 4096),
+            core::file_read::Chunk::Zero(4096)
+        ));
+        assert!(core::image_validation::inspect(Snapshot::from_bytes(&deep)).is_some());
+    }
+}
+
 fn first_data_block(raw: &[u8], blocks: u32) -> u32 {
     let root = &raw[40..100];
     let count = core::extent::validate_inline_root(root, blocks).expect("inline leaf root");
@@ -743,10 +835,272 @@ fn linux_created_external_extent_nodes_match_source_capture_and_inode_checksum_s
             }
         }
     }
+    let index = core::group_index::parse(source.duplicate()).unwrap();
+    let bound = core::extent_claims::bind(&index, number, 16)
+        .expect("the tree root, feature mode and checksum seed come from the same allocated inode");
+    let census = core::extent_claims::collect(
+        core::block_claims::Census::new(sb.blocks()).unwrap(),
+        &bound,
+    )
+    .expect("Linux counts external extent metadata as well as data in i_blocks");
+    for ordinal in 0..entries as usize {
+        let child = root.index_entry(ordinal).unwrap().child as u32;
+        let role = census.role_of(child).unwrap();
+        assert_eq!(
+            (
+                role.kind,
+                role.inode,
+                role.generation,
+                role.logical,
+                role.initialized
+            ),
+            (6, number, le32(raw, 100), 0, false)
+        );
+    }
+    for logical in (0..16).step_by(2) {
+        let physical = match bound.tree().find(logical).unwrap().resolved() {
+            core::extent_tree::Mapping::Unwritten(block) => block as u32,
+            _ => panic!("unwritten fallocate extent"),
+        };
+        let role = census.role_of(physical).unwrap();
+        assert_eq!(
+            (role.kind, role.inode, role.logical, role.initialized),
+            (4, number, logical, false)
+        );
+    }
     assert!(
-        core::allocation::parse(source).is_none(),
-        "local wide-node support must not silently widen the initial whole-image admission profile"
+        core::extent_claims::collect(census, &bound).is_none(),
+        "a second claim cannot reuse either tree metadata or file data"
     );
+    let first_child = root.index_entry(0).unwrap().child as u32;
+    for kind in [3, 4, 6] {
+        let prior = core::block_claims::Claim {
+            start: first_child,
+            length: 1,
+            kind,
+            inode: if kind == 3 { 0 } else { 12 },
+            generation: 0,
+            logical: 0,
+            initialized: false,
+        };
+        let occupied = core::block_claims::Census::new(sb.blocks())
+            .unwrap()
+            .claim(prior)
+            .ok()
+            .unwrap();
+        assert!(core::extent_claims::collect(occupied, &bound).is_none());
+    }
+    let inode_start = group.inode_table as usize * 4096 + (number as usize - 1) * 256;
+    for mutation in 0..7 {
+        let mut bad = img.clone();
+        if mutation < 2 {
+            let raw = &mut bad[inode_start..inode_start + 256];
+            let offset = if mutation == 0 { 100 } else { 28 };
+            let value = le32(raw, offset).wrapping_add(if mutation == 0 { 1 } else { 8 });
+            raw[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+            let checksum = core::inode::calculated_checksum(raw, number, uuid_seed).unwrap();
+            raw[124..126].copy_from_slice(&(checksum as u16).to_le_bytes());
+            raw[130..132].copy_from_slice(&((checksum >> 16) as u16).to_le_bytes());
+        } else {
+            let raw = &mut bad[first_child as usize * 4096..(first_child as usize + 1) * 4096];
+            if mutation != 3 {
+                let physical = match mutation {
+                    2 => first_child,
+                    4 => first_data_block(inode_bytes(&img, group.inode_table, 8), sb.blocks()),
+                    5 => first_data_block(inode_bytes(&img, group.inode_table, 2), sb.blocks()),
+                    _ => group.block_bitmap,
+                };
+                raw[20..24].copy_from_slice(&physical.to_le_bytes());
+                raw[18..20].fill(0);
+            } else {
+                let physical = raw[18..24].to_vec();
+                raw[30..36].copy_from_slice(&physical);
+            }
+            let tail = 12 + core::bytes::read_le16(raw, 4).unwrap() as usize * 12;
+            let checksum = core::crc::crc32c(inode_seed, &raw[..tail]);
+            raw[tail..tail + 4].copy_from_slice(&checksum.to_le_bytes());
+        }
+        let index = core::group_index::parse(Snapshot::from_bytes(&bad)).unwrap();
+        if mutation == 0 {
+            assert!(
+                core::extent_claims::bind(&index, number, 16).is_none(),
+                "an inode generation change cannot retain the old external-node checksum seed"
+            );
+        } else {
+            let bound = core::extent_claims::bind(&index, number, 16)
+                .expect("local metadata and the complete tree remain valid");
+            let candidate = core::extent_claims::collect(
+                core::block_claims::Census::new(sb.blocks()).unwrap(),
+                &bound,
+            );
+            assert_eq!(
+                candidate.is_none(),
+                mutation < 4,
+                "candidate claims have no knowledge of reservations that were not supplied to them"
+            );
+        }
+        assert!(
+            core::allocation::parse(Snapshot::from_bytes(&bad)).is_none(),
+            "whole-image allocation rejects stale seeds, bad accounting, self-aliases, cross-inode aliases and reserved/journal targets"
+        );
+    }
+    let volume = core::allocation::parse(source)
+        .expect("complete source-bound external-tree allocation census");
+    let node = core::allocated_inode::get(&volume, number).unwrap();
+    for logical in 0..16 {
+        assert!(
+            matches!(
+                core::file_read::chunk(&node, logical * 4096, 4096),
+                core::file_read::Chunk::Zero(4096)
+            ),
+            "holes and unwritten storage return zeros"
+        );
+    }
+    assert!(matches!(
+        core::file_read::chunk(&node, 65536, 4096),
+        core::file_read::Chunk::End
+    ));
+    assert_eq!(volume.census().role_of(first_child).unwrap().kind, 6);
+    assert!(
+        core::image_validation::inspect(Snapshot::from_bytes(&img)).is_some(),
+        "allocation, complete namespace and retained image certificates compose for external trees"
+    );
+
+    let mut written = img.clone();
+    let mut data_patterns = Vec::new();
+    for ordinal in 0..entries as usize {
+        let child = root.index_entry(ordinal).unwrap().child as usize;
+        let leaf = &mut written[child * 4096..(child + 1) * 4096];
+        let count = core::bytes::read_le16(leaf, 2).unwrap() as usize;
+        for i in 0..count {
+            let offset = 12 + 12 * i;
+            let logical = le32(leaf, offset);
+            let physical = le32(leaf, offset + 8);
+            let encoded = core::bytes::read_le16(leaf, offset + 4).unwrap();
+            assert!(encoded > 32768);
+            leaf[offset + 4..offset + 6].copy_from_slice(&(encoded - 32768).to_le_bytes());
+            data_patterns.push((logical, physical, logical as u8 + 31));
+        }
+        let tail = 12 + core::bytes::read_le16(leaf, 4).unwrap() as usize * 12;
+        let checksum = core::crc::crc32c(inode_seed, &leaf[..tail]);
+        leaf[tail..tail + 4].copy_from_slice(&checksum.to_le_bytes());
+    }
+    for &(_, physical, pattern) in &data_patterns {
+        written[physical as usize * 4096..(physical as usize + 1) * 4096].fill(pattern);
+    }
+    let volume = core::allocation::parse(Snapshot::from_bytes(&written)).unwrap();
+    let node = core::allocated_inode::get(&volume, number).unwrap();
+    for (logical, physical, pattern) in data_patterns {
+        let data = match core::file_read::chunk(&node, logical as u64 * 4096 + 7, 32) {
+            core::file_read::Chunk::Data(data) => data,
+            _ => panic!("initialized external-tree extent must read owned bytes"),
+        };
+        assert_eq!(data, &[pattern; 32]);
+        let role = volume.census().role_of(physical).unwrap();
+        assert_eq!(
+            (role.kind, role.inode, role.logical, role.initialized),
+            (4, number, logical, true)
+        );
+        assert!(matches!(
+            core::file_read::chunk(&node, (logical as u64 + 1) * 4096, 4096),
+            core::file_read::Chunk::Zero(4096)
+        ));
+    }
+    assert!(core::image_validation::inspect(Snapshot::from_bytes(&written)).is_some());
+    exercise_complete_owned_tree_depths(&img, number);
+
+    let mut shared_empty = img.clone();
+    let empty = &mut shared_empty[first_child as usize * 4096..(first_child as usize + 1) * 4096];
+    empty[2..4].fill(0);
+    let checksum = core::crc::crc32c(inode_seed, &empty[..4092]);
+    empty[4092..].copy_from_slice(&checksum.to_le_bytes());
+    let raw = &mut shared_empty[inode_start..inode_start + 256];
+    raw[42..44].copy_from_slice(&2u16.to_le_bytes());
+    raw[64..68].copy_from_slice(&16u32.to_le_bytes());
+    raw[68..72].copy_from_slice(&first_child.to_le_bytes());
+    raw[72..76].fill(0);
+    raw[28..32].copy_from_slice(&16u32.to_le_bytes());
+    seal_inode_image(&mut shared_empty, group.inode_table, number, uuid_seed);
+    let index = core::group_index::parse(Snapshot::from_bytes(&shared_empty)).unwrap();
+    let bound = core::extent_claims::bind(&index, number, 3)
+        .expect("empty child first-key exception matches Linux structural checks");
+    assert!(
+        core::extent_claims::collect(
+            core::block_claims::Census::new(sb.blocks()).unwrap(),
+            &bound
+        )
+        .is_none(),
+        "distinct parent entries cannot share even an empty extent-metadata block"
+    );
+}
+
+#[test]
+fn inode_bound_tree_candidates_reject_reserved_free_and_wrong_source_metadata() {
+    use core::{extent_claims, group_index, snapshot::Snapshot};
+    let img = image();
+    let (sb, group, _) = metadata(&img);
+    let index = group_index::parse(Snapshot::from_bytes(&img)).unwrap();
+    for number in [2, 11, 12] {
+        let bound = extent_claims::bind(&index, number, 1).unwrap();
+        let inode = inode_bytes(&img, group.inode_table, number);
+        assert_eq!(bound.metadata().generation, le32(inode, 100));
+        assert_eq!(bound.tree().checked_nodes(), 1);
+        assert_eq!(
+            core::inode_table::position(&index, number),
+            Some(group.inode_table as u64 * 4096 + (number as u64 - 1) * 256)
+        );
+    }
+    for number in [0, 1, 8, 10, 13, sb.inodes() + 1, u32::MAX] {
+        assert!(extent_claims::bind(&index, number, 100).is_none());
+    }
+    assert!(core::inode_table::position(&index, 0).is_none());
+    assert!(core::inode_table::position(&index, u32::MAX).is_none());
+    let mut bad = img.clone();
+    let offset = group.inode_table as usize * 4096 + 11 * 256;
+    bad[offset + 100] ^= 1;
+    let index = group_index::parse(Snapshot::from_bytes(&bad)).unwrap();
+    assert!(extent_claims::bind(&index, 12, 1).is_none());
+}
+
+#[test]
+fn extent_metadata_claims_retain_inode_generation_and_reject_forged_shapes() {
+    use core::block_claims::{Census, Claim};
+    let claim = Claim {
+        start: 20,
+        length: 1,
+        kind: 6,
+        inode: 13,
+        generation: 17,
+        logical: 0,
+        initialized: false,
+    };
+    let census = Census::new(64).unwrap().claim(claim).ok().unwrap();
+    let role = census.role_of(20).unwrap();
+    assert_eq!(
+        (
+            role.kind,
+            role.inode,
+            role.generation,
+            role.logical,
+            role.initialized
+        ),
+        (6, 13, 17, 0, false)
+    );
+    for invalid in [
+        Claim { inode: 0, ..claim },
+        Claim { length: 2, ..claim },
+        Claim {
+            logical: 1,
+            ..claim
+        },
+        Claim {
+            initialized: true,
+            ..claim
+        },
+        Claim { kind: 7, ..claim },
+    ] {
+        assert!(Census::new(64).unwrap().claim(invalid).is_err());
+    }
 }
 
 mod extent_tree_tests {

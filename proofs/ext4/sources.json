@@ -147,7 +147,7 @@
       "path": "fs/ext4/balloc.c",
       "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/balloc.c",
       "blob_sha": "8040c731b3e45d1c54fda8bb5493604e03c969bd",
-      "review_scope": "block bitmap reserved regions and padding; sparse-super power rule and non-META_BG base superblock/GDT reservations"
+      "review_scope": "block bitmap reserved regions and padding; sparse-super power rule and non-META_BG base superblock/GDT reservations; ext4_new_meta_blocks attributes allocated index metadata to its inode"
     },
     {
       "path": "fs/ext4/ialloc.c",
@@ -171,7 +171,7 @@
       "path": "fs/ext4/inode.c",
       "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/inode.c",
       "blob_sha": "1123d995494b588744ba47fcee88e9cd0cc992dd",
-      "review_scope": "__ext4_get_inode_loc group/slot/block/offset arithmetic and inode-table validation; referenced behavior only"
+      "review_scope": "__ext4_get_inode_loc group/slot/block/offset arithmetic and inode-table validation; referenced behavior only; ext4_inode_blocks and ext4_inode_blocks_set distinguish 512-byte sector counts, high fields and HUGE_FILE units; bounded profile counts data and external extent metadata"
     },
     {
       "path": "fs/ext4/ext4_extents.h",

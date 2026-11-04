@@ -87,6 +87,10 @@ def main():
                               "{ let _ = verified_ext4::extent_tree::CheckedTree { ..t }; }\n", "E0451"),
         "replace_extent_tree_source": ("pub fn misuse<'s, 'image>(mut t: verified_ext4::extent_tree::CheckedTree<'s, 'image>, "
                                       "s: &'s verified_ext4::snapshot::Snapshot<'image>) { t.source = s; }\n", "E0616"),
+        "forge_bound_extent_inode": ("pub fn misuse(t: verified_ext4::extent_claims::BoundInode<'_, '_>) "
+                                    "{ let _ = verified_ext4::extent_claims::BoundInode { ..t }; }\n", "E0451"),
+        "replace_bound_extent_index": ("pub fn misuse<'v, 'image>(mut t: verified_ext4::extent_claims::BoundInode<'v, 'image>, "
+                                      "i: &'v verified_ext4::group_index::GroupIndex<'image>) { t.index = i; }\n", "E0616"),
     }
     for name, (source, code) in misuse.items():
         path = BUILD / (name + ".rs")

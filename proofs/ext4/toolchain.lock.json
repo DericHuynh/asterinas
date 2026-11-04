@@ -105,7 +105,9 @@
     "src/extent_node.rs",
     "src/source_block.rs",
     "src/extent_tree.rs",
-    "src/extent_tree_model.rs"
+    "src/extent_tree_model.rs",
+    "src/extent_claims.rs",
+    "src/extent_ownership.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -382,8 +384,13 @@
     "extent_node::every_record_respects_branch_bounds",
     "extent_node::child_intervals_stay_within_parent",
     "extent_node::leaf_result_is_unique",
+    "extent_claims::allocated_concatenation",
+    "extent_tree_model::stored_mapping_has_child",
+    "extent_tree_model::stored_mapping_from_child",
     "extent_tree_model::every_stored_mapping_respects_the_subtree_interval",
-    "extent_tree_model::audited_route_equals_complete_tree_mapping"
+    "extent_tree_model::audited_route_equals_complete_tree_mapping",
+    "extent_tree_model::complete_tree_has_unique_covering_extent",
+    "extent_ownership::a_stored_mapping_has_its_source_bound_claim"
   ],
   "required_flags": [
     "--no-cheating",
@@ -652,6 +659,13 @@
     "extent_tree::lookup",
     "extent_tree::checked_nodes",
     "extent_tree::audit",
-    "extent_tree::find"
+    "extent_tree::find",
+    "inode::parse_metadata",
+    "inode_table::position",
+    "extent_claims::tree",
+    "extent_claims::metadata",
+    "extent_claims::bind",
+    "extent_claims::collect",
+    "extent_tree::lookup_allocated"
   ]
 }

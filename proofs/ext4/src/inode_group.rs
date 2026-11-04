@@ -6,7 +6,7 @@
 
 use vstd::prelude::*;
 use crate::{bitmap, block_claims::{self, Census, Claim, Slot}, bytes, crc, group,
-    group_index::{self, GroupIndex, IndexView}, group_metadata, inode, inode_claims, inode_table};
+    group_index::{self, GroupIndex, IndexView}, group_metadata, inode, inode_claims, inode_table, extent_claims};
 
 verus! {
 
@@ -54,11 +54,11 @@ pub fn reserved_is_empty(raw: &[u8]) -> (r: bool) ensures r == empty_reserved(ra
 #[verifier::opaque]
 pub open spec fn ordinary_checked(v: IndexView, roles: Seq<Slot>, n: u32) -> bool {
     let raw = inode_table::raw(v, n);
-    &&& inode::accepted(raw, n, v.inodes, v.blocks, v.seed)
+    &&& extent_claims::accepted(v, n)
     &&& n == 2 ==> (bytes::le16(raw, 0) as u16 & 0xf000) == 0x4000
     &&& bytes::le16(raw, 116) == 0
-    &&& bytes::le32(raw, 28) == 8 * inode_claims::allocated(inode_claims::claims(raw, n))
-    &&& block_claims::mapped_claims(roles, inode_claims::claims(raw, n))
+    &&& bytes::le32(raw, 28) == 8 * inode_claims::allocated(extent_claims::claims(v, n))
+    &&& block_claims::mapped_claims(roles, extent_claims::claims(v, n))
 }
 
 #[verifier::opaque]
@@ -79,7 +79,7 @@ pub open spec fn checked_prefix(v: IndexView, roles: Seq<Slot>, group: u32, coun
 
 pub open spec fn contribution(v: IndexView, group: u32, slot: nat) -> Seq<Claim> {
     let n = number(v, group, slot);
-    if allocated(v, group, slot) && ordinary(n) { inode_claims::claims(inode_table::raw(v, n), n) }
+    if allocated(v, group, slot) && ordinary(n) { extent_claims::claims(v, n) }
     else { Seq::empty() }
 }
 
@@ -129,7 +129,7 @@ pub proof fn occupied_preservation_keeps_checked_nodes(v: IndexView, before: Seq
         reveal(ordinary_checked);
         let n = number(v, g, slot);
         if allocated(v, g, slot) && ordinary(n) {
-            block_claims::occupied_preservation_keeps_mapped_claims(before, after, inode_claims::claims(inode_table::raw(v, n), n));
+            block_claims::occupied_preservation_keeps_mapped_claims(before, after, extent_claims::claims(v, n));
         }
     }
 }
@@ -154,7 +154,6 @@ pub fn collect(index: &GroupIndex<'_>, mut census: Census, g: u32) -> (r: Option
     },
 {
     hide(crc::fold);
-    hide(inode::accepted);
     hide(group_metadata::valid);
     let ghost original = census.view();
     let (blocks, inodes, ipg, seed) = index.parameters();
@@ -204,7 +203,10 @@ pub fn collect(index: &GroupIndex<'_>, mut census: Census, g: u32) -> (r: Option
                 let mode = bytes::read_le16(raw, 0).unwrap();
                 if n == 2 && mode & 0xf000 != 0x4000 { return None; }
                 directory = mode & 0xf000 == 0x4000;
-                census = match inode_claims::collect(census, raw, n, inodes, blocks, seed) {
+                let bound = match extent_claims::bind(index, n, blocks as u64 + 1) {
+                    Some(bound) => bound, None => { return None; }
+                };
+                census = match extent_claims::collect(census, &bound) {
                     Some(next) => next, None => { return None; }
                 };
                 assert(ordinary_checked(index.view(), census.view().roles, n)) by { reveal(ordinary_checked); }

@@ -46,7 +46,7 @@ unsupported markers need Linux-compatible handling, not invented encodings.
 | INCOMPAT | `0x0004` | `RECOVER` | Partial: initial profile only | Dirty/clean transitions with concurrent commit/checkpoint/recovery |
 | INCOMPAT | `0x0008` | `JOURNAL_DEV` | Not implemented | External journal device identity, bounds, exclusion and exclusivity |
 | INCOMPAT | `0x0010` | `META_BG` | Not implemented | Distributed descriptor locations and reserved regions across resize |
-| INCOMPAT | `0x0040` | `EXTENTS` | Partial: initial profile only | 48-bit addresses, depth-0..5 trees, insert/split/merge/truncate and conversion |
+| INCOMPAT | `0x0040` | `EXTENTS` | Partial: owned read-only trees in bounded profile | 48-bit addresses, depth-0..5 trees, insert/split/merge/truncate and conversion |
 | INCOMPAT | `0x0080` | `64BIT` | Not implemented | 64-bit block counts/addresses and extended descriptors/bitmaps |
 | INCOMPAT | `0x0100` | `MMP` | Not implemented | Multiple-mount protection, leases, failure assumptions and heartbeat ordering |
 | INCOMPAT | `0x0200` | `FLEX_BG` | Not implemented | Cross-group bitmap/table placement and globally disjoint ownership |
@@ -58,10 +58,12 @@ unsupported markers need Linux-compatible handling, not invented encodings.
 | INCOMPAT | `0x10000` | `ENCRYPT` | Not implemented | Key/credential boundary, encrypted names/data, nonce lifetime and explicit crypto assumptions |
 | INCOMPAT | `0x20000` | `CASEFOLD` | Not implemented | Pinned Unicode normalization, encrypted/casefold lookup and HTree equivalence |
 
-Read-only extent-tree helpers now check complete structural trees and lookup
-equivalence at depths zero through five over 1–64 KiB blocks; see
-[EXTENT_TREES.md](EXTENT_TREES.md). Inode/feature binding and global physical
-ownership must still compose before this widens the admitted feature profile.
+Read-only extent-tree helpers check complete structural trees and lookup
+equivalence at depths zero through five over 1–64 KiB blocks. The bounded 4 KiB
+whole-image validator now binds inode/feature/source identity, complete metadata
+and data ownership, sector counts and structural reads; see
+[EXTENT_TREES.md](EXTENT_TREES.md). Other geometries/features, mutations and
+concurrent runtime refinement remain open.
 
 The bit inventory is only one part of full compatibility. Additional coverage
 includes power-of-two 1 through 64 KiB block geometry where supported by the target architecture,
