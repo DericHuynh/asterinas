@@ -4,96 +4,28 @@
 //! model. This does not establish an actual CortenMM/BIO/driver refinement.
 
 use vstd::prelude::*;
-use crate::{bootstrap, journal_view, layout::LayoutView, namespace, patch_set, replay_refinement::Disk,
+use crate::{bootstrap, disk_image, namespace, patch_set,
     transaction::ImageView, write_device::{self, Machine}, write_io::{self, Images}, write_media,
     write_recognition, writer_admission::{self, AdmissionView}};
 
 verus! {
 
-pub open spec fn source_block(source: Seq<u8>, block: u32) -> Seq<u8> {
-    if (block as nat + 1) * 4096 <= source.len() { source.subrange(block as int * 4096, (block as int + 1) * 4096) }
-    else { Seq::empty() }
-}
-
-pub open spec fn initial_disk(source: Seq<u8>, blocks: u32) -> Disk {
-    Map::new(Seq::new(blocks as nat, |i: int| i as u32).to_set(), |block: u32| source_block(source, block))
-}
-
-pub proof fn initial_disk_addresses_are_exactly_the_filesystem_range(source: Seq<u8>, blocks: u32, block: u32)
-    ensures initial_disk(source, blocks).dom().contains(block) == (block < blocks),
-{
-    let addresses = Seq::new(blocks as nat, |i: int| i as u32);
-    if block < blocks {
-        assert(addresses[block as int] == block);
-        assert(addresses.contains(block));
-    } else if addresses.contains(block) {
-        let i = choose|i: int| 0 <= i < addresses.len() && addresses[i] == block;
-        assert(i as u32 == i);
-    }
-}
-
-pub open spec fn flat_bytes(disk: Disk, source: Seq<u8>, blocks: u32) -> Seq<u8> {
-    Seq::new(source.len(), |i: int| {
-        if i < blocks as nat * 4096 {
-            let block = (i / 4096) as u32;
-            if disk.dom().contains(block) && i % 4096 < disk[block].len() { disk[block][i % 4096] } else { 0u8 }
-        } else { source[i] }
-    })
-}
-
-pub proof fn initial_block_map_has_the_exact_source_bytes(source: Seq<u8>, blocks: u32, block: u32)
-    requires blocks as nat * 4096 <= source.len(), block < blocks,
-    ensures initial_disk(source, blocks).dom().contains(block), initial_disk(source, blocks)[block].len() == 4096,
-        initial_disk(source, blocks)[block] == source.subrange(block as int * 4096, (block as int + 1) * 4096),
-{
-    initial_disk_addresses_are_exactly_the_filesystem_range(source, blocks, block);
-}
-
-pub proof fn flat_projection_preserves_partition_bytes_beyond_the_filesystem(disk: Disk, source: Seq<u8>, blocks: u32, index: int)
-    requires blocks as nat * 4096 <= index < source.len(),
-    ensures flat_bytes(disk, source, blocks).len() == source.len(), flat_bytes(disk, source, blocks)[index] == source[index],
-{
-}
-
-pub proof fn a_flat_source_has_the_exact_mapped_journal(source: Seq<u8>, layout: LayoutView)
-    requires journal_view::geometry(layout), layout.fs_blocks as nat * 4096 <= source.len(),
-    ensures journal_view::mapped(initial_disk(source, layout.fs_blocks), layout),
-        journal_view::snapshot(initial_disk(source, layout.fs_blocks), layout)
-            == source.subrange(layout.start as int * 4096, (layout.start as int + layout.journal_blocks) * 4096),
-{
-    let disk = initial_disk(source, layout.fs_blocks);
-    assert forall|logical: u32| logical < layout.journal_blocks implies
-        #[trigger] disk.dom().contains((layout.start + logical) as u32)
-        && disk[(layout.start + logical) as u32].len() == 4096 by {
-        initial_block_map_has_the_exact_source_bytes(source, layout.fs_blocks, (layout.start + logical) as u32);
-    }
-    assert(journal_view::snapshot(disk, layout) =~= source.subrange(layout.start as int * 4096,
-        (layout.start as int + layout.journal_blocks) * 4096)) by {
-        assert forall|i: int| 0 <= i < layout.journal_blocks as nat * 4096 implies
-            #[trigger] journal_view::snapshot(disk, layout)[i] == source[layout.start as int * 4096 + i] by {
-            let logical = (i / 4096) as u32;
-            initial_block_map_has_the_exact_source_bytes(source, layout.fs_blocks, (layout.start + logical) as u32);
-            vstd::arithmetic::div_mod::lemma_fundamental_div_mod(i, 4096);
-        }
-    }
-}
-
 pub proof fn an_admitted_source_supplies_the_physical_writer_context(admission: AdmissionView, images: Images)
     requires writer_admission::valid(admission, images),
-    ensures write_recognition::context(initial_disk(admission.boot.source, images.tx.layout.fs_blocks), images),
+    ensures write_recognition::context(disk_image::initial_disk(admission.boot.source, images.tx.layout.fs_blocks), images),
 {
     hide(crate::crc::fold);
     reveal(writer_admission::valid);
     reveal(write_io::valid_images);
     reveal(bootstrap::valid);
     let source = admission.boot.source;
-    let disk = initial_disk(source, images.tx.layout.fs_blocks);
-    a_flat_source_has_the_exact_mapped_journal(source, images.tx.layout);
-    initial_block_map_has_the_exact_source_bytes(source, images.tx.layout.fs_blocks, 0);
+    let disk = disk_image::initial_disk(source, images.tx.layout.fs_blocks);
+    disk_image::a_flat_source_has_the_exact_mapped_journal(source, images.tx.layout);
+    disk_image::initial_block_map_has_the_exact_source_bytes(source, images.tx.layout.fs_blocks, 0);
     assert forall|k: nat| write_device::is_write(k, images.tx.payloads.len()) implies
         #[trigger] disk.dom().contains(write_media::address(images, k)) by {
         write_media::every_program_write_has_a_complete_bounded_image(images, k);
-        initial_disk_addresses_are_exactly_the_filesystem_range(source, images.tx.layout.fs_blocks, write_media::address(images, k));
+        disk_image::initial_disk_addresses_are_exactly_the_filesystem_range(source, images.tx.layout.fs_blocks, write_media::address(images, k));
     }
 }
 
@@ -104,7 +36,7 @@ pub open spec fn expected_block(source: Seq<u8>, images: Images, block: u32) -> 
             Some(image) => image,
             None => match patch_set::selected(write_io::log_images(images), block as int) {
                 Some(image) => image,
-                None => if block == 0 { images.dirty } else { source_block(source, block) },
+                None => if block == 0 { images.dirty } else { disk_image::source_block(source, block) },
             },
         }
     }
@@ -125,26 +57,6 @@ proof fn admission_byte_shapes(admission: AdmissionView, images: Images)
     reveal(write_io::valid_images);
 }
 
-proof fn applying_patches_preserves_the_source_length(source: Seq<u8>, patches: Seq<ImageView>)
-    ensures patch_set::apply(source, patches).len() == source.len(),
-{
-}
-
-proof fn a_single_patch_selects_exactly_its_target(image: ImageView, block: int)
-    ensures patch_set::selected(seq![image], block) == if block == image.block as int { Some(image.image) } else { None },
-{
-    let entries = seq![image];
-    if block == image.block as int {
-        assert(entries.len() == 1 && entries[0] == image);
-        assert(0 <= 0int < entries.len() && entries[0].block as int == block);
-        assert(exists|i: int| 0 <= i < entries.len() && (#[trigger] entries[i]).block as int == block);
-        let i = choose|i: int| 0 <= i < entries.len() && (#[trigger] entries[i]).block as int == block;
-        assert(i == 0);
-    } else {
-        assert forall|i: int| 0 <= i < entries.len() implies (#[trigger] entries[i]).block as int != block by { assert(i == 0); }
-    }
-}
-
 #[verifier::rlimit(30)]
 pub proof fn validated_final_image_has_the_expected_block(admission: AdmissionView, images: Images, block: u32)
     requires writer_admission::valid(admission, images), block < images.tx.layout.fs_blocks,
@@ -160,16 +72,16 @@ pub proof fn validated_final_image_has_the_expected_block(admission: AdmissionVi
     let dirty = patch_set::apply(source, marker);
     let logged = patch_set::apply(dirty, write_io::log_images(images));
     let homes = patch_set::apply(logged, images.tx.original);
-    applying_patches_preserves_the_source_length(source, marker);
-    applying_patches_preserves_the_source_length(dirty, write_io::log_images(images));
-    applying_patches_preserves_the_source_length(logged, images.tx.original);
+    patch_set::applying_patches_preserves_the_source_length(source, marker);
+    patch_set::applying_patches_preserves_the_source_length(dirty, write_io::log_images(images));
+    patch_set::applying_patches_preserves_the_source_length(logged, images.tx.original);
     assert(dirty.len() == source.len() && logged.len() == source.len() && homes.len() == source.len());
     patch_set::applying_a_patch_replaces_exactly_its_block(source, marker, block);
     patch_set::applying_a_patch_replaces_exactly_its_block(dirty, write_io::log_images(images), block);
     patch_set::applying_a_patch_replaces_exactly_its_block(logged, images.tx.original, block);
     patch_set::applying_a_patch_replaces_exactly_its_block(homes, retirement, block);
-    a_single_patch_selects_exactly_its_target(marker[0], block as int);
-    a_single_patch_selects_exactly_its_target(retirement[0], block as int);
+    patch_set::a_single_patch_selects_exactly_its_target(marker[0], block as int);
+    patch_set::a_single_patch_selects_exactly_its_target(retirement[0], block as int);
     assert(patch_set::selected(marker, block as int) == if block == 0 { Some(images.dirty) } else { None });
     assert(patch_set::selected(retirement, block as int) == if block == images.journal_block { Some(images.tail) } else { None });
 }
@@ -210,20 +122,20 @@ proof fn log_targets_are_exactly_the_encoded_record_range(images: Images, block:
 pub proof fn successful_media_has_exactly_the_expected_block(admission: AdmissionView, images: Images, machine: Machine, block: u32)
     requires writer_admission::valid(admission, images), write_device::inv(machine, images.tx.payloads.len()),
         machine.io.phase is Done, !machine.io.pending, !machine.io.faulted, block < images.tx.layout.fs_blocks,
-    ensures write_media::disk(machine, initial_disk(admission.boot.source, images.tx.layout.fs_blocks), images)[block]
+    ensures write_media::disk(machine, disk_image::initial_disk(admission.boot.source, images.tx.layout.fs_blocks), images)[block]
         == expected_block(admission.boot.source, images, block),
 {
     hide(crate::crc::fold);
     hide(write_media::apply);
     an_admitted_source_supplies_the_physical_writer_context(admission, images);
     let source = admission.boot.source;
-    let before = initial_disk(source, images.tx.layout.fs_blocks);
+    let before = disk_image::initial_disk(source, images.tx.layout.fs_blocks);
     let count = images.tx.payloads.len();
     write_recognition::successful_writer_completion_has_exact_durable_home_bytes_and_retired_tail(machine, before, images);
     write_device::successful_completion_is_durable_and_has_no_late_persistence(machine, count);
     reveal(writer_admission::valid);
     reveal(write_io::valid_images);
-    initial_block_map_has_the_exact_source_bytes(source, images.tx.layout.fs_blocks, block);
+    disk_image::initial_block_map_has_the_exact_source_bytes(source, images.tx.layout.fs_blocks, block);
     log_targets_are_exactly_the_encoded_record_range(images, block);
     if block == images.journal_block {
     } else if let Some(image) = patch_set::selected(images.tx.original, block as int) {
@@ -295,7 +207,7 @@ pub proof fn validated_final_image_preserves_extra_partition_bytes(admission: Ad
 pub proof fn successful_durable_writer_is_the_complete_validated_filesystem_image(admission: AdmissionView, images: Images, machine: Machine)
     requires writer_admission::valid(admission, images), write_device::inv(machine, images.tx.payloads.len()),
         machine.io.phase is Done, !machine.io.pending, !machine.io.faulted,
-    ensures flat_bytes(write_media::disk(machine, initial_disk(admission.boot.source, images.tx.layout.fs_blocks), images),
+    ensures disk_image::flat_bytes(write_media::disk(machine, disk_image::initial_disk(admission.boot.source, images.tx.layout.fs_blocks), images),
             admission.boot.source, images.tx.layout.fs_blocks) == admission.after.index.volume.index.source,
         namespace::valid(admission.after),
         forall|k: nat| !#[trigger] write_device::enabled(machine, write_device::Event::Persist(k)),
@@ -305,19 +217,19 @@ pub proof fn successful_durable_writer_is_the_complete_validated_filesystem_imag
     an_admitted_source_supplies_the_physical_writer_context(admission, images);
     let source = admission.boot.source;
     let blocks = images.tx.layout.fs_blocks;
-    let before = initial_disk(source, blocks);
+    let before = disk_image::initial_disk(source, blocks);
     let media = write_media::disk(machine, before, images);
     write_device::successful_completion_is_durable_and_has_no_late_persistence(machine, images.tx.payloads.len());
     write_media::apply_keeps_every_existing_block(before, images, machine.stable, write_device::total(images.tx.payloads.len()));
     admission_byte_shapes(admission, images);
-    assert(flat_bytes(media, source, blocks) =~= admission.after.index.volume.index.source) by {
+    assert(disk_image::flat_bytes(media, source, blocks) =~= admission.after.index.volume.index.source) by {
         assert forall|i: int| 0 <= i < source.len() implies
-            #[trigger] flat_bytes(media, source, blocks)[i] == admission.after.index.volume.index.source[i] by {
+            #[trigger] disk_image::flat_bytes(media, source, blocks)[i] == admission.after.index.volume.index.source[i] by {
             if i < blocks as nat * 4096 {
                 let block = (i / 4096) as u32;
                 assert(block as int == i / 4096);
                 assert(block < blocks);
-                initial_disk_addresses_are_exactly_the_filesystem_range(source, blocks, block);
+                disk_image::initial_disk_addresses_are_exactly_the_filesystem_range(source, blocks, block);
                 successful_media_has_exactly_the_expected_block(admission, images, machine, block);
                 validated_final_image_has_the_expected_block(admission, images, block);
                 assert(media.dom().contains(block));
@@ -337,7 +249,7 @@ pub proof fn every_admitted_writer_has_a_finite_validated_completion(admission: 
     requires writer_admission::valid(admission, images),
     ensures write_device::execution(r.0, r.1, images.tx.payloads.len()), r.0[0] == write_device::initial(),
         r.0.last().io.phase is Done, !r.0.last().io.pending, !r.0.last().io.faulted,
-        flat_bytes(write_media::disk(r.0.last(), initial_disk(admission.boot.source, images.tx.layout.fs_blocks), images),
+        disk_image::flat_bytes(write_media::disk(r.0.last(), disk_image::initial_disk(admission.boot.source, images.tx.layout.fs_blocks), images),
             admission.boot.source, images.tx.layout.fs_blocks) == admission.after.index.volume.index.source,
         namespace::valid(admission.after),
 {

@@ -173,4 +173,6 @@ pub mod content_write;
 pub mod inode_time;
 pub mod inode_time_fields;
 pub mod inode_touch;
+pub mod disk_image;
 pub mod writer_image;
+pub mod recovery_image;
