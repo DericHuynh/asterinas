@@ -89,6 +89,86 @@ fn shadow_patches_are_sorted_owned_and_reject_duplicates_without_changes() {
 }
 
 #[test]
+fn shadow_sources_preserve_provenance_overlay_precedence_and_validation() {
+    use core::{
+        allocated_inode, allocation, directory_index, file_read, namespace, patch_set::PatchSet,
+        snapshot::Snapshot,
+    };
+    let img = image();
+    let (sb, group, _) = metadata(&img);
+    let block = first_data_block(inode_bytes(&img, group.inode_table, 12), sb.blocks());
+    let base = Snapshot::from_bytes(&img);
+    let replacement = [0x9d; 4096];
+    let patches = PatchSet::new().insert(block, &replacement).ok().unwrap();
+    let shadow = base.overlay(&patches).unwrap();
+    assert_eq!(shadow.shadow_depth(), 1);
+    assert_eq!(shadow.partition_bytes(), img.len() as u64);
+    assert_eq!(shadow.block(block).unwrap().as_slice(), &replacement);
+    for index in [0, 1, group.inode_table, sb.blocks() - 1] {
+        assert_eq!(
+            shadow.block(index).unwrap().as_slice(),
+            base.block(index).unwrap().as_slice()
+        );
+    }
+    assert!(shadow.block(sb.blocks()).is_none());
+    assert!(shadow.block(u32::MAX).is_none());
+    let checked = allocation::parse(shadow).unwrap();
+    let directories = directory_index::build(&checked).unwrap();
+    assert!(namespace::validate(&directories).is_some());
+    let node = allocated_inode::get(&checked, 12).unwrap();
+    match file_read::chunk(&node, 0, 4096) {
+        file_read::Chunk::Data(bytes) => assert_eq!(bytes, &replacement),
+        _ => panic!("shadow data was not used by the source-bound file reader"),
+    }
+    assert_eq!(
+        base.block(block).unwrap().as_slice(),
+        &img[block as usize * 4096..(block as usize + 1) * 4096]
+    );
+    let later_bytes = [0xa7; 4096];
+    let later = PatchSet::new().insert(block, &later_bytes).ok().unwrap();
+    let shadow = base.overlay(&patches).unwrap().overlay(&later).unwrap();
+    assert_eq!(shadow.block(block).unwrap().as_slice(), &later_bytes);
+    assert_eq!(
+        shadow.block(0).unwrap().as_slice(),
+        base.block(0).unwrap().as_slice()
+    );
+    let mut corrupt_inode_table = base.block(group.inode_table).unwrap().as_slice().to_vec();
+    corrupt_inode_table[256] ^= 1;
+    let corrupt = PatchSet::new()
+        .insert(group.inode_table, &corrupt_inode_table)
+        .ok()
+        .unwrap();
+    assert!(
+        allocation::parse(base.overlay(&corrupt).unwrap()).is_none(),
+        "shadow metadata must be revalidated"
+    );
+    let outside = PatchSet::new()
+        .insert(sb.blocks(), &[0; 4096])
+        .ok()
+        .unwrap();
+    assert!(base.overlay(&outside).is_none());
+    let maximum = PatchSet::new().insert(u32::MAX, &[0; 4096]).ok().unwrap();
+    assert!(base.overlay(&maximum).is_none());
+    let empty = PatchSet::new();
+    let mut nested = base.overlay(&empty).unwrap();
+    for _ in 1..core::snapshot::MAX_SHADOW_LAYERS {
+        nested = nested.overlay(&empty).unwrap();
+    }
+    assert_eq!(nested.shadow_depth(), core::snapshot::MAX_SHADOW_LAYERS);
+    assert_eq!(
+        nested.block(block).unwrap().as_slice(),
+        base.block(block).unwrap().as_slice()
+    );
+    assert!(nested.overlay(&empty).is_none());
+    for bytes in [&[][..], &[0; 4095][..]] {
+        let short = Snapshot::from_bytes(bytes);
+        assert!(short.overlay(&patches).is_none());
+        assert!(short.block(0).is_none());
+        assert!(short.overlay(&empty).is_some());
+    }
+}
+
+#[test]
 fn codecs_handle_extremes_and_crc_streaming() {
     for v in [0, 1, 255, 256, 65535, 65536, 0x89abcdef, u32::MAX] {
         assert_eq!(

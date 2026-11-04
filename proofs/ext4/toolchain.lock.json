@@ -91,7 +91,8 @@
     "src/tree_model.rs",
     "src/namespace_tree.rs",
     "src/namespace.rs",
-    "src/patch_set.rs"
+    "src/patch_set.rs",
+    "src/shadow_model.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -331,7 +332,9 @@
     "namespace_tree::every_directory_reaches_root",
     "namespace::every_directory_is_rooted",
     "patch_set::one_target_has_one_image",
-    "patch_set::applying_a_patch_replaces_exactly_its_block"
+    "patch_set::applying_a_patch_replaces_exactly_its_block",
+    "shadow_model::layering_matches_patch_application",
+    "shadow_model::a_block_has_exact_selected_bytes"
   ],
   "required_flags": [
     "--no-cheating",
@@ -529,6 +532,8 @@
     "patch_set::at",
     "patch_set::get",
     "patch_set::insert",
-    "patch_set::into_images"
+    "patch_set::into_images",
+    "snapshot::shadow_depth",
+    "snapshot::overlay"
   ]
 }

@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "license": "MPL-2.0",
-  "recorded_at": "2026-11-04T01:08:24.490492+00:00",
+  "recorded_at": "2026-11-04T01:12:51.877512+00:00",
   "scope": "Checked host core and specified abstract machines; not a complete or kernel-integrated ext4 filesystem",
   "verifier_version": {
     "verus": {
@@ -19,7 +19,7 @@
     "encountered-error": false,
     "encountered-vir-error": false,
     "success": true,
-    "verified": 611,
+    "verified": 621,
     "errors": 0,
     "is-verifying-entire-crate": true
   },
@@ -31,7 +31,7 @@
     "--crate-type=rlib"
   ],
   "source_sha256": {
-    "src/model.rs": "ab94c3bc5b2954a9d2fc4eab7f8abe088922401623a0ea724dfd363a956dfbca",
+    "src/model.rs": "c784089a3769b3eb0021219d534089a9c74cb09d77134084ff6e68d97032ab67",
     "src/redo.rs": "e964baa83ca170c3cc60dbc8df4bfc470a81549ac23a5cfe4526a9cb0edb7e7f",
     "src/journal.rs": "eef5dcc269f81cbc1c7e8c6a4daf0a58cf7015423657a9cfe1f0fff186b91834",
     "src/lease.rs": "37358276a3719454ddeaf16177a2ce058b5e382c57b0609cea97031da084b1aa",
@@ -85,7 +85,7 @@
     "src/block_claims.rs": "1862b1c3cc9c3512c86ca20c20ce39cf1d7be34d298cb8698f9cf4aeedf7dd43",
     "src/inode_claims.rs": "bc3d8fd72ad758ae719b5d1a019493382b773a8dce0e01e71d8a98cd404c0439",
     "src/group_claims.rs": "db95c81b48e9d8c56e4682d30208fb5908dc48224f46e0512c85ef66c8731ad3",
-    "src/snapshot.rs": "81546ff738e7cb1aa9db37e21995ebd575fb369380d9dc6c3900183145c914d4",
+    "src/snapshot.rs": "1dde059daed74fdbc7183a97d0e90460dc2111ee09434ee3de8478a53c9ac34b",
     "src/group_metadata.rs": "7dfb35dc3b021b9749ad22d4322d2e7aabb26a9ad4593e08d1e298a6f5e9f18d",
     "src/group_index.rs": "6735f537dd656a047a5c1c743e808b1a876d2a0d5d27c2533221f610ac5902b1",
     "src/inode_table.rs": "a6bcaa884a0160fbbb9cdbc37ac4663d2e2741701e64d6b2adaffa66ffccf24b",
@@ -105,9 +105,10 @@
     "src/tree_model.rs": "05731005fd59882f1351f1e2cf28ce1268b83771ae03e57163311660bf183e50",
     "src/namespace_tree.rs": "c0783345cd7e71bc17a397f20dbe76d9ce62d6576662dc6e0ab786bc1598666b",
     "src/namespace.rs": "5efc10614982088277e12eceb150b87b7e4e367b2fab2fc2b93ae29bff9b55ce",
-    "src/patch_set.rs": "5cc2702075a03ba59413d58fbb5b5c105b0bfbabdafdaaf999c82c9ff51afc68"
+    "src/patch_set.rs": "5cc2702075a03ba59413d58fbb5b5c105b0bfbabdafdaaf999c82c9ff51afc68",
+    "src/shadow_model.rs": "cad69cea5b78e3059fa177096d1ab2fd25b7b920678fba8ea4c695b5bf11a014"
   },
-  "lock_sha256": "6e87fe347c424e77a41c4a2d589c400a5d221205d4e27e48e8eb747c44d5ef81",
+  "lock_sha256": "10aa3f0748ec1ca808d5270d2caa30736bc50b85c7875eaa27b73a3c7309364d",
   "runner_sha256": "de6b473ab50632068de9e7fc619591c7b4d5afbc0058a1fcd7f946c0198beb91",
   "named_proof_coverage": [
     "access::override_cannot_execute_a_nonexecutable_regular_file",
@@ -259,6 +260,8 @@
     "scan_trace::every_prefix_block_is_covered",
     "scan_trace::prefix_preserves_well_formedness",
     "scan_trace::well_formed_prefixes_agree_at_every_common_position",
+    "shadow_model::a_block_has_exact_selected_bytes",
+    "shadow_model::layering_matches_patch_application",
     "super_state::recovery_flag_image_preserves_uuid_and_boot_bytes",
     "super_state::replay_policy_is_stable_under_another_valid_replay",
     "super_state::replay_preserves_geometry_and_keeps_recovery",
@@ -512,8 +515,10 @@
     "snapshot::as_slice",
     "snapshot::block",
     "snapshot::from_bytes",
+    "snapshot::overlay",
     "snapshot::partition_bytes",
     "snapshot::range",
+    "snapshot::shadow_depth",
     "super_state::recovery_image",
     "super_state::valid_replay",
     "superblock::blocks",
@@ -541,14 +546,14 @@
     "write_io::pending_command",
     "write_io::prepare"
   ],
-  "host_library_sha256": "776e92120c186e2611974c6a34e1259f5804191d1fac92a3585d799596646a41",
+  "host_library_sha256": "b18bb63f76ff31f806a70dae633d873bb2f2ea8a9e80e19c6ab259d40f8a8727",
   "compatibility": {
     "schema": 1,
     "status": "passed",
     "scope": "host interoperability tests, not formal proof",
     "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
-    "proof_artifact_sha256": "776e92120c186e2611974c6a34e1259f5804191d1fac92a3585d799596646a41",
-    "image_sha256": "1310e6efdab2b0c3250dd28d55504549cf4f6676e3aa0ad891ff2b8a00a58ffd",
+    "proof_artifact_sha256": "b18bb63f76ff31f806a70dae633d873bb2f2ea8a9e80e19c6ab259d40f8a8727",
+    "image_sha256": "8a9ebf0f511860341b9e0bb70d6092b7cb2c778724ce4202026368b8adcc7a6e",
     "request_boundary_rejections": [
       "reuse_request",
       "redirect_completion",
@@ -559,11 +564,11 @@
     ],
     "compatibility_runner_sha256": "9164eb940e75a089f0b051c4ad7fee16592ca6c0423c640ae70bce36f33159f6",
     "test_source_sha256": {
-      "compat": "3f194e5c7579bacc8acc0a45c4817b440c4357fe8bd0d5bfde3c252cdf4d2e0d",
+      "compat": "62e5104960fbbebbb80312c29f3919fbbb55cf98f8b2c19f1cd5cb5cc6655924",
       "journal": "d5299e37f6dc76f39c0c2c88722638f5947c2f18b753aff0bdd181eba28aca8f"
     }
   },
-  "compatibility_test_count": 33,
+  "compatibility_test_count": 34,
   "e2fsprogs_version": "1.47.0",
   "negative_gate_checks": {
     "status": "passed",
@@ -611,5 +616,6 @@
   "name_index_positions": "checked_ordinal_identifies_the_exact_source_key_insertion_position",
   "static_namespace": "checked_exact_reference_and_inode_link_counts_Linux_dot_dotdot_placement_and_targets_unique_matching_directory_parents_root_rules_and_every_directory_reaches_root_by_bounded_depth_rank",
   "namespace_cycle_checks": "checked_nonrecursive_color_depth_cursor_walks_with_ghost_path_certificates_no_runtime_path_stack_depth_bound_65536",
-  "bounded_shadow_patches": "checked_owned_exact_images_sorted_unique_targets_binary_lookup_4096_credit_and_unchanged_rejection"
+  "bounded_shadow_patches": "checked_owned_exact_images_sorted_unique_targets_binary_lookup_4096_credit_and_unchanged_rejection",
+  "immutable_shadow_source": "checked_exact_layer_composition_precedence_partition_bounds_and_block_provenance_32_layers_shared_base_no_filesystem_copy"
 }
