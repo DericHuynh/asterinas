@@ -7,7 +7,7 @@ on:
       - proofs/ext4/**
       - .github/workflows/verify_ext4.yml
   push:
-    branches: [main, design/verus-ext4, feat/verus-ext4-core, feat/verus-ext4-concurrency, feat/verus-ext4-tree-ownership, feat/verus-ext4-large-file, feat/verus-ext4-huge-file, feat/verus-ext4-csum-seed, feat/verus-ext4-64bit-descriptors, feat/verus-ext4-lazy-inodes, feat/verus-ext4-lazy-blocks, feat/verus-ext4-flex-bg, feat/verus-ext4-concurrent-handles, feat/verus-ext4-writer-admission, feat/verus-ext4-file-overwrite]
+    branches: [main, design/verus-ext4, feat/verus-ext4-core, feat/verus-ext4-concurrency, feat/verus-ext4-tree-ownership, feat/verus-ext4-large-file, feat/verus-ext4-huge-file, feat/verus-ext4-csum-seed, feat/verus-ext4-64bit-descriptors, feat/verus-ext4-lazy-inodes, feat/verus-ext4-lazy-blocks, feat/verus-ext4-flex-bg, feat/verus-ext4-concurrent-handles, feat/verus-ext4-writer-admission, feat/verus-ext4-file-overwrite, feat/verus-ext4-inode-times]
     paths:
       - proofs/ext4/**
       - .github/workflows/verify_ext4.yml

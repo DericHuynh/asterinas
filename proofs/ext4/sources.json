@@ -45,7 +45,7 @@
       "path": "fs/ext4/ext4.h",
       "url": "https://github.com/torvalds/linux/blob/v7.0/fs/ext4/ext4.h",
       "blob_sha": "7617e2d454ea516fee9047366458c0bda568fddf",
-      "review_scope": "feature bit inventory and supported masks; block/logical limits and selected inode definitions; ext4_isize/ext4_isize_set regular versus LARGEDIR high-field interpretation; ext4_group_desc high/low address, counter and bitmap checksum field offsets and 64BIT descriptor size constants"
+      "review_scope": "feature bit inventory and supported masks; block/logical limits and selected inode definitions; ext4_isize/ext4_isize_set regular versus LARGEDIR high-field interpretation; ext4_group_desc high/low address, counter and bitmap checksum field offsets and 64BIT descriptor size constants; signed base/epoch/nanosecond timestamp table, ext4_encode_extra_time/ext4_decode_extra_time, legacy clamping and EXT4_FITS_IN_INODE presence rule"
     },
     {
       "path": "kernel/core/comps/block/src/lib.rs",

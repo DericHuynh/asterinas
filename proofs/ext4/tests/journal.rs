@@ -695,6 +695,197 @@ mod content_writes {
     }
 }
 
+mod inode_times {
+    use core::{
+        inode_time as time,
+        inode_time_fields::{self as fields, Field},
+    };
+
+    use super::*;
+
+    #[test]
+    fn timestamp_words_roundtrip_all_epoch_boundaries_and_nanosecond_extremes() {
+        for seconds in [
+            time::MIN_SECONDS,
+            -1,
+            0,
+            2147483647,
+            2147483648,
+            4294967295,
+            4294967296,
+            6442450943,
+            6442450944,
+            8589934591,
+            8589934592,
+            10737418239,
+            10737418240,
+            12884901887,
+            12884901888,
+            time::MAX_SECONDS,
+        ] {
+            for nanos in [0u32, 1, 999999999] {
+                let words = time::encode_extended(seconds, nanos).unwrap();
+                let decoded = time::decode_words(words.base, words.extra, true);
+                assert_eq!((decoded.seconds, decoded.nanoseconds), (seconds, nanos));
+                assert_eq!(words.base, seconds as u32);
+                assert_eq!(
+                    words.extra & 3,
+                    ((seconds - seconds as i32 as i64) >> 32) as u32
+                );
+                assert_eq!(words.extra >> 2, nanos);
+            }
+        }
+        for (seconds, nanos) in [
+            (time::MIN_SECONDS - 1, 0),
+            (time::MAX_SECONDS + 1, 0),
+            (i64::MIN, 0),
+            (i64::MAX, 0),
+            (0, 1000000000),
+            (0, u32::MAX),
+        ] {
+            assert!(time::encode_extended(seconds, nanos).is_none());
+        }
+        let raw = time::decode_words(u32::MAX, u32::MAX, true);
+        assert_eq!((raw.seconds, raw.nanoseconds), (12884901887, 1073741823));
+        assert!(time::encode_extended(raw.seconds, raw.nanoseconds).is_none());
+    }
+
+    #[test]
+    fn legacy_timestamps_clamp_seconds_and_preserve_negative_sign_without_epoch_guessing() {
+        for seconds in [
+            i64::MIN,
+            time::MIN_SECONDS - 1,
+            time::MIN_SECONDS,
+            -1,
+            0,
+            2147483647,
+            2147483648,
+            i64::MAX,
+        ] {
+            let base = time::encode_legacy(seconds);
+            let decoded = time::decode_words(base, u32::MAX, false);
+            assert_eq!(
+                decoded.seconds,
+                seconds.clamp(time::MIN_SECONDS, 2147483647)
+            );
+            assert_eq!(decoded.nanoseconds, 0);
+        }
+        assert_eq!(time::decode_words(0xffffffff, 0, true).seconds, -1);
+        assert_eq!(time::decode_words(0xffffffff, 3, true).seconds, 12884901887);
+    }
+
+    #[test]
+    fn inode_time_presence_follows_extra_isize_and_preserves_all_other_bytes() {
+        for extra in [0u16, 4, 8, 12, 16, 20, 24, 32, 128] {
+            for (field, base, high) in [
+                (Field::Atime, 8usize, 140usize),
+                (Field::Ctime, 12, 132),
+                (Field::Mtime, 16, 136),
+                (Field::Crtime, 144, 148),
+            ] {
+                let mut inode = vec![0xa5; 256];
+                inode[128..130].copy_from_slice(&extra.to_le_bytes());
+                let before = inode.clone();
+                let present = base + 4 <= 128 + extra as usize;
+                let extended = high + 4 <= 128 + extra as usize;
+                let success = fields::set_time(&mut inode, field, 2147483648, 123456789);
+                assert_eq!(success, present);
+                if present {
+                    let decoded = fields::get_time(&inode, field).unwrap();
+                    assert_eq!(
+                        decoded.seconds,
+                        if extended { 2147483648 } else { 2147483647 }
+                    );
+                    assert_eq!(decoded.nanoseconds, if extended { 123456789 } else { 0 });
+                } else {
+                    assert!(fields::get_time(&inode, field).is_none());
+                }
+                for index in 0..inode.len() {
+                    if !present
+                        || !(base..base + 4).contains(&index)
+                            && (!extended || !(high..high + 4).contains(&index))
+                    {
+                        assert_eq!(inode[index], before[index], "extra={extra}, index={index}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn malformed_inode_time_ranges_and_unrepresentable_updates_fail_unchanged() {
+        for length in [0usize, 1, 127, 129, 130, 131, 132, 256] {
+            let mut inode = vec![0xff; length];
+            let before = inode.clone();
+            assert!(fields::get_time(&inode, Field::Atime).is_none());
+            assert!(!fields::set_time(&mut inode, Field::Mtime, 0, 0));
+            assert_eq!(inode, before);
+        }
+        let mut inode = vec![0u8; 256];
+        inode[128..130].copy_from_slice(&32u16.to_le_bytes());
+        for (seconds, nanos) in [
+            (time::MIN_SECONDS - 1, 0),
+            (time::MAX_SECONDS + 1, 0),
+            (0, 1000000000),
+        ] {
+            let before = inode.clone();
+            assert!(!fields::set_time(&mut inode, Field::Mtime, seconds, nanos));
+            assert_eq!(inode, before);
+        }
+        let mut legacy = vec![0u8; 128];
+        assert!(fields::set_time(
+            &mut legacy,
+            Field::Atime,
+            i64::MAX,
+            u32::MAX
+        ));
+        let decoded = fields::get_time(&legacy, Field::Atime).unwrap();
+        assert_eq!((decoded.seconds, decoded.nanoseconds), (2147483647, 0));
+        assert!(!fields::set_time(&mut legacy, Field::Crtime, 0, 0));
+    }
+
+    #[test]
+    fn linux_tools_read_extended_timestamp_words_after_inode_checksum_reseal() {
+        let (mut image, _, seed, _) = fixture();
+        let table = core::bytes::read_le32(&image, 4104).unwrap() as usize;
+        let inode = &mut image[table * 4096 + 11 * 256..table * 4096 + 12 * 256];
+        let words = time::encode_extended(2147483648, 123456789).unwrap();
+        for field in [Field::Atime, Field::Mtime, Field::Ctime, Field::Crtime] {
+            assert!(fields::set_time(inode, field, 2147483648, 123456789));
+        }
+        let checksum = core::inode::calculated_checksum(inode, 12, seed).unwrap();
+        inode[124..126].copy_from_slice(&(checksum as u16).to_le_bytes());
+        inode[130..132].copy_from_slice(&((checksum >> 16) as u16).to_le_bytes());
+        let path = "build/inode-times-native.img";
+        std::fs::write(path, &image).unwrap();
+        let executable = std::env::var("DEBUGFS_BIN").unwrap_or_else(|_| "debugfs".to_string());
+        let output = std::process::Command::new(executable)
+            .args(["-R", "stat /payload", path])
+            .output()
+            .unwrap();
+        std::fs::remove_file(path).unwrap();
+        assert!(output.status.success());
+        let output = String::from_utf8_lossy(&output.stdout);
+        for field in ["atime", "ctime", "mtime", "crtime"] {
+            assert!(
+                output.contains(&format!(
+                    "{field}: 0x{:08x}:{:08x}",
+                    words.base, words.extra
+                )),
+                "{output}"
+            );
+        }
+        assert!(
+            core::image_validation::inspect(core::snapshot::Snapshot::from_bytes(&image)).is_some()
+        );
+        let recovered = linux_recover("build/inode-times-fsck.img", &image);
+        assert_eq!(
+            &recovered[table * 4096 + 11 * 256..table * 4096 + 12 * 256],
+            &image[table * 4096 + 11 * 256..table * 4096 + 12 * 256]
+        );
+    }
+}
+
 fn linux_recover(path: &str, image: &[u8]) -> Vec<u8> {
     std::fs::write(path, image).unwrap();
     let executable = std::env::var("E2FSCK_BIN").unwrap_or_else(|_| "e2fsck".to_string());
