@@ -34,6 +34,7 @@ The accepted byte structures do not certify the whole volume.
 | Name index | Full (directory inode, byte-name) equality; 1..255 byte names, no NUL or slash, owned snapshots, 4096 CRC buckets, at most 64 keys/bucket and 65536 total. Limit exhaustion rejects admission; CRC equality is never name equality. These are helper resource bounds, not an enabled mount profile. |
 | Directory index | Complete canonical live-entry enumeration for all allocated directories, positive block-aligned sizes, initialized blocks, source and target inode types/generations, globally unique (directory,name) keys and exact complete lookup. At most 4096 directory blocks and the name-index limits above. Dot/parent rules, link counts and rooted topology are checked separately by the namespace certificate. |
 | Namespace certificate | Exact live-inode reference counts equal i_links_count; one dot at block 0/record 0 targets self, one dotdot at block 0/record 1 targets the live parent; root parent is self with no ordinary incoming directory link, every other directory has one ordinary incoming link matching dotdot. Finite depth ranks prove every directory reaches root. Regular file hard links allowed; directory hard links, orphaned live files and disconnected cycles rejected. Bounded nonrecursive graph traversal, depth at most 65536; no mount/VFS/recovery authority. |
+| Bootstrap journal discovery | Same-source primary superblock, group-zero descriptor and exact reserved inode 8; bounded journal capture before global allocation validation. Static layout preservation and recovered-shadow admission remain separate. |
 | Recovery bounds | One initialized journal extent of 1024..32768 blocks; at most 4096 staged payload/revoke entries, with whole-record preflight; no transaction-ID wrap; a fully occupied ring without a proved stopping boundary is rejected. |
 
 Superblock reserved-GDT blocks and high block-count fields must be zero.
@@ -103,7 +104,7 @@ This local policy is not global inode/bitmap/ownership validation.
 - Prove operation preservation of topology, link counts and directory lookup/rename, plus orphan/reclamation rules.
 - Verified read/write/allocation operation preservation and transaction closure.
 - Unmount ordering and actual runtime/device enforcement of serialized log reuse.
-- Bootstrap journal discovery, preservation of group addresses and journal inode 8, and recovery validation in a shadow view before publication.
+- Preservation of bootstrap group addresses and journal inode 8, and recovery validation in a shadow view before publication.
 - OSTD frame/DMA/device and VFS/credential refinements.
 
 A replay target must not escape the partition or overwrite the journal.

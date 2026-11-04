@@ -138,3 +138,4 @@ pub mod namespace;
 
 pub mod patch_set;
 mod shadow_model;
+pub mod bootstrap;

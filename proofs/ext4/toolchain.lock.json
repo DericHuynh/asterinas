@@ -92,7 +92,8 @@
     "src/namespace_tree.rs",
     "src/namespace.rs",
     "src/patch_set.rs",
-    "src/shadow_model.rs"
+    "src/shadow_model.rs",
+    "src/bootstrap.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -534,6 +535,15 @@
     "patch_set::insert",
     "patch_set::into_images",
     "snapshot::shadow_depth",
-    "snapshot::overlay"
+    "snapshot::overlay",
+    "bootstrap::source",
+    "bootstrap::layout",
+    "bootstrap::primary",
+    "bootstrap::uuid",
+    "bootstrap::raw_journal_inode",
+    "bootstrap::capture_journal",
+    "bootstrap::locate",
+    "snapshot::capture",
+    "layout::physical_start"
   ]
 }

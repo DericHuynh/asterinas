@@ -169,6 +169,56 @@ fn shadow_sources_preserve_provenance_overlay_precedence_and_validation() {
 }
 
 #[test]
+fn journal_bootstrap_uses_declared_inode_bytes_before_allocation_validation() {
+    use core::{bootstrap, group_index, snapshot::Snapshot};
+    let img = image();
+    let (sb, group, _) = metadata(&img);
+    let source = Snapshot::from_bytes(&img);
+    let located = bootstrap::locate(&source).unwrap();
+    assert_eq!(located.primary(), &img[..4096]);
+    assert_eq!(located.uuid(), &img[1128..1144]);
+    assert_eq!(
+        located.raw_journal_inode(),
+        inode_bytes(&img, group.inode_table, 8)
+    );
+    let layout = located.layout();
+    let start = layout.physical_start() as usize * 4096;
+    let end = start + layout.blocks() as usize * 4096;
+    assert_eq!(located.capture_journal(), &img[start..end]);
+    assert_eq!(located.source().partition_bytes(), img.len() as u64);
+    let mut checkpoint_cut = img.clone();
+    checkpoint_cut[group.block_bitmap as usize * 4096] ^= 0x80;
+    assert!(group_index::parse(Snapshot::from_bytes(&checkpoint_cut)).is_none());
+    let cut_source = Snapshot::from_bytes(&checkpoint_cut);
+    let cut = bootstrap::locate(&cut_source)
+        .expect("recovery discovery does not require consistent home bitmaps");
+    assert_eq!(cut.layout().physical_start(), layout.physical_start());
+    assert_eq!(cut.capture_journal(), located.capture_journal());
+    for offset in [
+        1024 + 56,
+        4096 + 30,
+        group.inode_table as usize * 4096 + 7 * 256 + 60,
+    ] {
+        let mut bad = img.clone();
+        bad[offset] ^= 1;
+        assert!(bootstrap::locate(&Snapshot::from_bytes(&bad)).is_none());
+    }
+    for length in [0, 4095, 4096, 8191, group.inode_table as usize * 4096] {
+        assert!(bootstrap::locate(&Snapshot::from_bytes(&img[..length])).is_none());
+    }
+    assert_eq!(source.capture(0, 2).unwrap(), &img[..8192]);
+    for (start, count) in [
+        (0, 0),
+        (0, 32769),
+        (sb.blocks(), 1),
+        (u32::MAX, 1),
+        (u32::MAX, 2),
+    ] {
+        assert!(source.capture(start, count).is_none());
+    }
+}
+
+#[test]
 fn codecs_handle_extremes_and_crc_streaming() {
     for v in [0, 1, 255, 256, 65535, 65536, 0x89abcdef, u32::MAX] {
         assert_eq!(

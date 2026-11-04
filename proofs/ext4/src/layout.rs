@@ -42,6 +42,7 @@ impl JournalLayout {
     }
 
     pub fn blocks(&self) -> (r: u32) ensures r == self.view().journal_blocks { self.journal_blocks }
+    pub fn physical_start(&self) -> (r: u32) ensures r == self.view().start { self.physical_start }
     pub fn filesystem_blocks(&self) -> (r: u32) ensures r == self.view().fs_blocks { self.fs_blocks }
 
     pub fn valid(&self) -> (r: bool) ensures r == self.wf() {

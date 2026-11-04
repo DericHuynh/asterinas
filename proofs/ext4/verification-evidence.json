@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "license": "MPL-2.0",
-  "recorded_at": "2026-11-04T01:12:51.877512+00:00",
+  "recorded_at": "2026-11-04T01:18:58.670082+00:00",
   "scope": "Checked host core and specified abstract machines; not a complete or kernel-integrated ext4 filesystem",
   "verifier_version": {
     "verus": {
@@ -19,7 +19,7 @@
     "encountered-error": false,
     "encountered-vir-error": false,
     "success": true,
-    "verified": 621,
+    "verified": 632,
     "errors": 0,
     "is-verifying-entire-crate": true
   },
@@ -31,7 +31,7 @@
     "--crate-type=rlib"
   ],
   "source_sha256": {
-    "src/model.rs": "c784089a3769b3eb0021219d534089a9c74cb09d77134084ff6e68d97032ab67",
+    "src/model.rs": "24847396d08ecb5283900baf15461e0749f9727a2d572272d571e239ce262633",
     "src/redo.rs": "e964baa83ca170c3cc60dbc8df4bfc470a81549ac23a5cfe4526a9cb0edb7e7f",
     "src/journal.rs": "eef5dcc269f81cbc1c7e8c6a4daf0a58cf7015423657a9cfe1f0fff186b91834",
     "src/lease.rs": "37358276a3719454ddeaf16177a2ce058b5e382c57b0609cea97031da084b1aa",
@@ -54,7 +54,7 @@
     "src/system.rs": "9fee18a8ce457db065dec5c09f13ef17e939c36c073cb604ff4838612e22208b",
     "src/descriptor.rs": "334aa73df2e0a9e9ecc9e0e8561f9157615fa9bcc99ac2bfd5cf4e5846568f06",
     "src/revoke.rs": "affe750a3c54dc7194eccf122a95ee37385e759f1228ad97af8971c405cc7a1c",
-    "src/layout.rs": "7376c293e942d7358120119ee521b2159f81ed5ca8e98b72753f282f697fa282",
+    "src/layout.rs": "20e6e0cca5006604e35cef05375e90dbd06089bdcd1d66511b6314899f06467b",
     "src/replay.rs": "3b411f0fb26dde325cf629906c12547f12942550dd81d2d2d72960078f0a3e13",
     "src/replay_refinement.rs": "ce5d691099276600446de7dc6d0002281e6d85a1499a7c34513d51b568c1bc7d",
     "src/scan.rs": "405ddc4893f7e7b3fed4d3f0902324183601b5a6219a010e560822c44ac04b87",
@@ -85,7 +85,7 @@
     "src/block_claims.rs": "1862b1c3cc9c3512c86ca20c20ce39cf1d7be34d298cb8698f9cf4aeedf7dd43",
     "src/inode_claims.rs": "bc3d8fd72ad758ae719b5d1a019493382b773a8dce0e01e71d8a98cd404c0439",
     "src/group_claims.rs": "db95c81b48e9d8c56e4682d30208fb5908dc48224f46e0512c85ef66c8731ad3",
-    "src/snapshot.rs": "1dde059daed74fdbc7183a97d0e90460dc2111ee09434ee3de8478a53c9ac34b",
+    "src/snapshot.rs": "b831d68e1ca3b948583f98c5743aecb7a8e6d9a4a3645491f91c43d9a476e5f7",
     "src/group_metadata.rs": "7dfb35dc3b021b9749ad22d4322d2e7aabb26a9ad4593e08d1e298a6f5e9f18d",
     "src/group_index.rs": "6735f537dd656a047a5c1c743e808b1a876d2a0d5d27c2533221f610ac5902b1",
     "src/inode_table.rs": "a6bcaa884a0160fbbb9cdbc37ac4663d2e2741701e64d6b2adaffa66ffccf24b",
@@ -106,9 +106,10 @@
     "src/namespace_tree.rs": "c0783345cd7e71bc17a397f20dbe76d9ce62d6576662dc6e0ab786bc1598666b",
     "src/namespace.rs": "5efc10614982088277e12eceb150b87b7e4e367b2fab2fc2b93ae29bff9b55ce",
     "src/patch_set.rs": "5cc2702075a03ba59413d58fbb5b5c105b0bfbabdafdaaf999c82c9ff51afc68",
-    "src/shadow_model.rs": "cad69cea5b78e3059fa177096d1ab2fd25b7b920678fba8ea4c695b5bf11a014"
+    "src/shadow_model.rs": "cad69cea5b78e3059fa177096d1ab2fd25b7b920678fba8ea4c695b5bf11a014",
+    "src/bootstrap.rs": "32e42c64f10276bb90fc9be86f6f38036b0bf14a87e54777b7bda6654f16a08f"
   },
-  "lock_sha256": "10aa3f0748ec1ca808d5270d2caa30736bc50b85c7875eaa27b73a3c7309364d",
+  "lock_sha256": "c13c7afa8ade254c4bfa1e39788ebb19475ced177ee7acb0fe55f2e6f22550df",
   "runner_sha256": "de6b473ab50632068de9e7fc619591c7b4d5afbc0058a1fcd7f946c0198beb91",
   "named_proof_coverage": [
     "access::override_cannot_execute_a_nonexecutable_regular_file",
@@ -374,6 +375,13 @@
     "block_claims::matches_bitmap",
     "block_claims::new",
     "block_claims::role_of",
+    "bootstrap::capture_journal",
+    "bootstrap::layout",
+    "bootstrap::locate",
+    "bootstrap::primary",
+    "bootstrap::raw_journal_inode",
+    "bootstrap::source",
+    "bootstrap::uuid",
     "bytes::block_offset",
     "bytes::checked_range",
     "bytes::encode_be32",
@@ -460,6 +468,7 @@
     "layout::filesystem_blocks",
     "layout::from_inode",
     "layout::offset",
+    "layout::physical_start",
     "layout::valid",
     "name_set::contains",
     "name_set::find",
@@ -514,6 +523,7 @@
     "scan::replay_plan",
     "snapshot::as_slice",
     "snapshot::block",
+    "snapshot::capture",
     "snapshot::from_bytes",
     "snapshot::overlay",
     "snapshot::partition_bytes",
@@ -546,14 +556,14 @@
     "write_io::pending_command",
     "write_io::prepare"
   ],
-  "host_library_sha256": "b18bb63f76ff31f806a70dae633d873bb2f2ea8a9e80e19c6ab259d40f8a8727",
+  "host_library_sha256": "deba4ac15e72cffebb3c77579db10cdd50008715b4d7df3cb161afa2ae6a7713",
   "compatibility": {
     "schema": 1,
     "status": "passed",
     "scope": "host interoperability tests, not formal proof",
     "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
-    "proof_artifact_sha256": "b18bb63f76ff31f806a70dae633d873bb2f2ea8a9e80e19c6ab259d40f8a8727",
-    "image_sha256": "8a9ebf0f511860341b9e0bb70d6092b7cb2c778724ce4202026368b8adcc7a6e",
+    "proof_artifact_sha256": "deba4ac15e72cffebb3c77579db10cdd50008715b4d7df3cb161afa2ae6a7713",
+    "image_sha256": "8a305a233526d8666396cb1bfbbae58ed192ce36a67dde7a041d0146396c78fa",
     "request_boundary_rejections": [
       "reuse_request",
       "redirect_completion",
@@ -564,11 +574,11 @@
     ],
     "compatibility_runner_sha256": "9164eb940e75a089f0b051c4ad7fee16592ca6c0423c640ae70bce36f33159f6",
     "test_source_sha256": {
-      "compat": "62e5104960fbbebbb80312c29f3919fbbb55cf98f8b2c19f1cd5cb5cc6655924",
+      "compat": "7b06f40b1b769676e7b064d8ff7832c1972d0baaa63805d7d864d9c8621278a5",
       "journal": "d5299e37f6dc76f39c0c2c88722638f5947c2f18b753aff0bdd181eba28aca8f"
     }
   },
-  "compatibility_test_count": 34,
+  "compatibility_test_count": 35,
   "e2fsprogs_version": "1.47.0",
   "negative_gate_checks": {
     "status": "passed",
@@ -617,5 +627,6 @@
   "static_namespace": "checked_exact_reference_and_inode_link_counts_Linux_dot_dotdot_placement_and_targets_unique_matching_directory_parents_root_rules_and_every_directory_reaches_root_by_bounded_depth_rank",
   "namespace_cycle_checks": "checked_nonrecursive_color_depth_cursor_walks_with_ghost_path_certificates_no_runtime_path_stack_depth_bound_65536",
   "bounded_shadow_patches": "checked_owned_exact_images_sorted_unique_targets_binary_lookup_4096_credit_and_unchanged_rejection",
-  "immutable_shadow_source": "checked_exact_layer_composition_precedence_partition_bounds_and_block_provenance_32_layers_shared_base_no_filesystem_copy"
+  "immutable_shadow_source": "checked_exact_layer_composition_precedence_partition_bounds_and_block_provenance_32_layers_shared_base_no_filesystem_copy",
+  "bootstrap_journal_discovery": "checked_same_source_primary_group_zero_descriptor_exact_reserved_inode_8_and_bounded_exact_journal_capture_without_allocation_bitmap_prerequisite"
 }

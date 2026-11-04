@@ -165,6 +165,44 @@ impl<'a> Snapshot<'a> {
         let bytes = &self.bytes[start as usize..(start + 4096) as usize];
         Some(Block { bytes, index, source: Ghost(self.view()) })
     }
+
+    pub fn capture(&self, start: u32, count: u32) -> (r: Option<Vec<u8>>)
+        ensures match r {
+            Some(bytes) => 0 < count <= 32768 && start as nat + count <= 4294967296
+                && (start as nat + count) * 4096 <= self.view().len()
+                && bytes@ == self.view().subrange(start as int * 4096, (start as int + count) * 4096),
+            None => count == 0 || count > 32768 || start as nat + count > 4294967296
+                || (start as nat + count) * 4096 > self.view().len(),
+        },
+    {
+        if count == 0 || count > 32768 || start as u64 + count as u64 > 4294967296
+            || (start as u64 + count as u64) * 4096 > self.partition_bytes() { return None; }
+        let mut bytes = Vec::new();
+        let mut block = 0u32;
+        while block < count
+            invariant 0 < count <= 32768, block <= count, start as nat + count <= 4294967296,
+                (start as nat + count) * 4096 <= self.view().len(),
+                bytes@ == self.view().subrange(start as int * 4096, (start as int + block) * 4096),
+            decreases count - block,
+        {
+            let raw = self.block(start + block).unwrap().as_slice();
+            let mut offset = 0usize;
+            while offset < 4096
+                invariant offset <= 4096, raw.len() == 4096, block < count <= 32768,
+                    start as nat + count <= 4294967296,
+                    (start as nat + count) * 4096 <= self.view().len(),
+                    raw@ == self.view().subrange((start as int + block) * 4096, (start as int + block + 1) * 4096),
+                    bytes@ == self.view().subrange(start as int * 4096, (start as int + block) * 4096 + offset),
+                decreases 4096 - offset,
+            {
+                bytes.push(raw[offset]);
+                assert(bytes@ =~= self.view().subrange(start as int * 4096, (start as int + block) * 4096 + offset + 1));
+                offset += 1;
+            }
+            block += 1;
+        }
+        Some(bytes)
+    }
 }
 
 }

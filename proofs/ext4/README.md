@@ -7,9 +7,9 @@ implementation of a **Linux-compatible ext4 subset**.
 It is not a complete filesystem and is not registered with the kernel VFS.
 No mount or filesystem write path is enabled.
 
-The pinned Verus run checks **621 obligations with zero errors**, including
-240 named proof functions and 192 named executable functions.
-34 host interoperability/regression tests pass on Linux-created metadata.
+The pinned Verus run checks **632 obligations with zero errors**, including
+240 named proof functions and 201 named executable functions.
+35 host interoperability/regression tests pass on Linux-created metadata.
 [Proof status](proof-status.json) and [recorded evidence](verification-evidence.json)
 state the exact scope; tests do not discharge formal obligations.
 
@@ -35,6 +35,7 @@ state the exact scope; tests do not discharge formal obligations.
 | `namespace_model.rs`, `directory_index.rs` | Complete canonical enumeration of every allocated directory/block and live record, including empty preallocation; source/target inode types and target generations, global unique names, exact source entries and complete lookup via proved name-index positions. Bounded to 4096 directory blocks. Link counts and rooted parent topology are composed by namespace.rs. |
 | `namespace_counts.rs`, `parent_table.rs`, `tree_model.rs`, `namespace_tree.rs`, `namespace.rs` | Exact source-reference accounting, inode link counts, canonical first-block dot/dotdot placement and targets, unique ordinary directory parents and matching dotdot, root rules, bounded nonrecursive traversal and a theorem that every accepted directory reaches root. Regular file hard links are admitted; disconnected cycles and directory hard links are rejected. This is a static image certificate, not recovery/mount/VFS authority. |
 | `patch_set.rs`, `shadow_model.rs`, `snapshot.rs` | Owned exact after-images in a sorted unique target set, binary lookup, 4096-block credit and unchanged rejection. Immutable shadow sources share the original bytes and at most 32 bounded patch layers; later patches take precedence with exact block and byte provenance. The existing allocation/namespace validators read the shadow directly. Recovery admission integration remains open. |
+| `bootstrap.rs`, `snapshot.rs` | Locate journal inode 8 through the same primary superblock and group-zero descriptor before global bitmap validation; exact reserved-inode byte range and bounded complete journal capture. Discovery alone gives no recovery, mount or write authority. |
 | `layout.rs` | Checked mapping of a single initialized journal extent; journal blocks excluded from replay targets. |
 | `replay.rs`, `replay_refinement.rs` | Linux same/later revoke suppression and reallocation, latest-image selection, exact chronological redo equivalence, arbitrary partial replay restart. |
 | `scan.rs`, `scan_trace.rs`, `scan_stop.rs`, `scan_budget.rs` | Bounded ring scan, contiguous exact record coverage, complete descriptor payloads, committed cut, actual source/commit provenance, checked stopping witnesses, unique canonical maximal prefix and recovered input. Clean snapshots and active snapshots satisfying the declared resource profile are admitted. Every writer crash snapshot satisfies that scan profile. |
