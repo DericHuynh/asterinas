@@ -9,11 +9,12 @@ and a [concurrent block/extent/transaction protocol](CONCURRENCY.md).
 It is not a complete filesystem and is not registered with the kernel VFS.
 No mount or filesystem write path is enabled.
 
-The pinned entire-crate Verus run checks **2404 obligations with zero errors**,
-including 737 named proof functions and 658 named executable functions.
-275 host interoperability/regression tests pass: 213 metadata and 62 journal.
-The run includes the [EA-enabled namespace slice](EA_NAMESPACE.md), with
-23 added native regressions, 179 total negative API checks and six verifier gates.
+The pinned entire-crate Verus run checks **2529 obligations with zero errors**,
+including 767 named proof functions and 674 named executable functions.
+298 host interoperability/regression tests pass: 236 metadata and 62 journal.
+The run includes the [EA-enabled namespace](EA_NAMESPACE.md) and the bounded
+[concurrent namespace mutation core](NS_MUTATION.md), with 23 added mutation
+regressions, 195 total negative API checks and six verifier gates.
 [Proof status](proof-status.json) and [recorded evidence](verification-evidence.json)
 state the exact scope; tests do not discharge formal obligations.
 
@@ -21,6 +22,7 @@ state the exact scope; tests do not discharge formal obligations.
 
 | Component | Behavior and verification scope |
 | --- | --- |
+| `ns_rename_block.rs`, `ns_inode_touch.rs`, `ns_rename.rs`, `ns_mutation_model.rs`, `ns_checkout.rs`, `ns_prepared.rs`, `ns_mutation.rs` | New host concurrent preparation/publication contracts: exact same-parent NOREPLACE record rename, narrow inode timestamp/version/checksum framing, complete EA-enabled result admission, owned immutable checkouts, full source/revision comparison, nonwrapping epochs and finite publication histories. See [namespace mutation](NS_MUTATION.md). The pinned whole-crate run checks these contracts; broader operations, stale rebasing, credentials, actual OSTD/CortenMM locking, mounted caches and EA-enabled journal/durability composition remain open. |
 | `ea_namespace_nodes.rs`, `ea_directory.rs`, `ea_directory_index.rs`, `ea_namespace_counts.rs`, `ea_namespace_parent.rs`, `ea_namespace_topology.rs`, `ea_namespace.rs` | New EA-enabled immutable namespace implementation and proof contracts: exact ordinary source nodes, complete source-owned directory blocks and HTree settings, full-key source lookup/absence, typed generations, exact links, canonical parents and rooted directory/regular-file reachability. See [EA namespace](EA_NAMESPACE.md). The pinned whole-crate run checks these contracts; actual JBD2 admission, mutations, full EA filesystem admission and CortenMM/kernel/mount integration remain open. |
 | `dir_hash.rs` | All six Linux unkeyed filename hashes with exact modular word operations, byte packing, seed selection, half-MD4/TEA rounds and result normalization. See [directory hashes](DIRECTORY_HASHES.md). These compose with bounded source-bound DIR_INDEX admission in [HTree admission](HTREE_ADMISSION.md). Keyed encryption and Unicode casefold remain open. |
 | `htree_names.rs`, `htree_range.rs`, `directory_htree.rs`, `directory_piece.rs` | Complete source-bound DIR_INDEX and bounded LARGEDIR admission: inherited/collision intervals, Linux candidate-path closure, full-name uniqueness and source absence, initialized physical ownership, canonical dot/index/leaf records and whole-image namespace composition. See [HTree admission](HTREE_ADMISSION.md). Mutations, other formats and runtime integration remain open. |
@@ -239,6 +241,7 @@ export VERUS_BIN=/absolute/path/to/new-verus-directory/verus
 export VERUS_LIB_DIR=/absolute/path/to/new-verus-directory
 python3 proofs/ext4/tools/verify.py
 python3 proofs/ext4/tools/check_gate.py
+python3 proofs/ext4/tools/check_timeout.py
 python3 proofs/ext4/tools/check_compat.py
 ~~~
 
@@ -252,7 +255,10 @@ It rejects local proof escapes, extra flags, omitted modules and source-inventor
 requires named proof and executable coverage; invalidates stale artifacts on failure;
 and records source, runner, manifest, verifier and emitted-library hashes.
 The negative checks include an actual failing Verus assertion in a disposable copy.
-179 negative Rust compilation checks reject certificate/source substitution, edit/queue ownership violations, request reuse/forgery, completion redirection, state replacement, command mutation and finishing through a live command loan.
+The separate timeout regression fault-injects a disposable runner and checks
+current partial logs, stale-log/artifact invalidation and failure reporting. It
+executes no verifier subprocess and supplies no formal filesystem proof evidence.
+195 negative Rust compilation checks reject certificate/source substitution, edit/queue ownership violations, request reuse/forgery, completion redirection, state replacement, command mutation and finishing through a live command loan.
 [CI](../../.github/workflows/verify_ext4.yml) runs the same checks.
 
 The emitted host library exercises proof erasure and Linux byte compatibility.

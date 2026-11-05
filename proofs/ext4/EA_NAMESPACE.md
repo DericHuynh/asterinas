@@ -21,8 +21,13 @@ not discharge formal obligations.
 This layer does not authorize mounting or filesystem operations.
 The mapped internal journal still requires actual JBD2 identity, state and
 recovery admission.
-Runtime credentials, concurrent namespace mutation, durable namespace updates
-and CortenMM/OSTD/device refinement remain separate obligations.
+Runtime credentials, durable namespace updates and CortenMM/OSTD/device
+refinement remain separate obligations. A separate [host namespace mutation
+core](NS_MUTATION.md) composes checked parallel preparation and version-checked
+same-parent NOREPLACE publication in the bounded host profile. It is included
+in the pinned complete verification and compilation run and does not change
+this static certificate into
+mounted operation authority.
 
 | Design component | Implementation and contract | Remaining boundary |
 | --- | --- | --- |

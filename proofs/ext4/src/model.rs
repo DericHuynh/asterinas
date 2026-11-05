@@ -332,3 +332,17 @@ pub mod ea_namespace_parent;
 pub mod ea_namespace_topology;
 
 pub mod ea_namespace;
+
+pub mod ns_mutation_model;
+
+pub mod ns_inode_touch;
+
+pub mod ns_rename_block;
+
+pub mod ns_rename;
+
+pub mod ns_checkout;
+
+pub mod ns_prepared;
+
+pub mod ns_mutation;
