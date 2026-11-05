@@ -318,3 +318,17 @@ pub mod ea_ordinary;
 pub mod ea_allocation_counts;
 
 pub mod ea_allocation;
+
+pub mod ea_namespace_nodes;
+
+pub mod ea_directory;
+
+pub mod ea_directory_index;
+
+pub mod ea_namespace_counts;
+
+pub mod ea_namespace_parent;
+
+pub mod ea_namespace_topology;
+
+pub mod ea_namespace;

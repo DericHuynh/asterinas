@@ -6312,7 +6312,7 @@ mod htree_indexes {
         }
     }
 
-    fn deepen_indexed_image(
+    pub(super) fn deepen_indexed_image(
         img: &[u8],
         table: u32,
         root_physical: usize,
@@ -11961,5 +11961,713 @@ mod ea_volume_allocation {
         assert!(ea_allocation::inspect(&snapshot, u32::MAX, 0, 4096).is_none());
         assert!(ea_allocation::inspect(&snapshot, u32::MAX, 1, 4095).is_none());
         assert!(ea_allocation::inspect(&snapshot, u32::MAX, 4097, 4096).is_none());
+    }
+}
+
+// Native EA-enabled namespace tests execute emitted code on Linux-created
+// images. They do not discharge the formal source and topology obligations.
+mod ea_namespace_admission {
+    use core::{ea_allocation, ea_namespace, snapshot::Snapshot};
+
+    use super::{
+        ea_inode_values::{fixture, fixture_with_features, offset, seal_raw},
+        inline_xattr_updates::command,
+        *,
+    };
+
+    #[derive(Clone)]
+    struct Record {
+        at: usize,
+        next: usize,
+        target: u32,
+        name: Vec<u8>,
+    }
+    fn data_blocks(img: &[u8], table: u32, number: u32) -> Vec<u32> {
+        let at = offset(table, number);
+        let count = le32(img, at + 4) as usize / 4096;
+        let root = &img[at + 40..at + 100];
+        assert_eq!(core::bytes::read_le16(root, 6), Some(0));
+        let mut blocks = vec![0; count];
+        for i in 0..core::bytes::read_le16(root, 2).unwrap() as usize {
+            let extent = core::extent::parse(root, 12 + 12 * i, le32(img, 1028)).unwrap();
+            assert!(extent.initialized);
+            for j in 0..extent.length {
+                let logical = (extent.logical + j) as usize;
+                if logical < blocks.len() {
+                    assert_eq!(blocks[logical], 0);
+                    blocks[logical] = extent.physical + j;
+                }
+            }
+        }
+        assert!(blocks.iter().all(|b| *b > 0));
+        blocks
+    }
+    fn records(img: &[u8], physical: u32) -> Vec<Record> {
+        let raw = &img[physical as usize * 4096..(physical as usize + 1) * 4096];
+        let mut at = 0;
+        let mut result = Vec::new();
+        while at < 4084 {
+            let next = at + core::bytes::read_le16(raw, at + 4).unwrap() as usize;
+            let length = raw[at + 6] as usize;
+            assert!(next > at && next <= 4084 && at + 8 + length <= next);
+            result.push(Record {
+                at,
+                next,
+                target: le32(raw, at),
+                name: raw[at + 8..at + 8 + length].to_vec(),
+            });
+            at = next;
+        }
+        assert_eq!(at, 4084);
+        result
+    }
+    fn location(img: &[u8], table: u32, number: u32, name: &[u8]) -> (u32, usize) {
+        for physical in data_blocks(img, table, number) {
+            if let Some(record) = records(img, physical)
+                .into_iter()
+                .find(|r| r.target != 0 && r.name == name)
+            {
+                return (physical, record.at);
+            }
+        }
+        panic!("missing source directory key {name:?}");
+    }
+    fn seal_inode(img: &mut [u8], table: u32, number: u32, seed: u32) {
+        let at = offset(table, number);
+        seal_raw(&mut img[at..at + 256], number, seed);
+    }
+    fn links(img: &mut [u8], table: u32, number: u32, count: u16, seed: u32) {
+        let at = offset(table, number);
+        img[at + 26..at + 28].copy_from_slice(&count.to_le_bytes());
+        seal_inode(img, table, number, seed);
+    }
+    fn seal_directory(img: &mut [u8], table: u32, number: u32, physical: u32, seed: u32) {
+        let seed = core::inode::inode_seed(seed, number, le32(img, offset(table, number) + 100));
+        let at = physical as usize * 4096;
+        let hash = core::crc::crc32c(seed, &img[at..at + 4084]);
+        img[at + 4092..at + 4096].copy_from_slice(&hash.to_le_bytes());
+    }
+    fn seal_super(img: &mut [u8]) {
+        let hash = core::crc::crc32c(0xffffffff, &img[1024..2044]);
+        img[2044..2048].copy_from_slice(&hash.to_le_bytes());
+    }
+    fn append_named(
+        img: &mut [u8],
+        table: u32,
+        number: u32,
+        target: u32,
+        kind: u8,
+        name: &[u8],
+        seed: u32,
+    ) {
+        assert!(!name.is_empty() && name.len() <= 255);
+        let physical = data_blocks(img, table, number)[0];
+        let previous = records(img, physical).pop().unwrap();
+        assert_eq!(previous.next, 4084);
+        let minimum = (8 + previous.name.len() + 3) / 4 * 4;
+        let next = previous.at + minimum;
+        assert!(next + (8 + name.len() + 3) / 4 * 4 <= 4084);
+        let at = physical as usize * 4096;
+        let raw = &mut img[at..at + 4096];
+        raw[previous.at + 4..previous.at + 6].copy_from_slice(&(minimum as u16).to_le_bytes());
+        raw[next..4084].fill(0);
+        raw[next..next + 4].copy_from_slice(&target.to_le_bytes());
+        raw[next + 4..next + 6].copy_from_slice(&((4084 - next) as u16).to_le_bytes());
+        raw[next + 6] = name.len() as u8;
+        raw[next + 7] = kind;
+        raw[next + 8..next + 8 + name.len()].copy_from_slice(name);
+        seal_directory(img, table, number, physical, seed);
+    }
+    fn allocation_admitted(img: &[u8], bytes: u64) {
+        let snapshot = Snapshot::from_bytes(img);
+        assert!(
+            ea_allocation::inspect(&snapshot, u32::MAX, 8, bytes).is_some(),
+            "physical allocation remains valid"
+        );
+    }
+    fn rejected(img: &[u8], bytes: u64) {
+        allocation_admitted(img, bytes);
+        let snapshot = Snapshot::from_bytes(img);
+        assert!(ea_namespace::inspect(&snapshot, u32::MAX, 8, bytes).is_none());
+    }
+    fn fsck(img: &[u8], prefix: &str) {
+        let path = format!("build/{prefix}.img");
+        std::fs::write(&path, img).unwrap();
+        let fsck = std::env::var("E2FSCK_BIN").unwrap_or_else(|_| "e2fsck".into());
+        command(&fsck, &["-fn", &path], false);
+        let _ = std::fs::remove_file(path);
+    }
+    fn seal_index(raw: &mut [u8], first: usize, seed: u32) {
+        let count = core::bytes::read_le16(raw, first + 2).unwrap() as usize;
+        let limit = core::bytes::read_le16(raw, first).unwrap() as usize;
+        let tail = first + limit * 8;
+        let prefix = core::crc::crc32c(seed, &raw[..first + count * 8]);
+        let reserved = core::crc::crc32c(prefix, &raw[tail..tail + 4]);
+        let hash = core::crc::crc32c(reserved, &[0, 0, 0, 0]);
+        raw[tail + 4..tail + 8].copy_from_slice(&hash.to_le_bytes());
+    }
+    fn indexed_image(prefix: &str) -> Vec<u8> {
+        let path = format!("build/{prefix}.img");
+        let empty = format!("build/{prefix}-empty.bin");
+        let script = format!("build/{prefix}-commands.txt");
+        let mkfs = std::env::var("MKE2FS_BIN").unwrap_or_else(|_| "mke2fs".into());
+        let debugfs = std::env::var("DEBUGFS_BIN").unwrap_or_else(|_| "debugfs".into());
+        let fsck = std::env::var("E2FSCK_BIN").unwrap_or_else(|_| "e2fsck".into());
+        command(
+            &mkfs,
+            &[
+                "-q",
+                "-F",
+                "-t",
+                "ext4",
+                "-b",
+                "4096",
+                "-I",
+                "256",
+                "-O",
+                "none,has_journal,extent,filetype,sparse_super,large_file,extra_isize,metadata_csum,dir_index,ea_inode",
+                "-E",
+                "lazy_itable_init=0,lazy_journal_init=0",
+                &path,
+                "16384",
+            ],
+            false,
+        );
+        std::fs::write(&empty, []).unwrap();
+        let mut requests = String::from("mkdir /indexed\n");
+        for i in 0..300 {
+            requests += &format!("write {empty} /indexed/{i:04}-{}\n", "x".repeat(210));
+        }
+        std::fs::write(&script, requests).unwrap();
+        command(&debugfs, &["-w", "-f", &script, &path], false);
+        command(&fsck, &["-fyD", &path], true);
+        command(&fsck, &["-fn", &path], false);
+        let img = std::fs::read(&path).unwrap();
+        assert_ne!(le32(&img, offset(le32(&img, 4104), 12) + 32) & 0x1000, 0);
+        for file in [&path, &empty, &script] {
+            let _ = std::fs::remove_file(file);
+        }
+        img
+    }
+
+    #[test]
+    fn complete_ea_namespace_retains_rooted_names_and_ea_payloads_under_all_seed_descriptor_profiles()
+     {
+        for wide in [false, true] {
+            for stored in [false, true] {
+                let fixture = fixture_with_features(
+                    &format!("ea-namespace-profile-{wide}-{stored}"),
+                    4096,
+                    wide,
+                    stored,
+                );
+                let snapshot = Snapshot::from_bytes(&fixture.bytes);
+                let namespace = ea_namespace::inspect(&snapshot, fixture.inodes, 1, 4096).unwrap();
+                assert_eq!(namespace.parent(2), Some(2));
+                assert_eq!(namespace.parent(11), Some(2));
+                assert_eq!(namespace.depth(2), Some(0));
+                assert_eq!(namespace.depth(11), Some(1));
+                for (name, target, kind) in [
+                    (b"first".as_slice(), 12, 1),
+                    (b"second".as_slice(), 13, 1),
+                    (b"lost+found".as_slice(), 11, 2),
+                ] {
+                    let entry = namespace.lookup(2, name).unwrap();
+                    assert_eq!(
+                        (entry.identity().0, entry.identity().1, entry.identity().3),
+                        (2, target, kind)
+                    );
+                    assert_eq!(entry.name(), name);
+                }
+                assert_eq!(namespace.lookup(11, b"..").unwrap().identity().1, 2);
+                assert_eq!(namespace.index().len(), 7);
+                assert_eq!(namespace.index().directory_count(), 2);
+                let mut total_blocks = 0;
+                for ordinal in 0..namespace.index().directory_count() {
+                    let directory = namespace.index().directory(ordinal).unwrap();
+                    let blocks = data_blocks(&fixture.bytes, fixture.table, directory.number());
+                    assert_eq!(directory.block_count() as usize, blocks.len());
+                    assert_eq!(directory.raw_blocks().len(), blocks.len());
+                    for (logical, physical) in blocks.iter().enumerate() {
+                        assert_eq!(directory.physical_block(logical as u32), Some(*physical));
+                        let at = *physical as usize * 4096;
+                        assert_eq!(
+                            directory.raw_blocks()[logical],
+                            &fixture.bytes[at..at + 4096]
+                        );
+                    }
+                    total_blocks += directory.block_count();
+                }
+                assert_eq!(namespace.index().block_count(), total_blocks);
+                assert!(
+                    namespace
+                        .index()
+                        .directory(namespace.index().directory_count())
+                        .is_none()
+                );
+                assert_eq!(namespace.lookup(2, b".").unwrap().location(), (0, 0));
+                assert_eq!(namespace.lookup(2, b"..").unwrap().location(), (0, 1));
+                assert_eq!(
+                    namespace
+                        .allocation()
+                        .integrity()
+                        .value(0)
+                        .unwrap()
+                        .as_slice(),
+                    fixture.value
+                );
+                assert!(
+                    namespace.index().nodes().get(14).is_none(),
+                    "EA inode is not a namespace target"
+                );
+                for number in [0, 8, 12, 13, 14, u32::MAX] {
+                    assert!(namespace.parent(number).is_none());
+                    assert!(namespace.depth(number).is_none());
+                }
+                assert!(namespace.lookup(2, b"First").is_none());
+                assert!(namespace.lookup(2, b"firs").is_none());
+                assert!(namespace.lookup(8, b".").is_none());
+                assert!(namespace.lookup(14, b".").is_none());
+                assert!(namespace.index().get(namespace.index().len()).is_none());
+            }
+        }
+    }
+
+    #[test]
+    fn lookup_generation_is_derived_from_the_exact_source_target_inode() {
+        let fixture = fixture("ea-namespace-generation", 4096);
+        let mut img = fixture.bytes.clone();
+        let at = offset(fixture.table, 12);
+        let generation = le32(&img, at + 100).wrapping_add(0x8172_3401);
+        img[at + 100..at + 104].copy_from_slice(&generation.to_le_bytes());
+        seal_inode(&mut img, fixture.table, 12, fixture.seed);
+        allocation_admitted(&img, 4096);
+        let snapshot = Snapshot::from_bytes(&img);
+        let namespace = ea_namespace::inspect(&snapshot, u32::MAX, 1, 4096).unwrap();
+        assert_eq!(
+            namespace.lookup(2, b"first").unwrap().identity(),
+            (2, 12, generation, 1)
+        );
+        assert_eq!(
+            namespace.index().nodes().get(12).unwrap().generation,
+            generation
+        );
+    }
+
+    #[test]
+    fn regular_hard_links_compare_complete_byte_names_including_non_utf8_and_maximum_length() {
+        let fixture = fixture("ea-namespace-hardlinks", 4096);
+        let mut img = fixture.bytes.clone();
+        let long = vec![b'x'; 255];
+        for name in [
+            b"first-extra".as_slice(),
+            &[0xff, 0x80, b'x'],
+            long.as_slice(),
+        ] {
+            append_named(&mut img, fixture.table, 2, 12, 1, name, fixture.seed);
+        }
+        links(&mut img, fixture.table, 12, 4, fixture.seed);
+        fsck(&img, "ea-namespace-hardlinks-result");
+        let snapshot = Snapshot::from_bytes(&img);
+        let namespace = ea_namespace::inspect(&snapshot, u32::MAX, 1, 4096).unwrap();
+        for name in [
+            b"first".as_slice(),
+            b"first-extra".as_slice(),
+            &[0xff, 0x80, b'x'],
+            long.as_slice(),
+        ] {
+            assert_eq!(namespace.lookup(2, name).unwrap().identity().1, 12);
+        }
+        assert!(namespace.lookup(2, b"first-extr").is_none());
+        assert!(namespace.lookup(2, &[0xff, 0x80]).is_none());
+        assert!(namespace.lookup(2, &long[..254]).is_none());
+    }
+
+    #[test]
+    fn deleted_records_do_not_hide_a_later_live_source_entry_or_create_lookup_keys() {
+        let fixture = fixture("ea-namespace-dead-record", 4096);
+        let mut img = fixture.bytes.clone();
+        append_named(&mut img, fixture.table, 2, 0, 0, b"dead", fixture.seed);
+        append_named(
+            &mut img,
+            fixture.table,
+            2,
+            12,
+            1,
+            b"after-dead",
+            fixture.seed,
+        );
+        links(&mut img, fixture.table, 12, 2, fixture.seed);
+        let snapshot = Snapshot::from_bytes(&img);
+        let namespace = ea_namespace::inspect(&snapshot, u32::MAX, 1, 4096).unwrap();
+        assert!(namespace.lookup(2, b"dead").is_none());
+        assert_eq!(namespace.lookup(2, b"after-dead").unwrap().identity().1, 12);
+        assert_eq!(namespace.lookup(2, b"first").unwrap().identity().1, 12);
+    }
+
+    #[test]
+    fn directory_entries_cannot_expose_ea_journal_reserved_or_unallocated_inode_targets() {
+        let fixture = fixture("ea-namespace-targets", 4096);
+        let (physical, at) = location(&fixture.bytes, fixture.table, 2, b"first");
+        for target in [14u32, 8, 5, 15] {
+            let mut img = fixture.bytes.clone();
+            let start = physical as usize * 4096 + at;
+            img[start..start + 4].copy_from_slice(&target.to_le_bytes());
+            seal_directory(&mut img, fixture.table, 2, physical, fixture.seed);
+            rejected(&img, 4096);
+        }
+    }
+
+    #[test]
+    fn directory_entry_types_must_match_the_source_ordinary_inode_type() {
+        let fixture = fixture("ea-namespace-types", 4096);
+        for (name, wrong) in [(b"first".as_slice(), 2u8), (b"lost+found".as_slice(), 1u8)] {
+            let mut img = fixture.bytes.clone();
+            let (physical, at) = location(&img, fixture.table, 2, name);
+            img[physical as usize * 4096 + at + 7] = wrong;
+            seal_directory(&mut img, fixture.table, 2, physical, fixture.seed);
+            rejected(&img, 4096);
+        }
+    }
+
+    #[test]
+    fn every_directory_block_checksum_is_checked_even_when_preallocated_records_are_empty() {
+        let fixture = fixture("ea-namespace-empty-checksum", 4096);
+        let blocks = data_blocks(&fixture.bytes, fixture.table, 11);
+        assert!(blocks.len() > 1);
+        let mut img = fixture.bytes.clone();
+        img[*blocks.last().unwrap() as usize * 4096 + 4092] ^= 0x80;
+        rejected(&img, 4096);
+    }
+
+    #[test]
+    fn resealed_record_lengths_cannot_skip_or_overrun_the_complete_directory_chain() {
+        let fixture = fixture("ea-namespace-record-length", 4096);
+        let (physical, at) = location(&fixture.bytes, fixture.table, 2, b"first");
+        for length in [0u16, 10, 4092] {
+            let mut img = fixture.bytes.clone();
+            let start = physical as usize * 4096 + at;
+            img[start + 4..start + 6].copy_from_slice(&length.to_le_bytes());
+            seal_directory(&mut img, fixture.table, 2, physical, fixture.seed);
+            rejected(&img, 4096);
+        }
+    }
+
+    #[test]
+    fn complete_full_key_uniqueness_rejects_duplicate_names_with_distinct_live_targets() {
+        let fixture = fixture("ea-namespace-duplicate", 4096);
+        let mut img = fixture.bytes.clone();
+        let (physical, at) = location(&img, fixture.table, 2, b"second");
+        let start = physical as usize * 4096 + at;
+        img[start + 6] = 5;
+        img[start + 8..start + 13].copy_from_slice(b"first");
+        seal_directory(&mut img, fixture.table, 2, physical, fixture.seed);
+        rejected(&img, 4096);
+    }
+
+    #[test]
+    fn live_names_cannot_contain_a_path_separator_or_nul_even_after_crc_resealing() {
+        let fixture = fixture("ea-namespace-invalid-names", 4096);
+        let (physical, at) = location(&fixture.bytes, fixture.table, 2, b"first");
+        for byte in [b'/', 0] {
+            let mut img = fixture.bytes.clone();
+            img[physical as usize * 4096 + at + 9] = byte;
+            seal_directory(&mut img, fixture.table, 2, physical, fixture.seed);
+            rejected(&img, 4096);
+        }
+    }
+
+    #[test]
+    fn regular_and_directory_link_counts_equal_complete_source_namespace_references() {
+        let fixture = fixture("ea-namespace-link-count", 4096);
+        for (number, count) in [(12u32, 2u16), (2, 4)] {
+            let mut img = fixture.bytes.clone();
+            links(&mut img, fixture.table, number, count, fixture.seed);
+            rejected(&img, 4096);
+        }
+    }
+
+    #[test]
+    fn an_allocated_regular_inode_without_a_directory_reference_is_not_a_valid_namespace() {
+        let fixture = fixture("ea-namespace-unreferenced-file", 4096);
+        let mut img = fixture.bytes.clone();
+        let (physical, at) = location(&img, fixture.table, 2, b"first");
+        img[physical as usize * 4096 + at..physical as usize * 4096 + at + 4].fill(0);
+        seal_directory(&mut img, fixture.table, 2, physical, fixture.seed);
+        rejected(&img, 4096);
+    }
+
+    #[test]
+    fn dot_and_dotdot_are_required_in_their_first_block_source_positions() {
+        let fixture = fixture("ea-namespace-dot-positions", 4096);
+        let physical = data_blocks(&fixture.bytes, fixture.table, 2)[0];
+        let start = physical as usize * 4096;
+        for variant in 0..3 {
+            let mut img = fixture.bytes.clone();
+            if variant < 2 {
+                let at = if variant == 0 { 0 } else { 12 };
+                img[start + at..start + at + 4].fill(0);
+                links(&mut img, fixture.table, 2, 2, fixture.seed);
+            } else {
+                img[start + 6] = 2;
+                img[start + 8..start + 10].copy_from_slice(b"..");
+                img[start + 18] = 1;
+                img[start + 20] = b'.';
+            }
+            seal_directory(&mut img, fixture.table, 2, physical, fixture.seed);
+            rejected(&img, 4096);
+        }
+    }
+
+    #[test]
+    fn dot_must_target_its_own_directory_when_all_reference_counts_are_repaired() {
+        let fixture = fixture("ea-namespace-dot-target", 4096);
+        let mut img = fixture.bytes.clone();
+        let physical = data_blocks(&img, fixture.table, 2)[0];
+        img[physical as usize * 4096..physical as usize * 4096 + 4]
+            .copy_from_slice(&11u32.to_le_bytes());
+        links(&mut img, fixture.table, 2, 2, fixture.seed);
+        links(&mut img, fixture.table, 11, 3, fixture.seed);
+        seal_directory(&mut img, fixture.table, 2, physical, fixture.seed);
+        rejected(&img, 4096);
+    }
+
+    #[test]
+    fn dotdot_parent_must_match_the_unique_named_parent_after_link_counts_are_repaired() {
+        let fixture = fixture("ea-namespace-parent-mismatch", 4096);
+        let mut img = fixture.bytes.clone();
+        let physical = data_blocks(&img, fixture.table, 11)[0];
+        img[physical as usize * 4096 + 12..physical as usize * 4096 + 16]
+            .copy_from_slice(&11u32.to_le_bytes());
+        links(&mut img, fixture.table, 2, 2, fixture.seed);
+        links(&mut img, fixture.table, 11, 3, fixture.seed);
+        seal_directory(&mut img, fixture.table, 11, physical, fixture.seed);
+        rejected(&img, 4096);
+    }
+
+    #[test]
+    fn a_directory_cannot_have_two_named_incoming_links_even_with_exact_stored_counts() {
+        let fixture = fixture("ea-namespace-directory-hardlink", 4096);
+        let mut img = fixture.bytes.clone();
+        append_named(
+            &mut img,
+            fixture.table,
+            2,
+            11,
+            2,
+            b"dir-alias",
+            fixture.seed,
+        );
+        links(&mut img, fixture.table, 11, 3, fixture.seed);
+        rejected(&img, 4096);
+    }
+
+    #[test]
+    fn a_named_edge_to_root_is_rejected_even_when_its_complete_reference_count_matches() {
+        let fixture = fixture("ea-namespace-named-root", 4096);
+        let mut img = fixture.bytes.clone();
+        append_named(
+            &mut img,
+            fixture.table,
+            11,
+            2,
+            2,
+            b"root-alias",
+            fixture.seed,
+        );
+        links(&mut img, fixture.table, 2, 4, fixture.seed);
+        rejected(&img, 4096);
+    }
+
+    #[test]
+    fn locally_consistent_disconnected_directory_cycle_does_not_reach_the_root() {
+        let fixture = fixture("ea-namespace-disconnected-cycle", 4096);
+        let mut img = fixture.bytes.clone();
+        let (root, lost_at) = location(&img, fixture.table, 2, b"lost+found");
+        img[root as usize * 4096 + lost_at..root as usize * 4096 + lost_at + 4].fill(0);
+        let lost = data_blocks(&img, fixture.table, 11)[0];
+        img[lost as usize * 4096 + 12..lost as usize * 4096 + 16]
+            .copy_from_slice(&11u32.to_le_bytes());
+        append_named(&mut img, fixture.table, 11, 11, 2, b"loop", fixture.seed);
+        links(&mut img, fixture.table, 2, 2, fixture.seed);
+        links(&mut img, fixture.table, 11, 3, fixture.seed);
+        seal_directory(&mut img, fixture.table, 2, root, fixture.seed);
+        seal_directory(&mut img, fixture.table, 11, lost, fixture.seed);
+        allocation_admitted(&img, 4096);
+        let snapshot = Snapshot::from_bytes(&img);
+        let allocation = ea_allocation::inspect(&snapshot, u32::MAX, 1, 4096).unwrap();
+        let index = core::ea_directory_index::build(&allocation).unwrap();
+        assert!(index.lookup(2, b"lost+found").is_none());
+        assert_eq!(index.lookup(11, b"..").unwrap().identity().1, 11);
+        assert_eq!(index.lookup(11, b"loop").unwrap().identity().1, 11);
+        assert_eq!(
+            (0..index.len())
+                .filter(|i| index.get(*i).unwrap().identity().1 == 11)
+                .count(),
+            3
+        );
+        assert!(
+            ea_namespace::inspect(&snapshot, u32::MAX, 1, 4096).is_none(),
+            "cycle fails beyond local entry/count checks"
+        );
+    }
+
+    #[test]
+    fn linux_nested_directories_and_regular_hard_links_keep_exact_parent_depths() {
+        let fixture = fixture("ea-namespace-nested", 4096);
+        let path = "build/ea-namespace-nested-work.img";
+        let script = "build/ea-namespace-nested-commands.txt";
+        std::fs::write(path, &fixture.bytes).unwrap();
+        std::fs::write(script, "mkdir /a\nmkdir /a/b\nln /first /a/b/hard\n").unwrap();
+        let debugfs = std::env::var("DEBUGFS_BIN").unwrap_or_else(|_| "debugfs".into());
+        command(&debugfs, &["-w", "-f", script, path], false);
+        let mut img = std::fs::read(path).unwrap();
+        links(&mut img, fixture.table, 12, 2, fixture.seed);
+        fsck(&img, "ea-namespace-nested-result");
+        let snapshot = Snapshot::from_bytes(&img);
+        let namespace = ea_namespace::inspect(&snapshot, u32::MAX, 1, 4096).unwrap();
+        let a = namespace.lookup(2, b"a").unwrap().identity().1;
+        let b = namespace.lookup(a, b"b").unwrap().identity().1;
+        assert_eq!(namespace.parent(a), Some(2));
+        assert_eq!(namespace.parent(b), Some(a));
+        assert_eq!(namespace.depth(a), Some(1));
+        assert_eq!(namespace.depth(b), Some(2));
+        assert_eq!(namespace.lookup(b, b"hard").unwrap().identity().1, 12);
+        assert_eq!(namespace.lookup(2, b"first").unwrap().identity().1, 12);
+        for file in [path, script] {
+            let _ = std::fs::remove_file(file);
+        }
+    }
+
+    #[test]
+    fn actual_linux_htrees_bind_lookup_names_to_source_hash_seed_and_leaf_ranges() {
+        let img = indexed_image("ea-namespace-indexed");
+        let table = le32(&img, 4104);
+        let seed = core::superblock::metadata_checksum_seed(&img[1024..2048]).unwrap();
+        let physical = data_blocks(&img, table, 12)[0];
+        let inode_seed = core::inode::inode_seed(seed, 12, le32(&img, offset(table, 12) + 100));
+        let start = physical as usize * 4096;
+        assert!(core::bytes::read_le16(&img, start + 34).unwrap() > 1);
+        let snapshot = Snapshot::from_bytes(&img);
+        let namespace = ea_namespace::inspect(&snapshot, u32::MAX, 1, 0).unwrap();
+        assert_eq!(namespace.parent(12), Some(2));
+        for i in 0..300 {
+            let name = format!("{i:04}-{}", "x".repeat(210));
+            assert_eq!(
+                namespace.lookup(12, name.as_bytes()).unwrap().identity().1,
+                13 + i
+            );
+        }
+        assert!(namespace.lookup(12, b"missing").is_none());
+        for duplicate in [false, true] {
+            let mut wrong = img.clone();
+            let left = le32(&wrong, start + 36);
+            let right = le32(&wrong, start + 44);
+            if duplicate {
+                wrong[start + 44..start + 48].copy_from_slice(&left.to_le_bytes());
+            } else {
+                wrong[start + 36..start + 40].copy_from_slice(&right.to_le_bytes());
+                wrong[start + 44..start + 48].copy_from_slice(&left.to_le_bytes());
+            }
+            seal_index(&mut wrong[start..start + 4096], 32, inode_seed);
+            rejected(&wrong, 0);
+        }
+        let mut wrong_seed = img.clone();
+        wrong_seed[1260] ^= 1;
+        seal_super(&mut wrong_seed);
+        rejected(&wrong_seed, 0);
+    }
+
+    #[test]
+    fn actual_source_largedir_flag_admits_depth_two_and_rejects_missing_flag_or_depth_three() {
+        let img = indexed_image("ea-namespace-largedir");
+        let table = le32(&img, 4104);
+        let physical = data_blocks(&img, table, 12)[0];
+        let blocks = le32(&img, offset(table, 12) + 4) / 4096;
+        let seed = core::superblock::metadata_checksum_seed(&img[1024..2048]).unwrap();
+        let inode_seed = core::inode::inode_seed(seed, 12, le32(&img, offset(table, 12) + 100));
+        let deep = super::htree_indexes::deepen_indexed_image(
+            &img,
+            table,
+            physical as usize,
+            12,
+            blocks,
+            inode_seed,
+        );
+        fsck(&deep, "ea-namespace-largedir-result");
+        let snapshot = Snapshot::from_bytes(&deep);
+        let namespace = ea_namespace::inspect(&snapshot, u32::MAX, 1, 0).unwrap();
+        for i in 0..300 {
+            let name = format!("{i:04}-{}", "x".repeat(210));
+            assert_eq!(
+                namespace.lookup(12, name.as_bytes()).unwrap().identity().1,
+                13 + i
+            );
+        }
+        let mut missing = deep.clone();
+        let flags = le32(&missing, 1120) & !0x4000;
+        missing[1120..1124].copy_from_slice(&flags.to_le_bytes());
+        seal_super(&mut missing);
+        rejected(&missing, 0);
+        let mut too_deep = deep.clone();
+        let at = physical as usize * 4096;
+        too_deep[at + 30] = 3;
+        seal_index(&mut too_deep[at..at + 4096], 32, inode_seed);
+        rejected(&too_deep, 0);
+    }
+
+    #[test]
+    fn dir_nlink_unknown_directory_marker_never_weakens_regular_reference_counts() {
+        let fixture = fixture("ea-namespace-dir-nlink", 4096);
+        let mut img = fixture.bytes.clone();
+        let flags = le32(&img, 1124) | 0x20;
+        img[1124..1128].copy_from_slice(&flags.to_le_bytes());
+        seal_super(&mut img);
+        links(&mut img, fixture.table, 2, 1, fixture.seed);
+        links(&mut img, fixture.table, 11, 1, fixture.seed);
+        let snapshot = Snapshot::from_bytes(&img);
+        let namespace = ea_namespace::inspect(&snapshot, u32::MAX, 1, 4096).unwrap();
+        assert_eq!(namespace.parent(11), Some(2));
+        let mut no_feature = img.clone();
+        no_feature[1124..1128].copy_from_slice(&(flags & !0x20).to_le_bytes());
+        seal_super(&mut no_feature);
+        rejected(&no_feature, 4096);
+        let mut no_regular_reference = img.clone();
+        let (physical, at) = location(&no_regular_reference, fixture.table, 2, b"first");
+        let start = physical as usize * 4096 + at;
+        no_regular_reference[start..start + 4].fill(0);
+        seal_directory(
+            &mut no_regular_reference,
+            fixture.table,
+            2,
+            physical,
+            fixture.seed,
+        );
+        rejected(&no_regular_reference, 4096);
+        append_named(
+            &mut img,
+            fixture.table,
+            2,
+            12,
+            1,
+            b"file-hard",
+            fixture.seed,
+        );
+        rejected(&img, 4096);
+    }
+
+    #[test]
+    fn namespace_budgets_never_return_a_silently_partial_directory_or_inode_catalogue() {
+        let fixture = fixture("ea-namespace-budgets", 4096);
+        let snapshot = Snapshot::from_bytes(&fixture.bytes);
+        assert!(ea_namespace::inspect(&snapshot, fixture.inodes, 1, 4096).is_some());
+        assert!(ea_namespace::inspect(&snapshot, fixture.inodes - 1, 1, 4096).is_none());
+        assert!(ea_namespace::inspect(&snapshot, fixture.inodes, 0, 4096).is_none());
+        assert!(ea_namespace::inspect(&snapshot, fixture.inodes, 1, 4095).is_none());
+        let mut huge = fixture.bytes.clone();
+        let at = offset(fixture.table, 11);
+        huge[at + 4..at + 8].copy_from_slice(&(4097u32 * 4096).to_le_bytes());
+        seal_inode(&mut huge, fixture.table, 11, fixture.seed);
+        rejected(&huge, 4096);
     }
 }
