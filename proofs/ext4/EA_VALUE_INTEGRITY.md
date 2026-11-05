@@ -121,9 +121,11 @@ and future updates require separate compatibility and lifecycle proofs.
 | Physical resources | One ownership ledger covers all admitted EA values; physical claim lengths remain bounded by the declared volume. |
 | Runtime and authority | Host-owned immutable bytes are neither mounted read handles nor credential, allocator, lock, journal, DMA or device authority. |
 
-The next integration must combine this EA value closure with the ordinary and
-journal extent ownership ledger, complete physical bitmap equality, namespace and
-journal admission, and exact source-bound ordinary inode residual accounting.
+The separate [EA allocation compositor](EA_ALLOCATION.md) now combines this EA
+value closure with ordinary and journal extent ownership, complete physical
+bitmap equality and exact source-bound ordinary inode residual accounting.
+Directory/namespace and actual JBD2 identity/state/recovery admission remain
+separate integration obligations.
 Allocation, block/value COW, deduplication, refcount and logical quota changes,
 orphan/reclamation, concurrent cache/lock protocols and all resulting durable
 home images remain unfinished. Runtime execution must refine Asterinas's

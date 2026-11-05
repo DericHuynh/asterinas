@@ -11443,3 +11443,523 @@ mod ea_value_integrity {
         assert!(all.reference_census().logical().is_empty());
     }
 }
+
+// Global EA allocation regression tests execute emitted code on Linux-created
+// source images. Native tests do not discharge formal obligations.
+mod ea_volume_allocation {
+    use core::{ea_allocation, ea_integrity, snapshot::Snapshot};
+
+    use super::{
+        ea_inode_values::{
+            Fixture, entry_hash, fixture, fixture_with_features, mappings, offset, seal_raw,
+        },
+        *,
+    };
+
+    fn seal_inode(img: &mut [u8], fixture: &Fixture, number: u32) {
+        let at = offset(fixture.table, number);
+        seal_raw(&mut img[at..at + 256], number, fixture.seed);
+    }
+    fn seal_group(img: &mut [u8], number: u32, seed: u32) {
+        let width = core::superblock::descriptor_length(&img[1024..2048]).unwrap();
+        let at = 4096 + number as usize * width;
+        let group_seed = core::crc::crc32c(seed, &number.to_le_bytes());
+        let part = core::crc::crc32c(group_seed, &img[at..at + 30]);
+        let zeroed = core::crc::crc32c(part, &[0, 0]);
+        let checksum = core::crc::crc32c(zeroed, &img[at + 32..at + width]) as u16;
+        img[at + 30..at + 32].copy_from_slice(&checksum.to_le_bytes());
+    }
+    fn seal_external(img: &mut [u8], fixture: &Fixture, address: u32) {
+        let at = address as usize * 4096;
+        let checksum =
+            core::xattr::checksum(&img[at..at + 4096], address as u64, fixture.seed).unwrap();
+        img[at + 16..at + 20].copy_from_slice(&checksum.to_le_bytes());
+    }
+    fn fresh_block(img: &[u8]) -> u32 {
+        let bitmap = le32(img, 4096) as usize * 4096;
+        (1..le32(img, 1028))
+            .rev()
+            .find(|b| img[bitmap + *b as usize / 8] & (1 << (*b % 8)) == 0)
+            .unwrap()
+    }
+    fn set_allocated(img: &mut [u8], block: u32, allocated: bool) {
+        assert!(le32(img, 1028) <= 32768);
+        let at = le32(img, 4096) as usize * 4096 + block as usize / 8;
+        assert_ne!(img[at] & (1 << (block % 8)) != 0, allocated);
+        if allocated {
+            img[at] |= 1 << (block % 8);
+        } else {
+            img[at] &= !(1 << (block % 8));
+        }
+        seal_single_group_allocation(img);
+    }
+    fn one_extent(
+        img: &mut [u8],
+        fixture: &Fixture,
+        number: u32,
+        physical: u32,
+        logical: u32,
+        length: u16,
+    ) {
+        let at = offset(fixture.table, number);
+        let root = &mut img[at + 40..at + 100];
+        root.fill(0);
+        root[..2].copy_from_slice(&0xf30au16.to_le_bytes());
+        root[2..4].copy_from_slice(&1u16.to_le_bytes());
+        root[4..6].copy_from_slice(&4u16.to_le_bytes());
+        root[12..16].copy_from_slice(&logical.to_le_bytes());
+        root[16..18].copy_from_slice(&length.to_le_bytes());
+        root[20..24].copy_from_slice(&physical.to_le_bytes());
+    }
+    fn add_file_extent(
+        img: &mut [u8],
+        fixture: &Fixture,
+        number: u32,
+        physical: u32,
+        logical: u32,
+        unwritten: bool,
+    ) {
+        let at = offset(fixture.table, number);
+        assert_eq!(core::bytes::read_le16(img, at + 42), Some(0));
+        let sectors = le32(img, at + 28) + 8;
+        img[at + 4..at + 8].copy_from_slice(&((logical + 1) * 4096).to_le_bytes());
+        img[at + 28..at + 32].copy_from_slice(&sectors.to_le_bytes());
+        one_extent(
+            img,
+            fixture,
+            number,
+            physical,
+            logical,
+            if unwritten { 0x8001 } else { 1 },
+        );
+        seal_inode(img, fixture, number);
+    }
+    fn update_value_hashes(img: &mut [u8], fixture: &Fixture, payload: &[u8]) {
+        assert_eq!(payload.len(), 4096);
+        let hash = core::crc::crc32c(fixture.seed, payload);
+        let value = offset(fixture.table, 14);
+        img[value + 8..value + 12].copy_from_slice(&hash.to_le_bytes());
+        let parent = offset(fixture.table, 12);
+        for (at, name) in [
+            (parent + 164, b"big".as_slice()),
+            (parent + 184, b"alias".as_slice()),
+        ] {
+            img[at + 12..at + 16].copy_from_slice(&entry_hash(name, hash).to_le_bytes());
+        }
+        let external = fixture.external as usize * 4096;
+        let shared = entry_hash(b"shared", hash);
+        img[external + 12..external + 16].copy_from_slice(&shared.to_le_bytes());
+        img[external + 44..external + 48].copy_from_slice(&shared.to_le_bytes());
+        seal_external(img, fixture, fixture.external);
+        for number in [12, 13, 14] {
+            seal_inode(img, fixture, number);
+        }
+    }
+    fn integrity_admitted(img: &[u8], bytes: u64) {
+        let snapshot = Snapshot::from_bytes(img);
+        assert!(
+            ea_integrity::inspect(&snapshot, u32::MAX, 8, bytes).is_some(),
+            "all EA values and references remain valid"
+        );
+    }
+    fn rejected(img: &[u8], bytes: u64) {
+        let snapshot = Snapshot::from_bytes(img);
+        assert!(ea_allocation::inspect(&snapshot, u32::MAX, 8, bytes).is_none());
+    }
+    fn fsck(img: &[u8], prefix: &str) {
+        let path = format!("build/{prefix}.img");
+        std::fs::write(&path, img).unwrap();
+        let fsck = std::env::var("E2FSCK_BIN").unwrap_or_else(|_| "e2fsck".into());
+        super::inline_xattr_updates::command(&fsck, &["-fn", &path], false);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn global_ea_allocation_counts_shared_external_storage_once_in_all_linux_seed_and_descriptor_profiles()
+     {
+        for wide in [false, true] {
+            for stored_seed in [false, true] {
+                let fixture = fixture_with_features(
+                    &format!("ea-volume-profile-{wide}-{stored_seed}"),
+                    4096,
+                    wide,
+                    stored_seed,
+                );
+                let snapshot = Snapshot::from_bytes(&fixture.bytes);
+                let all = ea_allocation::inspect(&snapshot, u32::MAX, 1, 4096).unwrap();
+                assert_eq!(all.integrity().value_count(), 1);
+                assert_eq!(all.integrity().value(0).unwrap().as_slice(), fixture.value);
+                assert_eq!(all.ordinary_count(), 4);
+                assert_eq!(all.ordinary(0).unwrap().number(), 2);
+                assert!(all.ordinary(0).unwrap().is_directory());
+                assert!(all.ordinary(4).is_none());
+                let records = all.ledger().claims();
+                assert_eq!(
+                    records
+                        .iter()
+                        .filter(|c| c.kind == 7 && c.start == fixture.external)
+                        .count(),
+                    1
+                );
+                assert_eq!(all.ledger().role_of(fixture.external).unwrap().kind, 7);
+                assert_eq!(
+                    all.ledger()
+                        .role_of(mappings(&fixture.bytes, fixture.table, 4096)[0])
+                        .unwrap()
+                        .inode,
+                    14
+                );
+                let journal = all.journal();
+                assert_eq!(
+                    all.ledger().role_of(journal.physical_start()).unwrap().kind,
+                    2
+                );
+                assert_eq!(
+                    all.ledger()
+                        .role_of(journal.physical_start() + journal.blocks() - 1)
+                        .unwrap()
+                        .kind,
+                    2
+                );
+                let claimed: u64 = records.iter().map(|c| u64::from(c.length)).sum();
+                assert_eq!(
+                    claimed,
+                    u64::from(le32(&fixture.bytes, 1028) - le32(&fixture.bytes, 1036))
+                );
+                assert!(
+                    core::allocation::parse(Snapshot::from_bytes(&fixture.bytes)).is_none(),
+                    "ordinary mount profile remains gated"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn global_ea_allocation_composes_exact_parent_logical_charges_with_partial_value_block_ownership()
+     {
+        for size in [16_384usize, 16_401, 65_536] {
+            let fixture = fixture(&format!("ea-volume-multiblock-{size}"), size);
+            let snapshot = Snapshot::from_bytes(&fixture.bytes);
+            let all = ea_allocation::inspect(&snapshot, u32::MAX, 8, size as u64).unwrap();
+            assert_eq!(
+                all.integrity().allocated_blocks(),
+                ((size + 4095) / 4096) as u64
+            );
+            for i in 0..all.ordinary_count() {
+                let ordinary = all.ordinary(i).unwrap();
+                if ordinary.number() == 12 {
+                    let usage = ordinary.usage();
+                    assert_eq!(usage.own, 0);
+                    assert_eq!(usage.ea, 3 * ((size + 4095) / 4096) as u64 * 8);
+                    assert_eq!(usage.external, 8);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn complete_ea_storage_cannot_alias_an_ordinary_file_extent_with_valid_counts_and_payload_hashes()
+     {
+        let fixture = fixture("ea-volume-ea-file-alias", 4096);
+        let mut img = fixture.bytes.clone();
+        let physical = mappings(&img, fixture.table, 4096)[0];
+        add_file_extent(&mut img, &fixture, 12, physical, 0, false);
+        integrity_admitted(&img, 4096);
+        rejected(&img, 4096);
+    }
+
+    #[test]
+    fn complete_ea_storage_cannot_alias_the_source_journal_even_with_a_matching_payload_crc() {
+        let fixture = fixture("ea-volume-ea-journal-alias", 4096);
+        let mut img = fixture.bytes.clone();
+        let old = mappings(&img, fixture.table, 4096)[0];
+        let journal = le32(&img, offset(fixture.table, 8) + 60);
+        one_extent(&mut img, &fixture, 14, journal, 0, 1);
+        let payload = img[journal as usize * 4096..(journal as usize + 1) * 4096].to_vec();
+        update_value_hashes(&mut img, &fixture, &payload);
+        set_allocated(&mut img, old, false);
+        integrity_admitted(&img, 4096);
+        rejected(&img, 4096);
+    }
+
+    #[test]
+    fn distinct_ordinary_files_cannot_share_data_storage_even_when_their_billing_is_exact() {
+        let fixture = fixture("ea-volume-file-file-alias", 4096);
+        let mut img = fixture.bytes.clone();
+        let physical = fresh_block(&img);
+        set_allocated(&mut img, physical, true);
+        add_file_extent(&mut img, &fixture, 12, physical, 0, false);
+        add_file_extent(&mut img, &fixture, 13, physical, 0, false);
+        integrity_admitted(&img, 4096);
+        rejected(&img, 4096);
+    }
+
+    #[test]
+    fn ordinary_data_cannot_reuse_a_shared_external_xattr_or_reserved_bitmap_block() {
+        let fixture = fixture("ea-volume-file-metadata-alias", 4096);
+        for physical in [
+            fixture.external,
+            le32(&fixture.bytes, 4096),
+            le32(&fixture.bytes, 4100),
+        ] {
+            let mut img = fixture.bytes.clone();
+            add_file_extent(&mut img, &fixture, 12, physical, 0, false);
+            integrity_admitted(&img, 4096);
+            rejected(&img, 4096);
+        }
+    }
+
+    #[test]
+    fn every_ordinary_extent_must_be_allocated_in_the_source_bitmap() {
+        let fixture = fixture("ea-volume-referenced-free-block", 4096);
+        let mut img = fixture.bytes.clone();
+        let physical = fresh_block(&img);
+        add_file_extent(&mut img, &fixture, 12, physical, 0, false);
+        integrity_admitted(&img, 4096);
+        rejected(&img, 4096);
+    }
+
+    #[test]
+    fn an_allocated_block_without_any_inode_or_metadata_owner_is_rejected_after_resealing_all_counters()
+     {
+        let fixture = fixture("ea-volume-hidden-allocation", 4096);
+        let mut img = fixture.bytes.clone();
+        let physical = fresh_block(&img);
+        set_allocated(&mut img, physical, true);
+        integrity_admitted(&img, 4096);
+        rejected(&img, 4096);
+    }
+
+    #[test]
+    fn an_arithmetic_parent_residual_must_match_its_actual_complete_extent_allocation() {
+        let fixture = fixture("ea-volume-parent-residual", 4096);
+        for number in [2, 12, 13] {
+            let mut img = fixture.bytes.clone();
+            let at = offset(fixture.table, number);
+            let sectors = le32(&img, at + 28) + 8;
+            img[at + 28..at + 32].copy_from_slice(&sectors.to_le_bytes());
+            seal_inode(&mut img, &fixture, number);
+            integrity_admitted(&img, 4096);
+            rejected(&img, 4096);
+        }
+    }
+
+    #[test]
+    fn the_source_journal_sector_count_must_cover_exactly_its_mapped_storage() {
+        let fixture = fixture("ea-volume-journal-sectors", 4096);
+        let at = offset(fixture.table, 8);
+        let correct = le32(&fixture.bytes, at + 28);
+        for sectors in [correct - 8, correct + 8] {
+            let mut img = fixture.bytes.clone();
+            img[at + 28..at + 32].copy_from_slice(&sectors.to_le_bytes());
+            seal_inode(&mut img, &fixture, 8);
+            integrity_admitted(&img, 4096);
+            rejected(&img, 4096);
+        }
+    }
+
+    #[test]
+    fn group_used_directory_counts_are_checked_separately_from_inode_and_block_free_counts() {
+        let fixture = fixture("ea-volume-used-directories", 4096);
+        assert_eq!(core::bytes::read_le16(&fixture.bytes, 4112), Some(2));
+        for count in [1u16, 3] {
+            let mut img = fixture.bytes.clone();
+            img[4112..4114].copy_from_slice(&count.to_le_bytes());
+            seal_group(&mut img, 0, fixture.seed);
+            integrity_admitted(&img, 4096);
+            rejected(&img, 4096);
+        }
+    }
+
+    #[test]
+    fn ordinary_sparse_and_unwritten_extents_keep_their_source_logical_and_initialization_roles() {
+        let fixture = fixture("ea-volume-sparse-ordinary", 4096);
+        for unwritten in [false, true] {
+            let mut img = fixture.bytes.clone();
+            let physical = fresh_block(&img);
+            img[physical as usize * 4096..(physical as usize + 1) * 4096].fill(0x39);
+            set_allocated(&mut img, physical, true);
+            add_file_extent(&mut img, &fixture, 12, physical, 2, unwritten);
+            let snapshot = Snapshot::from_bytes(&img);
+            let all = ea_allocation::inspect(&snapshot, u32::MAX, 1, 4096).unwrap();
+            let role = all.ledger().role_of(physical).unwrap();
+            assert_eq!(role.kind, 4);
+            assert_eq!(role.inode, 12);
+            assert_eq!(role.logical, 2);
+            assert_eq!(role.initialized, !unwritten);
+            fsck(
+                &img,
+                &format!("ea-volume-sparse-ordinary-result-{unwritten}"),
+            );
+        }
+    }
+
+    #[test]
+    fn ordinary_external_extent_nodes_are_counted_without_consuming_the_ea_node_budget() {
+        let fixture = fixture("ea-volume-ordinary-depth-one", 4096);
+        let mut img = fixture.bytes.clone();
+        let data = fresh_block(&img);
+        set_allocated(&mut img, data, true);
+        add_file_extent(&mut img, &fixture, 12, data, 0, false);
+        let metadata = fresh_block(&img);
+        set_allocated(&mut img, metadata, true);
+        let at = offset(fixture.table, 12);
+        let original = img[at + 40..at + 100].to_vec();
+        let seed = core::inode::inode_seed(fixture.seed, 12, le32(&img, at + 100));
+        let block = &mut img[metadata as usize * 4096..(metadata as usize + 1) * 4096];
+        block.fill(0);
+        block[..24].copy_from_slice(&original[..24]);
+        block[4..6].copy_from_slice(&340u16.to_le_bytes());
+        let checksum = core::crc::crc32c(seed, &block[..4092]);
+        block[4092..4096].copy_from_slice(&checksum.to_le_bytes());
+        let root = &mut img[at + 40..at + 100];
+        root.fill(0);
+        root[..2].copy_from_slice(&0xf30au16.to_le_bytes());
+        root[2..4].copy_from_slice(&1u16.to_le_bytes());
+        root[4..6].copy_from_slice(&4u16.to_le_bytes());
+        root[6..8].copy_from_slice(&1u16.to_le_bytes());
+        root[16..20].copy_from_slice(&metadata.to_le_bytes());
+        let sectors = le32(&img, at + 28) + 8;
+        img[at + 28..at + 32].copy_from_slice(&sectors.to_le_bytes());
+        seal_inode(&mut img, &fixture, 12);
+        integrity_admitted(&img, 4096);
+        let snapshot = Snapshot::from_bytes(&img);
+        let all = ea_allocation::inspect(&snapshot, u32::MAX, 1, 4096).unwrap();
+        assert_eq!(all.ledger().role_of(metadata).unwrap().kind, 6);
+        assert_eq!(all.ledger().role_of(metadata).unwrap().inode, 12);
+        let ordinary = (0..all.ordinary_count())
+            .map(|i| all.ordinary(i).unwrap())
+            .find(|o| o.number() == 12)
+            .unwrap();
+        assert_eq!(ordinary.allocated_blocks(), 2);
+        assert_eq!(ordinary.usage().own, 16);
+        fsck(&img, "ea-volume-ordinary-depth-one-result");
+    }
+
+    #[test]
+    fn shared_external_blocks_with_only_local_values_are_reserved_once_even_without_ea_graph_entries()
+     {
+        let fixture = fixture("ea-volume-local-only-sharing", 4096);
+        let mut img = fixture.bytes.clone();
+        let physical = fresh_block(&img);
+        let hash = core::xattr_hash::entry_hash(b"local", b"z").unwrap();
+        let block = &mut img[physical as usize * 4096..(physical as usize + 1) * 4096];
+        block.fill(0);
+        block[..4].copy_from_slice(&core::xattr::MAGIC.to_le_bytes());
+        block[4..8].copy_from_slice(&2u32.to_le_bytes());
+        block[8..12].copy_from_slice(&1u32.to_le_bytes());
+        block[12..16].copy_from_slice(&hash.to_le_bytes());
+        block[32] = 5;
+        block[33] = 1;
+        block[34..36].copy_from_slice(&4092u16.to_le_bytes());
+        block[40..44].copy_from_slice(&1u32.to_le_bytes());
+        block[44..48].copy_from_slice(&hash.to_le_bytes());
+        block[48..53].copy_from_slice(b"local");
+        block[4092] = b'z';
+        seal_external(&mut img, &fixture, physical);
+        for number in [2, 11] {
+            let at = offset(fixture.table, number);
+            assert_eq!(le32(&img, at + 104), 0);
+            let sectors = le32(&img, at + 28) + 8;
+            img[at + 104..at + 108].copy_from_slice(&physical.to_le_bytes());
+            img[at + 28..at + 32].copy_from_slice(&sectors.to_le_bytes());
+            seal_inode(&mut img, &fixture, number);
+        }
+        set_allocated(&mut img, physical, true);
+        integrity_admitted(&img, 4096);
+        let snapshot = Snapshot::from_bytes(&img);
+        let all = ea_allocation::inspect(&snapshot, u32::MAX, 1, 4096).unwrap();
+        assert_eq!(
+            all.integrity()
+                .reference_census()
+                .external_parents(physical),
+            2
+        );
+        assert_eq!(all.integrity().reference_census().physical().len(), 3);
+        assert_eq!(all.ledger().role_of(physical).unwrap().kind, 7);
+        assert_eq!(
+            all.ledger()
+                .claims()
+                .iter()
+                .filter(|c| c.start == physical)
+                .count(),
+            1
+        );
+        fsck(&img, "ea-volume-local-only-sharing-result");
+    }
+
+    #[test]
+    fn complete_global_ownership_uses_source_selected_backups_and_lazy_flex_group_bitmaps() {
+        let mke2fs = std::env::var("MKE2FS_BIN").unwrap_or_else(|_| "mke2fs".into());
+        for backup in ["", ",sparse_super", ",sparse_super2"] {
+            let name = if backup.is_empty() {
+                "all"
+            } else {
+                &backup[1..]
+            };
+            let path = format!("build/ea-volume-flex-{name}.img");
+            let features = format!(
+                "none,has_journal,extent,filetype,large_file,extra_isize,metadata_csum,ea_inode,flex_bg{backup}"
+            );
+            super::inline_xattr_updates::command(
+                &mke2fs,
+                &[
+                    "-q",
+                    "-F",
+                    "-t",
+                    "ext4",
+                    "-b",
+                    "4096",
+                    "-I",
+                    "256",
+                    "-N",
+                    "128",
+                    "-O",
+                    &features,
+                    "-G",
+                    "2",
+                    "-E",
+                    "lazy_itable_init=0,lazy_journal_init=0",
+                    &path,
+                    "65536",
+                ],
+                false,
+            );
+            let img = std::fs::read(&path).unwrap();
+            let _ = std::fs::remove_file(&path);
+            let snapshot = Snapshot::from_bytes(&img);
+            let all = ea_allocation::inspect(&snapshot, 128, 1, 0).unwrap();
+            assert_eq!(all.integrity().value_count(), 0);
+            assert_eq!(all.integrity().reference_census().index().group_count(), 2);
+            assert_eq!(all.ordinary_count(), 2);
+            assert_eq!(
+                core::bytes::read_le16(
+                    &img,
+                    4096 + core::superblock::descriptor_length(&img[1024..2048]).unwrap() + 18
+                )
+                .unwrap()
+                    & 1,
+                1
+            );
+            let total: u64 = all
+                .ledger()
+                .claims()
+                .iter()
+                .map(|c| u64::from(c.length))
+                .sum();
+            assert_eq!(total, u64::from(le32(&img, 1028) - le32(&img, 1036)));
+            fsck(&img, &format!("ea-volume-flex-{name}-result"));
+        }
+    }
+
+    #[test]
+    fn global_allocation_budget_rejections_never_publish_an_incomplete_source_prefix() {
+        let fixture = fixture("ea-volume-budgets", 4096);
+        let snapshot = Snapshot::from_bytes(&fixture.bytes);
+        assert!(ea_allocation::inspect(&snapshot, fixture.inodes, 1, 4096).is_some());
+        assert!(ea_allocation::inspect(&snapshot, fixture.inodes - 1, 1, 4096).is_none());
+        assert!(ea_allocation::inspect(&snapshot, u32::MAX, 0, 4096).is_none());
+        assert!(ea_allocation::inspect(&snapshot, u32::MAX, 1, 4095).is_none());
+        assert!(ea_allocation::inspect(&snapshot, u32::MAX, 4097, 4096).is_none());
+    }
+}

@@ -183,3 +183,15 @@ checked source; none widens full filesystem or runtime admission.
 | F-ALLOC | Every EA claim block is set in its source logical bitmap and excluded from fixed metadata and every external-xattr block | Authenticated allocation/free and source-wide role ownership |
 | F-ADMIT | Complete census value projection, explicit physical-record coverage and bounded aggregate payload lengths; no positive partial value prefix | Full EA namespace/journal/volume admission and acceptance completeness |
 | F-OPS / J-RESTART / S-RACE | No mutation, orphan/quota/dedup, journal, lock or device authority follows from the immutable result | Complete lifecycle, concurrent durable updates and CortenMM/OSTD refinement |
+
+The separate EA-enabled whole-volume allocation composition (EA_ALLOCATION.md)
+adds the following implementation contracts. Recorded evidence controls their
+checked source; full namespace/JBD2/mount authority remains separate.
+
+| Obligation | Present contract | Remaining boundary |
+| --- | --- | --- |
+| F-OWN | Exact complete source-role sequence for all EA, fixed metadata, journal, ordinary extent and distinct external-xattr allocations; global ledger rejects cross-owner and cross-role aliases | Mutation preservation, allocator authority and runtime frame ownership |
+| F-ACCOUNT | Every ordinary parent residual equals actual data/extent-metadata blocks; logical EA and external pointer charges remain separate; exact journal and EA physical sectors | Quota limits/database persistence and counter transitions |
+| F-ALLOC | Every source logical block bitmap equals final nonfree roles in both directions; exact group directory and primary free-block counts | Allocation/free protocol and durable bitmap/counter updates |
+| F-ADMIT | Every declared inode slot is classified and the ordinary catalogue is its exact source projection; retained EA values and references remain source-bound | Full directory/namespace and actual JBD2 identity/state/recovery admission, acceptance completeness |
+| S-ENTRY / J-RESTART / S-RACE | Private immutable candidate getters preserve source and ownership certificates; no I/O or mutation follows | Authenticated VFS, concurrent durable lifecycle and CortenMM/OSTD/device refinement |

@@ -340,6 +340,22 @@ def main():
         'replace_ea_integrity_values': ("pub fn misuse(mut i: verified_ext4::ea_integrity::Integrity<'_, '_>) { i.values = Vec::new(); }\n", 'E0616'),
         'move_stored_value_out_of_ea_integrity_borrow': ("pub fn misuse(i: verified_ext4::ea_integrity::Integrity<'_, '_>) { let _stored = *i.value(0).unwrap(); }\n", 'E0507'),
     })
+    misuse.update({
+        'forge_ea_global_allocation': ("pub fn misuse(a: verified_ext4::ea_allocation::Allocation<'_, '_>) { let _ = verified_ext4::ea_allocation::Allocation { ..a }; }\n", 'E0451'),
+        'forge_ea_ordinary_allocation': ('pub fn misuse(o: verified_ext4::ea_ordinary::Ordinary) { let _ = verified_ext4::ea_ordinary::Ordinary { ..o }; }\n', 'E0451'),
+        'forge_ea_source_journal': ('pub fn misuse(j: verified_ext4::ea_journal::Journal) { let _ = verified_ext4::ea_journal::Journal { ..j }; }\n', 'E0451'),
+        'replace_ea_ordinary_claim_records': ('pub fn misuse(mut o: verified_ext4::ea_ordinary::Ordinary) { o.claims = Vec::new(); }\n', 'E0616'),
+        'mutate_ea_ordinary_claim_record': ('pub fn misuse(o: verified_ext4::ea_ordinary::Ordinary) { o.claims()[0].start = 1; }\n', 'E0594'),
+        'mutate_ea_global_ledger_claim': ("pub fn misuse(a: verified_ext4::ea_allocation::Allocation<'_, '_>) { a.ledger().claims()[0].start = 1; }\n", 'E0594'),
+        'mutate_ea_global_payload': ("pub fn misuse(a: verified_ext4::ea_allocation::Allocation<'_, '_>) { a.integrity().value(0).unwrap().as_slice()[0] = 1; }\n", 'E0594'),
+        'move_ea_ordinary_from_global_borrow': ("pub fn misuse(a: verified_ext4::ea_allocation::Allocation<'_, '_>) { let _owned = *a.ordinary(0).unwrap(); }\n", 'E0507'),
+        'consume_ea_global_ledger_through_borrow': ("pub fn misuse(a: verified_ext4::ea_allocation::Allocation<'_, '_>) { let _ = a.ledger().claim(verified_ext4::block_claims::Claim { start: 1, length: 1, kind: 1, inode: 0, generation: 0, logical: 0, initialized: false }); }\n", 'E0507'),
+        'mutate_source_while_ea_global_allocation_is_live': ('pub fn misuse(mut bytes: Vec<u8>) { let snapshot = verified_ext4::snapshot::Snapshot::from_bytes(&bytes); let allocation = verified_ext4::ea_allocation::inspect(&snapshot, u32::MAX, 1, 4096).unwrap(); bytes[0] = 1; let _ = allocation.ordinary_count(); }\n', 'E0502'),
+        'confuse_ea_global_allocation_with_mounted_inode_authority': ("pub fn misuse(a: &verified_ext4::ea_allocation::Allocation<'_, '_>) { let _ = verified_ext4::allocated_inode::get(a, 12); }\n", 'E0308'),
+        'confuse_ea_global_allocation_with_source_snapshot': ("pub fn misuse(a: verified_ext4::ea_allocation::Allocation<'_, '_>) { let _ = verified_ext4::image_validation::inspect(a); }\n", 'E0308'),
+        'replace_ea_source_journal_mapping': ('pub fn misuse(mut j: verified_ext4::ea_journal::Journal, layout: verified_ext4::layout::JournalLayout) { j.layout = layout; }\n', 'E0616'),
+        'move_ea_integrity_out_of_global_borrow': ("pub fn misuse(a: verified_ext4::ea_allocation::Allocation<'_, '_>) { let _integrity = *a.integrity(); }\n", 'E0507'),
+    })
     for name, (source, code) in misuse.items():
         path = BUILD / (name + ".rs")
         path.write_text(source)

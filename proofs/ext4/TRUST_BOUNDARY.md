@@ -415,3 +415,35 @@ protocol. Immutable host inspection grants no VFS credentials, allocation,
 refcount/quota/orphan edit, lock, BIO, DMA or device authority. Runtime refinement
 must use Asterinas's CortenMM/OSTD framekernel interfaces. See
 [EA value integrity](EA_VALUE_INTEGRITY.md).
+
+## EA-enabled whole-volume physical ownership
+
+The separate EA allocation certificate retains the complete original-source EA
+integrity result and extends an exact owned duplicate of its claim ledger.
+Every declared source inode slot has an explicit class. The ordinary catalogue
+is exactly the projection of that source scan; caller-supplied or partial lists
+cannot justify used-directory counters or global ownership. Empty reserved slots
+contribute no hidden storage, and supported allocated EA slots resolve to retained
+checked values. Source feature masks are retained throughout.
+
+The final exact claim sequence includes all EA allocations, source-selected fixed
+metadata, inode 8's supported journal extent, every ordinary file/directory extent
+tree and one claim per distinct external xattr block. Later appends preserve every
+prior occupied slot. Repeated external pointers skip only addresses already in
+the preceding source pointer catalogue; an arbitrary existing role-7 slot does
+not authorize sharing. Complete ordinary parent residual sectors equal actual
+owned extent blocks; logical EA charges are never counted as duplicate physical
+allocation.
+
+Both directions of every logical block bitmap are compared against final occupied
+roles, with exact group directory counts and global free counts. Thus claimed-free
+and allocated-but-unowned storage reject this bounded result. This does not prove
+directory record contents, links, rootedness or HTree correctness, nor the mapped
+journal's JBD2 header/UUID/state, emptiness or actual recovery admission. An image
+with invalid namespace or journal bytes can still satisfy allocation ownership.
+
+Host-owned candidate duplication and immutable observations grant no allocation,
+credential, mutation, lock, BIO or persistence authority. Full filesystem EA
+admission, every kernel/full-feature/writable-mount gate and durable EA lifecycle
+remain closed. Future runtime execution must refine CortenMM/OSTD framekernel
+ownership and device contracts. See [EA allocation](EA_ALLOCATION.md).

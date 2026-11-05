@@ -10,6 +10,9 @@ all declared inode slots in the same snapshot. The separate
 [EA value integrity layer](EA_VALUE_INTEGRITY.md) composes that census with all-value
 payload CRCs, complete extent/data claims, exact physical sectors, joint EA claim
 disjointness and checked allocation/fixed-metadata/external-xattr exclusions.
+The [EA whole-volume allocation compositor](EA_ALLOCATION.md) additionally binds
+all ordinary and journal storage, source-selected fixed metadata, distinct external
+xattr blocks and exact complete bitmap/counter ownership to the same snapshot.
 Its executable contracts and named obligations are included in the pinned
 whole-crate manifest; recorded evidence determines the exact checked source.
 This is not full EA_INODE filesystem admission or a journalled update path.
@@ -112,7 +115,7 @@ ownership, lifetime and transaction protocols; a census is immutable inspection.
 
 | Next integration obligation | Required implementation/proof |
 | --- | --- |
-| Full admission | Compose the source reference and EA value integrity results with ordinary/journal extent ownership, exact global bitmap equality, namespace/journal admission and exact ordinary-parent residual accounting, without bypassing feature checks. |
+| Full admission | The separate EA_ALLOCATION.md result now composes ordinary/journal physical ownership, exact global bitmap equality and exact ordinary-parent residual accounting. Directory/namespace and actual JBD2 identity/state/recovery admission still require composition before full EA filesystem authority. |
 | Lifecycle and quotas | Couple physical references, per-parent charges, allocation, block COW, value deduplication and zero-reference orphan/reclamation transitions with complete failure unwind. |
 | Durability and races | Include every resulting home image in one admitted transaction, prove crash/recovery closure and serialize competing inode/xattr/cache/allocator operations. |
 | Framekernel runtime | Refine authenticated VFS/idmap/LSM inputs, CortenMM/OSTD frame/cache/DMA ownership, sleeping-lock order and actual BIO/flush/quiescence behavior. |

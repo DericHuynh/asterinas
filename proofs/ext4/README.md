@@ -9,9 +9,9 @@ and a [concurrent block/extent/transaction protocol](CONCURRENCY.md).
 It is not a complete filesystem and is not registered with the kernel VFS.
 No mount or filesystem write path is enabled.
 
-The pinned Verus run checks **2207 obligations with zero errors**, including
-683 named proof functions and 600 named executable functions.
-236 host interoperability/regression tests pass on Linux-created metadata.
+The pinned Verus run checks **2284 obligations with zero errors**, including
+709 named proof functions and 620 named executable functions.
+252 host interoperability/regression tests pass on Linux-created metadata.
 [Proof status](proof-status.json) and [recorded evidence](verification-evidence.json)
 state the exact scope; tests do not discharge formal obligations.
 
@@ -205,6 +205,17 @@ quota enforcement, deduplication and journalled value updates remain open.
 The new modules are in the pinned whole-crate manifest; recorded evidence
 determines their exact checked scope. Kernel/full-feature/mount gates remain closed.
 
+The separate [EA whole-volume allocation layer](EA_ALLOCATION.md) composes the
+retained EA payload/reference certificate with actual source group reservations,
+internal-journal storage, every allocated ordinary inode's complete extent claims
+and each distinct external xattr block. The final ledger equals all source logical
+block bitmaps in both directions; complete group directory counts and the primary
+free-block count are checked. Ordinary parent billing residuals now equal actual
+physical data/extent-metadata allocations. This closes the earlier ordinary/journal
+ownership gap for this bounded allocation result. Namespace and JBD2 state/admission,
+mutations and CortenMM/OSTD runtime remain open; no full filesystem or mount gate is
+enabled. Recorded evidence determines the exact checked contracts and source.
+
 ## Reproduce
 
 Install the Rust toolchain and the digest-pinned Verus release:
@@ -230,7 +241,7 @@ It rejects local proof escapes, extra flags, omitted modules and source-inventor
 requires named proof and executable coverage; invalidates stale artifacts on failure;
 and records source, runner, manifest, verifier and emitted-library hashes.
 The negative checks include an actual failing Verus assertion in a disposable copy.
-149 negative Rust compilation checks reject certificate/source substitution, edit/queue ownership violations, request reuse/forgery, completion redirection, state replacement, command mutation and finishing through a live command loan.
+163 negative Rust compilation checks reject certificate/source substitution, edit/queue ownership violations, request reuse/forgery, completion redirection, state replacement, command mutation and finishing through a live command loan.
 [CI](../../.github/workflows/verify_ext4.yml) runs the same checks.
 
 The emitted host library exercises proof erasure and Linux byte compatibility.
