@@ -255,7 +255,7 @@
       "path": "fs/ext4/acl.c",
       "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/acl.c",
       "blob_sha": "3bffe862f9549919a4ac38fe301becd3ac846775",
-      "review_scope": "Compact version-1 four/eight-byte ACL disk entries, exact conversion and access/default namespace coupling. Independent safe Rust parser and source-bound access decisions; ACL mutations and VFS idmaps remain open."
+      "review_scope": "Compact version-1 four/eight-byte disk encoding; ext4_set_acl access-mode coupling, mode-only ACL removal, default-directory restrictions, common xattr transaction and cache update semantics. Independent safe Rust conversion/transaction implementation and all-home crash closure; actual VFS/cache locks, quotas, inheritance and runtime integration remain open."
     },
     {
       "path": "fs/ext4/acl.h",
@@ -267,7 +267,7 @@
       "path": "fs/posix_acl.c",
       "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/posix_acl.c",
       "blob_sha": "12591c95c9256185b6fdbf7f32929dfdf70fc54b",
-      "review_scope": "posix_acl_valid tag-state and mask rules; posix_acl_permission owner/named-user precedence, single matching group complete request, mask and no denied-group OTHER fallback; posix_acl_equiv_mode group mask replacement. VFS authentication/idmap/LSM refinement remains open."
+      "review_scope": "posix_acl_valid tag/mask/ID rules and exact permission evaluation; posix_acl_from_xattr version-2 stride, ignored short-entry IDs and named invalid-ID rejection; posix_acl_equiv_mode (MASK itself marks non-equivalence), posix_acl_update_mode SGID/group/scoped FSETID behavior; set_posix_acl owner/scoped FOWNER authority and default regular-file set/remove exception; do_set_acl empty/header-only input semantics. Independent strict checked conversion, complete-parse uniqueness and source-bound access/default updates. Caller/idmap/LSM, chmod/inheritance, reverse reporting and CortenMM/runtime refinement remain open."
     },
     {
       "path": "fs/ext4/hash.c",

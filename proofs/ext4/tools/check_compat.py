@@ -263,6 +263,20 @@ def main():
         "reuse_xattr_lifecycle_grant": ("pub fn misuse(a: verified_ext4::acl_access::Authorization<'_, '_, '_>) { let _ = verified_ext4::xattr_lifecycle::set_user(a, b\"key\", b\"value\", 0, 123, 0); let _ = a.requested_bits(); }\n", "E0382"),
         "reuse_started_xattr_lifecycle": ("pub fn misuse(c: verified_ext4::xattr_lifecycle::Candidate<'_, '_, '_>) { let _ = c.begin(); let _ = c.begin(); }\n", "E0382"),
     })
+    misuse.update({
+        "forge_acl_mutation_authority": ("pub fn misuse(a: verified_ext4::acl_update::Authorization<'_, '_, '_>) { let _ = verified_ext4::acl_update::Authorization { ..a }; }\n", "E0451"),
+        "redirect_acl_mutation_authority": ("pub fn misuse<'n, 'v, 'a>(mut a: verified_ext4::acl_update::Authorization<'n, 'v, 'a>, n: &'n verified_ext4::allocated_inode::AllocatedInode<'v, 'a>) { a.node = n; }\n", "E0616"),
+        "retarget_acl_authority_kind": ("pub fn misuse(mut a: verified_ext4::acl_update::Authorization<'_, '_, '_>) { a.kind = verified_ext4::acl_update::Kind::Access; }\n", "E0616"),
+        "reuse_acl_mutation_authority": ("pub fn misuse(a: verified_ext4::acl_update::Authorization<'_, '_, '_>) { let _ = verified_ext4::acl_update::prepare(a, b\"\", 1, 0); let _ = verified_ext4::acl_update::prepare(a, b\"\", 1, 0); }\n", "E0382"),
+        "forge_acl_mutation_candidate": ("pub fn misuse(c: verified_ext4::acl_update::Candidate<'_, '_, '_>) { let _ = verified_ext4::acl_update::Candidate { ..c }; }\n", "E0451"),
+        "replace_acl_mutation_patches": ("pub fn misuse(mut c: verified_ext4::acl_update::Candidate<'_, '_, '_>, p: verified_ext4::patch_set::PatchSet) { c.patches = p; }\n", "E0616"),
+        "reuse_started_acl_mutation": ("pub fn misuse(c: verified_ext4::acl_update::Candidate<'_, '_, '_>) { let _ = c.begin(); let _ = c.begin(); }\n", "E0382"),
+        "mutate_acl_mutation_image": ("pub fn misuse(c: verified_ext4::acl_update::Candidate<'_, '_, '_>) { c.patches().at(0).unwrap().as_slice()[0] = 1; }\n", "E0594"),
+        "forge_converted_acl": ("pub fn misuse(a: verified_ext4::acl_xattr::Converted) { let _ = verified_ext4::acl_xattr::Converted { ..a }; }\n", "E0451"),
+        "mutate_converted_acl_bytes": ("pub fn misuse(a: verified_ext4::acl_xattr::Converted) { a.as_slice()[0] = 9; }\n", "E0594"),
+        "bypass_xattr_storage_constructor": ("pub fn misuse(n: &verified_ext4::allocated_inode::AllocatedInode<'_, '_>, v: &verified_ext4::xattr_store::Store) { let _ = verified_ext4::xattr_transaction::build(n, v, 0o100777, 1, 0); }\n", "E0603"),
+        "confuse_data_grant_with_acl_authority": ("pub fn misuse(a: verified_ext4::acl_access::Authorization<'_, '_, '_>) { let _ = verified_ext4::acl_update::prepare(a, b\"\", 1, 0); }\n", "E0308"),
+    })
     for name, (source, code) in misuse.items():
         path = BUILD / (name + ".rs")
         path.write_text(source)

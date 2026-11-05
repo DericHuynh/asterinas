@@ -14,8 +14,7 @@ use crate::{acl_access::{self, Authorization, AuthorizationView}, allocated_inod
 
 verus! {
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Error { InvalidName, Permission, ReadOnly, Values(store::Error), Unsupported, NoSpace, Encoding, Admission }
+pub use crate::xattr_transaction::Error;
 pub struct UpdateView { pub grant: AuthorizationView, pub name: Seq<u8>, pub data: Option<Seq<u8>>, pub flags: u32,
     pub desired: Seq<ItemView>, pub region: crate::xattr_footprint::Region, pub change: Change, pub patches: Seq<ImageView>, pub after: AllocationView, pub attributes: AttributesView }
 pub open spec fn requested(v: UpdateView) -> bool {
@@ -67,12 +66,6 @@ impl<'n, 'v, 'a> Candidate<'n, 'v, 'a> {
     }
 }
 
-fn copy_block(source: &[u8]) -> (r: Option<Vec<u8>>)
-    ensures match r { Some(next) => source.len() == 4096 && next@ == source@, None => source.len() != 4096 },
-{
-    if source.len() != 4096 { return None; }
-    let mut next = bytes::zero_block(); bytes::write_bytes(next.as_mut_slice(), 0, source); Some(next)
-}
 fn prepare<'n, 'v, 'a>(grant: Authorization<'n, 'v, 'a>, name: &[u8], data: Option<&[u8]>, flags: u32, seconds: i64, nanos: u32)
     -> (r: Result<Option<Candidate<'n, 'v, 'a>>, Error>)
     ensures grant.wf(), match r { Ok(Some(candidate)) => candidate.wf() && candidate.view().grant == grant.view() && candidate.view().name == name@
@@ -81,7 +74,6 @@ fn prepare<'n, 'v, 'a>(grant: Authorization<'n, 'v, 'a>, name: &[u8], data: Opti
         Ok(None) => data is Some && store::set_error(store::source_items(grant.view().detail.attributes), 1, name@, data.unwrap()@, flags).is_none()
             && store::get(store::source_items(grant.view().detail.attributes), 1, name@) == Some(data.unwrap()@), Err(_) => true },
 {
-    hide(crate::crc::fold);
     let (node, credentials, request, Ghost(authorization)) = grant.release();
     if request != 2 { return Err(Error::Permission); }
     if name.len() == 0 || name.len() > 255 { return Err(Error::InvalidName); }
@@ -105,69 +97,12 @@ fn prepare<'n, 'v, 'a>(grant: Authorization<'n, 'v, 'a>, name: &[u8], data: Opti
         },
         None => match original.remove(1, name) { Ok(updated) => updated, Err((_, error)) => { return Err(Error::Values(error)); } },
     };
-    let old_address = xattr::inode_pointer(source_inode).unwrap(); if old_address >= blocks as u64 { return Err(Error::Admission); }
-    let old_block = old_address as u32;
-    let mut old_refs = 0u32;
-    if old_block > 0 {
-        let old = match xattr_source::inspect_block(index, old_address) { Some(old) => old, None => { return Err(Error::Admission); } }; old_refs = old.refcount();
-    }
-    // A dummy address lets the packer decide whether an external block is
-    // necessary before requesting space; inline-only updates work on full disks.
-    let tentative = if old_block > 0 && old_refs == 1 { old_block } else { 1u32 };
-    let packed = match xattr_pack::encode(&updated, source_inode, tentative as u64, seed, inodes) { Some(packed) => packed, None => { return Err(Error::NoSpace); } };
-    let (packed, new_block) = if packed.has_external() && tentative == 1 {
-        let free = match block_update::free_block(volume) { Some(free) => free, None => { return Err(Error::NoSpace); } };
-        let packed = match xattr_pack::encode(&updated, source_inode, free as u64, seed, inodes) { Some(packed) => packed, None => { return Err(Error::Encoding); } };
-        (packed, free)
-    } else { let physical = if packed.has_external() { tentative } else { 0u32 }; (packed, physical) };
-    let (body, external) = packed.into_parts();
-    let encoded = match inode_edit::encode(source_inode, &body, new_block, number, inodes, seed, index.huge_files(), seconds, nanos) { Some(raw) => raw, None => { return Err(Error::Encoding); } };
-    let ghost change = Change { before: source_inode@, packed: body@, after: encoded@, physical: new_block, number, inodes, seed,
-        huge: group_index::has_huge_files(index.view()), seconds: seconds as int, nanos: nanos as nat };
-    let mut patches = PatchSet::new();
-    if new_block > 0 && new_block != old_block {
-        patches = match block_update::accounting(volume, new_block, true) { Some(patches) => patches, None => { return Err(Error::Admission); } };
-    } else if new_block == 0 && old_block > 0 && old_refs == 1 {
-        patches = match block_update::accounting(volume, old_block, false) { Some(patches) => patches, None => { return Err(Error::Admission); } };
-    }
-    if bytes::read_le32(primary.as_slice(), 1116).unwrap() & 8 == 0 {
-        let mut promoted = match patches.get(0) { Some(image) => copy_block(image.as_slice()).unwrap(), None => copy_block(primary.as_slice()).unwrap() };
-        let flags = bytes::read_le32(&promoted, 1116).unwrap() | 8u32; bytes::write_le32(promoted.as_mut_slice(), 1116, flags);
-        let dirty = bytes::read_le32(&promoted, 1120).unwrap() | 4u32; bytes::write_le32(promoted.as_mut_slice(), 1120, dirty);
-        let checksum = crate::crc::crc32c(0xffffffff, &promoted[1024..2044]); bytes::write_le32(promoted.as_mut_slice(), 2044, checksum);
-        patches = match patches.upsert(0, &promoted) { Ok(patches) => patches, Err(_) => { return Err(Error::Admission); } };
-    }
-    if old_block > 0 && old_block != new_block && old_refs > 1 {
-        let old = match index.source().block(old_block) { Some(old) => old, None => { return Err(Error::Admission); } };
-        let detached = match block_update::detach_shared(old.as_slice(), old_block, seed, inodes) { Some(raw) => raw, None => { return Err(Error::Encoding); } };
-        patches = match patches.insert(old_block, &detached) { Ok(patches) => patches, Err(_) => { return Err(Error::Admission); } };
-    }
-    match external {
-        Some(raw) => { patches = match patches.insert(new_block, &raw) { Ok(patches) => patches, Err(_) => { return Err(Error::Admission); } }; },
-        None => { if new_block != 0 { return Err(Error::Encoding); } },
-    }
-    let position = inode_table::position(index, number).unwrap();
-    if position / 4096 > u32::MAX as u64 || position % 4096 > 3840 { return Err(Error::Admission); }
-    let target = (position / 4096) as u32;
-    let original_block = match index.source().block(target) { Some(block) => block, None => { return Err(Error::Admission); } };
-    let mut inode_block = copy_block(original_block.as_slice()).unwrap();
-    if !bytes::write_bytes(inode_block.as_mut_slice(), (position % 4096) as usize, &encoded) { return Err(Error::Encoding); }
-    patches = match patches.insert(target, &inode_block) { Ok(patches) => patches, Err(_) => { return Err(Error::Admission); } };
-    if patches.len() == 0 || patches.len() > 6 { return Err(Error::Admission); }
-    let region = match crate::xattr_footprint::check(node, new_block, &patches) { Some(region) => region, None => { return Err(Error::Admission); } };
-    let shadow = match index.source().overlay(&patches) { Some(shadow) => shadow, None => { return Err(Error::Admission); } };
-    let after = match allocation::parse(shadow) { Some(after) => after, None => { return Err(Error::Admission); } };
-    let after_attributes = match xattr_inode::inspect(after.index(), number) { Some(attributes) => attributes, None => { return Err(Error::Admission); } };
-    let (first, second) = after_attributes.source_tables();
-    if let Some(table) = first { if !crate::xattr_canonical::check(table, false) { return Err(Error::Admission); } }
-    if let Some(table) = second { if !crate::xattr_canonical::check(table, true) { return Err(Error::Admission); } }
-    let actual = match store::capture(&after_attributes) { Some(actual) => actual, None => { return Err(Error::Admission); } };
-    if !actual.equivalent(&updated) { return Err(Error::Admission); }
-    let after_raw = match inode_table::read(after.index(), number) { Some(raw) => raw, None => { return Err(Error::Admission); } };
-    if !bytes::equal(after_raw, &encoded) { return Err(Error::Admission); }
-    let ghost view = UpdateView { grant: authorization, name: name@, data: desired_data, flags, desired: updated.view(), region, change, patches: patches.view(),
-        after: after.view(), attributes: after_attributes.view() };
-    assert(valid(view)) by { reveal(valid); }
+    let storage = match crate::xattr_transaction::build(node, &updated, info.mode, seconds, nanos) { Ok(storage) => storage, Err(error) => { return Err(error); } };
+    let (patches, Ghost(stored)) = storage.into_parts();
+    proof { crate::xattr_transaction::retaining_the_mode_retains_the_original_xattr_update_inode(stored); }
+    let ghost view = UpdateView { grant: authorization, name: name@, data: desired_data, flags, desired: updated.view(), region: stored.region,
+        change: stored.change, patches: patches.view(), after: stored.after, attributes: stored.attributes };
+    assert(valid(view)) by { reveal(valid); reveal(crate::xattr_transaction::valid); }
     Ok(Some(Candidate { node, patches, checked: Ghost(view) }))
 }
 

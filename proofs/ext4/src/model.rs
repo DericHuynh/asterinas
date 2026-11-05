@@ -277,3 +277,11 @@ pub mod xattr_footprint;
 pub mod xattr_durable;
 
 pub mod xattr_canonical;
+
+pub mod inode_mode;
+pub mod acl_xattr;
+
+pub mod xattr_transaction;
+pub mod xattr_commit;
+
+pub mod acl_update;
