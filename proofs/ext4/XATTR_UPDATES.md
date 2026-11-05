@@ -117,6 +117,10 @@ The separate [EA_INODE core](EA_INODE.md) now provides isolated metadata,
 source-bound value inspection and structural reference/quota contracts. It does
 not extend this lifecycle's ordinary filesystem admission, value allocation,
 orphan handling or journalled update support.
+The [source EA reference census](EA_REFERENCE_CENSUS.md) separately binds complete
+parent descriptors, physical counts, logical billing and external sharing to the
+actual metadata; global ownership and this lifecycle's EA mutation admission
+remain unfinished.
 
 
 Access/default ACL updates are implemented separately in [POSIX_ACL.md](POSIX_ACL.md).

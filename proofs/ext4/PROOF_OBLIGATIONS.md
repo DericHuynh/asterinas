@@ -95,6 +95,24 @@ Full EA_INODE F-ADMIT, allocation/orphan/quota F-OPS, and journal/crash closure
 remain open; the ordinary admission and mount/writer gates still reject it.
 Recorded evidence determines the exact checked implementation and obligations.
 
+The source-bound EA metadata census now composes complete actual-feature
+group/bitmap enumeration, every declared inode's classification and complete
+ordinary-parent physical/logical projections (EA_REFERENCE_CENSUS.md).
+Its contracts relate stored live EA counts to physical indegrees, bind every
+descriptor to an allocated exact-size value, exclude legacy Lustre handling for
+every logical parent, check every logical entry's exact source-name hash relation
+to the target's stored value-hash word in either Linux name-byte convention,
+and account for every external parent pointer including
+local-only blocks. Pairwise inode-table ranges and source inode slots are
+separated; external xattr blocks cannot intersect any inode table, including
+under FLEX_BG. GDT/bitmap/journal/data role separation remains open.
+Parent billing uses the exact logical projection and retains
+only an arithmetic residual; it does not discharge global physical F-OWN.
+Full EA-enabled F-ADMIT still requires namespace/journal/global ownership and
+all-value-content validation; entry/metadata-hash consistency does not replace
+payload CRC or complete physical-sector accounting. Lifecycle F-OPS, quota/orphan persistence, races
+and durable journal closure remain open, and no mount/writer gate is enabled.
+
 ## Security and concurrent integration
 
 | ID | Obligation | Present artifact / missing work |

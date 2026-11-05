@@ -15,8 +15,17 @@ clean-state marker and RECOVER clear, and binds allocated inode-table bytes to
 the original snapshot. The ordinary whole-image allocation/namespace and writer
 admission paths still reject EA_INODE; isolated parsing does not enable a mount
 or widen those feature masks. Modern 16 MiB initialized value inspection and
-structural reference/quota contracts do not supply global ownership, a complete
-reference census, orphan lifetime, quota enforcement or durable updates.
+structural reference/quota contracts do not supply global ownership, orphan
+lifetime, quota enforcement or durable updates. The separate
+[EA reference census](EA_REFERENCE_CENSUS.md) now binds complete actual-feature
+group/bitmap metadata and every declared inode slot to exact physical/logical
+EA projections, stored reference counts, external sharing counts and parent
+billing arithmetic. Every logical entry checks its exact source name and the
+target stored value-hash word against the entry hash in either Linux name-byte
+convention; unread payload CRCs and full physical-sector accounting remain open. It also separates inode-table ranges/source slots and
+excludes external xattr blocks from those tables; other role aliases remain for
+the global ownership audit. This metadata closure still does not admit a whole EA-enabled
+filesystem or validate every value's extents/content.
 
 ## Implemented structural subset
 

@@ -9,9 +9,9 @@ and a [concurrent block/extent/transaction protocol](CONCURRENCY.md).
 It is not a complete filesystem and is not registered with the kernel VFS.
 No mount or filesystem write path is enabled.
 
-The pinned Verus run checks **2010 obligations with zero errors**, including
-639 named proof functions and 549 named executable functions.
-206 host interoperability/regression tests pass on Linux-created metadata.
+The pinned Verus run checks **2149 obligations with zero errors**, including
+665 named proof functions and 582 named executable functions.
+222 host interoperability/regression tests pass on Linux-created metadata.
 [Proof status](proof-status.json) and [recorded evidence](verification-evidence.json)
 state the exact scope; tests do not discharge formal obligations.
 
@@ -175,8 +175,20 @@ complete-key descriptor selection, dense initialized value reads up to 16 MiB,
 signed/unsigned entry-hash compatibility and structural reference/quota models.
 Its contracts bind returned bytes to actual source extents and check full value
 and entry hashes; source permissions and global metadata/data ownership remain
-separate. Reference ledgers are caller-supplied data, not a complete authenticated
-disk census, and reference edit images confer no I/O or durability claim.
+separate. Bare reference ledgers accept caller-supplied data, and reference edit
+images confer no I/O or durability claim. The separate
+[source EA reference census](EA_REFERENCE_CENSUS.md) binds complete group/bitmap
+metadata, every declared inode slot, exact parent projections, physical EA counts,
+logical parent billing and every external pointer count to the original source.
+Every logical entry also checks its exact source name and target's stored value
+hash against the entry hash under either Linux name-byte convention; this does
+not check unread payload CRCs.
+It includes external blocks with only local values. The parent billing residual
+is arithmetic, not physical ownership; the census does not validate every EA
+payload or replace global allocation/namespace/journal admission.
+The index separates all inode-table ranges and source inode slots, and the
+census excludes every external xattr block from those tables. Other metadata/data
+roles still require the global ownership audit.
 Ordinary full-filesystem admission still rejects EA_INODE. Allocation/orphans,
 quota enforcement, deduplication and journalled value updates remain open.
 The new modules are in the pinned whole-crate manifest; recorded evidence
@@ -207,7 +219,7 @@ It rejects local proof escapes, extra flags, omitted modules and source-inventor
 requires named proof and executable coverage; invalidates stale artifacts on failure;
 and records source, runner, manifest, verifier and emitted-library hashes.
 The negative checks include an actual failing Verus assertion in a disposable copy.
-120 negative Rust compilation checks reject certificate/source substitution, edit/queue ownership violations, request reuse/forgery, completion redirection, state replacement, command mutation and finishing through a live command loan.
+135 negative Rust compilation checks reject certificate/source substitution, edit/queue ownership violations, request reuse/forgery, completion redirection, state replacement, command mutation and finishing through a live command loan.
 [CI](../../.github/workflows/verify_ext4.yml) runs the same checks.
 
 The emitted host library exercises proof erasure and Linux byte compatibility.
