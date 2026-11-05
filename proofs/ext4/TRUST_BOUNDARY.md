@@ -378,4 +378,40 @@ Its `own` residual is arithmetic, not ownership. Complete physical separation,
 value content/CRC validation for every target, sector/EOF closure, quota database
 persistence, authenticated lifecycle edits and CortenMM/OSTD lock/cache/device
 refinement remain open. Full filesystem admission and mount/writer gates remain
-closed. See [EA reference census](EA_REFERENCE_CENSUS.md).
+closed. See [EA reference census](EA_REFERENCE_CENSUS.md). The separate value
+integrity composition below supplies bounded payload/EA-sector closure; this
+reference census alone still establishes metadata relations only.
+
+
+## Source-bound EA value integrity
+
+The private integrity result retains one original-source reference census and
+one complete payload/storage result for every census EA inode. Explicit physical
+record coverage and unique value inode identities prevent a partial or unrelated
+value list from standing in for complete inspection. Same source header and inode
+number determine one exact node; payload metadata and logical bindings therefore
+refer to the same retained inode bytes, without a CRC identity premise.
+
+Complete source tree claims include all external extent nodes and every data
+extent. A shared physical ledger rejects within/across-value aliases and retains
+exact initialized map roles. Dense data-extent coverage and full source-byte CRCs
+are checked separately from structural tree validity. Extra data allocations past
+the rounded EOF reject the profile. Complete EA sectors include metadata blocks;
+parent logical charges remain a separate quantity. Accepted empty metadata leaves
+are still counted; no minimal/canonical extent-tree representation is inferred.
+
+Every claimed EA block must be set in the actual group's logical allocation
+bitmap and excluded from source-selected superblock/GDT backups, all bitmap and
+inode-table blocks and every external-xattr block. These checks do not enumerate
+ordinary-file/directory or journal data owners, or prove all allocated bits have
+a unique global owner. Full EA filesystem admission and every mount/write gate
+remain closed.
+
+The aggregate byte budget bounds declared/retained payload lengths. Host Vec
+capacity, transient buffers and allocation success are not consequences of that
+bound. Final partial-block bytes beyond the value length are not returned or
+hashed; future publication/reuse requires an initialization and tail-zeroing
+protocol. Immutable host inspection grants no VFS credentials, allocation,
+refcount/quota/orphan edit, lock, BIO, DMA or device authority. Runtime refinement
+must use Asterinas's CortenMM/OSTD framekernel interfaces. See
+[EA value integrity](EA_VALUE_INTEGRITY.md).

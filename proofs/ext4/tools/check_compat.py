@@ -324,6 +324,22 @@ def main():
         "mutate_live_ea_census_source": ("pub fn misuse(mut bytes: Vec<u8>) { let snapshot = verified_ext4::snapshot::Snapshot::from_bytes(&bytes); let census = verified_ext4::ea_census::inspect(&snapshot, u32::MAX).unwrap(); bytes[0] = 1; let _ = census.values(); }\n", "E0502"),
         "confuse_ea_census_with_whole_volume": ("pub fn misuse(c: &verified_ext4::ea_census::Census<'_, '_>) { let _ = verified_ext4::allocated_inode::get(c, 12); }\n", "E0308"),
     })
+    misuse.update({
+        'forge_ea_stored_value': ('pub fn misuse(s: verified_ext4::ea_storage::Stored) { let _ = verified_ext4::ea_storage::Stored { ..s }; }\n', 'E0451'),
+        'forge_ea_value_integrity': ("pub fn misuse(i: verified_ext4::ea_integrity::Integrity<'_, '_>) { let _ = verified_ext4::ea_integrity::Integrity { ..i }; }\n", 'E0451'),
+        'mutate_ea_stored_payload': ('pub fn misuse(s: verified_ext4::ea_storage::Stored) { s.as_slice()[0] = 1; }\n', 'E0594'),
+        'mutate_ea_stored_mapping': ('pub fn misuse(s: verified_ext4::ea_storage::Stored) { s.blocks()[0] = 1; }\n', 'E0594'),
+        'mutate_ea_stored_claim': ('pub fn misuse(s: verified_ext4::ea_storage::Stored) { s.claims()[0].start = 1; }\n', 'E0594'),
+        'replace_ea_stored_metadata': ('pub fn misuse(mut s: verified_ext4::ea_storage::Stored) { s.info.refs = 0; }\n', 'E0616'),
+        'replace_ea_integrity_references': ("pub fn misuse<'s, 'a>(mut i: verified_ext4::ea_integrity::Integrity<'s, 'a>, r: verified_ext4::ea_census::Census<'s, 'a>) { i.references = r; }\n", 'E0616'),
+        'replace_ea_integrity_ledger': ("pub fn misuse(mut i: verified_ext4::ea_integrity::Integrity<'_, '_>, c: verified_ext4::block_claims::Census) { i.ownership = c; }\n", 'E0616'),
+        'mutate_ea_integrity_ledger_claim': ("pub fn misuse(i: verified_ext4::ea_integrity::Integrity<'_, '_>) { i.ledger().claims()[0].start = 1; }\n", 'E0594'),
+        'mutate_live_ea_integrity_source': ('pub fn misuse(mut bytes: Vec<u8>) { let snapshot = verified_ext4::snapshot::Snapshot::from_bytes(&bytes); let integrity = verified_ext4::ea_integrity::inspect(&snapshot, u32::MAX, 1, 4096).unwrap(); bytes[0] = 1; let _ = integrity.value_count(); }\n', 'E0502'),
+        'consume_ea_integrity_borrowed_ledger': ("pub fn misuse(i: verified_ext4::ea_integrity::Integrity<'_, '_>) { let _ = i.ledger().claim(verified_ext4::block_claims::Claim { start: 1, length: 1, kind: 1, inode: 0, generation: 0, logical: 0, initialized: false }); }\n", 'E0507'),
+        'confuse_ea_integrity_with_allocated_filesystem': ("pub fn misuse(i: &verified_ext4::ea_integrity::Integrity<'_, '_>) { let _ = verified_ext4::allocated_inode::get(i, 12); }\n", 'E0308'),
+        'replace_ea_integrity_values': ("pub fn misuse(mut i: verified_ext4::ea_integrity::Integrity<'_, '_>) { i.values = Vec::new(); }\n", 'E0616'),
+        'move_stored_value_out_of_ea_integrity_borrow': ("pub fn misuse(i: verified_ext4::ea_integrity::Integrity<'_, '_>) { let _stored = *i.value(0).unwrap(); }\n", 'E0507'),
+    })
     for name, (source, code) in misuse.items():
         path = BUILD / (name + ".rs")
         path.write_text(source)

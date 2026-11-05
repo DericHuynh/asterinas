@@ -9,9 +9,9 @@ and a [concurrent block/extent/transaction protocol](CONCURRENCY.md).
 It is not a complete filesystem and is not registered with the kernel VFS.
 No mount or filesystem write path is enabled.
 
-The pinned Verus run checks **2149 obligations with zero errors**, including
-665 named proof functions and 582 named executable functions.
-222 host interoperability/regression tests pass on Linux-created metadata.
+The pinned Verus run checks **2207 obligations with zero errors**, including
+683 named proof functions and 600 named executable functions.
+236 host interoperability/regression tests pass on Linux-created metadata.
 [Proof status](proof-status.json) and [recorded evidence](verification-evidence.json)
 state the exact scope; tests do not discharge formal obligations.
 
@@ -189,6 +189,17 @@ payload or replace global allocation/namespace/journal admission.
 The index separates all inode-table ranges and source inode slots, and the
 census excludes every external xattr block from those tables. Other metadata/data
 roles still require the global ownership audit.
+The separate [EA value integrity layer](EA_VALUE_INTEGRITY.md) adds complete
+extent-claim and payload validation for every census EA inode, exact physical
+sector accounting, initialized dense coverage with no extra data extents past
+the rounded EOF, and joint EA-value claim disjointness. Every source physical
+record is covered by a unique stored value result; exact source-node and metadata
+relations connect payload CRCs with logical entry hashes. Checked source bitmap,
+fixed-metadata and external-xattr exclusions apply to every EA claim block.
+Ordinary/journal data-owner separation and global allocation/namespace/journal
+composition remain open. Aggregate payload-byte limits do not assert an exact
+host heap-capacity bound. The new contracts and obligations are in the pinned
+manifest; recorded evidence determines checked scope.
 Ordinary full-filesystem admission still rejects EA_INODE. Allocation/orphans,
 quota enforcement, deduplication and journalled value updates remain open.
 The new modules are in the pinned whole-crate manifest; recorded evidence
@@ -219,7 +230,7 @@ It rejects local proof escapes, extra flags, omitted modules and source-inventor
 requires named proof and executable coverage; invalidates stale artifacts on failure;
 and records source, runner, manifest, verifier and emitted-library hashes.
 The negative checks include an actual failing Verus assertion in a disposable copy.
-135 negative Rust compilation checks reject certificate/source substitution, edit/queue ownership violations, request reuse/forgery, completion redirection, state replacement, command mutation and finishing through a live command loan.
+149 negative Rust compilation checks reject certificate/source substitution, edit/queue ownership violations, request reuse/forgery, completion redirection, state replacement, command mutation and finishing through a live command loan.
 [CI](../../.github/workflows/verify_ext4.yml) runs the same checks.
 
 The emitted host library exercises proof erasure and Linux byte compatibility.

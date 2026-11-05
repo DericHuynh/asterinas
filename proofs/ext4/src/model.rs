@@ -302,3 +302,9 @@ pub mod ea_parent;
 pub mod ea_ref_projection;
 pub mod ea_billing;
 pub mod ea_census;
+
+pub mod ea_storage;
+
+pub mod ea_block_policy;
+
+pub mod ea_integrity;

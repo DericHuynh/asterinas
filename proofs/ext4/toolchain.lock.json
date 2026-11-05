@@ -200,7 +200,10 @@
     "src/ea_parent.rs",
     "src/ea_ref_projection.rs",
     "src/ea_billing.rs",
-    "src/ea_census.rs"
+    "src/ea_census.rs",
+    "src/ea_storage.rs",
+    "src/ea_block_policy.rs",
+    "src/ea_integrity.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -867,7 +870,25 @@
     "ea_index::distinct_source_inode_slots_have_disjoint_byte_ranges",
     "ea_census::external_xattr_blocks_do_not_alias_any_source_inode_slot",
     "ea_census::source_parent_billing_uses_every_ondisk_logical_ea_entry",
-    "ea_census::every_logical_parent_binding_checks_the_exact_source_name_and_entry_hash"
+    "ea_census::every_logical_parent_binding_checks_the_exact_source_name_and_entry_hash",
+    "ea_storage::every_stored_ea_value_has_all_its_source_tree_claims",
+    "ea_storage::every_stored_ea_extent_ends_within_the_value",
+    "ea_storage::every_complete_ea_tree_allocation_is_physically_disjoint",
+    "ea_storage::stored_ea_physical_sectors_include_every_external_extent_node",
+    "ea_storage::every_stored_ea_byte_and_hash_is_from_the_original_snapshot",
+    "ea_storage::stored_ea_maps_are_initialized_allocated_claim_slots",
+    "ea_storage::the_same_live_ea_metadata_has_one_exact_representation",
+    "ea_block_policy::every_checked_ea_claim_block_is_source_allocated_and_outside_fixed_metadata",
+    "ea_integrity::every_source_physical_ea_record_has_a_verified_payload",
+    "ea_integrity::every_source_logical_ea_record_has_a_verified_payload",
+    "ea_integrity::distinct_integrity_values_have_distinct_inode_numbers",
+    "ea_integrity::every_source_ea_value_has_exactly_one_integrity_result",
+    "ea_integrity::every_ea_extent_allocation_has_a_checked_source_block_role",
+    "ea_integrity::integrity_resource_limits_never_return_a_partial_value_prefix",
+    "ea_integrity::same_source_ea_inode_number_identifies_one_exact_node",
+    "ea_integrity::every_source_target_is_the_exact_verified_inode_and_payload",
+    "ea_integrity::distinct_ea_values_have_disjoint_complete_physical_claims",
+    "ea_integrity::every_logical_ea_binding_checks_its_exact_payload_crc_and_entry_hash"
   ],
   "required_flags": [
     "--no-cheating",
@@ -1457,6 +1478,24 @@
     "ea_census::quota",
     "ea_census::external_parents",
     "ea_census::inspect",
-    "ea_index::is_inode_table_block"
+    "ea_index::is_inode_table_block",
+    "block_claims::claims",
+    "extent_claims::collect_checked",
+    "ea_storage::info",
+    "ea_storage::as_slice",
+    "ea_storage::blocks",
+    "ea_storage::claims",
+    "ea_storage::allocated_blocks",
+    "ea_storage::inspect",
+    "ea_block_policy::block_is_allocated",
+    "ea_block_policy::is_fixed_metadata",
+    "ea_block_policy::check",
+    "ea_integrity::reference_census",
+    "ea_integrity::ledger",
+    "ea_integrity::value_count",
+    "ea_integrity::value",
+    "ea_integrity::total_bytes",
+    "ea_integrity::allocated_blocks",
+    "ea_integrity::inspect"
   ]
 }

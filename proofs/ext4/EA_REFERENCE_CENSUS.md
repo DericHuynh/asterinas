@@ -151,10 +151,13 @@ entries, two-group FLEX_BG placement with lazy bitmap semantics, overlapping
 inode-table ranges and external-xattr/inode-table aliases. Exact executions and
 pass counts are supplied by recorded evidence, not by this scenario list.
 
-The next integration must compose this reference closure with a global physical
-ownership ledger, namespace and journal admission, complete value extent/content
-validation, exact EA/ordinary inode sector accounting and unsupported-feature
-exclusion. Authenticated allocation, refcount/COW/deduplication, quota persistence,
+The separate [EA value integrity layer](EA_VALUE_INTEGRITY.md) now composes this
+reference closure with complete bounded EA tree claims, payload CRCs, exact EA
+physical sectors, joint EA value disjointness and source allocation/fixed-metadata/
+external-xattr exclusions. The reference census alone retains its metadata-only
+scope. Full admission still requires ordinary/journal data-owner separation,
+exact global bitmap ownership, namespace/journal validation and exact ordinary
+inode sector accounting without bypassing feature checks. Authenticated allocation, refcount/COW/deduplication, quota persistence,
 orphan/reclamation, concurrent lock/cache protocols and durable crash recovery
 remain unfinished. Runtime execution must use Asterinas's CortenMM/OSTD
 framekernel memory, ownership, locking and device interfaces.

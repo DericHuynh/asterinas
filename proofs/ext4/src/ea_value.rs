@@ -73,7 +73,7 @@ impl Value {
         ensures self.wf(), other.wf(), r == (self.view().data == other.view().data),
     { proof { use_type_invariant(self); use_type_invariant(other); } bytes::equal(&self.data, &other.data) }
 }
-fn distinct(maps: &[u64]) -> (r: bool) ensures r == maps@.no_duplicates() {
+pub(crate) fn distinct(maps: &[u64]) -> (r: bool) ensures r == maps@.no_duplicates() {
     let mut i = 0usize;
     while i < maps.len()
         invariant i <= maps.len(), forall|a: int, b: int| 0 <= a < b < i ==> #[trigger] maps@[a] != #[trigger] maps@[b],
@@ -91,7 +91,7 @@ fn distinct(maps: &[u64]) -> (r: bool) ensures r == maps@.no_duplicates() {
 }
 // Validate the final owned buffer against actual source ranges, independently
 // of the append loop. Only initialized mappings can reach this checker.
-fn check_content(source: &Snapshot<'_>, maps: &[u64], data: &[u8]) -> (r: bool)
+pub(crate) fn check_content(source: &Snapshot<'_>, maps: &[u64], data: &[u8]) -> (r: bool)
     ensures r ==> content(source.view(), maps@, data@),
 {
     if data.len() == 0 || data.len() > 16777216 || maps.len() != (data.len() + 4095) / 4096 { return false; }
@@ -136,7 +136,7 @@ fn check_content(source: &Snapshot<'_>, maps: &[u64], data: &[u8]) -> (r: bool)
     true
 }
 
-fn read_tree(tree: &extent_tree::CheckedTree<'_, '_>, source: &Snapshot<'_>, size: u32)
+pub(crate) fn read_tree(tree: &extent_tree::CheckedTree<'_, '_>, source: &Snapshot<'_>, size: u32)
     -> (r: Option<(Vec<u8>, Vec<u64>, Ghost<Seq<SpanView>>)>)
     requires tree.wf(), tree.context().source == source.view(), 0 < size <= 16777216,
     ensures tree.wf(), match r { Some(parts) => parts.0.len() == size && parts.1.len() == (size as nat + 4095) / 4096
