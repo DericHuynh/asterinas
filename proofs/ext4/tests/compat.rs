@@ -12106,7 +12106,7 @@ mod ea_namespace_admission {
         let hash = core::crc::crc32c(reserved, &[0, 0, 0, 0]);
         raw[tail + 4..tail + 8].copy_from_slice(&hash.to_le_bytes());
     }
-    fn indexed_image(prefix: &str) -> Vec<u8> {
+    pub(super) fn indexed_image(prefix: &str) -> Vec<u8> {
         let path = format!("build/{prefix}.img");
         let empty = format!("build/{prefix}-empty.bin");
         let script = format!("build/{prefix}-commands.txt");
@@ -12669,5 +12669,683 @@ mod ea_namespace_admission {
         huge[at + 4..at + 8].copy_from_slice(&(4097u32 * 4096).to_le_bytes());
         seal_inode(&mut huge, fixture.table, 11, fixture.seed);
         rejected(&huge, 4096);
+    }
+}
+
+// Native concurrent namespace mutation tests use the emitted verified core.
+// Host threads and Mutex supply scheduling, not an OSTD lock refinement.
+mod ns_concurrent_mutation {
+    use core::{
+        ea_namespace,
+        inode_time_fields::{self, Field},
+        ns_mutation::{Checkout, Prepared, PublishError, Store},
+        snapshot::Snapshot,
+    };
+
+    use super::{
+        ea_inode_values::{Fixture, fixture, fixture_with_features, offset, seal_raw},
+        inline_xattr_updates::command,
+        *,
+    };
+
+    const SECONDS: i64 = 1_700_000_100;
+    const NANOS: u32 = 123_456_789;
+
+    fn open(raw: &[u8], limit: u64) -> Store {
+        Store::open(raw, limit, u32::MAX, 8, 4096).expect("admitted EA source")
+    }
+    fn prepare(checkout: Checkout, directory: u32, old: &[u8], new: &[u8]) -> Prepared {
+        match checkout.prepare_rename_noreplace(directory, old, new, SECONDS, NANOS) {
+            Ok(prepared) => prepared,
+            Err(_) => panic!("rename preparation rejected"),
+        }
+    }
+    fn publish(store: &mut Store, prepared: Prepared) -> u64 {
+        match store.publish(prepared) {
+            Ok(epoch) => epoch,
+            Err(_) => panic!("publication rejected"),
+        }
+    }
+    fn check_namespace(raw: &[u8], missing: &[(u32, &[u8])], present: &[(u32, &[u8], u32)]) {
+        let snapshot = Snapshot::from_bytes(raw);
+        let namespace = ea_namespace::inspect(&snapshot, u32::MAX, 8, 4096).unwrap();
+        for &(directory, name) in missing {
+            assert!(
+                namespace.lookup(directory, name).is_none(),
+                "unexpected key {name:?}"
+            );
+        }
+        for &(directory, name, target) in present {
+            assert_eq!(
+                namespace.lookup(directory, name).unwrap().identity().1,
+                target
+            );
+        }
+    }
+    fn fsck(raw: &[u8], prefix: &str) {
+        let path = format!("build/{prefix}.img");
+        std::fs::write(&path, raw).unwrap();
+        let executable = std::env::var("E2FSCK_BIN").unwrap_or_else(|_| "e2fsck".into());
+        command(&executable, &["-fn", &path], false);
+        let _ = std::fs::remove_file(path);
+    }
+    fn version(raw: &[u8]) -> u64 {
+        le32(raw, 36) as u64 + ((le32(raw, 152) as u64) << 32)
+    }
+    fn set_version(raw: &mut [u8], table: u32, number: u32, seed: u32, value: u64) {
+        let start = offset(table, number);
+        raw[start + 36..start + 40].copy_from_slice(&(value as u32).to_le_bytes());
+        raw[start + 152..start + 156].copy_from_slice(&((value >> 32) as u32).to_le_bytes());
+        seal_raw(&mut raw[start..start + 256], number, seed);
+    }
+    fn root_data(raw: &[u8], table: u32, number: u32) -> u32 {
+        let start = offset(table, number);
+        let extents = &raw[start + 40..start + 100];
+        assert_eq!(core::bytes::read_le16(extents, 6), Some(0));
+        let extent = core::extent::parse(extents, 12, le32(raw, 1028)).unwrap();
+        assert_eq!(extent.logical, 0);
+        assert!(extent.initialized);
+        extent.physical
+    }
+    fn record_span(raw: &[u8], table: u32, number: u32, name: &[u8]) -> usize {
+        let block = root_data(raw, table, number) as usize * 4096;
+        let mut position = 0usize;
+        while position < 4084 {
+            let span = core::bytes::read_le16(raw, block + position + 4).unwrap() as usize;
+            let length = raw[block + position + 6] as usize;
+            if le32(raw, block + position) != 0
+                && &raw[block + position + 8..block + position + 8 + length] == name
+            {
+                return span;
+            }
+            assert!(span >= 8 && position + span <= 4084);
+            position += span;
+        }
+        panic!("missing linear source record");
+    }
+    fn assert_inode_update(before: &[u8], after: &[u8], parent: bool) {
+        assert_eq!(version(after), version(before) + 1);
+        let ctime = inode_time_fields::get_time(after, Field::Ctime).unwrap();
+        assert_eq!((ctime.seconds, ctime.nanoseconds), (SECONDS, NANOS));
+        if parent {
+            let mtime = inode_time_fields::get_time(after, Field::Mtime).unwrap();
+            assert_eq!((mtime.seconds, mtime.nanoseconds), (SECONDS, NANOS));
+        } else {
+            assert_eq!(&after[16..20], &before[16..20]);
+            assert_eq!(&after[136..140], &before[136..140]);
+        }
+        for i in 0..256 {
+            let mutable = (12..16).contains(&i)
+                || (36..40).contains(&i)
+                || (124..126).contains(&i)
+                || (130..136).contains(&i)
+                || (152..156).contains(&i)
+                || parent && ((16..20).contains(&i) || (136..140).contains(&i));
+            if !mutable {
+                assert_eq!(after[i], before[i], "unrelated inode byte {i}");
+            }
+        }
+    }
+    fn assert_ea_retained(f: &Fixture, result: &[u8]) {
+        let ea = offset(f.table, 14);
+        assert_eq!(&result[ea..ea + 256], &f.bytes[ea..ea + 256]);
+        let external = f.external as usize * 4096;
+        assert_eq!(
+            &result[external..external + 4096],
+            &f.bytes[external..external + 4096]
+        );
+        for number in [12u32, 13] {
+            let start = offset(f.table, number);
+            assert_eq!(
+                &result[start + 28..start + 32],
+                &f.bytes[start + 28..start + 32]
+            );
+            assert_eq!(
+                &result[start + 104..start + 108],
+                &f.bytes[start + 104..start + 108]
+            );
+            assert_eq!(
+                &result[start + 160..start + 256],
+                &f.bytes[start + 160..start + 256]
+            );
+        }
+        let snapshot = Snapshot::from_bytes(result);
+        let namespace = ea_namespace::inspect(&snapshot, u32::MAX, 8, 4096).unwrap();
+        assert_eq!(
+            namespace
+                .allocation()
+                .integrity()
+                .value(0)
+                .unwrap()
+                .as_slice(),
+            f.value
+        );
+    }
+    fn reject_unchanged(store: &Store, directory: u32, old: &[u8], new: &[u8]) {
+        let before = store.bytes().to_vec();
+        let epoch = store.epoch();
+        assert!(
+            store
+                .checkout()
+                .prepare_rename_noreplace(directory, old, new, SECONDS, NANOS)
+                .is_err()
+        );
+        assert_eq!(store.epoch(), epoch);
+        assert_eq!(store.bytes(), before);
+    }
+
+    #[test]
+    fn file_rename_preserves_ea_storage_and_coalesces_parent_target_metadata_under_all_source_profiles()
+     {
+        for wide in [false, true] {
+            for stored_seed in [false, true] {
+                let f = fixture_with_features(
+                    &format!("ns-mutation-profiles-{wide}-{stored_seed}"),
+                    4096,
+                    wide,
+                    stored_seed,
+                );
+                let mut store = open(&f.bytes, 8);
+                let staged = prepare(store.checkout(), 2, b"first", b"renamed");
+                assert_eq!(staged.epoch(), 0);
+                check_namespace(
+                    staged.bytes(),
+                    &[(2, b"first")],
+                    &[(2, b"renamed", 12), (2, b"second", 13)],
+                );
+                assert_eq!(store.bytes(), f.bytes);
+                assert_eq!(publish(&mut store, staged), 1);
+                let parent = offset(f.table, 2);
+                let target = offset(f.table, 12);
+                assert_eq!(
+                    parent / 4096,
+                    target / 4096,
+                    "shared table block exercises coalescing"
+                );
+                assert_inode_update(
+                    &f.bytes[parent..parent + 256],
+                    &store.bytes()[parent..parent + 256],
+                    true,
+                );
+                assert_inode_update(
+                    &f.bytes[target..target + 256],
+                    &store.bytes()[target..target + 256],
+                    false,
+                );
+                let neighbor = offset(f.table, 13);
+                assert_eq!(
+                    &store.bytes()[neighbor..neighbor + 256],
+                    &f.bytes[neighbor..neighbor + 256]
+                );
+                let directory_block = root_data(&f.bytes, f.table, 2);
+                for block in 0..f.bytes.len() / 4096 {
+                    if block != parent / 4096
+                        && block != target / 4096
+                        && block != directory_block as usize
+                    {
+                        assert_eq!(
+                            &store.bytes()[block * 4096..(block + 1) * 4096],
+                            &f.bytes[block * 4096..(block + 1) * 4096]
+                        );
+                    }
+                }
+                assert_ea_retained(&f, store.bytes());
+                fsck(
+                    store.bytes(),
+                    &format!("ns-mutation-profiles-result-{wide}-{stored_seed}"),
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn same_parent_directory_rename_keeps_dotdot_link_counts_and_root_reachability() {
+        let f = fixture("ns-mutation-directory", 4096);
+        let mut store = open(&f.bytes, 4);
+        let staged = prepare(store.checkout(), 2, b"lost+found", b"recovered");
+        assert_eq!(publish(&mut store, staged), 1);
+        let snapshot = Snapshot::from_bytes(store.bytes());
+        let namespace = ea_namespace::inspect(&snapshot, u32::MAX, 8, 4096).unwrap();
+        assert!(namespace.lookup(2, b"lost+found").is_none());
+        assert_eq!(namespace.lookup(2, b"recovered").unwrap().identity().1, 11);
+        assert_eq!(namespace.lookup(11, b"..").unwrap().identity().1, 2);
+        assert_eq!(namespace.parent(11), Some(2));
+        assert_eq!(namespace.depth(11), Some(1));
+        for number in [2u32, 11] {
+            let at = offset(f.table, number);
+            assert_eq!(&store.bytes()[at + 26..at + 28], &f.bytes[at + 26..at + 28]);
+        }
+        fsck(store.bytes(), "ns-mutation-directory-result");
+    }
+
+    #[test]
+    fn rename_handles_shorter_longer_non_utf8_and_maximum_names_within_the_original_span() {
+        let f = fixture("ns-mutation-name-lengths", 4096);
+        let mut store = open(&f.bytes, 8);
+        assert!(record_span(&f.bytes, f.table, 2, b"second") >= 264);
+        let long = vec![b'z'; 255];
+        let mut old = b"second".to_vec();
+        for (index, name) in [long.as_slice(), &[0xff, 0x80, b'x'], b"q"]
+            .into_iter()
+            .enumerate()
+        {
+            let staged = prepare(store.checkout(), 2, &old, name);
+            assert_eq!(publish(&mut store, staged), index as u64 + 1);
+            check_namespace(
+                store.bytes(),
+                &[(2, &old)],
+                &[(2, name, 13), (2, b"first", 12)],
+            );
+            old = name.to_vec();
+        }
+        fsck(store.bytes(), "ns-mutation-name-lengths-result");
+    }
+
+    #[test]
+    fn noreplace_rejects_existing_destination_and_identical_source_key_without_publication() {
+        let f = fixture("ns-mutation-noreplace", 4096);
+        let store = open(&f.bytes, 4);
+        reject_unchanged(&store, 2, b"first", b"second");
+        reject_unchanged(&store, 2, b"first", b"first");
+    }
+
+    #[test]
+    fn noreplace_rejects_an_existing_alias_even_when_both_keys_target_the_same_inode() {
+        let f = fixture("ns-mutation-existing-alias", 4096);
+        let path = "build/ns-mutation-existing-alias-work.img";
+        let script = "build/ns-mutation-existing-alias-commands.txt";
+        std::fs::write(path, &f.bytes).unwrap();
+        std::fs::write(script, "ln /first /alias\n").unwrap();
+        let debugfs = std::env::var("DEBUGFS_BIN").unwrap_or_else(|_| "debugfs".into());
+        command(&debugfs, &["-w", "-f", script, path], false);
+        let mut img = std::fs::read(path).unwrap();
+        let at = offset(f.table, 12);
+        img[at + 26..at + 28].copy_from_slice(&2u16.to_le_bytes());
+        seal_raw(&mut img[at..at + 256], 12, f.seed);
+        fsck(&img, "ns-mutation-existing-alias-baseline");
+        let store = open(&img, 4);
+        reject_unchanged(&store, 2, b"first", b"alias");
+        check_namespace(store.bytes(), &[], &[(2, b"first", 12), (2, b"alias", 12)]);
+        for file in [path, script] {
+            let _ = std::fs::remove_file(file);
+        }
+    }
+
+    #[test]
+    fn missing_names_and_non_directory_ea_journal_or_out_of_range_parents_are_rejected() {
+        let f = fixture("ns-mutation-missing", 4096);
+        let store = open(&f.bytes, 4);
+        reject_unchanged(&store, 2, b"missing", b"new");
+        for directory in [0u32, 8, 12, 14, u32::MAX] {
+            reject_unchanged(&store, directory, b"first", b"new");
+        }
+    }
+
+    #[test]
+    fn dot_dotdot_empty_slash_nul_and_overlong_names_cannot_be_renamed_or_created() {
+        let f = fixture("ns-mutation-invalid-names", 4096);
+        let store = open(&f.bytes, 4);
+        let long = vec![b'x'; 256];
+        for name in [
+            b"".as_slice(),
+            b".",
+            b"..",
+            b"a/b",
+            b"a\0b",
+            long.as_slice(),
+        ] {
+            reject_unchanged(&store, 2, b"first", name);
+            reject_unchanged(&store, 2, name, b"new");
+        }
+    }
+
+    #[test]
+    fn lack_of_record_span_space_rejects_without_repacking_or_partial_inode_updates() {
+        let f = fixture("ns-mutation-record-space", 4096);
+        let store = open(&f.bytes, 4);
+        let span = record_span(&f.bytes, f.table, 2, b"first");
+        assert!(span < 264);
+        let name = vec![b'n'; span - 7];
+        assert!((8 + name.len() + 3) / 4 * 4 > span);
+        reject_unchanged(&store, 2, b"first", &name);
+    }
+
+    #[test]
+    fn readonly_source_allows_inspection_but_rejects_mutation_preparation() {
+        let f = fixture("ns-mutation-readonly", 4096);
+        let mut img = f.bytes.clone();
+        let flags = le32(&img, 1124) | core::feature_policy::READONLY;
+        img[1124..1128].copy_from_slice(&flags.to_le_bytes());
+        let checksum = core::crc::crc32c(0xffffffff, &img[1024..2044]);
+        img[2044..2048].copy_from_slice(&checksum.to_le_bytes());
+        let store = open(&img, 4);
+        reject_unchanged(&store, 2, b"first", b"new");
+    }
+
+    #[test]
+    fn unrepresentable_timestamps_are_rejected_without_changing_the_published_image() {
+        let f = fixture("ns-mutation-invalid-time", 4096);
+        let store = open(&f.bytes, 4);
+        for (seconds, nanos) in [(SECONDS, 1_000_000_000u32), (i64::MAX, 0), (i64::MIN, 0)] {
+            assert!(
+                store
+                    .checkout()
+                    .prepare_rename_noreplace(2, b"first", b"new", seconds, nanos)
+                    .is_err()
+            );
+            assert_eq!(store.bytes(), f.bytes);
+            assert_eq!(store.epoch(), 0);
+        }
+    }
+
+    #[test]
+    fn parent_and_target_inode_version_exhaustion_never_wraps_or_publishes() {
+        let f = fixture("ns-mutation-inode-counter", 4096);
+        for number in [2u32, 12] {
+            let mut img = f.bytes.clone();
+            set_version(
+                &mut img,
+                f.table,
+                number,
+                f.seed,
+                core::xattr_replace::MAX_VERSION,
+            );
+            let store = open(&img, 4);
+            reject_unchanged(&store, 2, b"first", b"new");
+        }
+    }
+
+    #[test]
+    fn stale_preparations_cannot_lose_an_earlier_rename_and_fresh_retry_preserves_both() {
+        let f = fixture("ns-mutation-stale-retry", 4096);
+        let mut store = open(&f.bytes, 8);
+        let first = prepare(store.checkout(), 2, b"first", b"alpha");
+        let second = prepare(store.checkout(), 2, b"second", b"beta");
+        assert_eq!(publish(&mut store, first), 1);
+        let current = store.bytes().to_vec();
+        assert!(matches!(store.publish(second), Err(PublishError::Stale)));
+        assert_eq!(store.epoch(), 1);
+        assert_eq!(store.bytes(), current);
+        let second = prepare(store.checkout(), 2, b"second", b"beta");
+        assert_eq!(publish(&mut store, second), 2);
+        check_namespace(
+            store.bytes(),
+            &[(2, b"first"), (2, b"second")],
+            &[(2, b"alpha", 12), (2, b"beta", 13)],
+        );
+        assert_ea_retained(&f, store.bytes());
+        fsck(store.bytes(), "ns-mutation-stale-retry-result");
+    }
+
+    #[test]
+    fn same_epoch_candidate_from_a_different_valid_source_is_rejected_even_outside_its_write_set() {
+        let f = fixture("ns-mutation-source-mismatch", 4096);
+        let store_a = open(&f.bytes, 4);
+        let prepared = prepare(store_a.checkout(), 2, b"first", b"alpha");
+        let mut different = f.bytes.clone();
+        let at = offset(f.table, 13);
+        let generation = le32(&different, at + 100).wrapping_add(0x1020_3040);
+        different[at + 100..at + 104].copy_from_slice(&generation.to_le_bytes());
+        seal_raw(&mut different[at..at + 256], 13, f.seed);
+        let mut store_b = open(&different, 4);
+        assert!(matches!(
+            store_b.publish(prepared),
+            Err(PublishError::SourceMismatch)
+        ));
+        assert_eq!(store_b.epoch(), 0);
+        assert_eq!(store_b.bytes(), different);
+    }
+
+    #[test]
+    fn exhausted_publication_budget_retains_the_admitted_image_and_epoch() {
+        let f = fixture("ns-mutation-epoch-exhausted", 4096);
+        let mut store = open(&f.bytes, 0);
+        let prepared = prepare(store.checkout(), 2, b"first", b"new");
+        assert!(matches!(
+            store.publish(prepared),
+            Err(PublishError::Exhausted)
+        ));
+        assert_eq!(store.epoch(), 0);
+        assert_eq!(store.bytes(), f.bytes);
+    }
+
+    #[test]
+    fn the_last_allowed_publication_succeeds_then_fresh_work_is_exhausted_and_stale_work_stays_stale()
+     {
+        let f = fixture("ns-mutation-last-epoch", 4096);
+        let mut store = open(&f.bytes, 1);
+        let first = prepare(store.checkout(), 2, b"first", b"alpha");
+        let stale = prepare(store.checkout(), 2, b"second", b"beta");
+        assert_eq!(publish(&mut store, first), 1);
+        let current = store.bytes().to_vec();
+        assert!(matches!(store.publish(stale), Err(PublishError::Stale)));
+        let fresh = prepare(store.checkout(), 2, b"second", b"beta");
+        assert!(matches!(store.publish(fresh), Err(PublishError::Exhausted)));
+        assert_eq!(store.bytes(), current);
+        assert_eq!(store.epoch(), 1);
+    }
+
+    #[test]
+    fn restoring_old_names_does_not_revive_a_preparation_from_an_earlier_epoch() {
+        let f = fixture("ns-mutation-name-aba", 4096);
+        let mut store = open(&f.bytes, 8);
+        let stale = prepare(store.checkout(), 2, b"second", b"beta");
+        let forward = prepare(store.checkout(), 2, b"first", b"step");
+        publish(&mut store, forward);
+        let back = prepare(store.checkout(), 2, b"step", b"first");
+        assert_eq!(publish(&mut store, back), 2);
+        check_namespace(
+            store.bytes(),
+            &[(2, b"step")],
+            &[(2, b"first", 12), (2, b"second", 13)],
+        );
+        let current = store.bytes().to_vec();
+        assert!(matches!(store.publish(stale), Err(PublishError::Stale)));
+        assert_eq!(store.bytes(), current);
+        assert_eq!(store.epoch(), 2);
+    }
+
+    #[test]
+    fn store_checkout_and_prepared_images_own_their_bytes_and_private_name_inputs() {
+        let f = fixture("ns-mutation-owned-capture", 4096);
+        let mut source = f.bytes.clone();
+        let mut store = open(&source, 8);
+        let old = store.checkout();
+        let saved_old = old.bytes().to_vec();
+        source.fill(0x9a);
+        assert_eq!(store.bytes(), f.bytes);
+        let mut name = b"alpha".to_vec();
+        let prepared = prepare(store.checkout(), 2, b"first", &name);
+        let saved_prepared = prepared.bytes().to_vec();
+        name.fill(b'z');
+        assert_eq!(prepared.bytes(), saved_prepared);
+        assert_eq!(publish(&mut store, prepared), 1);
+        assert_eq!(old.bytes(), saved_old);
+        assert_eq!(old.epoch(), 0);
+        check_namespace(old.bytes(), &[(2, b"alpha")], &[(2, b"first", 12)]);
+        check_namespace(
+            store.bytes(),
+            &[(2, b"first"), (2, b"zzzzz")],
+            &[(2, b"alpha", 12)],
+        );
+    }
+
+    #[test]
+    fn real_workers_prepare_in_parallel_publish_one_winner_and_retry_without_losing_updates() {
+        let f = fixture("ns-mutation-threads", 4096);
+        let store = open(&f.bytes, 8);
+        let first = store.checkout();
+        let second = store.checkout();
+        let old = store.checkout();
+        let shared = std::sync::Mutex::new(store);
+        let barrier = std::sync::Barrier::new(3);
+        let (sent, received) = std::sync::mpsc::channel();
+        let winners = std::thread::scope(|scope| {
+            let reader_barrier = &barrier;
+            let reader = scope.spawn(move || {
+                reader_barrier.wait();
+                let snapshot = Snapshot::from_bytes(old.bytes());
+                let namespace = ea_namespace::inspect(&snapshot, u32::MAX, 8, 4096).unwrap();
+                received.recv().unwrap();
+                received.recv().unwrap();
+                assert_eq!(namespace.lookup(2, b"first").unwrap().identity().1, 12);
+                assert_eq!(namespace.lookup(2, b"second").unwrap().identity().1, 13);
+                assert!(namespace.lookup(2, b"alpha").is_none());
+                assert!(namespace.lookup(2, b"beta").is_none());
+                assert_eq!(old.epoch(), 0);
+            });
+            let mut workers = Vec::new();
+            for (id, checkout, from, to) in [
+                (0usize, first, b"first".as_slice(), b"alpha".as_slice()),
+                (1usize, second, b"second".as_slice(), b"beta".as_slice()),
+            ] {
+                let shared = &shared;
+                let barrier = &barrier;
+                let sent = sent.clone();
+                workers.push(scope.spawn(move || {
+                    barrier.wait();
+                    let prepared = prepare(checkout, 2, from, to);
+                    let outcome = shared.lock().unwrap().publish(prepared);
+                    let won = match outcome {
+                        Ok(epoch) => {
+                            assert_eq!(epoch, 1);
+                            true
+                        }
+                        Err(PublishError::Stale) => false,
+                        Err(_) => panic!("unexpected publication error"),
+                    };
+                    sent.send(()).unwrap();
+                    (id, won)
+                }));
+            }
+            drop(sent);
+            let results: Vec<_> = workers
+                .into_iter()
+                .map(|worker| worker.join().unwrap())
+                .collect();
+            reader.join().unwrap();
+            results
+        });
+        assert_eq!(winners.iter().filter(|(_, won)| *won).count(), 1);
+        let loser = winners.iter().find(|(_, won)| !*won).unwrap().0;
+        let mut store = shared.into_inner().unwrap();
+        let (from, to) = if loser == 0 {
+            (b"first".as_slice(), b"alpha".as_slice())
+        } else {
+            (b"second".as_slice(), b"beta".as_slice())
+        };
+        let retry = prepare(store.checkout(), 2, from, to);
+        assert_eq!(publish(&mut store, retry), 2);
+        check_namespace(
+            store.bytes(),
+            &[(2, b"first"), (2, b"second")],
+            &[(2, b"alpha", 12), (2, b"beta", 13)],
+        );
+        assert_ea_retained(&f, store.bytes());
+        fsck(store.bytes(), "ns-mutation-threads-result");
+    }
+
+    #[test]
+    fn a_worker_panic_after_preparation_cannot_publish_partial_namespace_bytes() {
+        let f = fixture("ns-mutation-panic", 4096);
+        let store = open(&f.bytes, 8);
+        let checkout = store.checkout();
+        let worker = std::thread::spawn(move || {
+            let _private = prepare(checkout, 2, b"first", b"alpha");
+            panic!("simulated failure before publication");
+        });
+        assert!(worker.join().is_err());
+        assert_eq!(store.epoch(), 0);
+        assert_eq!(store.bytes(), f.bytes);
+        check_namespace(store.bytes(), &[(2, b"alpha")], &[(2, b"first", 12)]);
+    }
+
+    #[test]
+    fn dropping_unpublished_checkouts_and_preparations_does_not_consume_publication_capacity() {
+        let f = fixture("ns-mutation-drop", 4096);
+        let mut store = open(&f.bytes, 1);
+        drop(store.checkout());
+        drop(prepare(store.checkout(), 2, b"first", b"alpha"));
+        assert_eq!(store.epoch(), 0);
+        assert_eq!(store.bytes(), f.bytes);
+        let next = prepare(store.checkout(), 2, b"first", b"alpha");
+        assert_eq!(publish(&mut store, next), 1);
+    }
+
+    #[test]
+    fn opening_rejects_malformed_sources_and_incomplete_admission_budgets() {
+        let f = fixture("ns-mutation-open-rejections", 4096);
+        assert!(Store::open(&[], 8, u32::MAX, 8, 4096).is_none());
+        let mut bad = f.bytes.clone();
+        bad[2044] ^= 1;
+        assert!(Store::open(&bad, 8, u32::MAX, 8, 4096).is_none());
+        assert!(Store::open(&f.bytes, 8, f.inodes - 1, 8, 4096).is_none());
+        assert!(Store::open(&f.bytes, 8, u32::MAX, 0, 4096).is_none());
+        assert!(Store::open(&f.bytes, 8, u32::MAX, 8, 4095).is_none());
+    }
+
+    fn indexed_route_candidate(raw: &[u8], inside: bool) -> (Vec<u8>, Vec<u8>) {
+        let snapshot = Snapshot::from_bytes(raw);
+        let namespace = ea_namespace::inspect(&snapshot, u32::MAX, 8, 4096).unwrap();
+        let old = format!("0000-{}", "x".repeat(210)).into_bytes();
+        let logical = namespace.lookup(12, &old).unwrap().location().0;
+        let directory = (0..namespace.index().directory_count())
+            .map(|i| namespace.index().directory(i).unwrap())
+            .find(|d| d.number() == 12)
+            .unwrap();
+        let root = directory.raw_blocks()[0];
+        assert_eq!(root[30], 0);
+        let count = core::bytes::read_le16(root, 34).unwrap() as usize;
+        let slot = (0..count)
+            .find(|i| le32(root, 36 + 8 * i) & 0x0fff_ffff == logical)
+            .unwrap();
+        let lower = if slot == 0 {
+            0u64
+        } else {
+            (le32(root, 32 + 8 * slot) & !1) as u64
+        };
+        let upper = if slot + 1 == count {
+            1u64 << 32
+        } else {
+            (le32(root, 40 + 8 * slot) & !1) as u64
+        };
+        assert!(lower < upper && count > 1);
+        let seed = core::dir_hash::State {
+            a: le32(raw, 1260),
+            b: le32(raw, 1264),
+            c: le32(raw, 1268),
+            d: le32(raw, 1272),
+        };
+        let version = root[28] + if le32(raw, 1376) & 2 != 0 { 3 } else { 0 };
+        for i in 0..100_000u32 {
+            let name = format!("renamed-{i:08}").into_bytes();
+            let hash = core::dir_hash::calculate(&name, seed, version)
+                .unwrap()
+                .major as u64;
+            if (lower < hash && hash < upper) == inside && hash != lower && hash != upper {
+                return (old, name);
+            }
+        }
+        panic!("could not find deterministic hash interval witness");
+    }
+
+    #[test]
+    fn indexed_rename_keeps_an_existing_leaf_route_and_passes_linux_fsck() {
+        let raw = super::ea_namespace_admission::indexed_image("ns-mutation-indexed-valid");
+        let (old, name) = indexed_route_candidate(&raw, true);
+        let mut store = open(&raw, 8);
+        let prepared = prepare(store.checkout(), 12, &old, &name);
+        assert_eq!(publish(&mut store, prepared), 1);
+        check_namespace(store.bytes(), &[(12, &old)], &[(12, &name, 13)]);
+        fsck(store.bytes(), "ns-mutation-indexed-valid-result");
+    }
+
+    #[test]
+    fn indexed_rename_that_requires_routing_changes_is_rejected_by_complete_final_admission() {
+        let raw = super::ea_namespace_admission::indexed_image("ns-mutation-indexed-invalid");
+        let (old, name) = indexed_route_candidate(&raw, false);
+        let store = open(&raw, 8);
+        reject_unchanged(&store, 12, &old, &name);
+        check_namespace(store.bytes(), &[(12, &name)], &[(12, &old, 13)]);
     }
 }

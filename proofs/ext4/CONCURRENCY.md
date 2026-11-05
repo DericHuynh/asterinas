@@ -6,6 +6,12 @@ This is the expanded implementation target. Existing serialized journal proofs
 remain scoped to their stated machine and device contract. They do not prove
 concurrent JBD2 operation or any newly listed on-disk feature.
 
+The checked [host namespace mutation core](NS_MUTATION.md) prepares owned
+EA-enabled same-parent NOREPLACE renames in parallel and uses exact source and
+revision comparison for exclusive publication. Its finite history contracts
+preserve complete namespace admission. Runtime locks, broader namespace
+operations and actual EA journal durability remain open.
+
 ## State and identities
 
 Physical addresses carry a volume/mount identity and a 64-bit block number.
@@ -121,6 +127,7 @@ The reviewed concrete boundaries are:
 | C-REVOKE | Free/reuse and unwritten conversion generate correct revokes and preserve initialization under interleavings. | Recovery filtering checked; concurrent production/operation proof open. |
 | C-RECOVER | Every concurrent crash cut has a canonical recoverable committed prefix and validates a complete filesystem. | Serialized/repeated recovery and sealed host-image admission checked. Successful admitted writer and recovery durable maps now equal their complete validated filesystem images, with unchanged extra partition bytes and finite failure-free model witnesses; see WRITER_IMAGE.md and RECOVERY_IMAGE.md. Every admitted recovery-model cut is now the complete valid image or repairable to it with the same exact admitted plan, with unchanged-tail canonical journal preservation (RECOVERY_CRASH_IMAGES.md). Fresh bootstrap discovery for all admitted recovery-model cuts and unchanged-tail canonical scan-source equality now compose (RECOVERY_BOOTSTRAP.md). Every bounded concurrent-window cut now admits actual scanning/recovery using the retained mapping; suffix redo yields exact complete-prefix bytes including primary recovery marking, and arbitrary finite recovery attempts preserve admission and the exact target (CONCURRENT_RECOVERY_CLOSURE.md). Fresh bootstrap reconstruction for all window cuts, complete initial/every-prefix validation and guarded full repaired-image admission now compose in WINDOW_FILESYSTEM_ADMISSION.md. Full validator/recovery acceptance completeness, operation crash closure, circular reuse and actual CortenMM/device refinement remain open. |
 | C-PUBLISH | Readers, handles and fsync observe only their allowed version and durability closure. | Actual data/zero chunks refine logical bytes; admitted timed writes have exact prefix and unchanged-byte reads through any validated result source and successful modeled durable media (WRITE_READ_RESULTS.md). Concurrent VFS/handle publication, CortenMM source capture and full operation/admission completeness remain open. |
+| C-NS-MUTATE | Concurrent preparation and atomic exact namespace mutation publication. | Checked bounded host: actual same-parent NOREPLACE name/metadata changes, whole-result EA admission, immutable owned reads, exact source/revision guards, stale rejection, nonwrapping epochs and finite history contracts (NS_MUTATION.md). All other namespace operations, dependency-aware rebasing, VFS authorization, actual OSTD locks/CortenMM and EA journal crash closure remain open. |
 | C-RESIZE | Versioned bootstrap admits old/new geometry and journal targets across resize without partition escape. | Fixed-profile identity policy checked; dynamic geometry open. |
 | C-FEATURES | All supported feature combinations preserve the block/extent/concurrency invariants. | Bounded static profile includes optional HUGE_FILE, CSUM_SEED bounded 64BIT descriptors and FLEX_BG placement, source-derived accounting/checksum domains and independent journal identity; full feature and concurrent mutation composition remain open. |
 

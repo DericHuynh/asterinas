@@ -374,6 +374,24 @@ def main():
         "confuse_ea_namespace_with_mounted_inode_authority": ("pub fn misuse(n: &verified_ext4::ea_namespace::Namespace<'_, '_>) { let _ = verified_ext4::allocated_inode::get(n, 12); }\n", "E0308"),
         "replace_ea_directory_index_entries": ("pub fn misuse(mut i: verified_ext4::ea_directory_index::DirectoryIndex<'_>) { i.entries = Vec::new(); }\n", "E0616"),
     })
+    misuse.update({
+        'forge_namespace_mutation_store': ('pub fn misuse(s: verified_ext4::ns_mutation::Store) { let _ = verified_ext4::ns_mutation::Store { ..s }; }\n', 'E0451'),
+        'forge_namespace_mutation_checkout': ('pub fn misuse(c: verified_ext4::ns_mutation::Checkout) { let _ = verified_ext4::ns_mutation::Checkout { ..c }; }\n', 'E0451'),
+        'forge_namespace_mutation_prepared': ('pub fn misuse(p: verified_ext4::ns_mutation::Prepared) { let _ = verified_ext4::ns_mutation::Prepared { ..p }; }\n', 'E0451'),
+        'mutate_published_namespace_source': ('pub fn misuse(s: verified_ext4::ns_mutation::Store) { s.bytes()[0] = 0; }\n', 'E0594'),
+        'mutate_namespace_checkout_source': ('pub fn misuse(c: verified_ext4::ns_mutation::Checkout) { c.bytes()[0] = 0; }\n', 'E0594'),
+        'mutate_namespace_prepared_result': ('pub fn misuse(p: verified_ext4::ns_mutation::Prepared) { p.bytes()[0] = 0; }\n', 'E0594'),
+        'republish_consumed_namespace_preparation': ('pub fn misuse(s: &mut verified_ext4::ns_mutation::Store, p: verified_ext4::ns_mutation::Prepared) { let _ = s.publish(p); let _ = s.publish(p); }\n', 'E0382'),
+        'reuse_consumed_namespace_checkout': ('pub fn misuse(c: verified_ext4::ns_mutation::Checkout) { let _ = c.prepare_rename_noreplace(2, b"first", b"alpha", 0, 0); let _ = c.prepare_rename_noreplace(2, b"first", b"beta", 0, 0); }\n', 'E0382'),
+        'move_namespace_store_from_shared_borrow': ('pub fn misuse(s: &verified_ext4::ns_mutation::Store) { let _owned = *s; }\n', 'E0507'),
+        'move_namespace_checkout_from_shared_borrow': ('pub fn misuse(c: &verified_ext4::ns_mutation::Checkout) { let _owned = *c; }\n', 'E0507'),
+        'move_namespace_preparation_from_shared_borrow': ('pub fn misuse(p: &verified_ext4::ns_mutation::Prepared) { let _owned = *p; }\n', 'E0507'),
+        'publish_while_namespace_bytes_are_borrowed': ('pub fn misuse(s: &mut verified_ext4::ns_mutation::Store, p: verified_ext4::ns_mutation::Prepared) { let bytes = s.bytes(); let _ = s.publish(p); let _ = bytes.len(); }\n', 'E0502'),
+        'consume_namespace_checkout_while_source_is_borrowed': ('pub fn misuse(c: verified_ext4::ns_mutation::Checkout) { let bytes = c.bytes(); let _ = c.prepare_rename_noreplace(2, b"first", b"alpha", 0, 0); let _ = bytes.len(); }\n', 'E0505'),
+        'consume_namespace_preparation_while_result_is_borrowed': ('pub fn misuse(s: &mut verified_ext4::ns_mutation::Store, p: verified_ext4::ns_mutation::Prepared) { let bytes = p.bytes(); let _ = s.publish(p); let _ = bytes.len(); }\n', 'E0505'),
+        'substitute_arbitrary_patches_for_namespace_preparation': ('pub fn misuse(s: &mut verified_ext4::ns_mutation::Store) { let _ = s.publish(verified_ext4::patch_set::PatchSet::new()); }\n', 'E0308'),
+        'substitute_static_namespace_for_mutation_preparation': ("pub fn misuse(s: &mut verified_ext4::ns_mutation::Store, n: verified_ext4::ea_namespace::Namespace<'_, '_>) { let _ = s.publish(n); }\n", 'E0308'),
+    })
     for name, (source, code) in misuse.items():
         path = BUILD / (name + ".rs")
         path.write_text(source)

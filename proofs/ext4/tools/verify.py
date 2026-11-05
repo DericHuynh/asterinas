@@ -37,6 +37,9 @@ def main():
     }
     write_report(report)  # Remove any stale success before checking prerequisites.
     (BUILD / "libverified_ext4.rlib").unlink(missing_ok=True)
+    # A timeout must not leave diagnostics from an earlier source revision.
+    for name in ["verus.stdout", "verus.stderr", "compile.stdout", "compile.stderr"]:
+        (BUILD / name).unlink(missing_ok=True)
     try:
         if len(sys.argv) != 1:
             raise RuntimeError("No extra verifier flags or filters are accepted.")
@@ -91,13 +94,17 @@ def main():
         if LOCK["verus"]["commit"] not in version_text:
             raise RuntimeError("Verifier version did not report the pinned full commit.")
         report["verifier_version"] = json.loads(version.stdout)
+        diagnostic_dir = BUILD / "verus-logs" / str(os.getpid())
+        diagnostic_dir.mkdir(parents=True)
+        report["diagnostic_log_directory"] = str(diagnostic_dir.relative_to(ROOT))
         report["command"] = [
             binary, "--no-cheating", "--no-external-by-default", "--output-json", "--compile",
             "--crate-type=rlib", "--crate-name=verified_ext4", "--out-dir=build",
+            "--log", "smt", "--log-dir", report["diagnostic_log_directory"],
             LOCK["model_root"],
         ]
         process = subprocess.run(
-            report["command"], cwd=ROOT, capture_output=True, text=True, timeout=300,
+            report["command"], cwd=ROOT, capture_output=True, text=True, timeout=900,
         )
         (BUILD / "verus.stdout").write_text(process.stdout)
         (BUILD / "verus.stderr").write_text(process.stderr)
@@ -152,6 +159,9 @@ def main():
         print(f"Verus checked {results['verified']} obligations and compiled the core. "
               "Kernel mount gates remain closed.")
     except Exception as error:
+        if isinstance(error, subprocess.TimeoutExpired) and error.cmd == report.get("command"):
+            for name, output in [("verus.stdout", error.stdout), ("verus.stderr", error.stderr)]:
+                (BUILD / name).write_bytes(output.encode() if isinstance(output, str) else output or b"")
         report["status"] = "failed_or_not_run"
         (BUILD / "libverified_ext4.rlib").unlink(missing_ok=True)
         report["error"] = str(error)

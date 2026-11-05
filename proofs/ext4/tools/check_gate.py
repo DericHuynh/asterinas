@@ -41,7 +41,7 @@ def main():
                 root.write_text(root.read_text().replace("mod system;", ""))
             elif case == "false_assertion":
                 root.write_text(root.read_text().replace("fn main() {}", "fn main() { assert(false); }"))
-            process = subprocess.run(arguments, cwd=copy, env=environment, capture_output=True, text=True, timeout=300)
+            process = subprocess.run(arguments, cwd=copy, env=environment, capture_output=True, text=True, timeout=960)
             report = json.loads((copy / "build/proof-report.json").read_text())
             if process.returncode == 0 or report["status"] != "failed_or_not_run":
                 raise RuntimeError("Gate accepted negative case: " + case)
