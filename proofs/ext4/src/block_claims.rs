@@ -226,6 +226,33 @@ impl Census {
         &self.claims
     }
 
+    /// Duplicate the immutable candidate ledger without granting allocator or
+    /// filesystem authority. Both owned copies retain exactly the same view.
+    pub fn duplicate(&self) -> (r: Self)
+        ensures self.wf(), r.wf(), r.view() == self.view(),
+    {
+        proof { use_type_invariant(self); }
+        let mut roles: Vec<Slot> = Vec::new(); let mut i = 0usize;
+        while i < self.roles.len()
+            invariant self.wf(), i <= self.roles.len(), roles@ == self.roles@.take(i as int),
+            decreases self.roles.len() - i,
+        {
+            roles.push(self.roles[i]);
+            assert(roles@ =~= self.roles@.take(i as int + 1)); i += 1;
+        }
+        assert(roles@ =~= self.roles@);
+        let mut claims: Vec<Claim> = Vec::new(); i = 0;
+        while i < self.claims.len()
+            invariant self.wf(), roles@ == self.roles@, i <= self.claims.len(), claims@ == self.claims@.take(i as int),
+            decreases self.claims.len() - i,
+        {
+            claims.push(self.claims[i]);
+            assert(claims@ =~= self.claims@.take(i as int + 1)); i += 1;
+        }
+        assert(claims@ =~= self.claims@);
+        Census { roles, claims }
+    }
+
     pub fn role_of(&self, block: u32) -> (r: Option<Slot>)
         ensures self.wf(), match r {
             Some(role) => block < self.view().roles.len() && role == self.view().roles[block as int],

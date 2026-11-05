@@ -153,7 +153,7 @@
       "path": "fs/ext4/ialloc.c",
       "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/ialloc.c",
       "blob_sha": "b1bc1950c9f03b9dca9729cfac532ff95d504948",
-      "review_scope": "initialized inode bitmap semantics and padding; reserved inode markers, group/slot addressing, inode-table unused high-water count and used-directory counter updates; ext4_read_inode_bitmap rejects INODE_UNINIT for group zero and otherwise synthesizes all-free inode bits plus allocated padding without physical bitmap read/checksum"
+      "review_scope": "initialized inode bitmap semantics and padding; reserved inode markers, group/slot addressing, inode-table unused high-water count and used-directory counter updates; ext4_read_inode_bitmap rejects INODE_UNINIT for group zero and otherwise synthesizes all-free inode bits plus allocated padding without physical bitmap read/checksum; lines 1224-1234 increment the group used-directory counter only for S_ISDIR mode; EA inode creation in xattr.c uses S_IFREG and does not contribute a directory"
     },
     {
       "path": "fs/ext4/namei.c",

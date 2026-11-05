@@ -36,6 +36,14 @@ identity and retains all logical entry-hash checks. Ordinary/journal data owners
 full bitmap equality, namespace/journal admission, authenticated lifecycle and
 CortenMM/OSTD refinement remain separate. The aggregate limit applies to payload
 byte lengths, not allocator capacity or temporary host memory.
+The separate [EA whole-volume allocation result](EA_ALLOCATION.md) composes all
+ordinary-file/directory and journal storage, source-selected fixed metadata and
+distinct external xattr blocks with that retained EA certificate. Exact complete
+block bitmap equality and directory/free counters are checked; ordinary billing
+residuals equal full physical extent allocations. The public node budget still
+bounds EA audits; ordinary audits derive volume-blocks-plus-one bounds. This is
+an allocation certificate, not directory/namespace or JBD2 state admission, and
+does not widen ordinary writer or mount feature gates.
 
 ## Implemented structural subset
 

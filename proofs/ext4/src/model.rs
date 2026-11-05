@@ -308,3 +308,13 @@ pub mod ea_storage;
 pub mod ea_block_policy;
 
 pub mod ea_integrity;
+
+pub mod ea_reservations;
+
+pub mod ea_journal;
+
+pub mod ea_ordinary;
+
+pub mod ea_allocation_counts;
+
+pub mod ea_allocation;

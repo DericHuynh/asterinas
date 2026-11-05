@@ -158,6 +158,11 @@ impl<'s, 'a> Census<'s, 'a> {
         ensures self.wf(), valid(self.view()), match r { Some(usage) => parent > 0 && usage.ea_inodes == ea_refs::parent_count(self.view().graph.logical, parent)
             && usage.bytes == ea_refs::parent_bytes(self.view().graph.logical, parent, 4096), None => true },
     { proof { use_type_invariant(self); } ea_refs::quota_usage(self.graph.logical(), parent, 4096) }
+    /// Every ordinary parent's exact retained external-xattr pointer, including
+    /// shared and local-value-only blocks. This grants no mutation authority.
+    pub fn external_pointers(&self) -> (r: &[External])
+        ensures self.wf(), valid(self.view()), r@ == self.view().external,
+    { proof { use_type_invariant(self); } &self.external }
     pub fn external_parents(&self, block: u32) -> (r: u32)
         ensures self.wf(), valid(self.view()), r as nat == external_count(self.view().external, block),
     { proof { use_type_invariant(self); reveal(valid); } count_external(&self.external, block).unwrap() }
@@ -314,7 +319,7 @@ fn check_bindings(index: &Index<'_, '_>, logical: &[ParentReference]) -> (r: Opt
     }
     Some(Ghost(checked))
 }
-fn check_reserved(raw: &[u8], number: u32, inodes: u32, seed: u32, huge: bool) -> (r: bool)
+pub(crate) fn check_reserved(raw: &[u8], number: u32, inodes: u32, seed: u32, huge: bool) -> (r: bool)
     requires raw.len() == 256,
     ensures r ==> (if number == 8 { inode::metadata_accepted_with_features(raw@, number, inodes, seed, huge)
         && bytes::le16(raw@, 0) as u16 & 0xf000 == 0x8000 && xattr::inode_address(raw@) == 0 && !xattr::body_present(raw@) }
