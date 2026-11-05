@@ -356,6 +356,24 @@ def main():
         'replace_ea_source_journal_mapping': ('pub fn misuse(mut j: verified_ext4::ea_journal::Journal, layout: verified_ext4::layout::JournalLayout) { j.layout = layout; }\n', 'E0616'),
         'move_ea_integrity_out_of_global_borrow': ("pub fn misuse(a: verified_ext4::ea_allocation::Allocation<'_, '_>) { let _integrity = *a.integrity(); }\n", 'E0507'),
     })
+    misuse.update({
+        "forge_ea_namespace": ("pub fn misuse(n: verified_ext4::ea_namespace::Namespace<'_, '_>) { let _ = verified_ext4::ea_namespace::Namespace { ..n }; }\n", "E0451"),
+        "forge_ea_namespace_nodes": ("pub fn misuse(n: verified_ext4::ea_namespace_nodes::Nodes) { let _ = verified_ext4::ea_namespace_nodes::Nodes { ..n }; }\n", "E0451"),
+        "forge_ea_namespace_directory": ("pub fn misuse(d: verified_ext4::ea_directory::Directory<'_>) { let _ = verified_ext4::ea_directory::Directory { ..d }; }\n", "E0451"),
+        "forge_ea_directory_index": ("pub fn misuse(i: verified_ext4::ea_directory_index::DirectoryIndex<'_>) { let _ = verified_ext4::ea_directory_index::DirectoryIndex { ..i }; }\n", "E0451"),
+        "forge_ea_namespace_entry": ("pub fn misuse(e: verified_ext4::ea_directory_index::Entry) { let _ = verified_ext4::ea_directory_index::Entry { ..e }; }\n", "E0451"),
+        "mutate_ea_namespace_node_mode": ("pub fn misuse(n: verified_ext4::ea_namespace::Namespace<'_, '_>) { n.index().nodes().slots()[0].mode = 0o100777; }\n", "E0594"),
+        "mutate_ea_namespace_lookup_name": ("pub fn misuse(n: verified_ext4::ea_namespace::Namespace<'_, '_>) { n.lookup(2, b\"first\").unwrap().name()[0] = b'x'; }\n", "E0594"),
+        "mutate_ea_directory_index_entry_name": ("pub fn misuse(i: verified_ext4::ea_directory_index::DirectoryIndex<'_>) { i.get(0).unwrap().name()[0] = b'x'; }\n", "E0594"),
+        "mutate_ea_namespace_source_directory_block": ("pub fn misuse(n: verified_ext4::ea_namespace::Namespace<'_, '_>) { n.index().directory(0).unwrap().raw_blocks()[0][0] = 0; }\n", "E0594"),
+        "mutate_ea_namespace_physical_ledger": ("pub fn misuse(n: verified_ext4::ea_namespace::Namespace<'_, '_>) { n.allocation().ledger().claims()[0].start = 1; }\n", "E0594"),
+        "mutate_ea_namespace_retained_payload": ("pub fn misuse(n: verified_ext4::ea_namespace::Namespace<'_, '_>) { n.allocation().integrity().value(0).unwrap().as_slice()[0] = 1; }\n", "E0594"),
+        "move_ea_namespace_borrowed_allocation": ("pub fn misuse(n: verified_ext4::ea_namespace::Namespace<'_, '_>) { let _allocation = *n.allocation(); }\n", "E0507"),
+        "move_ea_namespace_lookup_entry": ("pub fn misuse(n: verified_ext4::ea_namespace::Namespace<'_, '_>) { let _entry = *n.lookup(2, b\"first\").unwrap(); }\n", "E0507"),
+        "mutate_source_while_ea_namespace_is_live": ("pub fn misuse(mut bytes: Vec<u8>) { let snapshot = verified_ext4::snapshot::Snapshot::from_bytes(&bytes); let namespace = verified_ext4::ea_namespace::inspect(&snapshot, u32::MAX, 1, 4096).unwrap(); bytes[0] = 1; let _ = namespace.lookup(2, b\"first\"); }\n", "E0502"),
+        "confuse_ea_namespace_with_mounted_inode_authority": ("pub fn misuse(n: &verified_ext4::ea_namespace::Namespace<'_, '_>) { let _ = verified_ext4::allocated_inode::get(n, 12); }\n", "E0308"),
+        "replace_ea_directory_index_entries": ("pub fn misuse(mut i: verified_ext4::ea_directory_index::DirectoryIndex<'_>) { i.entries = Vec::new(); }\n", "E0616"),
+    })
     for name, (source, code) in misuse.items():
         path = BUILD / (name + ".rs")
         path.write_text(source)

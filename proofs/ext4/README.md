@@ -9,16 +9,19 @@ and a [concurrent block/extent/transaction protocol](CONCURRENCY.md).
 It is not a complete filesystem and is not registered with the kernel VFS.
 No mount or filesystem write path is enabled.
 
-The pinned Verus run checks **2284 obligations with zero errors**, including
-709 named proof functions and 620 named executable functions.
-252 host interoperability/regression tests pass on Linux-created metadata.
+The pinned entire-crate Verus run checks **2404 obligations with zero errors**,
+including 737 named proof functions and 658 named executable functions.
+275 host interoperability/regression tests pass: 213 metadata and 62 journal.
+The run includes the [EA-enabled namespace slice](EA_NAMESPACE.md), with
+23 added native regressions, 179 total negative API checks and six verifier gates.
 [Proof status](proof-status.json) and [recorded evidence](verification-evidence.json)
 state the exact scope; tests do not discharge formal obligations.
 
-## Implemented and checked
+## Implementation and proof scope
 
-| Component | Checked behavior |
+| Component | Behavior and verification scope |
 | --- | --- |
+| `ea_namespace_nodes.rs`, `ea_directory.rs`, `ea_directory_index.rs`, `ea_namespace_counts.rs`, `ea_namespace_parent.rs`, `ea_namespace_topology.rs`, `ea_namespace.rs` | New EA-enabled immutable namespace implementation and proof contracts: exact ordinary source nodes, complete source-owned directory blocks and HTree settings, full-key source lookup/absence, typed generations, exact links, canonical parents and rooted directory/regular-file reachability. See [EA namespace](EA_NAMESPACE.md). The pinned whole-crate run checks these contracts; actual JBD2 admission, mutations, full EA filesystem admission and CortenMM/kernel/mount integration remain open. |
 | `dir_hash.rs` | All six Linux unkeyed filename hashes with exact modular word operations, byte packing, seed selection, half-MD4/TEA rounds and result normalization. See [directory hashes](DIRECTORY_HASHES.md). These compose with bounded source-bound DIR_INDEX admission in [HTree admission](HTREE_ADMISSION.md). Keyed encryption and Unicode casefold remain open. |
 | `htree_names.rs`, `htree_range.rs`, `directory_htree.rs`, `directory_piece.rs` | Complete source-bound DIR_INDEX and bounded LARGEDIR admission: inherited/collision intervals, Linux candidate-path closure, full-name uniqueness and source absence, initialized physical ownership, canonical dot/index/leaf records and whole-image namespace composition. See [HTree admission](HTREE_ADMISSION.md). Mutations, other formats and runtime integration remain open. |
 | `htree_topology.rs` | Complete supplied logical-tree traversal, exact root/child claim projection, parsed leaf records, no logical reuse and no orphan blocks. See [HTree topology](HTREE_TOPOLOGY.md). Source/hash/full-name/namespace composition is checked by [HTree admission](HTREE_ADMISSION.md); structural mutations and runtime authority remain open. |
@@ -64,7 +67,7 @@ state the exact scope; tests do not discharge formal obligations.
 | `directory_block.rs` | Complete canonical linear-record coverage including deleted records, unique complete stream, checksum tail and bounded read-only record/name access. Source/target, link and topology checks are composed by the namespace layer. |
 | `directory_file.rs`, `directory_source.rs` | Directory bytes and checksum seed come from the actual allocated inode and initialized mapping; executable records equal the unique canonical source stream. Gaps and malformed blocks fail closed. Whole-directory enumeration is composed by directory_index.rs. |
 | `name_set.rs` | Owned directory/name keys; exact membership, duplicate rejection and unchanged failed insertion; full byte comparison across CRC bucket collisions. At most 65536 keys, 64/bucket and 255 bytes/name. This is a bounded namespace-admission helper, not a complete namespace certificate. |
-| `namespace_model.rs`, `directory_index.rs` | Complete canonical enumeration of every allocated directory/block and live record, including empty preallocation; source/target inode types and target generations, global unique names, exact source entries and complete lookup via proved name-index positions. Bounded to 4096 directory blocks. Link counts and rooted parent topology are composed by namespace.rs. |
+| `namespace_model.rs`, `directory_index.rs` | Complete canonical enumeration of supported directories, their logical blocks through i_size and live records; source/target inode types and target generations, global unique names, exact source entries and complete lookup via proved name-index positions. Bounded to 4096 directory blocks. Link counts and rooted parent topology are composed by namespace.rs. |
 | `namespace_counts.rs`, `parent_table.rs`, `tree_model.rs`, `namespace_tree.rs`, `namespace.rs` | Exact source-reference accounting, inode link counts, canonical first-block dot/dotdot placement and targets, unique ordinary directory parents and matching dotdot, root rules, bounded nonrecursive traversal and a theorem that every accepted directory reaches root. Regular file hard links are admitted; disconnected cycles and directory hard links are rejected. This is a static image certificate, not recovery/mount/VFS authority. |
 | `patch_set.rs`, `shadow_model.rs`, `snapshot.rs` | Owned exact after-images in a sorted unique target set, binary lookup, 4096-block credit and unchanged rejection. Immutable shadow sources share the original bytes and at most 32 bounded patch layers; later patches take precedence with exact block and byte provenance. The existing allocation/namespace validators read the shadow directly. Recovery admission is composed by recovery_admission.rs. |
 | `bootstrap.rs`, `snapshot.rs` | Locate journal inode 8 through the same primary and group-zero descriptor before bitmap validation, exact bounded capture and unique source projection; Some/None exactly matches the admitted bootstrap predicate, including positive inode-table addresses. See [bootstrap completeness](BOOTSTRAP_COMPLETENESS.md). Fresh crash-source preservation now composes for admitted recovery and window cuts (RECOVERY_BOOTSTRAP.md and WINDOW_FILESYSTEM_ADMISSION.md). Full filesystem/recovery acceptance completeness and actual source origin remain open. |
@@ -212,9 +215,17 @@ and each distinct external xattr block. The final ledger equals all source logic
 block bitmaps in both directions; complete group directory counts and the primary
 free-block count are checked. Ordinary parent billing residuals now equal actual
 physical data/extent-metadata allocations. This closes the earlier ordinary/journal
-ownership gap for this bounded allocation result. Namespace and JBD2 state/admission,
-mutations and CortenMM/OSTD runtime remain open; no full filesystem or mount gate is
-enabled. Recorded evidence determines the exact checked contracts and source.
+ownership gap for this bounded allocation result. The separate
+[EA namespace layer](EA_NAMESPACE.md) retains that exact allocation certificate
+and adds complete ordinary source nodes, directory capture, typed names, source
+lookup absence, link counts and rooted topology, including a regular-file entry
+witness in a rooted directory. The pinned whole-crate run checks these
+contracts and compiles their implementation. The directory profile rejects data
+extents beyond block-aligned i_size instead of leaving allocated directory
+bytes outside the captured catalogue. Actual JBD2 state/admission, mutations
+and CortenMM/OSTD runtime remain open; no full EA filesystem, writable, kernel
+or mount gate is enabled. Recorded evidence determines the exact checked
+contracts and source.
 
 ## Reproduce
 
@@ -241,7 +252,7 @@ It rejects local proof escapes, extra flags, omitted modules and source-inventor
 requires named proof and executable coverage; invalidates stale artifacts on failure;
 and records source, runner, manifest, verifier and emitted-library hashes.
 The negative checks include an actual failing Verus assertion in a disposable copy.
-163 negative Rust compilation checks reject certificate/source substitution, edit/queue ownership violations, request reuse/forgery, completion redirection, state replacement, command mutation and finishing through a live command loan.
+179 negative Rust compilation checks reject certificate/source substitution, edit/queue ownership violations, request reuse/forgery, completion redirection, state replacement, command mutation and finishing through a live command loan.
 [CI](../../.github/workflows/verify_ext4.yml) runs the same checks.
 
 The emitted host library exercises proof erasure and Linux byte compatibility.
