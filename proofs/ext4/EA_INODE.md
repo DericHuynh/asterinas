@@ -4,6 +4,9 @@
 
 The EA_INODE core implements modern Linux value-inode metadata, exact-source
 descriptor/value inspection, hashing and structural reference accounting.
+The [source reference census](EA_REFERENCE_CENSUS.md) additionally binds complete
+parent projections, physical counts, logical billing and external sharing to
+all declared inode slots in the same snapshot.
 Its executable contracts and named obligations are included in the pinned
 whole-crate manifest; recorded evidence determines the exact checked source.
 This is not full EA_INODE filesystem admission or a journalled update path.
@@ -19,11 +22,11 @@ page, folio or buffer-head ownership into Asterinas's framekernel architecture.
 | Design component | Present implementation and contracts | Remaining boundary |
 | --- | --- | --- |
 | `ea_inode.rs` | Modern 256-byte regular EA inode with EA/EXTENTS flags, nonempty value up to 16 MiB, checksum, value CRC in raw atime word, 64-bit reference count in raw ctime/high and low i_version words, live/unlinked local states and framed reference-word edits | Allocation, complete sector accounting, authenticated refcount changes, orphan membership, quota changes and durable filesystem transactions |
-| `ea_source.rs` | Isolated original-snapshot header with actual EA_INODE feature retained, clean-state marker and RECOVER clear; bounded 4 KiB/256-byte geometry, source-selected descriptor width/seed/features; initialized allocated inode-bit, descriptor/bitmap checksums, unused-table bound and exact group/slot/table bytes | Full volume and journal admission, global ownership/reference census, lazy-group allocation and runtime source capture |
-| `ea_reference.rs` | Ordinary parent metadata and allocated table provenance, same-source inline/external parsing, physical external checksum, complete namespace/name selection, cross-location key uniqueness and bounded nonself value-inode descriptor | Caller/namespace authority, complete disk references, physical block ownership and descriptor-to-lifetime coupling |
+| `ea_source.rs` | Isolated original-snapshot header with actual EA_INODE feature retained, clean-state marker and RECOVER clear; bounded 4 KiB/256-byte geometry, source-selected descriptor width/seed/features; initialized allocated inode-bit, descriptor/bitmap checksums, unused-table bound and exact group/slot/table bytes | Full volume/journal and global ownership admission, lazy-group allocation and runtime capture; complete EA reference metadata enumeration is composed separately in EA_REFERENCE_CENSUS.md |
+| `ea_reference.rs` | Ordinary parent metadata and allocated table provenance, same-source inline/external parsing, physical external checksum, complete namespace/name selection, cross-location key uniqueness and bounded nonself value-inode descriptor | Caller/namespace authority, physical block ownership and descriptor-to-lifetime coupling; complete parent projections and source count closure are composed separately |
 | `ea_hash.rs` | Value CRC over all bytes, EA entry name plus one CRC word, modern unsigned and historical signed-name variants, exact-byte equality available separately | Cryptographic authentication is not provided; deduplication/allocation remains separate and must compare full bytes |
-| `ea_value.rs` | Same-source allocated live value inode, exact descriptor size, complete extent-tree audit with budget up to 4,096 nodes, dense initialized mappings through the value length, unique physical value blocks, exact pointwise source bytes and both value/entry hash checks; excludes Linux's legacy Lustre classification | Global metadata/data disjointness, extent allocations beyond EOF, complete sector accounting, full reference/quota census, authorization and kernel/device refinement |
-| `ea_refs.rs` | Up to 4,096 caller-supplied physical entry records, unique structural locations and consistent value sizes; add/remove/external-block clone count relations; separate per-parent logical references and cluster-rounded EA quota additions | Authenticated complete source census, real inode-refcount equality, quota limits/database persistence, allocation/orphan transitions and journal closure |
+| `ea_value.rs` | Same-source allocated live value inode, exact descriptor size, complete extent-tree audit with budget up to 4,096 nodes, dense initialized mappings through the value length, unique physical value blocks, exact pointwise source bytes and both value/entry hash checks; excludes Linux's legacy Lustre classification | Global metadata/data disjointness, extent allocations beyond EOF, complete sector accounting, content validation of every census value, quota persistence, authorization and kernel/device refinement |
+| `ea_refs.rs` | Up to 4,096 caller-supplied physical entry records, unique structural locations and consistent value sizes; add/remove/external-block clone count relations; separate per-parent logical references and cluster-rounded EA quota additions | Bare ledger construction does not establish source completeness; EA_REFERENCE_CENSUS.md supplies source metadata/refcount closure separately. Quota limits/database persistence, allocation/orphan transitions and journal closure remain open |
 
 ## Source and value boundaries
 
@@ -96,12 +99,14 @@ Both ledgers validate their supplied record sets and reject duplicate locations,
 conflicting value sizes and resource/overflow failures. The records remain caller
 data: a structurally valid ledger does not prove that every disk entry was found,
 that a claimed location came from this source, or that any EA inode's stored count
-equals a complete on-disk census. Those links must be established before using
-ledger counts to drive authenticated allocation, refcount, quota or orphan edits.
+equals a complete on-disk census. The separate source census now establishes
+those bounded reference metadata links and exact parent billing inputs.
+Authenticated allocation/refcount/quota/orphan edits still require their own
+ownership, lifetime and transaction protocols; a census is immutable inspection.
 
 | Next integration obligation | Required implementation/proof |
 | --- | --- |
-| Full admission | Extend the actual whole-image ownership/reference census and namespace profile without bypassing feature checks; bind every physical EA entry and value extent to the same source and reject unsupported combinations. |
+| Full admission | Compose the existing source EA reference census with whole-image physical ownership, namespace and journal admission; validate all value extents/content, exclude extra EOF allocations and establish complete sector accounting without bypassing feature checks. |
 | Lifecycle and quotas | Couple physical references, per-parent charges, allocation, block COW, value deduplication and zero-reference orphan/reclamation transitions with complete failure unwind. |
 | Durability and races | Include every resulting home image in one admitted transaction, prove crash/recovery closure and serialize competing inode/xattr/cache/allocator operations. |
 | Framekernel runtime | Refine authenticated VFS/idmap/LSM inputs, CortenMM/OSTD frame/cache/DMA ownership, sleeping-lock order and actual BIO/flush/quiescence behavior. |

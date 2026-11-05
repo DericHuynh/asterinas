@@ -9407,36 +9407,42 @@ mod ea_inode_values {
 
     use super::{inline_xattr_updates::command, *};
 
-    struct Fixture {
-        bytes: Vec<u8>,
-        value: Vec<u8>,
-        table: u32,
-        inodes: u32,
-        seed: u32,
-        external: u32,
+    pub(super) struct Fixture {
+        pub(super) bytes: Vec<u8>,
+        pub(super) value: Vec<u8>,
+        pub(super) table: u32,
+        pub(super) inodes: u32,
+        pub(super) seed: u32,
+        pub(super) external: u32,
     }
-    fn parameters(img: &[u8]) -> (u32, u32, u32) {
+    pub(super) fn parameters(img: &[u8]) -> (u32, u32, u32) {
         (
             le32(img, 4104),
             le32(img, 1024),
             core::superblock::metadata_checksum_seed(&img[1024..2048]).unwrap(),
         )
     }
-    fn offset(table: u32, number: u32) -> usize {
+    pub(super) fn offset(table: u32, number: u32) -> usize {
         table as usize * 4096 + (number as usize - 1) * 256
     }
-    fn seal_raw(raw: &mut [u8], number: u32, seed: u32) {
+    pub(super) fn seal_raw(raw: &mut [u8], number: u32, seed: u32) {
         let hash = core::inode::calculated_checksum(raw, number, seed).unwrap();
         raw[124..126].copy_from_slice(&(hash as u16).to_le_bytes());
         raw[130..132].copy_from_slice(&((hash >> 16) as u16).to_le_bytes());
     }
-    fn entry_hash(name: &[u8], value_hash: u32) -> u32 {
+    pub(super) fn entry_hash(name: &[u8], value_hash: u32) -> u32 {
         let name_hash = name
             .iter()
             .fold(0u32, |hash, byte| hash.rotate_left(5) ^ u32::from(*byte));
         name_hash.rotate_left(16) ^ value_hash
     }
-    fn entry(raw: &mut [u8], at: usize, name: &[u8], size: u32, value_hash: u32) -> usize {
+    pub(super) fn entry(
+        raw: &mut [u8],
+        at: usize,
+        name: &[u8],
+        size: u32,
+        value_hash: u32,
+    ) -> usize {
         raw[at] = name.len() as u8;
         raw[at + 1] = 1;
         raw[at + 2..at + 4].copy_from_slice(&0u16.to_le_bytes());
@@ -9446,7 +9452,7 @@ mod ea_inode_values {
         raw[at + 16..at + 16 + name.len()].copy_from_slice(name);
         at + 16 + (name.len() + 3) / 4 * 4
     }
-    fn mappings(img: &[u8], table: u32, size: usize) -> Vec<u32> {
+    pub(super) fn mappings(img: &[u8], table: u32, size: usize) -> Vec<u32> {
         let at = offset(table, 14);
         let raw = &img[at + 40..at + 100];
         assert_eq!(core::bytes::read_le16(raw, 6), Some(0));
@@ -9464,10 +9470,15 @@ mod ea_inode_values {
         assert!(result.iter().all(|physical| *physical != 0));
         result
     }
-    fn fixture(prefix: &str, size: usize) -> Fixture {
+    pub(super) fn fixture(prefix: &str, size: usize) -> Fixture {
         fixture_with_features(prefix, size, false, false)
     }
-    fn fixture_with_features(prefix: &str, size: usize, wide: bool, stored_seed: bool) -> Fixture {
+    pub(super) fn fixture_with_features(
+        prefix: &str,
+        size: usize,
+        wide: bool,
+        stored_seed: bool,
+    ) -> Fixture {
         assert!((4096..=65536).contains(&size));
         let features = format!(
             "none,has_journal,extent,filetype,sparse_super,large_file,extra_isize,metadata_csum,ea_inode{}{}",
@@ -9943,7 +9954,7 @@ mod ea_inode_values {
         assert_eq!(core::crc::crc32c(seed, &value), target);
         value
     }
-    fn with_value(fixture: &Fixture, value: &[u8]) -> Vec<u8> {
+    pub(super) fn with_value(fixture: &Fixture, value: &[u8]) -> Vec<u8> {
         assert_eq!(value.len(), fixture.value.len());
         let mut img = fixture.bytes.clone();
         for (i, block) in mappings(&img, fixture.table, value.len())
@@ -10269,5 +10280,681 @@ mod ea_reference_accounting {
         let mut bad = records[0];
         bad.value = 0;
         assert!(Ledger::from_records(&[bad]).is_none());
+    }
+}
+
+// Source-bound reference closure on Linux-created fixtures. These checks
+// establish no allocation, mount or I/O authority.
+mod ea_reference_census {
+    use core::{
+        ea_census, ea_index,
+        ea_inode::{self, Status},
+        ea_source,
+        snapshot::Snapshot,
+    };
+
+    use super::{
+        ea_inode_values::{Fixture, fixture, fixture_with_features},
+        *,
+    };
+
+    fn offset(table: u32, number: u32) -> usize {
+        table as usize * 4096 + (number as usize - 1) * 256
+    }
+    fn seal_inode(img: &mut [u8], table: u32, number: u32, seed: u32) {
+        let at = offset(table, number);
+        let raw = &mut img[at..at + 256];
+        let checksum = core::inode::calculated_checksum(raw, number, seed).unwrap();
+        raw[124..126].copy_from_slice(&(checksum as u16).to_le_bytes());
+        raw[130..132].copy_from_slice(&((checksum >> 16) as u16).to_le_bytes());
+    }
+    fn seal_super(img: &mut [u8]) {
+        let checksum = core::crc::crc32c(0xffffffff, &img[1024..2044]);
+        img[2044..2048].copy_from_slice(&checksum.to_le_bytes());
+    }
+    fn seal_group(img: &mut [u8], seed: u32) {
+        let width = core::superblock::descriptor_length(&img[1024..2048]).unwrap();
+        let group_seed = core::crc::crc32c(seed, &0u32.to_le_bytes());
+        let partial = core::crc::crc32c(group_seed, &img[4096..4126]);
+        let zeroed = core::crc::crc32c(partial, &[0, 0]);
+        let checksum = core::crc::crc32c(zeroed, &img[4128..4096 + width]) as u16;
+        img[4126..4128].copy_from_slice(&checksum.to_le_bytes());
+    }
+    fn seal_external(img: &mut [u8], address: u32, seed: u32) {
+        let block = &mut img[address as usize * 4096..(address as usize + 1) * 4096];
+        let checksum = core::xattr::checksum(block, address as u64, seed).unwrap();
+        block[16..20].copy_from_slice(&checksum.to_le_bytes());
+    }
+    fn set_inode_allocated(img: &mut [u8], number: u32, allocated: bool, seed: u32) {
+        let ipg = le32(img, 1064);
+        assert!(number > 0 && number <= ipg);
+        let bitmap = le32(img, 4100) as usize * 4096;
+        let slot = number as usize - 1;
+        if allocated {
+            img[bitmap + slot / 8] |= 1 << (slot % 8);
+        } else {
+            img[bitmap + slot / 8] &= !(1 << (slot % 8));
+        }
+        let is_set = |n: u32| img[bitmap + n as usize / 8] & (1 << (n % 8)) != 0;
+        let free = (0..ipg).filter(|n| !is_set(*n)).count() as u32;
+        let used_prefix = (0..ipg).rev().find(|n| is_set(*n)).map_or(0, |n| n + 1);
+        let checksum = core::crc::crc32c(seed, &img[bitmap..bitmap + ipg as usize / 8]);
+        img[4110..4112].copy_from_slice(&(free as u16).to_le_bytes());
+        img[4122..4124].copy_from_slice(&(checksum as u16).to_le_bytes());
+        img[4124..4126].copy_from_slice(&((ipg - used_prefix) as u16).to_le_bytes());
+        if core::superblock::descriptor_length(&img[1024..2048]) == Some(64) {
+            img[4142..4144].fill(0);
+            img[4146..4148].fill(0);
+            img[4154..4156].copy_from_slice(&((checksum >> 16) as u16).to_le_bytes());
+        }
+        img[1040..1044].copy_from_slice(&free.to_le_bytes());
+        seal_group(img, seed);
+        seal_super(img);
+    }
+    fn set_references(img: &mut [u8], fixture: &Fixture, next: u64) {
+        let at = offset(fixture.table, 14);
+        let changed = ea_inode::set_refcount(
+            &img[at..at + 256],
+            14,
+            fixture.inodes,
+            fixture.seed,
+            Status::Live,
+            next,
+        )
+        .unwrap();
+        img[at..at + 256].copy_from_slice(&changed);
+    }
+    fn index_then_reject(img: &[u8]) {
+        let snapshot = Snapshot::from_bytes(img);
+        let header = ea_source::parse(&snapshot).expect("primary read profile remains valid");
+        let _index = ea_index::parse(header)
+            .expect("source allocation and inode-table geometry remain valid");
+        assert!(ea_census::inspect(&snapshot, u32::MAX).is_none());
+    }
+    fn reject_index(img: &[u8]) {
+        let snapshot = Snapshot::from_bytes(img);
+        let header = ea_source::parse(&snapshot).expect("primary read profile remains valid");
+        assert!(ea_index::parse(header).is_none());
+        assert!(ea_census::inspect(&snapshot, u32::MAX).is_none());
+    }
+    fn entry_hash(name: &[u8], value_hash: u32) -> u32 {
+        name.iter()
+            .fold(0u32, |hash, byte| hash.rotate_left(5) ^ u32::from(*byte))
+            .rotate_left(16)
+            ^ value_hash
+    }
+
+    #[test]
+    fn linux_sharing_has_three_physical_references_four_logical_charges_and_two_block_parents() {
+        for wide in [false, true] {
+            for stored_seed in [false, true] {
+                let fixture = fixture_with_features(
+                    &format!("ea-census-profile-{wide}-{stored_seed}"),
+                    4096,
+                    wide,
+                    stored_seed,
+                );
+                let snapshot = Snapshot::from_bytes(&fixture.bytes);
+                let census = ea_census::inspect(&snapshot, u32::MAX).unwrap();
+                assert_eq!(census.physical().len(), 3);
+                assert_eq!(census.physical().refs(14), 3);
+                assert_eq!(census.logical().len(), 4);
+                assert_eq!(census.external_parents(fixture.external), 2);
+                assert_eq!(census.external_parents(1), 0);
+                assert_eq!(census.values().len(), 1);
+                assert_eq!(census.values()[0].number, 14);
+                assert_eq!(census.values()[0].refs, 3);
+                assert!(census.logical().iter().all(|entry| entry.parent != 14));
+                let first = census.quota(12).unwrap();
+                let second = census.quota(13).unwrap();
+                assert_eq!((first.ea_inodes, first.bytes), (3, 12_288));
+                assert_eq!((second.ea_inodes, second.bytes), (1, 4096));
+                assert!(census.quota(0).is_none());
+                assert_eq!(census.index().allocated(14), Some(true));
+                assert_eq!(census.index().allocated(15), Some(false));
+                assert_eq!(census.index().allocated(0), None);
+                assert_eq!(
+                    census.index().node(14).unwrap().raw(),
+                    inode_bytes(&fixture.bytes, fixture.table, 14)
+                );
+                assert!(census.index().node(15).is_none());
+                assert!(core::allocation::parse(Snapshot::from_bytes(&fixture.bytes)).is_none());
+                if wide {
+                    let mut stale_high_checksum = fixture.bytes.clone();
+                    stale_high_checksum[4154] ^= 1;
+                    seal_group(&mut stale_high_checksum, fixture.seed);
+                    reject_index(&stale_high_checksum);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn external_block_reference_counts_must_equal_all_parent_pointers() {
+        let fixture = fixture("ea-census-block-refcount", 4096);
+        for count in [1u32, 3] {
+            let mut img = fixture.bytes.clone();
+            let at = fixture.external as usize * 4096;
+            img[at + 4..at + 8].copy_from_slice(&count.to_le_bytes());
+            seal_external(&mut img, fixture.external, fixture.seed);
+            index_then_reject(&img);
+        }
+    }
+
+    #[test]
+    fn stored_ea_refwords_must_equal_physical_indegree_and_zero_ref_orphans_are_excluded() {
+        let fixture = fixture("ea-census-value-refcount", 4096);
+        for count in [2u64, 4, u64::MAX] {
+            let mut img = fixture.bytes.clone();
+            set_references(&mut img, &fixture, count);
+            index_then_reject(&img);
+        }
+        let mut orphan = fixture.bytes.clone();
+        set_references(&mut orphan, &fixture, 0);
+        index_then_reject(&orphan);
+    }
+
+    #[test]
+    fn references_cannot_dereference_a_stale_inode_image_after_its_allocation_bit_is_cleared() {
+        let fixture = fixture("ea-census-unallocated-value", 4096);
+        let mut img = fixture.bytes.clone();
+        set_inode_allocated(&mut img, 14, false, fixture.seed);
+        let snapshot = Snapshot::from_bytes(&img);
+        let header = ea_source::parse(&snapshot).unwrap();
+        assert!(header.get(14).is_none());
+        let index = ea_index::parse(header).unwrap();
+        assert_eq!(index.allocated(14), Some(false));
+        assert!(index.node(14).is_none());
+        assert!(ea_census::inspect(&snapshot, u32::MAX).is_none());
+    }
+
+    #[test]
+    fn every_allocated_live_ea_inode_requires_an_incoming_physical_record() {
+        let fixture = fixture("ea-census-unreferenced-value", 4096);
+        let mut img = fixture.bytes.clone();
+        let original = inode_bytes(&img, fixture.table, 14).to_vec();
+        let at = offset(fixture.table, 15);
+        img[at..at + 256].copy_from_slice(&original);
+        img[at + 36..at + 40].copy_from_slice(&1u32.to_le_bytes());
+        seal_inode(&mut img, fixture.table, 15, fixture.seed);
+        set_inode_allocated(&mut img, 15, true, fixture.seed);
+        assert!(
+            ea_inode::parse(
+                inode_bytes(&img, fixture.table, 15),
+                15,
+                fixture.inodes,
+                fixture.seed,
+                Status::Live
+            )
+            .is_some()
+        );
+        index_then_reject(&img);
+    }
+
+    #[test]
+    fn all_inline_and_shared_external_references_agree_with_the_value_inode_size() {
+        let fixture = fixture("ea-census-conflicting-size", 4096);
+        for at in [
+            offset(fixture.table, 12) + 192,
+            fixture.external as usize * 4096 + 40,
+        ] {
+            let mut img = fixture.bytes.clone();
+            img[at..at + 4].copy_from_slice(&4095u32.to_le_bytes());
+            if at < fixture.external as usize * 4096 {
+                seal_inode(&mut img, fixture.table, 12, fixture.seed);
+            } else {
+                seal_external(&mut img, fixture.external, fixture.seed);
+            }
+            index_then_reject(&img);
+        }
+        let mut img = fixture.bytes.clone();
+        let at = offset(fixture.table, 14);
+        img[at + 4..at + 8].copy_from_slice(&4095u32.to_le_bytes());
+        seal_inode(&mut img, fixture.table, 14, fixture.seed);
+        index_then_reject(&img);
+    }
+
+    #[test]
+    fn ea_inode_flags_determine_source_classification_and_cannot_hide_nested_parent_records() {
+        let fixture = fixture("ea-census-source-classification", 4096);
+        let mut ordinary_value = fixture.bytes.clone();
+        let ea = offset(fixture.table, 14);
+        ordinary_value[ea + 32..ea + 36].copy_from_slice(&0x80000u32.to_le_bytes());
+        seal_inode(&mut ordinary_value, fixture.table, 14, fixture.seed);
+        index_then_reject(&ordinary_value);
+        let mut ea_parent = fixture.bytes.clone();
+        let parent = offset(fixture.table, 12);
+        ea_parent[parent + 32..parent + 36].copy_from_slice(&0x280000u32.to_le_bytes());
+        seal_inode(&mut ea_parent, fixture.table, 12, fixture.seed);
+        index_then_reject(&ea_parent);
+    }
+
+    #[test]
+    fn allocation_census_rejects_stale_itable_unused_bitmap_checksums_and_free_counters() {
+        let fixture = fixture("ea-census-stale-allocation", 4096);
+        let ipg = le32(&fixture.bytes, 1064);
+        let mut stale_tail = fixture.bytes.clone();
+        stale_tail[4124..4126].copy_from_slice(&((ipg - 13) as u16).to_le_bytes());
+        seal_group(&mut stale_tail, fixture.seed);
+        index_then_reject(&stale_tail);
+        let old_checksum = fixture.bytes[4122..4124].to_vec();
+        let mut stale_bitmap = fixture.bytes.clone();
+        set_inode_allocated(&mut stale_bitmap, 14, false, fixture.seed);
+        stale_bitmap[4122..4124].copy_from_slice(&old_checksum);
+        seal_group(&mut stale_bitmap, fixture.seed);
+        reject_index(&stale_bitmap);
+        let mut wrong_free = fixture.bytes.clone();
+        let free = core::bytes::read_le16(&wrong_free, 4110).unwrap() + 1;
+        wrong_free[4110..4112].copy_from_slice(&free.to_le_bytes());
+        wrong_free[1040..1044].copy_from_slice(&(free as u32).to_le_bytes());
+        seal_group(&mut wrong_free, fixture.seed);
+        seal_super(&mut wrong_free);
+        reject_index(&wrong_free);
+    }
+
+    #[test]
+    fn multiple_ea_entries_in_one_shared_block_count_once_each_for_physical_refs_and_per_parent_for_quota()
+     {
+        let fixture = fixture("ea-census-two-shared-entries", 4096);
+        let mut img = fixture.bytes.clone();
+        let at = fixture.external as usize * 4096;
+        let hash = le32(&img, offset(fixture.table, 14) + 8);
+        let second = entry_hash(b"zzzzzz", hash);
+        img[at + 56] = 6;
+        img[at + 57] = 1;
+        img[at + 60..at + 64].copy_from_slice(&14u32.to_le_bytes());
+        img[at + 64..at + 68].copy_from_slice(&4096u32.to_le_bytes());
+        img[at + 68..at + 72].copy_from_slice(&second.to_le_bytes());
+        img[at + 72..at + 78].copy_from_slice(b"zzzzzz");
+        let first = le32(&img, at + 44);
+        let block_hash = if first == 0 || second == 0 {
+            0
+        } else {
+            first.rotate_left(16) ^ second
+        };
+        img[at + 12..at + 16].copy_from_slice(&block_hash.to_le_bytes());
+        seal_external(&mut img, fixture.external, fixture.seed);
+        set_references(&mut img, &fixture, 4);
+        for (number, sectors) in [(12, 40u32), (13, 24)] {
+            let parent = offset(fixture.table, number);
+            img[parent + 28..parent + 32].copy_from_slice(&sectors.to_le_bytes());
+            seal_inode(&mut img, fixture.table, number, fixture.seed);
+        }
+        let snapshot = Snapshot::from_bytes(&img);
+        let census = ea_census::inspect(&snapshot, u32::MAX).unwrap();
+        assert_eq!(census.physical().len(), 4);
+        assert_eq!(census.physical().refs(14), 4);
+        assert_eq!(census.logical().len(), 6);
+        assert_eq!(census.external_parents(fixture.external), 2);
+        let first = census.quota(12).unwrap();
+        let second = census.quota(13).unwrap();
+        assert_eq!((first.ea_inodes, first.bytes), (4, 16_384));
+        assert_eq!((second.ea_inodes, second.bytes), (2, 8192));
+    }
+
+    #[test]
+    fn reference_census_rejects_parent_specific_lustre_backpointers_and_insufficient_scan_budget() {
+        let fixture = fixture("ea-census-lustre-and-budget", 4096);
+        let snapshot = Snapshot::from_bytes(&fixture.bytes);
+        assert!(ea_census::inspect(&snapshot, u32::MAX).is_some());
+        assert!(ea_census::inspect(&snapshot, 0).is_none());
+        assert!(ea_census::inspect(&snapshot, fixture.inodes - 1).is_none());
+        let mut img = fixture.bytes.clone();
+        let ea = offset(fixture.table, 14);
+        img[ea + 16..ea + 20].copy_from_slice(&12u32.to_le_bytes());
+        seal_inode(&mut img, fixture.table, 14, fixture.seed);
+        index_then_reject(&img);
+        let generation = le32(&img, offset(fixture.table, 12) + 100).wrapping_add(1);
+        img[ea + 100..ea + 104].copy_from_slice(&generation.to_le_bytes());
+        seal_inode(&mut img, fixture.table, 14, fixture.seed);
+        let snapshot = Snapshot::from_bytes(&img);
+        assert!(ea_census::inspect(&snapshot, u32::MAX).is_some());
+    }
+
+    #[test]
+    fn cloning_a_shared_external_block_adds_physical_references_without_adding_logical_quota_charges()
+     {
+        let fixture = fixture("ea-census-external-clone", 4096);
+        let mut img = fixture.bytes.clone();
+        let destination = le32(&img, 1028) - 1;
+        let bitmap = le32(&img, 4096) as usize * 4096;
+        assert_eq!(
+            img[bitmap + destination as usize / 8] & (1 << (destination % 8)),
+            0
+        );
+        let original =
+            img[fixture.external as usize * 4096..(fixture.external as usize + 1) * 4096].to_vec();
+        img[destination as usize * 4096..(destination as usize + 1) * 4096]
+            .copy_from_slice(&original);
+        for block in [fixture.external, destination] {
+            img[block as usize * 4096 + 4..block as usize * 4096 + 8]
+                .copy_from_slice(&1u32.to_le_bytes());
+            seal_external(&mut img, block, fixture.seed);
+        }
+        let peer = offset(fixture.table, 13);
+        img[peer + 104..peer + 108].copy_from_slice(&destination.to_le_bytes());
+        seal_inode(&mut img, fixture.table, 13, fixture.seed);
+        set_references(&mut img, &fixture, 4);
+        img[bitmap + destination as usize / 8] |= 1 << (destination % 8);
+        seal_single_group_allocation(&mut img);
+        let snapshot = Snapshot::from_bytes(&img);
+        let census = ea_census::inspect(&snapshot, u32::MAX).unwrap();
+        assert_eq!(census.physical().len(), 4);
+        assert_eq!(census.physical().refs(14), 4);
+        assert_eq!(census.logical().len(), 4);
+        assert_eq!(census.external_parents(fixture.external), 1);
+        assert_eq!(census.external_parents(destination), 1);
+        let first = census.quota(12).unwrap();
+        let second = census.quota(13).unwrap();
+        assert_eq!((first.ea_inodes, first.bytes), (3, 12_288));
+        assert_eq!((second.ea_inodes, second.bytes), (1, 4096));
+        let path = "build/ea-census-external-clone-result.img";
+        std::fs::write(path, &img).unwrap();
+        let fsck = std::env::var("E2FSCK_BIN").unwrap_or_else(|_| "e2fsck".into());
+        super::inline_xattr_updates::command(&fsck, &["-fn", path], false);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn external_refcount_closure_includes_shared_blocks_that_contain_only_local_values() {
+        let fixture = fixture("ea-census-local-only-shared", 4096);
+        let mut img = fixture.bytes.clone();
+        let block_number = le32(&img, 1028) - 1;
+        let bitmap = le32(&img, 4096) as usize * 4096;
+        assert_eq!(
+            img[bitmap + block_number as usize / 8] & (1 << (block_number % 8)),
+            0
+        );
+        let hash = entry_hash(b"local", u32::from(b'z'));
+        let block = &mut img[block_number as usize * 4096..(block_number as usize + 1) * 4096];
+        block.fill(0);
+        block[..4].copy_from_slice(&core::xattr::MAGIC.to_le_bytes());
+        block[4..8].copy_from_slice(&2u32.to_le_bytes());
+        block[8..12].copy_from_slice(&1u32.to_le_bytes());
+        block[12..16].copy_from_slice(&hash.to_le_bytes());
+        block[32] = 5;
+        block[33] = 1;
+        block[34..36].copy_from_slice(&4092u16.to_le_bytes());
+        block[40..44].copy_from_slice(&1u32.to_le_bytes());
+        block[44..48].copy_from_slice(&hash.to_le_bytes());
+        block[48..53].copy_from_slice(b"local");
+        block[4092] = b'z';
+        seal_external(&mut img, block_number, fixture.seed);
+        for number in [2, 11] {
+            let at = offset(fixture.table, number);
+            assert_eq!(le32(&img, at + 104), 0);
+            let sectors = le32(&img, at + 28) + 8;
+            img[at + 104..at + 108].copy_from_slice(&block_number.to_le_bytes());
+            img[at + 28..at + 32].copy_from_slice(&sectors.to_le_bytes());
+            seal_inode(&mut img, fixture.table, number, fixture.seed);
+        }
+        img[bitmap + block_number as usize / 8] |= 1 << (block_number % 8);
+        seal_single_group_allocation(&mut img);
+        let snapshot = Snapshot::from_bytes(&img);
+        let census = ea_census::inspect(&snapshot, u32::MAX).unwrap();
+        assert_eq!(census.physical().len(), 3);
+        assert_eq!(census.physical().refs(14), 3);
+        assert_eq!(census.logical().len(), 4);
+        assert_eq!(census.external_parents(block_number), 2);
+        assert_eq!(census.quota(2).unwrap().ea_inodes, 0);
+        assert_eq!(census.quota(11).unwrap().ea_inodes, 0);
+        let mut wrong = img.clone();
+        wrong[block_number as usize * 4096 + 4..block_number as usize * 4096 + 8]
+            .copy_from_slice(&1u32.to_le_bytes());
+        seal_external(&mut wrong, block_number, fixture.seed);
+        index_then_reject(&wrong);
+    }
+    #[test]
+    fn reserved_inode_body_attributes_cannot_hide_an_ea_reference_from_the_complete_census() {
+        let fixture = fixture("ea-census-reserved-hidden-reference", 4096);
+        let mut img = fixture.bytes.clone();
+        let at = offset(fixture.table, 5);
+        let value_hash = le32(inode_bytes(&img, fixture.table, 14), 8);
+        img[at..at + 256].fill(0);
+        img[at + 128..at + 130].copy_from_slice(&32u16.to_le_bytes());
+        img[at + 160..at + 164].copy_from_slice(&core::xattr::MAGIC.to_le_bytes());
+        img[at + 164] = 6;
+        img[at + 165] = 1;
+        img[at + 168..at + 172].copy_from_slice(&14u32.to_le_bytes());
+        img[at + 172..at + 176].copy_from_slice(&(fixture.value.len() as u32).to_le_bytes());
+        img[at + 176..at + 180].copy_from_slice(&entry_hash(b"hidden", value_hash).to_le_bytes());
+        img[at + 180..at + 186].copy_from_slice(b"hidden");
+        seal_inode(&mut img, fixture.table, 5, fixture.seed);
+        let raw = inode_bytes(&img, fixture.table, 5);
+        assert!(core::inode_group::reserved_is_empty(raw));
+        assert!(
+            core::xattr::parse_body(raw, true, fixture.inodes)
+                .unwrap()
+                .present()
+        );
+        assert_eq!(le32(inode_bytes(&img, fixture.table, 14), 36), 3);
+        let snapshot = Snapshot::from_bytes(&img);
+        let header = ea_source::parse(&snapshot).unwrap();
+        assert_eq!(header.get(5).unwrap().raw(), raw);
+        let index = ea_index::parse(header).unwrap();
+        assert_eq!(index.allocated(5), Some(true));
+        assert_eq!(index.node(5).unwrap().raw(), raw);
+        assert!(ea_census::inspect(&snapshot, u32::MAX).is_none());
+    }
+    #[test]
+    fn complete_census_checks_each_ea_entry_hash_against_its_exact_name_and_target_hash() {
+        let fixture = fixture("ea-census-entry-name-hashes", 4096);
+        for inline in [false, true] {
+            for change_name in [false, true] {
+                let mut img = fixture.bytes.clone();
+                let at = if inline {
+                    offset(fixture.table, 12) + 184
+                } else {
+                    fixture.external as usize * 4096 + 32
+                };
+                if change_name {
+                    img[at + 16] ^= 1;
+                } else {
+                    img[at + 12] ^= 1;
+                    if !inline {
+                        let hash = le32(&img, at + 12);
+                        let block = fixture.external as usize * 4096;
+                        img[block + 12..block + 16].copy_from_slice(&hash.to_le_bytes());
+                    }
+                }
+                if inline {
+                    seal_inode(&mut img, fixture.table, 12, fixture.seed);
+                } else {
+                    seal_external(&mut img, fixture.external, fixture.seed);
+                }
+                let snapshot = Snapshot::from_bytes(&img);
+                let header = ea_source::parse(&snapshot).unwrap();
+                assert!(core::ea_parent::inspect(&header, 12).is_some());
+                assert!(core::ea_parent::inspect(&header, 13).is_some());
+                assert!(ea_census::inspect(&snapshot, u32::MAX).is_none());
+            }
+        }
+    }
+
+    #[test]
+    fn complete_census_accepts_unsigned_and_legacy_signed_high_byte_ea_names() {
+        let fixture = fixture("ea-census-signed-entry-names", 4096);
+        let name = [0xffu8, b'x'];
+        let value_hash = le32(inode_bytes(&fixture.bytes, fixture.table, 14), 8);
+        let unsigned = entry_hash(&name, value_hash);
+        let signed = name
+            .iter()
+            .fold(0u32, |hash, byte| {
+                hash.rotate_left(5) ^ (*byte as i8 as i32 as u32)
+            })
+            .rotate_left(16)
+            ^ value_hash;
+        assert_ne!(unsigned, signed);
+        for inline in [false, true] {
+            for hash in [unsigned, signed] {
+                let mut img = fixture.bytes.clone();
+                let at = if inline {
+                    let parent = offset(fixture.table, 12);
+                    img[parent + 184..parent + 256].fill(0);
+                    parent + 184
+                } else {
+                    let block = fixture.external as usize * 4096;
+                    img[block + 32..block + 4096].fill(0);
+                    img[block + 12..block + 16].copy_from_slice(&hash.to_le_bytes());
+                    block + 32
+                };
+                img[at] = 2;
+                img[at + 1] = 1;
+                img[at + 4..at + 8].copy_from_slice(&14u32.to_le_bytes());
+                img[at + 8..at + 12].copy_from_slice(&(fixture.value.len() as u32).to_le_bytes());
+                img[at + 12..at + 16].copy_from_slice(&hash.to_le_bytes());
+                img[at + 16..at + 18].copy_from_slice(&name);
+                if inline {
+                    seal_inode(&mut img, fixture.table, 12, fixture.seed);
+                } else {
+                    seal_external(&mut img, fixture.external, fixture.seed);
+                }
+                let snapshot = Snapshot::from_bytes(&img);
+                let header = ea_source::parse(&snapshot).unwrap();
+                assert!(core::ea_parent::inspect(&header, 12).is_some());
+                assert!(core::ea_parent::inspect(&header, 13).is_some());
+                let census = ea_census::inspect(&snapshot, u32::MAX).unwrap();
+                assert_eq!(census.physical().refs(14), 3);
+                assert_eq!(census.physical().len(), 3);
+                assert_eq!(census.logical().len(), 4);
+            }
+        }
+    }
+
+    #[test]
+    fn flex_groups_keep_lazy_inodes_unallocated_and_reject_aliased_inode_table_ranges() {
+        let path = "build/ea-census-two-group-flex-native.img";
+        let mke2fs = std::env::var("MKE2FS_BIN").unwrap_or_else(|_| "mke2fs".into());
+        super::inline_xattr_updates::command(
+            &mke2fs,
+            &[
+                "-q",
+                "-F",
+                "-t",
+                "ext4",
+                "-b",
+                "4096",
+                "-I",
+                "256",
+                "-N",
+                "128",
+                "-O",
+                "none,has_journal,extent,filetype,sparse_super,large_file,extra_isize,metadata_csum,ea_inode,flex_bg",
+                "-G",
+                "2",
+                "-E",
+                "lazy_itable_init=0,lazy_journal_init=0",
+                path,
+                "65536",
+            ],
+            false,
+        );
+        let mut img = std::fs::read(path).unwrap();
+        let _ = std::fs::remove_file(path);
+        let primary = &img[1024..2048];
+        let width = core::superblock::descriptor_length(primary).unwrap();
+        let seed = core::superblock::metadata_checksum_seed(primary).unwrap();
+        let blocks = le32(&img, 1028);
+        let inodes = le32(&img, 1024);
+        let ipg = le32(&img, 1064);
+        let first_group_one_inode = ipg + 1;
+        let group_one = 4096 + width;
+        let first_table = le32(&img, 4104);
+        let second_table = le32(&img, group_one + 8);
+        let table_blocks = ipg / 16;
+        assert_eq!((blocks, inodes, ipg), (65_536, 128, 64));
+        assert_eq!(le32(&img, 1120) & 0x200, 0x200);
+        assert!(core::bytes::read_le16(&img, group_one + 18).unwrap() & 1 != 0);
+        assert_eq!(
+            core::bytes::read_le16(&img, group_one + 14),
+            Some(ipg as u16)
+        );
+        assert_eq!(
+            core::bytes::read_le16(&img, group_one + 28),
+            Some(ipg as u16)
+        );
+        assert!(
+            first_table + table_blocks <= second_table
+                || second_table + table_blocks <= first_table
+        );
+        {
+            let snapshot = Snapshot::from_bytes(&img);
+            let header = ea_source::parse(&snapshot).unwrap();
+            let index = ea_index::parse(header).unwrap();
+            assert!(index.is_inode_table_block(first_table));
+            assert!(index.is_inode_table_block(first_table + table_blocks - 1));
+            assert!(index.is_inode_table_block(second_table));
+            assert!(index.is_inode_table_block(second_table + table_blocks - 1));
+            assert!(!index.is_inode_table_block(0));
+            assert_eq!(index.allocated(first_group_one_inode), Some(false));
+            assert!(index.node(first_group_one_inode).is_none());
+            let census = ea_census::inspect(&snapshot, u32::MAX).unwrap();
+            assert!(census.values().is_empty());
+            assert_eq!(census.physical().len(), 0);
+            assert!(census.logical().is_empty());
+        }
+        // INODE_UNINIT makes the entire group's logical bitmap empty. Neither
+        // stale physical bits nor a locally valid EA image may allocate it.
+        let physical_bitmap = le32(&img, group_one + 4) as usize * 4096;
+        img[physical_bitmap..physical_bitmap + 4096].fill(0xff);
+        let stale = second_table as usize * 4096;
+        img[stale..stale + 256].fill(0);
+        img[stale..stale + 2].copy_from_slice(&0o100600u16.to_le_bytes());
+        img[stale + 4..stale + 8].copy_from_slice(&4096u32.to_le_bytes());
+        img[stale + 26..stale + 28].copy_from_slice(&1u16.to_le_bytes());
+        img[stale + 32..stale + 36].copy_from_slice(&0x280000u32.to_le_bytes());
+        img[stale + 36..stale + 40].copy_from_slice(&1u32.to_le_bytes());
+        img[stale + 40..stale + 42].copy_from_slice(&0xf30au16.to_le_bytes());
+        img[stale + 44..stale + 46].copy_from_slice(&4u16.to_le_bytes());
+        img[stale + 128..stale + 130].copy_from_slice(&32u16.to_le_bytes());
+        let checksum =
+            core::inode::calculated_checksum(&img[stale..stale + 256], first_group_one_inode, seed)
+                .unwrap();
+        img[stale + 124..stale + 126].copy_from_slice(&(checksum as u16).to_le_bytes());
+        img[stale + 130..stale + 132].copy_from_slice(&((checksum >> 16) as u16).to_le_bytes());
+        assert!(
+            ea_inode::parse(
+                &img[stale..stale + 256],
+                first_group_one_inode,
+                inodes,
+                seed,
+                Status::Live
+            )
+            .is_some()
+        );
+        {
+            let snapshot = Snapshot::from_bytes(&img);
+            let header = ea_source::parse(&snapshot).unwrap();
+            assert!(header.get(first_group_one_inode).is_none());
+            let index = ea_index::parse(header).unwrap();
+            assert_eq!(index.allocated(first_group_one_inode), Some(false));
+            assert!(index.node(first_group_one_inode).is_none());
+            let census = ea_census::inspect(&snapshot, u32::MAX).unwrap();
+            assert!(census.values().is_empty());
+            assert_eq!(census.physical().len(), 0);
+        }
+        // FLEX_BG permits each pointer locally. The complete index must also
+        // ensure that two groups do not name the same inode-table frames.
+        img[group_one + 8..group_one + 12].copy_from_slice(&first_table.to_le_bytes());
+        let group_seed = core::crc::crc32c(seed, &1u32.to_le_bytes());
+        let partial = core::crc::crc32c(group_seed, &img[group_one..group_one + 30]);
+        let zeroed = core::crc::crc32c(partial, &[0, 0]);
+        let checksum = core::crc::crc32c(zeroed, &img[group_one + 32..group_one + width]) as u16;
+        img[group_one + 30..group_one + 32].copy_from_slice(&checksum.to_le_bytes());
+        assert!(
+            core::group::parse_with_features(
+                &img[group_one..group_one + width],
+                1,
+                blocks,
+                ipg,
+                seed,
+                true
+            )
+            .is_some()
+        );
+        let snapshot = Snapshot::from_bytes(&img);
+        let header = ea_source::parse(&snapshot).unwrap();
+        assert!(ea_index::parse(header).is_none());
+        assert!(ea_census::inspect(&snapshot, u32::MAX).is_none());
     }
 }

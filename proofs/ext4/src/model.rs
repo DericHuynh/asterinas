@@ -296,3 +296,9 @@ pub mod ea_reference;
 pub mod ea_hash;
 pub mod ea_value;
 pub mod ea_refs;
+
+pub mod ea_index;
+pub mod ea_parent;
+pub mod ea_ref_projection;
+pub mod ea_billing;
+pub mod ea_census;

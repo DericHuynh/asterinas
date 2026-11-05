@@ -339,3 +339,43 @@ caller-supplied structural records; they are not complete authenticated source
 censuses and cannot alone justify stored refcounts or quota changes.
 Full EA_INODE admission, lifetime, quota, concurrency and journal/device
 refinement remain required. Kernel/full-feature/writable-mount gates remain false.
+
+## Source-bound EA reference census
+
+`ea_census` composes the actual-feature complete group index, logical lazy bitmap
+semantics and every-inode classification with complete parent EA projections.
+A successful result requires the supplied scan budget to cover all declared
+inodes; no partial prefix becomes a positive certificate. All allocated EA values
+must be live, every physical descriptor must target an allocated exact-size value,
+and stored EA counts equal the complete physical graph indegrees. Every logical
+parent binding separately excludes the bounded legacy Lustre classification.
+Each logical binding checks its exact source-selected entry name and target's
+stored value-hash word against the entry hash, accepting the unsigned or
+historical signed-name variant. The stored word is not assumed to equal a CRC
+of unread payload bytes; full value-content and physical-sector audits remain
+separate.
+Every ordinary external parent pointer contributes to its block's `h_refcount`,
+including pointers to blocks containing only local values.
+
+The group index checks pairwise inode-table block-range separation before
+construction and binds source-node membership to those ranges. Distinct inode
+numbers consequently retain disjoint source byte slots. The census rejects all
+external xattr pointers into any inode-table block, preserving the inline versus
+external physical-entry distinction even with FLEX_BG placement. This does not
+establish separation from GDT/bitmap/journal roles or data extents; global physical
+ownership remains a separate admission boundary.
+
+This is the source-bound layer missing from bare `ea_refs`/graph helpers;
+arbitrary caller-supplied ledgers do not gain its certificate. The graph/census
+still authenticates no physical device, caller or VFS handle. The header requires
+RECOVER clear and unsupported orphan-work markers absent; allocated zero-ref EA values are
+rejected, and reserved body tables must parse and be absent. Those constraints
+do not supply a journal, namespace or orphan-lifetime proof.
+
+The parent `i_blocks` split includes every logical EA charge and one external
+block charge even when sharing or disabled quotas affect no physical allocation.
+Its `own` residual is arithmetic, not ownership. Complete physical separation,
+value content/CRC validation for every target, sector/EOF closure, quota database
+persistence, authenticated lifecycle edits and CortenMM/OSTD lock/cache/device
+refinement remain open. Full filesystem admission and mount/writer gates remain
+closed. See [EA reference census](EA_REFERENCE_CENSUS.md).

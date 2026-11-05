@@ -307,6 +307,23 @@ def main():
         "replace_ea_physical_records": ("pub fn misuse(mut l: verified_ext4::ea_refs::Ledger) { l.records = Vec::new(); }\n", "E0616"),
         "confuse_ordinary_index_with_ea_header": ("pub fn misuse(i: &verified_ext4::group_index::GroupIndex<'_>) { let _ = verified_ext4::ea_value::inspect(i, 12, 1, b\"key\", 4096); }\n", "E0308"),
     })
+    misuse.update({
+        "forge_ea_group_index": ("pub fn misuse(i: verified_ext4::ea_index::Index<'_, '_>) { let _ = verified_ext4::ea_index::Index { ..i }; }\n", "E0451"),
+        "replace_ea_group_metadata": ("pub fn misuse(mut i: verified_ext4::ea_index::Index<'_, '_>) { i.groups = Vec::new(); }\n", "E0616"),
+        "forge_ea_source_parent": ("pub fn misuse(p: verified_ext4::ea_parent::Parent<'_>) { let _ = verified_ext4::ea_parent::Parent { ..p }; }\n", "E0451"),
+        "replace_ea_parent_projection": ("pub fn misuse(mut p: verified_ext4::ea_parent::Parent<'_>) { p.body_records = Vec::new(); }\n", "E0616"),
+        "forge_ea_reference_graph": ("pub fn misuse(g: verified_ext4::ea_ref_projection::Graph) { let _ = verified_ext4::ea_ref_projection::Graph { ..g }; }\n", "E0451"),
+        "replace_ea_logical_graph": ("pub fn misuse(mut g: verified_ext4::ea_ref_projection::Graph) { g.logical = Vec::new(); }\n", "E0616"),
+        "reuse_ea_parent_graph_edit": ("pub fn misuse(g: verified_ext4::ea_ref_projection::Graph) { let _ = g.add_parent(12, &[], &[]); let _ = g.add_parent(13, &[], &[]); }\n", "E0382"),
+        "forge_ea_source_census": ("pub fn misuse(c: verified_ext4::ea_census::Census<'_, '_>) { let _ = verified_ext4::ea_census::Census { ..c }; }\n", "E0451"),
+        "replace_ea_census_graph": ("pub fn misuse(mut c: verified_ext4::ea_census::Census<'_, '_>, g: verified_ext4::ea_ref_projection::Graph) { c.graph = g; }\n", "E0616"),
+        "replace_ea_census_index": ("pub fn misuse<'s, 'a>(mut c: verified_ext4::ea_census::Census<'s, 'a>, i: verified_ext4::ea_index::Index<'s, 'a>) { c.index = i; }\n", "E0616"),
+        "mutate_ea_census_logical_reference": ("pub fn misuse(c: verified_ext4::ea_census::Census<'_, '_>) { c.logical()[0].parent = 13; }\n", "E0594"),
+        "mutate_ea_census_value_refcount": ("pub fn misuse(c: verified_ext4::ea_census::Census<'_, '_>) { c.values()[0].refs = 999; }\n", "E0594"),
+        "move_physical_ledger_out_of_ea_census": ("pub fn misuse(c: verified_ext4::ea_census::Census<'_, '_>) { let _ = c.physical().remove(verified_ext4::ea_refs::Location { kind: verified_ext4::ea_refs::Kind::Inline, owner: 12, offset: 164 }); }\n", "E0507"),
+        "mutate_live_ea_census_source": ("pub fn misuse(mut bytes: Vec<u8>) { let snapshot = verified_ext4::snapshot::Snapshot::from_bytes(&bytes); let census = verified_ext4::ea_census::inspect(&snapshot, u32::MAX).unwrap(); bytes[0] = 1; let _ = census.values(); }\n", "E0502"),
+        "confuse_ea_census_with_whole_volume": ("pub fn misuse(c: &verified_ext4::ea_census::Census<'_, '_>) { let _ = verified_ext4::allocated_inode::get(c, 12); }\n", "E0308"),
+    })
     for name, (source, code) in misuse.items():
         path = BUILD / (name + ".rs")
         path.write_text(source)
