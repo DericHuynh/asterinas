@@ -113,6 +113,11 @@ Future kernel execution must use the CortenMM/OSTD ownership, sleeping-lock and
 BIO/DMA interfaces of Asterinas's framekernel architecture. Linux page, folio and
 buffer-head ownership is not imported. Pinned references are in `sources.json`.
 
+The separate [EA_INODE core](EA_INODE.md) now provides isolated metadata,
+source-bound value inspection and structural reference/quota contracts. It does
+not extend this lifecycle's ordinary filesystem admission, value allocation,
+orphan handling or journalled update support.
+
 
 Access/default ACL updates are implemented separately in [POSIX_ACL.md](POSIX_ACL.md).
 They use owner/scoped FOWNER authority and couple permissions/SGID to storage.
