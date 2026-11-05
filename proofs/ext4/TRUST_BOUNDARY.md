@@ -262,3 +262,17 @@ All-home crash closure is conditional on the existing protected-source, 4-KiB
 atomic-write, draining-flush and quiescent restart contract. It establishes no
 physical device behavior, concurrent inode/xattr/cache lock, allocator epoch or
 CortenMM frame/DMA ownership. Kernel/full-feature/mount gates remain closed.
+
+## ACL mutation authority
+
+ACL mutation consumes a separate, source/kind-bound private authorization object.
+Ordinary ACL/DAC write grants cannot substitute for it. Actual mutations require
+the owner or the supplied scoped FOWNER decision; FSETID only controls SGID
+retention. Default removal on a regular file may succeed without owner authority
+and produces no mutation. The operation binds access ACL content, resulting mode
+and allocation metadata to the same transaction and commit decision.
+
+Filesystem IDs, group membership and FOWNER/FSETID scope remain authenticated VFS
+inputs. LSM decisions, ID translation, runtime ACL-cache coherence, locks and
+CortenMM/OSTD/device refinement remain open. The common storage constructor is
+crate-private and grants no standalone public filesystem write authority.

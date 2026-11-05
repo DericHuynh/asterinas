@@ -326,4 +326,55 @@ impl<'a> Acl<'a> {
     }
 }
 
+proof fn same_record(raw: Seq<u8>, a: Entry, b: Entry)
+    requires record(raw, a), record(raw, b), a.offset == b.offset,
+    ensures a == b,
+{ reveal(record); }
+proof fn same_prefix(a: AclView, b: AclView, count: nat)
+    requires valid(a), valid(b), a.raw == b.raw, count <= a.entries.len(), count <= b.entries.len(),
+    ensures a.entries.take(count as int) == b.entries.take(count as int),
+        forall|j: int| 0 <= j < count ==> #[trigger] a.entries[j] == #[trigger] b.entries[j],
+    decreases count,
+{
+    reveal(chain);
+    if count > 0 {
+        same_prefix(a, b, (count - 1) as nat);
+        let i = count as int - 1;
+        if i > 0 { assert(a.entries[i - 1] == b.entries[i - 1]); }
+        assert(record(a.raw, a.entries[i])); assert(record(b.raw, b.entries[i]));
+        assert(a.entries[i].offset == b.entries[i].offset);
+        same_record(a.raw, a.entries[i], b.entries[i]);
+        assert forall|j: int| 0 <= j < count implies #[trigger] a.entries[j] == #[trigger] b.entries[j] by {
+            if j < i { assert(a.entries[j] == b.entries[j]); }
+        }
+        assert(a.entries.take(count as int) =~= b.entries.take(count as int));
+    }
+}
+pub proof fn complete_acls_from_the_same_bytes_have_identical_entries(a: AclView, b: AclView)
+    requires valid(a), valid(b), a.raw == b.raw,
+    ensures a == b,
+{
+    reveal(chain);
+    let count = if a.entries.len() < b.entries.len() { a.entries.len() } else { b.entries.len() };
+    same_prefix(a, b, count);
+    if a.entries.len() < b.entries.len() {
+        assert(a.entries.len() > 0);
+        assert(b.entries[a.entries.len() as int - 1] == a.entries.last());
+        let next = b.entries[a.entries.len() as int];
+        assert(record(b.raw, next));
+        assert(next.offset as nat == b.entries[a.entries.len() as int - 1].offset as nat + width(b.entries[a.entries.len() as int - 1].tag));
+        assert(a.raw.len() == a.entries.last().offset as nat + width(a.entries.last().tag));
+        assert(next.offset == a.raw.len()); reveal(record);
+    } else if b.entries.len() < a.entries.len() {
+        assert(b.entries.len() > 0);
+        assert(a.entries[b.entries.len() as int - 1] == b.entries.last());
+        let next = a.entries[b.entries.len() as int];
+        assert(record(a.raw, next));
+        assert(next.offset as nat == a.entries[b.entries.len() as int - 1].offset as nat + width(a.entries[b.entries.len() as int - 1].tag));
+        assert(b.raw.len() == b.entries.last().offset as nat + width(b.entries.last().tag));
+        assert(next.offset == b.raw.len()); reveal(record);
+    }
+    assert(a.entries =~= b.entries);
+}
+
 }

@@ -15,31 +15,12 @@ pub open spec fn admitted(v: UpdateView, a: AdmissionView, images: Images) -> bo
     xattr_lifecycle::valid(v) && writer_admission::valid(a, images) && a.boot.source == v.grant.node.volume.index.source
         && images.tx.original == v.patches && images.tx.layout == v.grant.node.volume.journal
 }
-proof fn one_target(before: Disk, tx: TransactionView, i: int)
-    requires transaction::wf(tx), replay_refinement::all_targets_exist(before, transaction_refinement::log(tx)), 0 <= i < tx.original.len(),
-    ensures before.dom().contains(tx.original[i].block),
-        replay_refinement::chronological(before, transaction_refinement::log(tx), Seq::empty())[tx.original[i].block] == tx.original[i].image,
-{
-    let log = transaction_refinement::log(tx); let block = tx.original[i].block;
-    replay_refinement::chronological_lookup(before, log, Seq::empty(), block);
-    replay_refinement::last_eligible_characterizes_latest(log, Seq::empty(), block);
-    if let Some(j) = replay_refinement::last_eligible(log, Seq::empty(), block) {
-        if i < j { assert(tx.original[i].block != tx.original[j as int].block); }
-        if j < i { assert(tx.original[i].block != tx.original[j as int].block); }
-        assert(j == i);
-    } else { assert(crate::replay::blocked(block, log[i].sequence, Seq::empty())); }
-}
-
 pub proof fn completed_xattr_transactions_have_every_exact_durable_home_and_a_retired_log(v: UpdateView, a: AdmissionView, images: Images, machine: Machine)
     requires admitted(v, a, images), write_device::inv(machine, images.tx.payloads.len()), machine.io.phase is Done, !machine.io.pending, !machine.io.faulted,
     ensures write_media::disk(machine, disk_image::initial_disk(a.boot.source, images.tx.layout.fs_blocks), images)[images.journal_block] == images.tail,
         forall|i: int| 0 <= i < v.patches.len() ==> #[trigger]
             write_media::disk(machine, disk_image::initial_disk(a.boot.source, images.tx.layout.fs_blocks), images)[v.patches[i].block] == v.patches[i].image,
-{
-    crate::writer_image::an_admitted_source_supplies_the_physical_writer_context(a, images);
-    write_recognition::successful_writer_completion_has_exact_durable_home_bytes_and_retired_tail(machine,
-        disk_image::initial_disk(a.boot.source, images.tx.layout.fs_blocks), images);
-}
+{ crate::xattr_commit::completed_xattr_transactions_have_every_exact_durable_home_and_a_retired_log(v.patches, a, images, machine); }
 
 pub proof fn every_recovered_nonprimary_xattr_home_uses_the_same_commit_decision(v: UpdateView, a: AdmissionView,
     images: Images, machine: Machine, layout: &JournalLayout, scan: &crate::scan::Scan, recovery: crate::recovery_device::Machine, tail: Seq<u8>, i: int)
@@ -49,21 +30,7 @@ pub proof fn every_recovered_nonprimary_xattr_home_uses_the_same_commit_decision
         recovery.io.phase == 4, !recovery.io.faulted, !recovery.io.pending, 0 <= i < v.patches.len(), v.patches[i].block != 0,
     ensures recovery.stable[v.patches[i].block] == if machine.stable.contains(6 + images.tx.payloads.len()) { v.patches[i].image }
         else { disk_image::initial_disk(a.boot.source, images.tx.layout.fs_blocks)[v.patches[i].block] },
-{
-    hide(crate::crc::fold);
-    let before = disk_image::initial_disk(a.boot.source, images.tx.layout.fs_blocks); let block = v.patches[i].block;
-    crate::writer_image::an_admitted_source_supplies_the_physical_writer_context(a, images);
-    write_recovery::original_targets_exist(before, images);
-    assert(crate::write_io::valid_images(images)) by { reveal(writer_admission::valid); }
-    reveal(crate::write_io::valid_images);
-    assert(transaction::wf(images.tx));
-    one_target(before, images.tx, i);
-    assert(!(images.tx.layout.start <= block < images.tx.layout.start as int + images.tx.layout.journal_blocks)) by {
-        assert(crate::replay::payload_for_layout(images.tx.tags[i], images.tx.payloads[i], images.tx.sequence, images.tx.seed, images.tx.layout));
-        reveal(crate::replay::payload_for_layout);
-    }
-    write_recovery::successful_recovery_of_every_writer_cut_has_before_or_after_home_bytes(machine, before, images, layout, scan, recovery, tail, block);
-}
+{ crate::xattr_commit::every_recovered_nonprimary_xattr_home_uses_the_same_commit_decision(v.patches, a, images, machine, layout, scan, recovery, tail, i); }
 
 proof fn primary_facts(a: AdmissionView, images: Images)
     requires writer_admission::valid(a, images),
@@ -103,41 +70,7 @@ pub proof fn every_recovered_primary_xattr_home_has_old_counters_or_the_exact_co
         recovery.io.phase == 4, !recovery.io.faulted, !recovery.io.pending, 0 <= i < v.patches.len(), v.patches[i].block == 0,
     ensures if machine.stable.contains(6 + images.tx.payloads.len()) { recovery.stable[0] == v.patches[i].image }
         else { crate::super_state::preserves(a.boot.source.subrange(0, 4096), recovery.stable[0]) },
-{
-    hide(crate::crc::fold);
-    hide(replay_refinement::selected); hide(replay_refinement::chronological);
-    hide(transaction::wf); hide(crate::write_io::valid_images);
-    hide(write_recovery::returned); hide(write_recognition::context);
-    hide(write_device::inv); hide(crate::recovery_device::inv); hide(write_media::apply);
-    let before = disk_image::initial_disk(a.boot.source, images.tx.layout.fs_blocks);
-    let media = write_media::disk(machine, before, images); let count = images.tx.payloads.len();
-    primary_facts(a, images);
-    write_recovery::snapshot_state(machine, before, images, layout);
-    write_recovery::every_returned_writer_scan_is_empty_or_the_complete_transaction(machine, before, images, layout, scan);
-    crate::recovery_device::success_image_equals_linux_redo(recovery, media, scan.plan(), images.journal_block, tail);
-    replay_refinement::executable_selection_equals_chronological_redo(media, scan.plan());
-    write_media::apply_preserves_domain(before, images, machine.stable, write_device::total(count));
-    plan_indices(scan.plan());
-    replay_refinement::selected_domain(media, scan.plan().log(), scan.plan().selection());
-    assert(recovery.stable[0] == replay_refinement::selected(media, scan.plan().log(), scan.plan().selection())[0]);
-    if !machine.stable.contains(6 + count) {
-        assert(replay_refinement::selected(media, scan.plan().log(), scan.plan().selection()) == media) by { reveal(replay_refinement::selected); }
-        write_recognition::before_a_durable_commit_no_checkpoint_image_can_be_stable(machine, count);
-        crate::write_media::before_checkpoint_block_zero_is_only_the_recovery_flag_image(machine, before, images);
-        if machine.stable.contains(0) { assert(crate::super_state::preserves(before[0], images.dirty)); }
-        else { assert(crate::super_state::preserves(before[0], before[0])); }
-
-    } else if write_recovery::source(machine, before, images, layout).start != 0 {
-        assert(scan.plan().log() == transaction_refinement::log(images.tx));
-        assert(scan.plan().revocations() =~= Seq::<crate::replay::Revocation>::empty());
-        one_target(media, images.tx, i);
-    } else {
-        activation_precedes_a_stable_commit(machine, count);
-        assert(machine.stable.contains(9 + 2 * count));
-        write_recognition::clearing_the_journal_tail_requires_durable_home_afterimages(machine, before, images);
-        assert(replay_refinement::selected(media, scan.plan().log(), scan.plan().selection()) == media) by { reveal(replay_refinement::selected); }
-    }
-}
+{ crate::xattr_commit::every_recovered_primary_xattr_home_has_old_counters_or_the_exact_committed_image(v.patches, a, images, machine, layout, scan, recovery, tail, i); }
 
 pub proof fn every_writer_cut_recovers_all_xattr_metadata_together(v: UpdateView, a: AdmissionView,
     images: Images, machine: Machine, layout: &JournalLayout, scan: &crate::scan::Scan, recovery: crate::recovery_device::Machine, tail: Seq<u8>)
@@ -149,14 +82,6 @@ pub proof fn every_writer_cut_recovers_all_xattr_metadata_together(v: UpdateView
             #[trigger] recovery.stable[v.patches[i].block] == v.patches[i].image
         } else if v.patches[i].block == 0 { crate::super_state::preserves(a.boot.source.subrange(0, 4096), recovery.stable[0]) }
         else { recovery.stable[v.patches[i].block] == disk_image::initial_disk(a.boot.source, images.tx.layout.fs_blocks)[v.patches[i].block] }),
-{
-    assert forall|i: int| 0 <= i < v.patches.len() implies (if machine.stable.contains(6 + images.tx.payloads.len()) {
-            #[trigger] recovery.stable[v.patches[i].block] == v.patches[i].image
-        } else if v.patches[i].block == 0 { crate::super_state::preserves(a.boot.source.subrange(0, 4096), recovery.stable[0]) }
-        else { recovery.stable[v.patches[i].block] == disk_image::initial_disk(a.boot.source, images.tx.layout.fs_blocks)[v.patches[i].block] }) by {
-        if v.patches[i].block == 0 { every_recovered_primary_xattr_home_has_old_counters_or_the_exact_committed_image(v, a, images, machine, layout, scan, recovery, tail, i); }
-        else { every_recovered_nonprimary_xattr_home_uses_the_same_commit_decision(v, a, images, machine, layout, scan, recovery, tail, i); }
-    }
-}
+{ crate::xattr_commit::every_writer_cut_recovers_all_xattr_metadata_together(v.patches, a, images, machine, layout, scan, recovery, tail); }
 
 }

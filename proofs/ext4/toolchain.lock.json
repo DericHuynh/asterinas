@@ -181,7 +181,12 @@
     "src/xattr_lifecycle.rs",
     "src/xattr_footprint.rs",
     "src/xattr_durable.rs",
-    "src/xattr_canonical.rs"
+    "src/xattr_canonical.rs",
+    "src/inode_mode.rs",
+    "src/acl_xattr.rs",
+    "src/xattr_transaction.rs",
+    "src/xattr_commit.rs",
+    "src/acl_update.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -754,7 +759,22 @@
     "xattr_durable::every_recovered_nonprimary_xattr_home_uses_the_same_commit_decision",
     "xattr_durable::every_recovered_primary_xattr_home_has_old_counters_or_the_exact_committed_image",
     "xattr_durable::every_writer_cut_recovers_all_xattr_metadata_together",
-    "xattr_canonical::canonical_images_expose_no_nonzero_name_or_value_padding"
+    "xattr_canonical::canonical_images_expose_no_nonzero_name_or_value_padding",
+    "inode_mode::permission_changes_never_add_set_id_bits_or_change_file_type",
+    "inode_mode::permission_changes_preserve_every_unrelated_inode_byte",
+    "acl_xattr::converted_acls_preserve_every_supplied_named_identifier",
+    "acl::complete_acls_from_the_same_bytes_have_identical_entries",
+    "xattr_transaction::retaining_the_mode_retains_the_original_xattr_update_inode",
+    "xattr_commit::completed_xattr_transactions_have_every_exact_durable_home_and_a_retired_log",
+    "xattr_commit::every_recovered_nonprimary_xattr_home_uses_the_same_commit_decision",
+    "xattr_commit::every_recovered_primary_xattr_home_has_old_counters_or_the_exact_committed_image",
+    "xattr_commit::every_writer_cut_recovers_all_xattr_metadata_together",
+    "acl_update::only_an_owner_or_scoped_fowner_authority_can_produce_a_mutation",
+    "acl_update::every_other_attribute_survives_an_acl_mutation",
+    "acl_update::stored_acls_are_exact_or_folded_and_removed",
+    "acl_update::default_and_removed_acls_preserve_the_inode_mode",
+    "acl_update::access_acl_permissions_and_sgid_are_updated_together",
+    "acl_update::every_writer_cut_recovers_acl_mode_and_storage_together"
   ],
   "required_flags": [
     "--no-cheating",
@@ -1249,6 +1269,16 @@
     "xattr_lifecycle::set_user",
     "xattr_lifecycle::remove_user",
     "xattr_footprint::check",
-    "xattr_canonical::check"
+    "xattr_canonical::check",
+    "inode_mode::encode",
+    "acl_xattr::as_slice",
+    "acl_xattr::is_removal",
+    "acl_xattr::decode",
+    "acl_xattr::summarize",
+    "acl_xattr::parsed",
+    "acl_update::authorize",
+    "acl_update::patches",
+    "acl_update::begin",
+    "acl_update::prepare"
   ]
 }

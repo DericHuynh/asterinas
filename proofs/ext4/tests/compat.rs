@@ -7894,3 +7894,629 @@ mod xattr_lifecycle_updates {
         }
     }
 }
+
+mod acl_xattr_updates {
+    use core::{
+        access, acl_access,
+        acl_update::{self as update, Credentials, Kind},
+        acl_xattr, allocated_inode, allocation,
+        recovery_request::Completion,
+        snapshot::Snapshot,
+        xattr_inode,
+        xattr_table::ValueRef,
+    };
+
+    use super::{
+        inline_xattr_updates::{command, fixture, recover},
+        *,
+    };
+
+    fn wire(entries: &[(u16, u16, u32)]) -> Vec<u8> {
+        let mut raw = 2u32.to_le_bytes().to_vec();
+        for (tag, bits, id) in entries {
+            raw.extend(tag.to_le_bytes());
+            raw.extend(bits.to_le_bytes());
+            raw.extend(id.to_le_bytes());
+        }
+        raw
+    }
+    fn simple(owner: u16, group: u16, other: u16) -> Vec<u8> {
+        wire(&[
+            (1, owner, u32::MAX),
+            (4, group, u32::MAX),
+            (32, other, u32::MAX),
+        ])
+    }
+    fn extended(count: u32, mask: u16) -> Vec<u8> {
+        let mut entries = vec![(1, 6, u32::MAX), (2, mask, 1234)];
+        for id in 0..count {
+            entries.push((2, mask, 10000 + id));
+        }
+        entries.extend([(4, 0, u32::MAX), (16, mask, u32::MAX), (32, 0, u32::MAX)]);
+        wire(&entries)
+    }
+    fn owner() -> Credentials {
+        Credentials {
+            fsuid: 0,
+            fowner: false,
+            fsetid: false,
+        }
+    }
+    fn ok<T>(result: Result<T, update::Error>) -> T {
+        match result {
+            Ok(value) => value,
+            Err(_) => panic!("ACL update rejected"),
+        }
+    }
+    fn mode(img: &[u8], number: u32) -> u16 {
+        let (_, group, _) = metadata(img);
+        core::bytes::read_le16(inode_bytes(img, group.inode_table, number), 0).unwrap()
+    }
+    fn pointer(img: &[u8], number: u32) -> u32 {
+        let (_, group, _) = metadata(img);
+        core::xattr::inode_pointer(inode_bytes(img, group.inode_table, number)).unwrap() as u32
+    }
+    fn attribute(img: &[u8], number: u32, ns: u8, name: &[u8]) -> Option<Vec<u8>> {
+        let volume = allocation::parse(Snapshot::from_bytes(img)).unwrap();
+        let attrs = xattr_inode::inspect(volume.index(), number).unwrap();
+        match attrs.get(ns, name) {
+            Some(ValueRef::Bytes(raw)) => Some(raw.to_vec()),
+            None => None,
+            _ => panic!("local value"),
+        }
+    }
+    fn drive(
+        img: &[u8],
+        candidate: update::Candidate<'_, '_, '_>,
+        cuts: bool,
+    ) -> (Vec<u8>, Vec<(bool, Vec<u8>)>) {
+        let mut writer = candidate.begin().expect("full ACL transaction admission");
+        let mut stable = img.to_vec();
+        let mut snapshots = Vec::new();
+        let mut committed = false;
+        loop {
+            let pending = match writer.dispatch() {
+                Ok(pending) => pending,
+                Err(done) => {
+                    assert!(done.finished());
+                    break;
+                }
+            };
+            if let core::recovery_io::Command::Write { block, image } = pending.pending_command() {
+                if core::bytes::read_be32(image, 0) == Some(0xc03b3998)
+                    && core::bytes::read_be32(image, 4) == Some(2)
+                {
+                    committed = true;
+                }
+                stable[block as usize * 4096..(block as usize + 1) * 4096].copy_from_slice(image);
+                if cuts {
+                    snapshots.push((committed, stable.clone()));
+                }
+            }
+            writer = pending.finish_pending(Completion::Succeeded);
+        }
+        assert!(core::image_validation::inspect(Snapshot::from_bytes(&stable)).is_some());
+        (stable, snapshots)
+    }
+    fn apply(
+        img: &[u8],
+        number: u32,
+        kind: Kind,
+        raw: &[u8],
+        credentials: &Credentials,
+        groups: &[u32],
+        cuts: bool,
+    ) -> (Vec<u8>, Vec<(bool, Vec<u8>)>) {
+        let volume = allocation::parse(Snapshot::from_bytes(img)).unwrap();
+        let node = allocated_inode::get(&volume, number).unwrap();
+        let grant = update::authorize(&node, credentials, groups, kind)
+            .expect("ACL owner or capability authority");
+        let candidate = match ok(update::prepare(grant, raw, 123456789, 987654321)) {
+            Some(candidate) => candidate,
+            None => {
+                return (img.to_vec(), Vec::new());
+            }
+        };
+        drive(img, candidate, cuts)
+    }
+    fn linux(prefix: &str, img: &[u8]) -> Vec<u8> {
+        let path = format!("build/{prefix}.img");
+        std::fs::write(&path, img).unwrap();
+        let fsck = std::env::var("E2FSCK_BIN").unwrap_or_else(|_| "e2fsck".into());
+        command(&fsck, &["-fy", &path], true);
+        command(&fsck, &["-fn", &path], false);
+        let result = std::fs::read(&path).unwrap();
+        let _ = std::fs::remove_file(path);
+        result
+    }
+    fn set_mode(img: &mut [u8], number: u32, value: u16) {
+        let (_, group, seed) = metadata(img);
+        let at = group.inode_table as usize * 4096 + (number as usize - 1) * 256;
+        img[at..at + 2].copy_from_slice(&value.to_le_bytes());
+        seal_inode_image(img, group.inode_table, number, seed);
+    }
+    fn named_allowed(img: &[u8], bits: u8) -> bool {
+        let volume = allocation::parse(Snapshot::from_bytes(img)).unwrap();
+        let node = allocated_inode::get(&volume, 12).unwrap();
+        let credentials = access::Credentials {
+            fsuid: 1234,
+            in_inode_group: false,
+            dac_override: false,
+            dac_read_search: false,
+        };
+        acl_access::authorize(&node, &credentials, &[], bits).is_some()
+    }
+
+    #[test]
+    fn acl_uapi_conversion_matches_linux_compact_bytes_and_preserves_named_ids() {
+        let input = extended(0, 2);
+        let converted = acl_xattr::decode(&input).unwrap();
+        let img = fixture("acl-update-codec", false);
+        assert_eq!(converted.as_slice(), attribute(&img, 12, 2, b"").unwrap());
+        let acl = converted.parsed().unwrap();
+        let summary = acl_xattr::summarize(&acl).unwrap();
+        assert_eq!(summary.bits, 0o620);
+        assert!(summary.extended);
+        assert_eq!(acl.entry(1).unwrap().id, 1234);
+        let ignored = wire(&[
+            (1, 6, 100),
+            (2, 2, 1234),
+            (4, 0, 200),
+            (16, 2, 300),
+            (32, 0, 400),
+        ]);
+        assert_eq!(
+            acl_xattr::decode(&ignored).unwrap().as_slice(),
+            converted.as_slice(),
+            "Linux ignores IDs on short entries"
+        );
+        let mask_only =
+            acl_xattr::decode(&wire(&[(1, 6, 0), (4, 7, 0), (16, 1, 0), (32, 0, 0)])).unwrap();
+        assert!(
+            acl_xattr::summarize(&mask_only.parsed().unwrap())
+                .unwrap()
+                .extended
+        );
+        for raw in [
+            vec![1, 0, 0, 0],
+            vec![2, 0, 0],
+            vec![2, 0, 0, 0, 1],
+            simple(8, 0, 0),
+            wire(&[
+                (1, 6, 0),
+                (2, 2, u32::MAX),
+                (4, 0, 0),
+                (16, 2, 0),
+                (32, 0, 0),
+            ]),
+            wire(&[(1, 6, 0), (2, 2, 1234), (4, 0, 0), (32, 0, 0)]),
+        ] {
+            assert!(acl_xattr::decode(&raw).is_none());
+        }
+        assert!(acl_xattr::is_removal(b""));
+        assert!(acl_xattr::is_removal(&2u32.to_le_bytes()));
+        assert!(!acl_xattr::is_removal(&1u32.to_le_bytes()));
+    }
+    #[test]
+    fn an_owner_without_write_permission_can_set_a_mode_only_acl_without_enabling_ext_attr() {
+        let mut img = image();
+        set_mode(&mut img, 12, 0o100400);
+        assert_eq!(le32(&img, 1116) & 8, 0);
+        let volume = allocation::parse(Snapshot::from_bytes(&img)).unwrap();
+        let node = allocated_inode::get(&volume, 12).unwrap();
+        let ordinary = access::Credentials {
+            fsuid: 0,
+            in_inode_group: true,
+            dac_override: false,
+            dac_read_search: false,
+        };
+        assert!(acl_access::authorize(&node, &ordinary, &[0], 2).is_none());
+        let (after, _) = apply(
+            &img,
+            12,
+            Kind::Access,
+            &simple(6, 4, 0),
+            &owner(),
+            &[],
+            false,
+        );
+        assert_eq!(mode(&after, 12), 0o100640);
+        assert_eq!(attribute(&after, 12, 2, b""), None);
+        assert_eq!(le32(&after, 1116), le32(&img, 1116));
+        assert_eq!(pointer(&after, 12), 0);
+        let linux = linux("acl-update-mode-only", &after);
+        assert_eq!(mode(&linux, 12), 0o100640);
+    }
+    #[test]
+    fn named_acl_write_permission_cannot_authorize_acl_mutation_or_retarget_a_default_grant() {
+        let img = fixture("acl-update-authority", false);
+        assert!(named_allowed(&img, 2));
+        let volume = allocation::parse(Snapshot::from_bytes(&img)).unwrap();
+        let node = allocated_inode::get(&volume, 12).unwrap();
+        let user = Credentials {
+            fsuid: 1234,
+            fowner: false,
+            fsetid: false,
+        };
+        assert!(update::authorize(&node, &user, &[], Kind::Access).is_none());
+        let default = update::authorize(&node, &user, &[], Kind::Default).unwrap();
+        assert!(matches!(update::prepare(default, b"", 1, 0), Ok(None)));
+        let default = update::authorize(&node, &user, &[], Kind::Default).unwrap();
+        assert!(matches!(
+            update::prepare(default, &simple(7, 7, 7), 1, 0),
+            Err(update::Error::NotDirectory)
+        ));
+    }
+    #[test]
+    fn setting_an_access_acl_clears_sgid_unless_group_membership_or_fsetid_preserves_it() {
+        for in_group in [false, true] {
+            for fsetid in [false, true] {
+                let mut img = fixture(&format!("acl-update-sgid-{in_group}-{fsetid}"), false);
+                set_mode(&mut img, 12, 0o102620);
+                let credentials = Credentials { fsetid, ..owner() };
+                let groups: &[u32] = if in_group { &[0] } else { &[] };
+                let (after, _) = apply(
+                    &img,
+                    12,
+                    Kind::Access,
+                    &extended(0, 4),
+                    &credentials,
+                    groups,
+                    false,
+                );
+                assert_eq!(
+                    mode(&after, 12),
+                    if in_group || fsetid {
+                        0o102640
+                    } else {
+                        0o100640
+                    }
+                );
+                assert_eq!(attribute(&after, 12, 1, b"note"), Some(b"before7".to_vec()));
+                linux(
+                    &format!("acl-update-sgid-result-{in_group}-{fsetid}"),
+                    &after,
+                );
+            }
+        }
+    }
+    #[test]
+    fn mask_only_acls_remain_extended_and_mode_only_acls_are_folded() {
+        let img = fixture("acl-update-equivalence", false);
+        let masked = wire(&[(1, 6, 0), (4, 7, 0), (16, 1, 0), (32, 0, 0)]);
+        let (after, _) = apply(&img, 12, Kind::Access, &masked, &owner(), &[0], false);
+        assert_eq!(mode(&after, 12), 0o100610);
+        assert!(attribute(&after, 12, 2, b"").is_some());
+        let (folded, _) = apply(
+            &after,
+            12,
+            Kind::Access,
+            &simple(4, 0, 0),
+            &owner(),
+            &[],
+            false,
+        );
+        assert_eq!(mode(&folded, 12), 0o100400);
+        assert_eq!(attribute(&folded, 12, 2, b""), None);
+        assert_eq!(
+            attribute(&folded, 12, 1, b"note"),
+            Some(b"before7".to_vec())
+        );
+        linux("acl-update-equivalence-result", &folded);
+    }
+    #[test]
+    fn default_acls_are_kept_on_directories_without_changing_mode_or_sgid() {
+        let mut img = image();
+        set_mode(&mut img, 2, 0o042755);
+        let input = simple(7, 0, 0);
+        let (after, _) = apply(&img, 2, Kind::Default, &input, &owner(), &[], false);
+        assert_eq!(mode(&after, 2), 0o042755);
+        assert_eq!(
+            attribute(&after, 2, 3, b""),
+            Some(acl_xattr::decode(&input).unwrap().as_slice().to_vec())
+        );
+        let (removed, _) = apply(
+            &after,
+            2,
+            Kind::Default,
+            &2u32.to_le_bytes(),
+            &owner(),
+            &[],
+            false,
+        );
+        assert_eq!(mode(&removed, 2), 0o042755);
+        assert_eq!(attribute(&removed, 2, 3, b""), None);
+        linux("acl-update-default-result", &removed);
+    }
+    #[test]
+    fn access_acl_removal_preserves_mode_and_is_idempotent_even_when_the_key_is_absent() {
+        let img = fixture("acl-update-remove", true);
+        let before_mode = mode(&img, 12);
+        let (after, _) = apply(&img, 12, Kind::Access, b"", &owner(), &[], false);
+        assert_eq!(mode(&after, 12), before_mode);
+        assert_eq!(attribute(&after, 12, 2, b""), None);
+        assert_eq!(attribute(&after, 12, 1, b"large"), Some(vec![0x59; 512]));
+        let (again, _) = apply(
+            &after,
+            12,
+            Kind::Access,
+            &2u32.to_le_bytes(),
+            &owner(),
+            &[],
+            false,
+        );
+        assert_eq!(again, after);
+        linux("acl-update-remove-result", &after);
+    }
+    #[test]
+    fn crash_recovery_publishes_acl_mode_permissions_and_allocation_together() {
+        let img = fixture("acl-update-crash", false);
+        let old = attribute(&img, 12, 2, b"").unwrap();
+        let input = extended(32, 4);
+        let target = acl_xattr::decode(&input).unwrap().as_slice().to_vec();
+        let free = le32(&img, 1036);
+        let (after, cuts) = apply(&img, 12, Kind::Access, &input, &owner(), &[0], true);
+        assert_eq!(mode(&after, 12), 0o100640);
+        assert_eq!(attribute(&after, 12, 2, b""), Some(target.clone()));
+        assert_eq!(le32(&after, 1036), free - 1);
+        let mut committed = None;
+        for (done, cut) in cuts {
+            if done && committed.is_none() {
+                committed = Some(cut.clone());
+            }
+            let recovered = recover(cut);
+            assert_eq!(mode(&recovered, 12), if done { 0o100640 } else { 0o100620 });
+            assert_eq!(
+                attribute(&recovered, 12, 2, b""),
+                Some(if done { target.clone() } else { old.clone() })
+            );
+            assert_eq!(named_allowed(&recovered, 4), done);
+            assert_eq!(named_allowed(&recovered, 2), !done);
+            assert_eq!(le32(&recovered, 1036), if done { free - 1 } else { free });
+        }
+        let linux = linux("acl-update-crash-linux", &committed.unwrap());
+        assert_eq!(mode(&linux, 12), 0o100640);
+        assert_eq!(attribute(&linux, 12, 2, b""), Some(target));
+    }
+    #[test]
+    fn invalid_acl_inputs_readonly_sources_and_denied_owners_prepare_no_writes() {
+        let img = fixture("acl-update-invalid", false);
+        let original = img.clone();
+        let volume = allocation::parse(Snapshot::from_bytes(&img)).unwrap();
+        let node = allocated_inode::get(&volume, 12).unwrap();
+        for input in [vec![1, 0, 0, 0], simple(8, 0, 0), vec![2, 0, 0, 0, 1]] {
+            let grant = update::authorize(&node, &owner(), &[0], Kind::Access).unwrap();
+            assert!(matches!(
+                update::prepare(grant, &input, 1, 0),
+                Err(update::Error::InvalidAcl)
+            ));
+        }
+        let mut readonly = img.clone();
+        let flags = le32(&readonly, 1124) | 0x1000;
+        readonly[1124..1128].copy_from_slice(&flags.to_le_bytes());
+        let checksum = core::crc::crc32c(0xffffffff, &readonly[1024..2044]);
+        readonly[2044..2048].copy_from_slice(&checksum.to_le_bytes());
+        let volume = allocation::parse(Snapshot::from_bytes(&readonly)).unwrap();
+        let node = allocated_inode::get(&volume, 12).unwrap();
+        let grant = update::authorize(&node, &owner(), &[0], Kind::Access).unwrap();
+        assert!(matches!(
+            update::prepare(grant, &simple(7, 7, 7), 1, 0),
+            Err(update::Error::ReadOnly)
+        ));
+        assert_eq!(img, original);
+    }
+    #[test]
+    fn shared_acl_blocks_use_copy_on_write_and_folding_releases_only_the_new_exclusive_block() {
+        let path = "build/acl-update-shared.img";
+        let raw_path = "build/acl-update-shared.bin";
+        let old_input = extended(32, 2);
+        std::fs::write(path, image()).unwrap();
+        std::fs::write(raw_path, &old_input).unwrap();
+        let debugfs = std::env::var("DEBUGFS_BIN").unwrap_or_else(|_| "debugfs".into());
+        for request in [
+            "feature ext_attr".to_string(),
+            "write build/fixture-file.bin /peer".to_string(),
+            "ea_set /payload user.note before7".to_string(),
+            "ea_set /peer user.note peer".to_string(),
+            format!("ea_set -f {raw_path} /payload system.posix_acl_access"),
+            format!("ea_set -f {raw_path} /peer system.posix_acl_access"),
+            "sif /payload mode 0100620".to_string(),
+            "sif /peer mode 0100620".to_string(),
+        ] {
+            command(&debugfs, &["-w", "-R", &request, path], false);
+        }
+        let mut img = std::fs::read(path).unwrap();
+        let (_, group, seed) = metadata(&img);
+        let old = pointer(&img, 12);
+        let second = pointer(&img, 13);
+        assert_ne!(old, second);
+        assert!(old > 0 && second > 0);
+        let peer = group.inode_table as usize * 4096 + 12 * 256;
+        img[peer + 104..peer + 108].copy_from_slice(&old.to_le_bytes());
+        seal_inode_image(&mut img, group.inode_table, 13, seed);
+        let at = old as usize * 4096;
+        img[at + 4..at + 8].copy_from_slice(&2u32.to_le_bytes());
+        let checksum = core::xattr::checksum(&img[at..at + 4096], old as u64, seed).unwrap();
+        img[at + 16..at + 20].copy_from_slice(&checksum.to_le_bytes());
+        img[group.block_bitmap as usize * 4096 + second as usize / 8] &= !(1 << (second % 8));
+        seal_single_group_allocation(&mut img);
+        assert!(core::image_validation::inspect(Snapshot::from_bytes(&img)).is_some());
+        let old_peer = inode_bytes(&img, group.inode_table, 13).to_vec();
+        let old_acl = attribute(&img, 13, 2, b"").unwrap();
+        let free = le32(&img, 1036);
+        let (after, _) = apply(
+            &img,
+            12,
+            Kind::Access,
+            &extended(40, 4),
+            &owner(),
+            &[0],
+            false,
+        );
+        assert_ne!(pointer(&after, 12), old);
+        assert_eq!(le32(&after, 1036), free - 1);
+        assert_eq!(inode_bytes(&after, group.inode_table, 13), old_peer);
+        assert_eq!(attribute(&after, 13, 2, b""), Some(old_acl.clone()));
+        assert_eq!(le32(&after, old as usize * 4096 + 4), 1);
+        assert_eq!(mode(&after, 12), 0o100640);
+        let (folded, _) = apply(
+            &after,
+            12,
+            Kind::Access,
+            &simple(6, 0, 0),
+            &owner(),
+            &[0],
+            false,
+        );
+        assert_eq!(pointer(&folded, 12), 0);
+        assert_eq!(le32(&folded, 1036), free);
+        assert_eq!(attribute(&folded, 12, 2, b""), None);
+        assert_eq!(
+            attribute(&folded, 12, 1, b"note"),
+            Some(b"before7".to_vec())
+        );
+        assert_eq!(attribute(&folded, 13, 2, b""), Some(old_acl));
+        assert_eq!(mode(&folded, 13), 0o100620);
+        linux("acl-update-shared-final", &folded);
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_file(raw_path);
+    }
+    #[test]
+    fn scoped_fowner_can_update_another_owners_acl_and_fsetid_alone_cannot() {
+        let mut img = fixture("acl-update-fowner", false);
+        let (_, group, seed) = metadata(&img);
+        let at = group.inode_table as usize * 4096 + 11 * 256;
+        img[at + 2..at + 4].copy_from_slice(&1000u16.to_le_bytes());
+        seal_inode_image(&mut img, group.inode_table, 12, seed);
+        let volume = allocation::parse(Snapshot::from_bytes(&img)).unwrap();
+        let node = allocated_inode::get(&volume, 12).unwrap();
+        assert!(update::authorize(&node, &owner(), &[0], Kind::Access).is_none());
+        assert!(
+            update::authorize(
+                &node,
+                &Credentials {
+                    fsetid: true,
+                    ..owner()
+                },
+                &[0],
+                Kind::Access
+            )
+            .is_none()
+        );
+        let (after, _) = apply(
+            &img,
+            12,
+            Kind::Access,
+            &simple(4, 0, 0),
+            &Credentials {
+                fowner: true,
+                ..owner()
+            },
+            &[0],
+            false,
+        );
+        assert_eq!(mode(&after, 12), 0o100400);
+        assert_eq!(
+            core::bytes::read_le16(inode_bytes(&after, group.inode_table, 12), 2),
+            Some(1000)
+        );
+        linux("acl-update-fowner-result", &after);
+    }
+    #[test]
+    fn acl_mode_storage_and_checksums_compose_with_wide_descriptors_stored_seeds_and_huge_units() {
+        for wide in [false, true] {
+            for huge in [false, true] {
+                let prefix = format!("acl-update-formats-{wide}-{huge}");
+                let path = format!("build/{prefix}.img");
+                let features = format!(
+                    "none,has_journal,extent,filetype,sparse_super,large_file,extra_isize,metadata_csum,metadata_csum_seed{}{}",
+                    if wide { ",64bit" } else { "" },
+                    if huge { ",huge_file" } else { "" }
+                );
+                super::group64_tests::command(
+                    "MKE2FS",
+                    &[
+                        "-q",
+                        "-F",
+                        "-t",
+                        "ext4",
+                        "-b",
+                        "4096",
+                        "-I",
+                        "256",
+                        "-O",
+                        &features,
+                        "-E",
+                        "lazy_itable_init=0,lazy_journal_init=0",
+                        &path,
+                        "16384",
+                    ],
+                    false,
+                );
+                super::group64_tests::command(
+                    "DEBUGFS",
+                    &["-w", "-R", "write build/fixture-file.bin /payload", &path],
+                    false,
+                );
+                let mut img = std::fs::read(&path).unwrap();
+                let (_, group, seed) = metadata(&img);
+                let at = group.inode_table as usize * 4096 + 11 * 256;
+                if huge {
+                    let sectors = le32(&img, at + 28);
+                    img[at + 28..at + 32].copy_from_slice(&(sectors / 8).to_le_bytes());
+                    let flags = le32(&img, at + 32) | core::inode_blocks::HUGE_FLAG;
+                    img[at + 32..at + 36].copy_from_slice(&flags.to_le_bytes());
+                    seal_inode_image(&mut img, group.inode_table, 12, seed);
+                }
+                let sectors = core::inode_blocks::decode(
+                    inode_bytes(&img, group.inode_table, 12),
+                    4096,
+                    huge,
+                )
+                .unwrap();
+                let free = le32(&img, 1036);
+                let (after, _) = apply(
+                    &img,
+                    12,
+                    Kind::Access,
+                    &extended(32, 2),
+                    &owner(),
+                    &[0],
+                    false,
+                );
+                assert_eq!(mode(&after, 12), 0o100620);
+                assert_eq!(
+                    core::inode_blocks::decode(
+                        inode_bytes(&after, group.inode_table, 12),
+                        4096,
+                        huge
+                    ),
+                    Some(sectors + 8)
+                );
+                assert_eq!(le32(&after, 1036), free - 1);
+                let (folded, _) = apply(
+                    &after,
+                    12,
+                    Kind::Access,
+                    &simple(4, 0, 0),
+                    &owner(),
+                    &[0],
+                    false,
+                );
+                assert_eq!(mode(&folded, 12), 0o100400);
+                assert_eq!(pointer(&folded, 12), 0);
+                assert_eq!(le32(&folded, 1036), free);
+                assert_eq!(
+                    core::inode_blocks::decode(
+                        inode_bytes(&folded, group.inode_table, 12),
+                        4096,
+                        huge
+                    ),
+                    Some(sectors)
+                );
+                linux(&prefix, &folded);
+                let _ = std::fs::remove_file(path);
+            }
+        }
+    }
+}

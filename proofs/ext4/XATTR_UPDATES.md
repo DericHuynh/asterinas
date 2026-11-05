@@ -96,9 +96,16 @@ reject forged stores/packed images/candidates, redirection, mutation and grant
 or candidate reuse. Tests supplement the formal checks.
 
 This remains a bounded host implementation. EA_INODE value lifetimes, quota
-coupling, privileged namespace/ACL changes, deduplication into an existing block,
+coupling, trusted/security namespace changes, ACL inheritance/chmod, deduplication into an existing block,
 a mounted syscall and kernel concurrency are unfinished. A functioning full ext4
 filesystem is not claimed. Kernel/full-feature/mount gates remain false.
 Future kernel execution must use the CortenMM/OSTD ownership, sleeping-lock and
 BIO/DMA interfaces of Asterinas's framekernel architecture. Linux page, folio and
 buffer-head ownership is not imported. Pinned references are in `sources.json`.
+
+
+Access/default ACL updates are implemented separately in [POSIX_ACL.md](POSIX_ACL.md).
+They use owner/scoped FOWNER authority and couple permissions/SGID to storage.
+`xattr_transaction.rs` now provides the crate-private common storage builder;
+`xattr_commit.rs` provides common all-home commit/recovery closure.
+The public user-namespace policy and exact-mode preservation remain unchanged.
