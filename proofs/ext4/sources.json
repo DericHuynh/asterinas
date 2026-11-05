@@ -243,7 +243,7 @@
       "path": "fs/ext4/xattr.c",
       "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/xattr.c",
       "blob_sha": "7bf9ba19a89db2cd9e9536191eb904afe4c5f5d8",
-      "review_scope": "Header/refcount and checksum domain; entry bounds and inline/external value bases; exact namespace/name ordering and shared block reference semantics. Independently implemented immutable storage/census; mutation and EA_INODE lifetime remain open. Same-padded-size local fast path (1627-1665), zeroed value padding, inline non-EA e_hash=0 (1815-1850), ibody update (2252-2308), and ctime/i_version dirtying (2477-2479). Independent stricter same-length nonempty isolated user-value replacement; create/remove/resize/external COW remain open."
+      "review_scope": "Header/refcount/checksum domain, inline/external entry and value bases, complete namespace/name ordering and shared references. Independent immutable storage/census and bounded user lifecycle: CREATE/REPLACE/no-op checks (2410 onward), create/remove/resize repacking, exclusive reuse/shared COW/refcount release, free-block accounting and journalled EXT_ATTR promotion. Zeroed value padding and inline e_hash=0 (1627-1665, 1815-1850), ibody update (2252-2308), ctime/i_version dirtying (2477-2479), unsigned entry_hash (3143 onward: rotate-5 name bytes and rotate-16 zero-padded little-endian value words) and block_rehash (3193 onward: stop on a zero entry hash, not merely a zero accumulator). Complete decode/content/padding/hash and combined filesystem checks guard returned images. EA_INODE/quota lifetime, privileged namespace updates, deduplication into an existing block and kernel lock/memory/device refinement remain open."
     },
     {
       "path": "fs/ext4/xattr.h",
@@ -279,7 +279,7 @@
       "path": "fs/xattr.c",
       "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/xattr.c",
       "blob_sha": "3e49e612e1badc0b3a7c5ab1bf92e0559625bc00",
-      "review_scope": "xattr_permission (105-160): user namespace regular/directory restriction, write permission, sticky-directory special case, separate trusted/security/system policies. Implemented regular-file user-namespace operation consumes a source-bound ACL request-2 grant; VFS idmap, authentication and LSM remain open."
+      "review_scope": "xattr_permission (105-160): user namespace regular/directory restriction, write permission, sticky-directory special case, separate trusted/security/system policies. Implemented regular-file user-namespace operation consumes a source-bound ACL request-2 grant; VFS idmap, authentication and LSM remain open. The lifecycle operation additionally covers directories and the unprivileged sticky-owner restriction; CAP_FOWNER exception and privileged namespace mediation remain outside the current credential model."
     },
     {
       "path": "include/linux/iversion.h",

@@ -29,7 +29,7 @@ pub open spec fn home_block(before: Disk, v: write_io::Images, block: u32) -> bo
         && !(v.tx.layout.start <= block < v.tx.layout.start as int + v.tx.layout.journal_blocks)
 }
 
-proof fn snapshot_state(m: Machine, before: Disk, v: write_io::Images, layout: &JournalLayout)
+pub(crate) proof fn snapshot_state(m: Machine, before: Disk, v: write_io::Images, layout: &JournalLayout)
     requires write_recognition::context(before, v), write_device::inv(m, v.tx.payloads.len()),
         layout.wf(), layout.view() == v.tx.layout,
     ensures source(m, before, v, layout).start == 0 ==>

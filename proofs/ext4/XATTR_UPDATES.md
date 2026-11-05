@@ -1,75 +1,104 @@
 <!-- SPDX-License-Identifier: MPL-2.0 -->
 
-# Journalled inode-body user-attribute replacement
+# Journalled user-xattr lifecycle
 
-`xattr_update::prepare` consumes an actual source-bound ACL/DAC write grant and
-constructs one inode-table after-image for an existing `user.*` value. The
-current operation accepts regular files, a nonempty byte-name suffix, a
-nonempty replacement of exactly the existing length, and an isolated local
-inode-body value. It rejects READONLY sources, no-op replacements, nonzero
-inline entry hashes, unsupported storage, invalid timestamps and exhausted
-ordinary-inode version counters. `None` reports that no candidate was prepared;
-it is not a POSIX errno interface.
+`xattr_lifecycle::set_user` and `remove_user` consume a source-bound ACL/DAC
+write grant and build a complete candidate transaction for the admitted Linux
+ext4 profile. They implement creation, replacement, removal, empty values,
+resizing, inline/external movement, exclusive block reuse, shared-block
+copy-on-write, reference release and allocation accounting. An unchanged set
+returns `Ok(None)` after validating flags; it does not start a transaction.
+Errors leave the immutable source untouched and expose no I/O command.
 
-This implements a bounded host transaction operation. It does not implement
-attribute creation/removal, value resizing, external-block mutation, shared
-block copy-on-write, EA_INODE, quotas, ACL/security-namespace mutation, a mounted
-setxattr syscall or CortenMM/OSTD execution.
+The executable operation fixes the namespace to `user.*`, requires a nonempty
+suffix, admits regular files and directories, and restricts sticky-directory
+writes to the owner. The current credential model has no CAP_FOWNER input, so
+its privileged sticky-directory exception is conservatively unavailable.
+A grant for another inode, source or access request cannot be substituted.
+The generic owned store and table packer preserve complete keys and local
+values with nonzero namespace indices. Unsupported entries or exhausted bounds
+reject construction; these helpers confer no privileged-namespace authority.
 
 | Design obligation | Implemented and checked | Remaining boundary |
 | --- | --- | --- |
-| S-AUTH / S-ENTRY | Consumed source-bound request-2 grant; regular-file and fixed user-namespace checks; the ACL certificate and new complete body parse agree on every record | VFS caller authentication, idmaps, LSM and mount/open-handle policy |
-| F-CODEC | Same-size local replacement, zero padding, unchanged entry/name metadata, ctime-only update, exact ordinary-inode version increment and inode checksum reseal | Other storage/size changes and format geometries |
-| F-OPS | Recovered or completed inode contains the exact requested value; every other inline attribute, mtime, identity, extents, external pointer and unrelated inode byte is retained | Complete operation/admission acceptance without final validation and broader POSIX semantics |
-| F-OWN | One source-selected kind-3 inode-table home; all data, directory, extent and external-xattr blocks retain their exact source bytes; neighboring inodes in the same table block are framed | Allocation, external-block mutation/COW and runtime ownership |
-| F-CREDITS | One owned after-image is staged, closed and frozen under the existing bounded reservation API before complete writer admission | Fallible memory/resource reservation and multi-operation closure |
-| J-ACK | Successful physical-model completion equals the completely validated final filesystem image and exact replacement inode | Actual hardware, BIO and flush refinement |
-| J-CUT / J-RESTART | Every modeled writer cut followed by a returned certified scan and successful recovery yields the complete old inode or complete updated inode, selected by persisted commit, including value/time/version/checksum together | Full recovery admission completeness, other device atomicity and runtime restart/capture |
-| S-RACE / S-LOCK | Immutable source borrows and private affine grants/candidates prevent source replacement, mutation of prepared images and reuse after begin | Actual xattr/inode locks, concurrent operation freshness, callbacks and CortenMM/OSTD guards |
+| S-AUTH / S-ENTRY | Consumed exact-source request-2 ACL grant, user namespace, regular/directory/sticky checks, READONLY exclusion, complete parse agreement | Authenticated VFS caller/groups/idmaps, CAP_FOWNER exception, LSM, trusted/security/system/ACL mutation policy |
+| F-CODEC | Complete-key CREATE/REPLACE/remove semantics, empty values, zero-padded repacking, unsigned Linux entry/block hashes, sorted external tables, physical-address CRC, inode pointer and ctime/version/checksum reseal | EA_INODE, wider admitted inode/block formats and feature combinations |
+| F-OPS | Returned image decodes to exactly the intended set; every other complete key/value is retained; full combined allocation and final namespace checks precede dispatch | Completeness of successful packing/admission and broader POSIX operations |
+| F-OWN | Census-selected free blocks, exclusive reuse, shared COW/decrement, single-block bitmap/counter accounting, neighboring-inode and shared-value byte authority checks | Runtime allocator/cache locks, quotas, frame epochs and DMA exclusion |
+| F-CREDITS | Up to six coalesced, sorted, complete after-images are reserved, staged, closed and frozen together | Fallible memory reservation and concurrent multi-operation closure |
+| J-ACK | Every home image, including primary counters/feature promotion, is exact on successful durable completion; journal retirement follows durable homes | Physical BIO, flush and device refinement |
+| J-CUT / J-RESTART | Every modeled writer cut and successful certified recovery uses one persisted-commit decision for the complete patch set; before commit the primary retains old counters/features with only recovery marking permitted | Full recovery admission completeness and actual quiescent restart/capture |
+| S-RACE / S-LOCK | Private affine grants/candidates and immutable snapshot borrows prevent source replacement, prepared-image mutation and reuse after begin | Kernel inode/xattr/allocation locks and concurrent operation freshness |
 
-The input table is complete and terminated. A separate induction proves that
-two valid complete parses of the same bytes have identical entries and end
-offsets. The operation uses that result to bind its selected record to the same
-inode-body table used for ACL authorization.
+`xattr_store.rs` owns independent namespace/name/value bytes. Failed CREATE,
+REPLACE, key/size/flag checks and removal return the unchanged store. As in
+Linux ext4, CREATE|REPLACE reports existing-key or missing-key failure after
+lookup. A zero-length value is an existing attribute, distinct from absence.
+All equality decisions compare complete bytes; hashes and CRCs establish no
+identity or authentication assumption.
 
-Read-only xattr tables can contain overlapping local values. That does not
-grant independent mutable ownership. The mutation check compares the selected
-padded value span against every other local nonempty value, across all
-namespaces. It rejects aliases before preparing an image. The framing theorem
-therefore preserves other values, including access ACLs and security attributes,
-without assuming hashes or checksums are injective.
+`xattr_pack.rs` uses bounded subset-sum placement for the 88-byte inline and
+4060-byte external payloads. External keys follow Linux's namespace, name-length
+and unsigned-name order. New block hashes stop permanently at a zero *entry*
+hash; a zero intermediate accumulator alone does not stop hashing. Values are
+zero-padded to four-byte boundaries. The builder decodes its complete output
+and compares both directions against the intended owned store before returning
+an image. `xattr_canonical.rs` additionally checks all generated name/value padding,
+every entry hash and the complete block hash. This is a proved checked-output construction; a full Some/None
+admission-completeness theorem for the packer is not claimed.
 
-Linux's ordinary VFS version counter reserves one internal bit for its queried
-marker. The disk fields are decoded as low/high words, but this operation only
-increments observable versions below `2^63 - 1`; reaching the limit prevents
-another update. It rejects larger raw values as well. This bounded policy avoids
-wrap/reuse and does not apply EA-inode reference-count semantics to ordinary
-files. The inode-body entry hash stays zero, as in Linux's non-EA inline update
-path. Replacement padding is cleared.
+Rebuilding also safely separates aliased values from a read-only input table:
+all values are copied before editing, and every unrelated complete key is
+checked in the decoded result. Capacity exhaustion rejects the operation before
+I/O. The earlier `xattr_update`/`xattr_replace` isolated same-length fast path
+remains available independently and continues rejecting aliases.
 
-The generated table-block image splices the exact 256-byte sealed inode into
-the retained snapshot. The existing writer factory checks the complete initial
-and dirty/log/home/retirement result images plus bootstrap identity before
-returning an I/O-capable host object. The new durability and crash theorems
-compose with the actual scanner, selected replay, and byte-valued writer and
-recovery models. A persisted commit may recover the new value even if no public
-success was returned. Their existing exclusive-source, quiescent restart,
-atomic-4-KiB-write and flush contracts remain explicit; these are not hardware
-or mounted-filesystem proofs.
+`xattr_inode_edit.rs` preserves non-xattr sector accounting through the Linux
+HUGE_FILE codec. It updates ctime, the ordinary observable disk version and both
+inode checksum halves while framing identity, mode, owners, extents, mtime and
+all unrelated bytes. Observable versions remain below `2^63`; exhaustion and
+invalid timestamps reject construction without writes.
 
-Native tests use Linux-created compact ACLs, inline user values and external
-attributes. A named ACL user performs the operation despite no OTHER write
-permission. Tests check exact new value, unchanged ACL/external blocks/data,
-mtime framing, ctime/version, zero padding, version carry and exhaustion,
-READONLY, wrong grant, missing key, no-op and size rejection. A valid immutable
-image with an inline user value aliased onto the access ACL is rejected for
-mutation. Both precommit and committed-precheckpoint snapshots are recovered
-through the actual host recovery engine; Linux e2fsck also recovers the committed
-journal and validates the resulting value. Rust negative cases cover forged or
-redirected candidates, reused grants/candidates and mutable image access.
+`xattr_block_update.rs` reuses exclusive blocks, allocates only census-free
+blocks, and decrements shared references without editing their entries/values.
+Dropping an exclusive block frees its bit and updates group and primary free
+counts. Lazy groups start from their checked canonical logical bitmap, clear
+BLOCK_UNINIT and materialize the updated bitmap. Both descriptor widths retain
+the correct bitmap checksum halves and group checksum.
 
-Pinned references in `sources.json` cover Linux `xattr_permission`,
-`ext4_xattr_set_entry`, `ext4_xattr_ibody_set`, ctime/version dirtying,
-`ext4_inode_peek_iversion`, inode version serialization, and the VFS queried-bit
-representation. No Linux page, folio or buffer-head ownership is imported.
-Kernel/full-feature/mount gates remain false.
+`xattr_footprint.rs` checks byte authority against the exact source inode and
+allocation census. The combined candidate is then reparsed for complete
+allocation, reference counts, pointer/sector consistency, checksums and exact
+attribute contents. The sealed writer additionally validates the complete
+initial and final allocation/namespace images plus bootstrap identity before
+returning an I/O-capable object.
+
+Creating the first attribute journals the EXT_ATTR bit with the inode and any
+allocation changes. General primary/recovery identity permits variation only
+in that compatible bit; unrelated compatible features remain fixed. The xattr
+builder only enables it, never clears it. Incompatible format bits, UUID,
+geometry and journal identity remain fixed under the existing recovery policy.
+
+`xattr_durable.rs` composes the actual scanner, selected redo, byte-valued writer
+and recovery models for all home images together. A persisted commit can recover
+the new state even without a returned success. The primary's precommit recovery
+marker does not publish new allocation counters or EXT_ATTR. These proofs retain
+the explicit exclusive protected source window, matching quiescent initial
+snapshot, atomic 4-KiB writes, draining flush and quiescent restart contracts.
+An abort by itself does not establish quiescence.
+
+Native tests exercise Linux-created ACL/inline/external/shared images, flag
+precedence, missing versus empty values, exact two-area capacity, hashes,
+resizing/reuse/freeing/COW, peer preservation, first-feature promotion, failures,
+and recovered writer cuts. Linux e2fsck independently replays committed journals
+and validates resulting allocation and xattrs. Negative Rust compilation checks
+reject forged stores/packed images/candidates, redirection, mutation and grant
+or candidate reuse. Tests supplement the formal checks.
+
+This remains a bounded host implementation. EA_INODE value lifetimes, quota
+coupling, privileged namespace/ACL changes, deduplication into an existing block,
+a mounted syscall and kernel concurrency are unfinished. A functioning full ext4
+filesystem is not claimed. Kernel/full-feature/mount gates remain false.
+Future kernel execution must use the CortenMM/OSTD ownership, sleeping-lock and
+BIO/DMA interfaces of Asterinas's framekernel architecture. Linux page, folio and
+buffer-head ownership is not imported. Pinned references are in `sources.json`.

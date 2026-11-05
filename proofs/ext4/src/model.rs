@@ -258,3 +258,22 @@ pub mod xattr_table_edit;
 pub mod xattr_replace;
 
 pub mod xattr_update;
+
+pub mod xattr_hash;
+pub mod xattr_store;
+
+pub mod xattr_pack;
+
+pub mod xattr_inode_edit;
+
+pub mod xattr_block_update;
+
+pub mod xattr_batch;
+
+pub mod xattr_lifecycle;
+
+pub mod xattr_footprint;
+
+pub mod xattr_durable;
+
+pub mod xattr_canonical;

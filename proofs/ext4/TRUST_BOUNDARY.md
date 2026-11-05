@@ -245,3 +245,20 @@ hard links, orphaned live files and disconnected cycles are rejected. This
 certifies one immutable selected image. Recovery/boot selection, actual mount
 admission, operation preservation, credentials/handles and CortenMM/OSTD/device
 refinement are still required; the namespace object does not confer those rights.
+
+## User-xattr transaction boundary
+
+The xattr lifecycle is a bounded host operation. Only `user.*` mutation consumes
+the current ACL write grant; generic owned-store/packing helpers grant no I/O or
+privileged namespace authority. Sticky-directory owner checks conservatively
+exclude the unmodelled CAP_FOWNER exception. The complete proposed attribute set,
+allocation/reference census and final namespace are validated before dispatch.
+Byte authority excludes neighboring inodes, unrelated metadata and shared value
+bytes. EXT_ATTR is the sole newly variable compatible feature under bootstrap/
+recovery identity, and this builder only enables it. Other format features retain
+their existing policy.
+
+All-home crash closure is conditional on the existing protected-source, 4-KiB
+atomic-write, draining-flush and quiescent restart contract. It establishes no
+physical device behavior, concurrent inode/xattr/cache lock, allocator epoch or
+CortenMM frame/DMA ownership. Kernel/full-feature/mount gates remain closed.

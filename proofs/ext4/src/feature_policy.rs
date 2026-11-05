@@ -75,7 +75,9 @@ pub proof fn bootstrap_identity_preserves_source_feature_policy(before: Seq<u8>,
         before.subrange(1128, 1144) == after.subrange(1128, 1144),
         bytes::le32(before, 1028) == bytes::le32(after, 1028),
 {
-    assert(bytes::le32(before, 1116) == bytes::le32(after, 1116));
+    let old_compat = bytes::le32(before, 1116) as u32; let new_compat = bytes::le32(after, 1116) as u32;
+    assert(old_compat & 0x800u32 == new_compat & 0x800u32) by (bit_vector)
+        requires old_compat & !8u32 == new_compat & !8u32;
     assert(bytes::le32(before, 1124) == bytes::le32(after, 1124));
     crate::bootstrap_identity::fixed_primary_identity_keeps_bootstrap_geometry_and_checksum_domain(before, after);
     assert(before.subrange(1128, 1144) =~= after.subrange(1128, 1144));

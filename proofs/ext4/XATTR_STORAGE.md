@@ -5,7 +5,9 @@
 The bounded host profile admits EXT_ATTR with inode-body values and single
 external blocks, including shared external blocks. The storage/lookup API is
 immutable. [XATTR_UPDATES.md](XATTR_UPDATES.md) adds source-bound journalled
-replacement of existing isolated inline user values. Full setxattr/removexattr,
+bounded user-namespace create/replace/remove, empty values, resizing, inline/external
+movement, exclusive reuse and shared COW/release with allocation counters and
+whole-transaction crash closure. Full privileged-namespace setxattr/removexattr,
 authenticated VFS authorization, LSM policy, EA_INODE lifetime and a mounted
 filesystem remain open.
 

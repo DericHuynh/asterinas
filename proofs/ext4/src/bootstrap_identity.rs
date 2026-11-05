@@ -11,7 +11,7 @@ verus! {
 
 pub open spec fn primary_fixed(before: Seq<u8>, after: Seq<u8>) -> bool {
     &&& before.len() == 4096 && after.len() == 4096
-    &&& super_state::same_feature_flags(before, after)
+    &&& super_state::same_feature_flags(before, after) && super_state::same_compatible_flags(before, after)
     &&& forall|i: int| 0 <= i < 4096 && !super_state::replay_mutable(i) ==> #[trigger] after[i] == before[i]
 }
 
@@ -89,6 +89,7 @@ fn check_primary(before: &[u8], after: &[u8]) -> (r: bool)
     ensures r == primary_fixed(before@, after@),
 {
     if before.len() != 4096 || after.len() != 4096 { return false; }
+    if bytes::read_le32(before, 1116).unwrap() & !8u32 != bytes::read_le32(after, 1116).unwrap() & !8u32 { return false; }
     if (bytes::read_le32(before, 1120).unwrap() & 0xfffffffbu32)
         != (bytes::read_le32(after, 1120).unwrap() & 0xfffffffbu32) { return false; }
     let mut index = 0usize;
@@ -98,7 +99,7 @@ fn check_primary(before: &[u8], after: &[u8]) -> (r: bool)
         decreases 4096 - index,
     {
         let mutable = (1032 <= index && index < 1044) || (1068 <= index && index < 1100)
-            || (1120 <= index && index < 1124) || (1144 <= index && index < 1224)
+            || (1116 <= index && index < 1120) || (1120 <= index && index < 1124) || (1144 <= index && index < 1224)
             || (1288 <= index && index < 1292) || (2044 <= index && index < 2048);
         if !mutable && after[index] != before[index] { return false; }
         index += 1;

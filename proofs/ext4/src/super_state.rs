@@ -17,6 +17,12 @@ pub open spec fn same_feature_flags(before: Seq<u8>, after: Seq<u8>) -> bool {
         == (bytes::le32(after, 1120) as u32 & 0xfffffffbu32)
 }
 
+// EXT_ATTR is a dynamic compatible feature. Complete before/after filesystem
+// admission still checks whether any on-disk xattr requires this bit.
+pub open spec fn same_compatible_flags(before: Seq<u8>, after: Seq<u8>) -> bool {
+    bytes::le32(before, 1116) as u32 & !8u32 == bytes::le32(after, 1116) as u32 & !8u32
+}
+
 pub open spec fn is_dirty(primary: Seq<u8>) -> bool { bytes::le32(primary, 1120) as u32 & 4 != 0 }
 
 proof fn flags_change_only_recovery(flags: u32, dirty: bool)
@@ -114,12 +120,12 @@ pub proof fn recovery_flag_image_preserves_uuid_and_boot_bytes(before: Seq<u8>, 
 /// checksum. UUID, block/inode geometry, journal identity, and boot bytes are
 /// immutable under recovery. The recovery bit itself must remain set.
 pub open spec fn replay_mutable(i: int) -> bool {
-    1032 <= i < 1044 || 1068 <= i < 1100 || 1120 <= i < 1124
+    1032 <= i < 1044 || 1068 <= i < 1100 || 1116 <= i < 1120 || 1120 <= i < 1124
         || 1144 <= i < 1224 || 1288 <= i < 1292 || 2044 <= i < 2048
 }
 
 pub open spec fn replay_ok(before: Seq<u8>, after: Seq<u8>, partition_bytes: u64) -> bool {
-    &&& before.len() == 4096 && after.len() == 4096
+    &&& before.len() == 4096 && after.len() == 4096 && same_compatible_flags(before, after)
     &&& same_feature_flags(before, after)
     &&& superblock::accepted(before.subrange(1024, 2048), partition_bytes)
     &&& superblock::accepted(after.subrange(1024, 2048), partition_bytes)
@@ -133,6 +139,7 @@ pub fn valid_replay(before: &[u8], after: &[u8], partition_bytes: u64) -> (r: bo
     if before.len() != 4096 || after.len() != 4096 { return false; }
     if superblock::parse(&before[1024..2048], partition_bytes).is_none()
         || superblock::parse(&after[1024..2048], partition_bytes).is_none()
+        || bytes::read_le32(before, 1116).unwrap() & !8u32 != bytes::read_le32(after, 1116).unwrap() & !8u32
         || bytes::read_le32(after, 1120).unwrap() & 4 == 0
         || (bytes::read_le32(before, 1120).unwrap() & 0xfffffffbu32)
             != (bytes::read_le32(after, 1120).unwrap() & 0xfffffffbu32) { return false; }
@@ -143,7 +150,7 @@ pub fn valid_replay(before: &[u8], after: &[u8], partition_bytes: u64) -> (r: bo
         decreases 4096 - i,
     {
         let mutable = (1032 <= i && i < 1044) || (1068 <= i && i < 1100)
-            || (1120 <= i && i < 1124) || (1144 <= i && i < 1224)
+            || (1116 <= i && i < 1120) || (1120 <= i && i < 1124) || (1144 <= i && i < 1224)
             || (1288 <= i && i < 1292) || (2044 <= i && i < 2048);
         if !mutable && after[i] != before[i] { return false; }
         proof {
