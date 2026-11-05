@@ -169,3 +169,17 @@ extent, lease, journal, publication and resize obligations C-BLOCK through
 C-FEATURES are in [CONCURRENCY.md](CONCURRENCY.md). Full feature support and
 concurrent transaction execution remain unimplemented. The wider block/extent
 descriptors and split proofs are a foundation, not their completion.
+
+
+The EA value integrity composition (EA_VALUE_INTEGRITY.md) now adds the following
+implementation contracts and obligations. Recorded evidence determines their
+checked source; none widens full filesystem or runtime admission.
+
+| Obligation | Present contract | Remaining boundary |
+| --- | --- | --- |
+| F-READ / F-CODEC | Every source physical EA record is covered by one matching stored value; exact source-node and Info identity connect complete payload CRCs to each logical entry hash | Authenticated VFS reads, encryption and device capture |
+| F-OWN | Complete source data/extent-node projection, one ledger for all EA values, exact map roles and within/across-value claim disjointness | Ordinary/journal data-owner separation and complete global bitmap equality |
+| F-SIZE / F-ACCOUNT | Dense initialized data coverage ends at rounded value EOF; all reachable external metadata allocations are counted in exact EA inode sectors | Minimal/canonical tree shape and exact ordinary-parent residual ownership |
+| F-ALLOC | Every EA claim block is set in its source logical bitmap and excluded from fixed metadata and every external-xattr block | Authenticated allocation/free and source-wide role ownership |
+| F-ADMIT | Complete census value projection, explicit physical-record coverage and bounded aggregate payload lengths; no positive partial value prefix | Full EA namespace/journal/volume admission and acceptance completeness |
+| F-OPS / J-RESTART / S-RACE | No mutation, orphan/quota/dedup, journal, lock or device authority follows from the immutable result | Complete lifecycle, concurrent durable updates and CortenMM/OSTD refinement |

@@ -10958,3 +10958,488 @@ mod ea_reference_census {
         assert!(ea_census::inspect(&snapshot, u32::MAX).is_none());
     }
 }
+
+// Native source-complete EA value integrity tests. These exercise emitted
+// code on Linux-created bytes; they do not discharge formal obligations.
+mod ea_value_integrity {
+    use core::{
+        block_claims, ea_census,
+        ea_inode::{self, Status},
+        ea_integrity, ea_source, ea_storage, ea_value,
+        snapshot::Snapshot,
+    };
+
+    use super::{
+        ea_inode_values::{
+            Fixture, entry_hash, fixture, fixture_with_features, mappings, offset, seal_raw,
+        },
+        *,
+    };
+
+    fn seal_inode(img: &mut [u8], fixture: &Fixture, number: u32) {
+        let at = offset(fixture.table, number);
+        seal_raw(&mut img[at..at + 256], number, fixture.seed);
+    }
+    fn seal_group(img: &mut [u8], seed: u32) {
+        let width = core::superblock::descriptor_length(&img[1024..2048]).unwrap();
+        let group_seed = core::crc::crc32c(seed, &0u32.to_le_bytes());
+        let partial = core::crc::crc32c(group_seed, &img[4096..4126]);
+        let zeroed = core::crc::crc32c(partial, &[0, 0]);
+        let checksum = core::crc::crc32c(zeroed, &img[4128..4096 + width]) as u16;
+        img[4126..4128].copy_from_slice(&checksum.to_le_bytes());
+    }
+    fn seal_super(img: &mut [u8]) {
+        let checksum = core::crc::crc32c(0xffffffff, &img[1024..2044]);
+        img[2044..2048].copy_from_slice(&checksum.to_le_bytes());
+    }
+    fn set_inode_allocated(img: &mut [u8], fixture: &Fixture, number: u32) {
+        let ipg = le32(img, 1064);
+        assert!(number > 0 && number <= ipg);
+        let bitmap = le32(img, 4100) as usize * 4096;
+        let slot = number as usize - 1;
+        assert_eq!(img[bitmap + slot / 8] & (1 << (slot % 8)), 0);
+        img[bitmap + slot / 8] |= 1 << (slot % 8);
+        let is_set = |n: u32| img[bitmap + n as usize / 8] & (1 << (n % 8)) != 0;
+        let free = (0..ipg).filter(|n| !is_set(*n)).count() as u32;
+        let used = (0..ipg).rev().find(|n| is_set(*n)).map_or(0, |n| n + 1);
+        let checksum = core::crc::crc32c(fixture.seed, &img[bitmap..bitmap + ipg as usize / 8]);
+        img[4110..4112].copy_from_slice(&(free as u16).to_le_bytes());
+        img[4122..4124].copy_from_slice(&(checksum as u16).to_le_bytes());
+        img[4124..4126].copy_from_slice(&((ipg - used) as u16).to_le_bytes());
+        if core::superblock::descriptor_length(&img[1024..2048]) == Some(64) {
+            img[4142..4144].fill(0);
+            img[4146..4148].fill(0);
+            img[4154..4156].copy_from_slice(&((checksum >> 16) as u16).to_le_bytes());
+        }
+        img[1040..1044].copy_from_slice(&free.to_le_bytes());
+        seal_group(img, fixture.seed);
+        seal_super(img);
+    }
+    fn set_block_allocated(img: &mut [u8], block: u32, allocated: bool) {
+        assert!(block < le32(img, 1028));
+        let at = le32(img, 4096) as usize * 4096 + block as usize / 8;
+        if allocated {
+            assert_eq!(img[at] & (1 << (block % 8)), 0);
+            img[at] |= 1 << (block % 8);
+        } else {
+            assert_ne!(img[at] & (1 << (block % 8)), 0);
+            img[at] &= !(1 << (block % 8));
+        }
+        seal_single_group_allocation(img);
+    }
+    fn fresh_block(img: &[u8]) -> u32 {
+        let blocks = le32(img, 1028);
+        let bitmap = le32(img, 4096) as usize * 4096;
+        (1..blocks)
+            .rev()
+            .find(|block| img[bitmap + *block as usize / 8] & (1 << (*block % 8)) == 0)
+            .unwrap()
+    }
+    fn leaf(raw: &mut [u8], index: usize, logical: u32, physical: u32, length: u16) {
+        let at = 12 + index * 12;
+        raw[at..at + 4].copy_from_slice(&logical.to_le_bytes());
+        raw[at + 4..at + 6].copy_from_slice(&length.to_le_bytes());
+        raw[at + 6..at + 8].fill(0);
+        raw[at + 8..at + 12].copy_from_slice(&physical.to_le_bytes());
+    }
+    fn single_leaf(img: &mut [u8], fixture: &Fixture, physical: u32, length: u16) {
+        let ea = offset(fixture.table, 14);
+        let raw = &mut img[ea + 40..ea + 100];
+        raw.fill(0);
+        raw[..2].copy_from_slice(&0xf30au16.to_le_bytes());
+        raw[2..4].copy_from_slice(&1u16.to_le_bytes());
+        raw[4..6].copy_from_slice(&4u16.to_le_bytes());
+        leaf(raw, 0, 0, physical, length);
+    }
+    // Bind every source entry to the changed payload while preserving the
+    // complete physical/logical reference graph and every parent sector bill.
+    fn update_hashes(img: &mut [u8], fixture: &Fixture, content: &[u8]) {
+        let hash = core::crc::crc32c(fixture.seed, content);
+        let ea = offset(fixture.table, 14);
+        img[ea + 4..ea + 8].copy_from_slice(&(content.len() as u32).to_le_bytes());
+        img[ea + 8..ea + 12].copy_from_slice(&hash.to_le_bytes());
+        let parent = offset(fixture.table, 12);
+        for (at, name) in [
+            (parent + 164, b"big".as_slice()),
+            (parent + 184, b"alias".as_slice()),
+        ] {
+            img[at + 8..at + 12].copy_from_slice(&(content.len() as u32).to_le_bytes());
+            img[at + 12..at + 16].copy_from_slice(&entry_hash(name, hash).to_le_bytes());
+        }
+        let at = fixture.external as usize * 4096;
+        let shared = entry_hash(b"shared", hash);
+        img[at + 12..at + 16].copy_from_slice(&shared.to_le_bytes());
+        img[at + 40..at + 44].copy_from_slice(&(content.len() as u32).to_le_bytes());
+        img[at + 44..at + 48].copy_from_slice(&shared.to_le_bytes());
+        let checksum =
+            core::xattr::checksum(&img[at..at + 4096], fixture.external as u64, fixture.seed)
+                .unwrap();
+        img[at + 16..at + 20].copy_from_slice(&checksum.to_le_bytes());
+        seal_inode(img, fixture, 12);
+        seal_inode(img, fixture, 13);
+        seal_inode(img, fixture, 14);
+    }
+    fn reference_admitted(img: &[u8]) {
+        let snapshot = Snapshot::from_bytes(img);
+        assert!(
+            ea_census::inspect(&snapshot, u32::MAX).is_some(),
+            "reference metadata remains valid"
+        );
+    }
+    fn old_reader_admitted(img: &[u8], expected: &[u8], budget: u64) {
+        let snapshot = Snapshot::from_bytes(img);
+        let header = ea_source::parse(&snapshot).unwrap();
+        let value = ea_value::inspect(&header, 12, 1, b"big", budget).unwrap();
+        assert_eq!(value.as_slice(), expected);
+    }
+    fn integrity_rejected(img: &[u8], budget: u64, bytes: u64) {
+        let snapshot = Snapshot::from_bytes(img);
+        assert!(ea_integrity::inspect(&snapshot, u32::MAX, budget, bytes).is_none());
+    }
+    fn depth_one(fixture: &Fixture, alias_data: bool) -> (Vec<u8>, u32) {
+        assert_eq!(fixture.value.len(), 4096);
+        let mut img = fixture.bytes.clone();
+        let ea = offset(fixture.table, 14);
+        let original = img[ea + 40..ea + 100].to_vec();
+        let count = core::bytes::read_le16(&original, 2).unwrap() as usize;
+        assert_eq!(count, 1);
+        let address = if alias_data {
+            mappings(&img, fixture.table, 4096)[0]
+        } else {
+            fresh_block(&img)
+        };
+        let generation = le32(&img, ea + 100);
+        let checksum_seed = core::inode::inode_seed(fixture.seed, 14, generation);
+        let target = &mut img[address as usize * 4096..(address as usize + 1) * 4096];
+        target.fill(0);
+        target[..12 + count * 12].copy_from_slice(&original[..12 + count * 12]);
+        target[4..6].copy_from_slice(&340u16.to_le_bytes());
+        let checksum = core::crc::crc32c(checksum_seed, &target[..4092]);
+        target[4092..4096].copy_from_slice(&checksum.to_le_bytes());
+        let root = &mut img[ea + 40..ea + 100];
+        root.fill(0);
+        root[..2].copy_from_slice(&0xf30au16.to_le_bytes());
+        root[2..4].copy_from_slice(&1u16.to_le_bytes());
+        root[4..6].copy_from_slice(&4u16.to_le_bytes());
+        root[6..8].copy_from_slice(&1u16.to_le_bytes());
+        root[16..20].copy_from_slice(&address.to_le_bytes());
+        img[ea + 28..ea + 32].copy_from_slice(&16u32.to_le_bytes());
+        if !alias_data {
+            set_block_allocated(&mut img, address, true);
+        }
+        if alias_data {
+            let bytes = img[address as usize * 4096..(address as usize + 1) * 4096].to_vec();
+            update_hashes(&mut img, fixture, &bytes);
+        } else {
+            seal_inode(&mut img, fixture, 14);
+        }
+        (img, address)
+    }
+    fn peer_value(fixture: &Fixture, share_physical: bool) -> Vec<u8> {
+        assert_eq!(fixture.value.len(), 4096);
+        let mut img = fixture.bytes.clone();
+        let original = inode_bytes(&img, fixture.table, 14).to_vec();
+        let other = offset(fixture.table, 15);
+        img[other..other + 256].copy_from_slice(&original);
+        img[other + 36..other + 40].copy_from_slice(&1u32.to_le_bytes());
+        if !share_physical {
+            let destination = fresh_block(&img);
+            img[destination as usize * 4096..(destination as usize + 1) * 4096]
+                .copy_from_slice(&fixture.value);
+            let raw = &mut img[other + 40..other + 100];
+            raw.fill(0);
+            raw[..2].copy_from_slice(&0xf30au16.to_le_bytes());
+            raw[2..4].copy_from_slice(&1u16.to_le_bytes());
+            raw[4..6].copy_from_slice(&4u16.to_le_bytes());
+            leaf(raw, 0, 0, destination, 1);
+            set_block_allocated(&mut img, destination, true);
+        }
+        let first = offset(fixture.table, 14);
+        img[first + 36..first + 40].copy_from_slice(&2u32.to_le_bytes());
+        let parent = offset(fixture.table, 12);
+        img[parent + 188..parent + 192].copy_from_slice(&15u32.to_le_bytes());
+        seal_inode(&mut img, fixture, 12);
+        seal_inode(&mut img, fixture, 14);
+        seal_inode(&mut img, fixture, 15);
+        set_inode_allocated(&mut img, fixture, 15);
+        img
+    }
+
+    #[test]
+    fn all_value_integrity_counts_shared_values_once_under_each_linux_descriptor_and_seed_profile()
+    {
+        for wide in [false, true] {
+            for stored_seed in [false, true] {
+                let fixture = fixture_with_features(
+                    &format!("ea-integrity-profile-{wide}-{stored_seed}"),
+                    4096,
+                    wide,
+                    stored_seed,
+                );
+                let snapshot = Snapshot::from_bytes(&fixture.bytes);
+                let all = ea_integrity::inspect(&snapshot, u32::MAX, 1, 4096).unwrap();
+                assert_eq!(all.value_count(), 1);
+                assert!(all.value(1).is_none());
+                assert_eq!(all.allocated_blocks(), 1);
+                assert_eq!(all.reference_census().physical().len(), 3);
+                assert_eq!(all.reference_census().logical().len(), 4);
+                let value = all.value(0).unwrap();
+                assert_eq!(value.info().number, 14);
+                assert_eq!(value.info().refs, 3);
+                assert_eq!(value.as_slice(), fixture.value);
+                assert_eq!(value.claims().len(), 1);
+                assert_eq!(value.claims()[0].kind, 4);
+                assert_eq!(value.claims()[0].inode, 14);
+                assert_eq!(value.blocks().len(), 1);
+                assert!(
+                    core::image_validation::inspect(Snapshot::from_bytes(&fixture.bytes)).is_none(),
+                    "ordinary mount admission remains gated"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn all_value_integrity_returns_exact_partial_final_block_bytes_and_physical_charge() {
+        for size in [16_384usize, 16_401, 65_536] {
+            let fixture = fixture(&format!("ea-integrity-large-{size}"), size);
+            let snapshot = Snapshot::from_bytes(&fixture.bytes);
+            let all = ea_integrity::inspect(&snapshot, u32::MAX, 8, size as u64).unwrap();
+            assert_eq!(all.value_count(), 1);
+            assert_eq!(all.value(0).unwrap().as_slice(), fixture.value);
+            assert_eq!(all.allocated_blocks(), ((size + 4095) / 4096) as u64);
+            assert_eq!(
+                all.value(0).unwrap().blocks(),
+                mappings(&fixture.bytes, fixture.table, size)
+                    .into_iter()
+                    .map(u64::from)
+                    .collect::<Vec<_>>()
+            );
+        }
+    }
+
+    #[test]
+    fn value_integrity_reads_every_payload_instead_of_trusting_reference_metadata_hash_words() {
+        let fixture = fixture("ea-integrity-corrupt-payload", 16_401);
+        let mut img = fixture.bytes.clone();
+        let blocks = mappings(&img, fixture.table, fixture.value.len());
+        img[blocks[blocks.len() - 1] as usize * 4096] ^= 1;
+        reference_admitted(&img);
+        integrity_rejected(&img, 8, fixture.value.len() as u64);
+    }
+
+    #[test]
+    fn value_integrity_requires_exact_inode_sector_accounting_for_every_complete_extent_tree() {
+        let fixture = fixture("ea-integrity-exact-sectors", 4096);
+        let ea = offset(fixture.table, 14);
+        for sectors in [0u32, 1, 16] {
+            let mut img = fixture.bytes.clone();
+            img[ea + 28..ea + 32].copy_from_slice(&sectors.to_le_bytes());
+            seal_inode(&mut img, &fixture, 14);
+            reference_admitted(&img);
+            old_reader_admitted(&img, &fixture.value, 1);
+            integrity_rejected(&img, 1, 4096);
+        }
+    }
+
+    #[test]
+    fn value_integrity_rejects_holes_and_unwritten_blocks_even_with_intact_reference_metadata() {
+        let fixture = fixture("ea-integrity-dense-written", 4096);
+        let ea = offset(fixture.table, 14);
+        for hole in [false, true] {
+            let mut img = fixture.bytes.clone();
+            if hole {
+                img[ea + 52..ea + 56].copy_from_slice(&1u32.to_le_bytes());
+            } else {
+                img[ea + 56..ea + 58].copy_from_slice(&0x8001u16.to_le_bytes());
+            }
+            seal_inode(&mut img, &fixture, 14);
+            reference_admitted(&img);
+            integrity_rejected(&img, 1, 4096);
+        }
+    }
+
+    #[test]
+    fn complete_extent_collection_rejects_initialized_and_unwritten_allocations_beyond_value_eof() {
+        let fixture = fixture("ea-integrity-no-extra-eof", 4096);
+        let ea = offset(fixture.table, 14);
+        for unwritten in [false, true] {
+            let mut img = fixture.bytes.clone();
+            let extra = fresh_block(&img);
+            set_block_allocated(&mut img, extra, true);
+            let root = &mut img[ea + 40..ea + 100];
+            assert_eq!(core::bytes::read_le16(root, 2), Some(1));
+            root[2..4].copy_from_slice(&2u16.to_le_bytes());
+            leaf(root, 1, 1, extra, if unwritten { 0x8001 } else { 1 });
+            img[ea + 28..ea + 32].copy_from_slice(&16u32.to_le_bytes());
+            seal_inode(&mut img, &fixture, 14);
+            reference_admitted(&img);
+            old_reader_admitted(&img, &fixture.value, 1);
+            integrity_rejected(&img, 1, 4096);
+        }
+    }
+
+    #[test]
+    fn external_extent_metadata_is_allocated_charged_and_included_in_the_visit_budget() {
+        let fixture = fixture("ea-integrity-external-extent", 4096);
+        let (img, metadata) = depth_one(&fixture, false);
+        reference_admitted(&img);
+        old_reader_admitted(&img, &fixture.value, 2);
+        let snapshot = Snapshot::from_bytes(&img);
+        assert!(ea_integrity::inspect(&snapshot, u32::MAX, 1, 4096).is_none());
+        let all = ea_integrity::inspect(&snapshot, u32::MAX, 2, 4096).unwrap();
+        let value = all.value(0).unwrap();
+        assert_eq!(value.as_slice(), fixture.value);
+        assert_eq!(all.allocated_blocks(), 2);
+        assert_eq!(value.claims().len(), 2);
+        assert_eq!(value.claims()[0].start, metadata);
+        assert_eq!(value.claims()[0].kind, 6);
+        assert_eq!(value.claims()[1].kind, 4);
+    }
+
+    #[test]
+    fn value_data_cannot_reuse_its_own_checksum_valid_extent_metadata_block() {
+        let fixture = fixture("ea-integrity-metadata-data-alias", 4096);
+        let (img, address) = depth_one(&fixture, true);
+        let data = &img[address as usize * 4096..(address as usize + 1) * 4096];
+        reference_admitted(&img);
+        old_reader_admitted(&img, data, 2);
+        integrity_rejected(&img, 2, 4096);
+    }
+
+    #[test]
+    fn distinct_ea_inodes_may_hold_equal_bytes_but_must_have_disjoint_physical_storage() {
+        let fixture = fixture("ea-integrity-independent-values", 4096);
+        let img = peer_value(&fixture, false);
+        reference_admitted(&img);
+        let snapshot = Snapshot::from_bytes(&img);
+        let all = ea_integrity::inspect(&snapshot, u32::MAX, 1, 8192).unwrap();
+        assert_eq!(all.value_count(), 2);
+        assert_eq!(all.allocated_blocks(), 2);
+        assert_eq!(all.value(0).unwrap().info().number, 14);
+        assert_eq!(all.value(1).unwrap().info().number, 15);
+        assert_eq!(all.value(0).unwrap().as_slice(), fixture.value);
+        assert_eq!(all.value(1).unwrap().as_slice(), fixture.value);
+        assert_ne!(
+            all.value(0).unwrap().blocks(),
+            all.value(1).unwrap().blocks()
+        );
+        let path = "build/ea-integrity-independent-values-result.img";
+        std::fs::write(path, &img).unwrap();
+        let fsck = std::env::var("E2FSCK_BIN").unwrap_or_else(|_| "e2fsck".into());
+        super::inline_xattr_updates::command(&fsck, &["-fn", path], false);
+        let _ = std::fs::remove_file(path);
+
+        let aliased = peer_value(&fixture, true);
+        reference_admitted(&aliased);
+        let snapshot = Snapshot::from_bytes(&aliased);
+        let refs = ea_census::inspect(&snapshot, u32::MAX).unwrap();
+        assert_eq!(refs.values().len(), 2);
+        for number in [14, 15] {
+            let empty = block_claims::Census::new(le32(&aliased, 1028)).unwrap();
+            let (_, stored) = ea_storage::inspect(refs.index(), number, 1, empty).unwrap();
+            assert_eq!(
+                stored.as_slice(),
+                fixture.value,
+                "each inode is locally valid"
+            );
+        }
+        integrity_rejected(&aliased, 1, 8192);
+    }
+
+    #[test]
+    fn block_bitmap_allocation_is_checked_after_its_checksum_and_free_counters_are_repaired() {
+        let fixture = fixture("ea-integrity-unallocated-payload", 4096);
+        let mut img = fixture.bytes.clone();
+        let physical = mappings(&img, fixture.table, 4096)[0];
+        set_block_allocated(&mut img, physical, false);
+        reference_admitted(&img);
+        old_reader_admitted(&img, &fixture.value, 1);
+        integrity_rejected(&img, 1, 4096);
+    }
+
+    #[test]
+    fn checksum_valid_values_cannot_treat_allocated_allocation_bitmaps_as_payload_storage() {
+        let fixture = fixture("ea-integrity-fixed-metadata-alias", 4096);
+        for descriptor_offset in [4096, 4100] {
+            let mut img = fixture.bytes.clone();
+            let physical = le32(&img, descriptor_offset);
+            single_leaf(&mut img, &fixture, physical, 1);
+            let payload = img[physical as usize * 4096..(physical as usize + 1) * 4096].to_vec();
+            update_hashes(&mut img, &fixture, &payload);
+            reference_admitted(&img);
+            old_reader_admitted(&img, &payload, 1);
+            integrity_rejected(&img, 1, 4096);
+        }
+    }
+
+    #[test]
+    fn checksum_valid_value_cannot_alias_the_external_xattr_block_that_references_it() {
+        let fixture = fixture("ea-integrity-external-xattr-alias", 4096);
+        let mut img = fixture.bytes.clone();
+        single_leaf(&mut img, &fixture, fixture.external, 1);
+        // The first12 bytes contain only stable header words. Entry/block hash
+        // and checksum words lie outside the value, so this is not rejected
+        // merely because a self-referential CRC equation was left unsolved.
+        let at = fixture.external as usize * 4096;
+        let payload = img[at..at + 12].to_vec();
+        update_hashes(&mut img, &fixture, &payload);
+        reference_admitted(&img);
+        old_reader_admitted(&img, &payload, 1);
+        integrity_rejected(&img, 1, 12);
+    }
+
+    #[test]
+    fn complete_value_scan_rejects_insufficient_inode_node_or_byte_budgets_without_partial_success()
+    {
+        let fixture = fixture("ea-integrity-complete-budget", 4096);
+        let snapshot = Snapshot::from_bytes(&fixture.bytes);
+        assert!(ea_integrity::inspect(&snapshot, u32::MAX, 1, 4096).is_some());
+        assert!(ea_integrity::inspect(&snapshot, fixture.inodes - 1, 1, 4096).is_none());
+        assert!(ea_integrity::inspect(&snapshot, u32::MAX, 0, 4096).is_none());
+        assert!(ea_integrity::inspect(&snapshot, u32::MAX, 4097, 4096).is_none());
+        assert!(ea_integrity::inspect(&snapshot, u32::MAX, 1, 4095).is_none());
+        let img = peer_value(&fixture, false);
+        let snapshot = Snapshot::from_bytes(&img);
+        assert!(
+            ea_integrity::inspect(&snapshot, u32::MAX, 1, 4096).is_none(),
+            "a valid first value cannot conceal the missing second value"
+        );
+        assert!(ea_integrity::inspect(&snapshot, u32::MAX, 1, 8192).is_some());
+    }
+
+    #[test]
+    fn linux_ea_feature_profile_with_no_allocated_values_has_a_complete_empty_integrity_census() {
+        let path = "build/ea-integrity-empty-values-native.img";
+        let mke2fs = std::env::var("MKE2FS_BIN").unwrap_or_else(|_| "mke2fs".into());
+        super::inline_xattr_updates::command(
+            &mke2fs,
+            &[
+                "-q",
+                "-F",
+                "-t",
+                "ext4",
+                "-b",
+                "4096",
+                "-I",
+                "256",
+                "-O",
+                "none,has_journal,extent,filetype,sparse_super,large_file,extra_isize,metadata_csum,ea_inode",
+                "-E",
+                "lazy_itable_init=0,lazy_journal_init=0",
+                path,
+                "8192",
+            ],
+            false,
+        );
+        let img = std::fs::read(path).unwrap();
+        let _ = std::fs::remove_file(path);
+        let snapshot = Snapshot::from_bytes(&img);
+        let all = ea_integrity::inspect(&snapshot, u32::MAX, 1, 0).unwrap();
+        assert_eq!(all.value_count(), 0);
+        assert_eq!(all.allocated_blocks(), 0);
+        assert!(all.value(0).is_none());
+        assert!(all.reference_census().values().is_empty());
+        assert!(all.reference_census().logical().is_empty());
+    }
+}

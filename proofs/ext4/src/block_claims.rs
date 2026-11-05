@@ -180,7 +180,7 @@ fn slot_at(c: &Claim, block: u32) -> (r: Slot)
 }
 
 pub struct CensusView { pub roles: Seq<Slot>, pub claims: Seq<Claim> }
-pub struct Census { roles: Vec<Slot>, claims: Ghost<Seq<Claim>> }
+pub struct Census { roles: Vec<Slot>, claims: Vec<Claim> }
 
 impl Census {
     pub closed spec fn view(&self) -> CensusView { CensusView { roles: self.roles@, claims: self.claims@ } }
@@ -214,7 +214,16 @@ impl Census {
                 reveal(lookup);
             }
         }
-        Some(Census { roles, claims: Ghost(Seq::empty()) })
+        Some(Census { roles, claims: Vec::new() })
+    }
+
+    /// Exact immutable physical claims retained by this owned candidate ledger.
+    /// Reading records grants neither allocator nor filesystem authority.
+    pub fn claims(&self) -> (r: &[Claim])
+        ensures self.wf(), r@ == self.view().claims,
+    {
+        proof { use_type_invariant(self); }
+        &self.claims
     }
 
     pub fn role_of(&self, block: u32) -> (r: Option<Slot>)
@@ -299,12 +308,13 @@ impl Census {
         }
         let ghost previous = self.view();
         proof { an_entirely_free_range_is_disjoint(previous.roles, previous.claims, c); }
-        let Census { mut roles, claims } = self;
+        let Census { mut roles, mut claims } = self;
         let ghost next_claims = claims@.push(c);
         block = c.start;
         while block < end
             invariant c.start <= block <= end, end as nat == c.start as nat + c.length,
                 roles.len() == previous.roles.len(), ledger(previous.roles, previous.claims),
+                claims@ == previous.claims, next_claims == previous.claims.push(c),
                 valid_claim(c, roles.len() as nat), roles.len() <= MAX_BLOCKS,
                 forall|b: int| covers(c, b) ==> (#[trigger] previous.roles[b]).kind == 0,
                 forall|b: int| 0 <= b < roles.len() ==> (#[trigger] roles@[b])
@@ -314,6 +324,8 @@ impl Census {
             roles[block as usize] = slot_at(&c, block);
             block += 1;
         }
+        claims.push(c);
+        assert(claims@ == next_claims);
         assert(ledger(roles@, next_claims)) by {
             reveal(ledger);
             assert forall|b: int| 0 <= b < roles.len() implies #[trigger] roles@[b] == lookup(next_claims, b) by {
@@ -328,7 +340,7 @@ impl Census {
                 assert(!covers(c, b));
             }
         }
-        Ok(Census { roles, claims: Ghost(next_claims) })
+        Ok(Census { roles, claims })
     }
 }
 

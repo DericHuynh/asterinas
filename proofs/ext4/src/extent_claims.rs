@@ -577,4 +577,58 @@ pub fn collect(census: Census, inode: &BoundInode<'_, '_>) -> (r: Option<Census>
     Some(next)
 }
 
+/// Complete claims for any independently audited 4-KiB extent tree. The owner
+/// is a caller-supplied label; this helper does not authenticate an inode,
+/// feature policy, allocation bitmap, block role, or filesystem admission.
+pub open spec fn checked_claims(c: Context, owner: Owner) -> Seq<Claim> {
+    node_claims(c, extent_tree::root_node(c), None,
+        bytes::le16(extent_tree::root_node(c).raw, 6) as u16, owner)
+}
+
+/// Collect every reachable extent-tree metadata and data allocation, including
+/// extents beyond any caller's proposed EOF. The caller must separately check
+/// inode identity, logical content/EOF policy and exact sector accounting.
+pub fn collect_checked<'s, 'image>(initial: Census, source: &'s Snapshot<'image>, root: u64,
+    blocks: u32, checksum_seed: u32, owner: Owner, budget: u64)
+    -> (r: Option<(Census, u64, CheckedTree<'s, 'image>)>)
+    ensures initial.wf(), match r {
+        Some((next, total, tree)) => tree.wf()
+            && tree.context() == (Context { source: source.view(), root, blocks: blocks as u64,
+                size: 4096, checksum: BlockChecksum::Crc32c(checksum_seed) })
+            && 0 < tree.count() <= budget
+            && owner.number > 0 && (owner.kind == 4 || owner.kind == 5)
+            && next.wf() && next.view().roles.len() == blocks && blocks == initial.view().roles.len()
+            && block_claims::preserves_occupied(initial.view().roles, next.view().roles)
+            && next.view().claims == initial.view().claims + checked_claims(tree.context(), owner)
+            && block_claims::mapped_claims(next.view().roles, checked_claims(tree.context(), owner))
+            && total <= blocks && total as nat == inode_claims::allocated(checked_claims(tree.context(), owner)),
+        None => true,
+    },
+{
+    hide(crc::fold);
+    if initial.block_count() != blocks || owner.number == 0 || (owner.kind != 4 && owner.kind != 5) { return None; }
+    let tree = match extent_tree::audit(source, root, blocks as u64, 4096,
+        BlockChecksum::Crc32c(checksum_seed), budget) {
+        Ok(tree) => tree, Err(_) => { return None; },
+    };
+    let _ = tree.checked_nodes();
+    let ghost context = tree.context();
+    let raw = source.capture_bytes(root, 60).unwrap();
+    assert(raw@ == extent_tree::root_node(context).raw);
+    let node = extent_node::parse_inline_root(raw.as_slice(), blocks as u64).unwrap();
+    let depth = node.header_fields().2;
+    proof { reveal(extent_node::valid); }
+    assert(node.view() == extent_tree::root_node(context));
+    let p = Parameters { root, blocks, seed: checksum_seed, owner };
+    assert(p.context(source.view()) == context);
+    let (next, total) = match collect_node(initial, source, &p, node, None, depth, None, extent::MAX_LOGICAL_END) {
+        Some(pair) => pair, None => { return None; },
+    };
+    proof {
+        assert(node_claims(context, extent_tree::root_node(context), None, depth, owner) == checked_claims(context, owner));
+        block_claims::every_appended_claim_has_its_exact_physical_slots(&next, initial.view().claims, checked_claims(context, owner));
+    }
+    Some((next, total, tree))
+}
+
 }

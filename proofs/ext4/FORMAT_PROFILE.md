@@ -26,6 +26,16 @@ convention; unread payload CRCs and full physical-sector accounting remain open.
 excludes external xattr blocks from those tables; other role aliases remain for
 the global ownership audit. This metadata closure still does not admit a whole EA-enabled
 filesystem or validate every value's extents/content.
+The separate [EA value integrity layer](EA_VALUE_INTEGRITY.md) adds complete
+bounded EA data/extent-node claims, initialized dense data coverage through
+rounded EOF, full payload CRCs and exact physical sectors for every census value.
+One EA ownership ledger rejects all within/across-value aliases. Every claim
+block must be source-allocated and outside fixed metadata and external xattrs.
+It explicitly covers every physical reference, preserves exact source-node/Info
+identity and retains all logical entry-hash checks. Ordinary/journal data owners,
+full bitmap equality, namespace/journal admission, authenticated lifecycle and
+CortenMM/OSTD refinement remain separate. The aggregate limit applies to payload
+byte lengths, not allocator capacity or temporary host memory.
 
 ## Implemented structural subset
 
