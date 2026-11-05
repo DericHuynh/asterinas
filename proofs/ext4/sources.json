@@ -255,7 +255,7 @@
       "path": "fs/ext4/acl.c",
       "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/acl.c",
       "blob_sha": "3bffe862f9549919a4ac38fe301becd3ac846775",
-      "review_scope": "Compact version-1 four/eight-byte disk encoding; ext4_set_acl access-mode coupling, mode-only ACL removal, default-directory restrictions, common xattr transaction and cache update semantics. Independent safe Rust conversion/transaction implementation and all-home crash closure; actual VFS/cache locks, quotas, inheritance and runtime integration remain open."
+      "review_scope": "Compact version-1 four/eight-byte disk encoding; ext4_set_acl access-mode coupling, mode-only ACL removal, default-directory restrictions, common xattr transaction and cache update semantics; ext4_init_acl consumes posix_acl_create output and stores directory defaults and inherited access values during exclusive new-inode initialization. Independent safe Rust ACL transforms, source-bound set/chmod transactions and immutable creation plans; actual child allocation/publication, VFS/cache locks, quotas and CortenMM/runtime integration remain open. Recorded evidence determines checked scope."
     },
     {
       "path": "fs/ext4/acl.h",
@@ -267,7 +267,7 @@
       "path": "fs/posix_acl.c",
       "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/posix_acl.c",
       "blob_sha": "12591c95c9256185b6fdbf7f32929dfdf70fc54b",
-      "review_scope": "posix_acl_valid tag/mask/ID rules and exact permission evaluation; posix_acl_from_xattr version-2 stride, ignored short-entry IDs and named invalid-ID rejection; posix_acl_equiv_mode (MASK itself marks non-equivalence), posix_acl_update_mode SGID/group/scoped FSETID behavior; set_posix_acl owner/scoped FOWNER authority and default regular-file set/remove exception; do_set_acl empty/header-only input semantics. Independent strict checked conversion, complete-parse uniqueness and source-bound access/default updates. Caller/idmap/LSM, chmod/inheritance, reverse reporting and CortenMM/runtime refinement remain open."
+      "review_scope": "posix_acl_valid tag/mask/ID rules and exact permission evaluation; version-2 userspace input/reporting stride, ignored short-entry input IDs, named invalid-ID rejection and special-entry INVALID_ID output; posix_acl_equiv_mode (MASK itself marks non-equivalence), posix_acl_update_mode SGID/group/scoped FSETID behavior; set_posix_acl owner/scoped FOWNER authority and default regular-file set/remove exception; do_set_acl empty/header-only input semantics; __posix_acl_chmod_masq owner/other and mask-or-group permission replacement; posix_acl_create_masq default intersection and posix_acl_create umask fallback, extended-access retention, directory-default copying and symlink bypass. Independent transformation contracts include subject-access monotonicity with identical numeric owner/group/subject inputs; numeric version-2 reporting preserves named IDs and canonical special INVALID_ID. Authenticated ID mapping/LSM, atomic child creation and CortenMM/runtime refinement remain open. Recorded evidence determines checked scope."
     },
     {
       "path": "fs/ext4/hash.c",
@@ -286,6 +286,12 @@
       "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/include/linux/iversion.h",
       "blob_sha": "8f972eaca2ed124c3ef72ed85a7209826635f586",
       "review_scope": "I_VERSION_QUERIED_SHIFT=1 and increment constants (95-97), queried disk initialization (187-190), forced increment (203-206) and observable peek (250-252). New ordinary inode-body user-xattr operation admits only a strict increment within the observable 63-bit domain, with no wrap/reuse."
+    },
+    {
+      "path": "fs/open.c",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/open.c",
+      "blob_sha": "91f1139591abed01d0242a8eafe9a9e00690e848",
+      "review_scope": "chmod_common supplies ATTR_MODE and ATTR_CTIME to notify_change even when requested permission bits equal the existing mode. Independent host chmod preparation therefore retains a ctime transaction for unchanged mode/ACL contents; authenticated VFS/LSM and runtime notification semantics remain open."
     }
   ]
 }

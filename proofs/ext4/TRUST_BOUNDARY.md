@@ -276,3 +276,40 @@ Filesystem IDs, group membership and FOWNER/FSETID scope remain authenticated VF
 inputs. LSM decisions, ID translation, runtime ACL-cache coherence, locks and
 CortenMM/OSTD/device refinement remain open. The common storage constructor is
 crate-private and grants no standalone public filesystem write authority.
+
+The separate `acl_chmod` factory also consumes exact-source owner/scoped FOWNER
+authority. It accepts requested permission/special bits through `07777`, preserves
+file type, and clears requested SGID without owning-group membership or scoped
+FSETID. FSETID supplies no ownership authority. Its full-mode byte codec is
+separate from the existing ACL-set codec, whose contract still forbids adding
+set-ID bits and preserves setuid/sticky. The shared storage builder records which
+mode policy applies. A public raw codec result grants no filesystem mutation
+right; only the operation-specific candidate reaches sealed writer admission.
+
+Chmod's unchanged-logical-value storage path records retention separately from
+rebuilt canonical output. Retention is unavailable to the existing user-xattr
+and ACL-set factories. Its proof boundary preserves the source attribute bytes
+and pointer, restricts the transaction to one inode-table home image and excludes
+every external attribute block from writes. Valid source hints such as a zero
+external `h_hash` remain byte-exact rather than being rewritten or rejected by a
+canonical-encoder condition. Complete result allocation, namespace and logical
+value checks remain mandatory. This is not permission to skip validation of
+newly generated attribute storage.
+
+`acl_inherit::Plan` binds an immutable parent directory and its source default
+ACL to proposed child mode/access/default bytes. Private construction protects
+that correspondence; the object authenticates no caller, selects no child inode
+and exposes no I/O method. Its broader Linux file-type planning does not widen
+whole-image inode admission. A plan computed from a READONLY parent remains a
+read-only result. Allocator authority, an exclusive unpublished child, link-count
+and directory publication, parent/child locking, runtime cache coherence and
+atomic journal closure must be supplied by a future child-creation operation.
+The byte-level inheritance contracts cannot stand in for those boundaries.
+
+Inheritance subject-access monotonicity evaluates the transformed ACL and source
+default ACL with the same numeric owner, owning-group, subject and group-set
+inputs. It does not prove any child-to-parent ownership relation or compare the
+child against the parent's access ACL. Reverse version-2 ACL reporting similarly
+preserves supplied numeric named IDs and reports INVALID_ID for special entries;
+mount/user-namespace translation and authenticated userspace ID reporting remain
+VFS obligations.

@@ -9,9 +9,9 @@ and a [concurrent block/extent/transaction protocol](CONCURRENCY.md).
 It is not a complete filesystem and is not registered with the kernel VFS.
 No mount or filesystem write path is enabled.
 
-The pinned Verus run checks **1790 obligations with zero errors**, including
-586 named proof functions and 497 named executable functions.
-172 host interoperability/regression tests pass on Linux-created metadata.
+The pinned Verus run checks **1876 obligations with zero errors**, including
+610 named proof functions and 514 named executable functions.
+193 host interoperability/regression tests pass on Linux-created metadata.
 [Proof status](proof-status.json) and [recorded evidence](verification-evidence.json)
 state the exact scope; tests do not discharge formal obligations.
 
@@ -23,7 +23,7 @@ state the exact scope; tests do not discharge formal obligations.
 | `htree_names.rs`, `htree_range.rs`, `directory_htree.rs`, `directory_piece.rs` | Complete source-bound DIR_INDEX and bounded LARGEDIR admission: inherited/collision intervals, Linux candidate-path closure, full-name uniqueness and source absence, initialized physical ownership, canonical dot/index/leaf records and whole-image namespace composition. See [HTree admission](HTREE_ADMISSION.md). Mutations, other formats and runtime integration remain open. |
 | `htree_topology.rs` | Complete supplied logical-tree traversal, exact root/child claim projection, parsed leaf records, no logical reuse and no orphan blocks. See [HTree topology](HTREE_TOPOLOGY.md). Source/hash/full-name/namespace composition is checked by [HTree admission](HTREE_ADMISSION.md); structural mutations and runtime authority remain open. |
 | `htree.rs` | Standalone Linux HTree root/internal table codecs, exact used-prefix/tail CRC domain, logical child bounds and collision-aware binary search. See [HTree routing](HTREE_ROUTING.md). Composes with complete tree/name/source admission; operations and runtime authority remain open. |
-| `acl.rs`, `acl_xattr.rs`, `acl_access.rs`, `acl_update.rs`, `inode_mode.rs` | Compact/v2 ACL correspondence and complete-parse uniqueness, source-bound permission decisions, access/default mutation, owner/scoped FOWNER policy, SGID/FSETID rules, mode-only folding and all-home crash closure. See [POSIX ACLs](POSIX_ACL.md). Authentication/idmaps/LSM, inheritance/chmod, reverse reporting and kernel runtime remain open. |
+| `acl.rs`, `acl_xattr.rs`, `acl_access.rs`, `acl_update.rs`, `inode_mode.rs` | Compact/v2 ACL correspondence and complete-parse uniqueness, source-bound permission decisions, access/default mutation, owner/scoped FOWNER policy, SGID/FSETID rules, mode-only folding and all-home crash closure. Numeric version-2 reporting, ACL chmod and creation planning extend these contracts below. See [POSIX ACLs](POSIX_ACL.md). Authentication/idmaps/LSM, atomic child creation, idmapped userspace reporting and kernel runtime remain open. |
 | `xattr_store.rs`, `xattr_hash.rs`, `xattr_canonical.rs`, `xattr_pack.rs`, `xattr_inode_edit.rs`, `xattr_block_update.rs`, `xattr_footprint.rs`, `xattr_batch.rs`, `xattr_lifecycle.rs`, `xattr_transaction.rs`, `xattr_durable.rs`, `xattr_commit.rs` | Complete bounded user-xattr lifecycle: create/replace/remove/empty/resize, two-area packing, exclusive reuse/shared COW, reference and allocation counters, exact byte authority, ctime/version/checksums, first EXT_ATTR promotion and all-home commit/crash closure. The earlier `xattr_update` isolated same-length path remains checked. See [xattr updates](XATTR_UPDATES.md). EA_INODE, privileged namespace policy, admission completeness and runtime integration remain open. |
 | `xattr_entry.rs`, `xattr_table.rs`, `xattr.rs`, `xattr_inode.rs`, `xattr_source.rs` | Source-bound inode/external/shared xattr storage, full-key lookup and uniqueness, physical CRCs, exact reference census and complete allocation accounting; mode-only writes reject access ACLs. See [xattr storage](XATTR_STORAGE.md). Bounded user and ACL mutations are checked separately; trusted/security policy, LSM and EA_INODE lifetime remain open. |
 | `bytes.rs`, `crc.rs` | Total endian codecs, checked ranges, CRC32C and streaming/zero-field checksum relations. |
@@ -151,6 +151,24 @@ allocated inode and bitmap to the same borrowed frozen image. Namespace validati
 composes that certificate; recovery/mount admission remains separate.
 CRC checks do not authenticate a disk or prove freshness.
 
+`acl_transform.rs` adds Linux chmod and creation-mask transformations with exact
+entry/ID preservation, mode contracts and subject-access monotonicity under
+identical numeric identity inputs. `acl_xattr::report` supplies numeric version-2
+reporting with exact named IDs and INVALID_ID for special entries;
+authenticated idmapped userspace translation remains open. `acl_chmod.rs` couples source-bound
+owner/scoped FOWNER authority, requested special permission bits, SGID policy and
+access-ACL storage through the common journal path. Chmod with unchanged logical
+values retains exact source attribute storage, including valid zero hash hints,
+without writing or copying external blocks; rebuilt outputs retain canonical
+padding/hash checks. The earlier ACL-set codec
+retains its restriction against adding set-ID bits. `acl_inherit.rs` produces
+immutable parent-bound creation plans with umask fallback, access-ACL filtering,
+exact directory-default copies and symlink bypass. It supplies no child allocation,
+publication or I/O authority; atomic child creation remains unimplemented.
+These modules and their obligations are in the pinned whole-crate manifest;
+the recorded evidence determines the exact checked source and test coverage.
+See [POSIX ACLs](POSIX_ACL.md).
+
 ## Reproduce
 
 Install the Rust toolchain and the digest-pinned Verus release:
@@ -176,7 +194,7 @@ It rejects local proof escapes, extra flags, omitted modules and source-inventor
 requires named proof and executable coverage; invalidates stale artifacts on failure;
 and records source, runner, manifest, verifier and emitted-library hashes.
 The negative checks include an actual failing Verus assertion in a disposable copy.
-94 negative Rust compilation checks reject certificate/source substitution, edit/queue ownership violations, request reuse/forgery, completion redirection, state replacement, command mutation and finishing through a live command loan.
+108 negative Rust compilation checks reject certificate/source substitution, edit/queue ownership violations, request reuse/forgery, completion redirection, state replacement, command mutation and finishing through a live command loan.
 [CI](../../.github/workflows/verify_ext4.yml) runs the same checks.
 
 The emitted host library exercises proof erasure and Linux byte compatibility.

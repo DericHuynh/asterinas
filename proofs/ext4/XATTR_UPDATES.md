@@ -21,7 +21,7 @@ reject construction; these helpers confer no privileged-namespace authority.
 
 | Design obligation | Implemented and checked | Remaining boundary |
 | --- | --- | --- |
-| S-AUTH / S-ENTRY | Consumed exact-source request-2 ACL grant, user namespace, regular/directory/sticky checks, READONLY exclusion, complete parse agreement | Authenticated VFS caller/groups/idmaps, CAP_FOWNER exception, LSM, trusted/security/system/ACL mutation policy |
+| S-AUTH / S-ENTRY | Consumed exact-source request-2 ACL grant, user namespace, regular/directory/sticky checks, READONLY exclusion, complete parse agreement | Authenticated VFS caller/groups/idmaps, CAP_FOWNER exception, LSM and trusted/security namespace policy; ACL set/chmod use separate authorities in POSIX_ACL.md |
 | F-CODEC | Complete-key CREATE/REPLACE/remove semantics, empty values, zero-padded repacking, unsigned Linux entry/block hashes, sorted external tables, physical-address CRC, inode pointer and ctime/version/checksum reseal | EA_INODE, wider admitted inode/block formats and feature combinations |
 | F-OPS | Returned image decodes to exactly the intended set; every other complete key/value is retained; full combined allocation and final namespace checks precede dispatch | Completeness of successful packing/admission and broader POSIX operations |
 | F-OWN | Census-selected free blocks, exclusive reuse, shared COW/decrement, single-block bitmap/counter accounting, neighboring-inode and shared-value byte authority checks | Runtime allocator/cache locks, quotas, frame epochs and DMA exclusion |
@@ -61,6 +61,15 @@ invalid timestamps reject construction without writes.
 
 `xattr_block_update.rs` reuses exclusive blocks, allocates only census-free
 blocks, and decrements shared references without editing their entries/values.
+For chmod with unchanged logical values, the common builder also offers a
+retained-storage path: the source pointer/inline bytes remain fixed, exactly one
+inode-table home image is prepared, and external blocks are excluded from the
+write set. A shared external block needs no copy or reference change. This path
+preserves valid Linux source hash hints, including `h_hash == 0`, through exact
+source-byte framing. Complete allocation, namespace and value checks still apply;
+generated canonical padding/hashes are required only on the rebuild path.
+The user-xattr and ACL-set factories cannot select retention and continue to
+require canonical rebuilt outputs.
 Dropping an exclusive block frees its bit and updates group and primary free
 counts. Lazy groups start from their checked canonical logical bitmap, clear
 BLOCK_UNINIT and materialize the updated bitmap. Both descriptor widths retain
@@ -96,7 +105,8 @@ reject forged stores/packed images/candidates, redirection, mutation and grant
 or candidate reuse. Tests supplement the formal checks.
 
 This remains a bounded host implementation. EA_INODE value lifetimes, quota
-coupling, trusted/security namespace changes, ACL inheritance/chmod, deduplication into an existing block,
+coupling, trusted/security namespace changes, atomic child creation with inherited
+ACLs, deduplication into an existing block,
 a mounted syscall and kernel concurrency are unfinished. A functioning full ext4
 filesystem is not claimed. Kernel/full-feature/mount gates remain false.
 Future kernel execution must use the CortenMM/OSTD ownership, sleeping-lock and
@@ -106,6 +116,10 @@ buffer-head ownership is not imported. Pinned references are in `sources.json`.
 
 Access/default ACL updates are implemented separately in [POSIX_ACL.md](POSIX_ACL.md).
 They use owner/scoped FOWNER authority and couple permissions/SGID to storage.
+ACL chmod additionally transforms the access ACL and requested special permission
+bits through a distinct source-bound authority. The existing ACL-set codec keeps
+its restriction against adding set-ID bits. Inheritance currently produces only
+an immutable parent-bound plan; it does not allocate or publish a child inode.
 `xattr_transaction.rs` now provides the crate-private common storage builder;
 `xattr_commit.rs` provides common all-home commit/recovery closure.
 The public user-namespace policy and exact-mode preservation remain unchanged.

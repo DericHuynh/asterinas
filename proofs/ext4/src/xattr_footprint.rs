@@ -28,7 +28,7 @@ pub open spec fn valid(r: Region, node: NodeView) -> bool {
     &&& r.old as nat == xattr_source::pointer(index, node.number) && r.refs as nat == old_refs(node)
     &&& r.new < index.blocks && r.old < index.blocks && r.width as nat == superblock::descriptor_bytes(index.source.subrange(1024, 2048))
     &&& (r.new > 0 && r.new != r.old ==> r.new < node.volume.census.roles.len() && node.volume.census.roles[r.new as int].kind == 0)
-    &&& (r.new > 0 && r.new == r.old ==> r.refs == 1)
+    &&& (r.new > 0 && r.new == r.old ==> r.refs >= 1)
     &&& r.account == accounting(r.old, r.new, r.refs)
     &&& (r.account == 0 ==> r.bitmap == 0 && r.group == 0)
     &&& (r.account > 0 ==> r.group == r.account / 32768 && r.group < index.groups.len() && r.bitmap == index.groups[r.group as int].block_bitmap)
@@ -50,6 +50,7 @@ pub open spec fn reference(r: Region, node: NodeView, block: u32) -> Seq<u8> {
 }
 pub open spec fn confined(r: Region, node: NodeView, images: Seq<crate::transaction::ImageView>) -> bool {
     valid(r, node) && forall|k: int| 0 <= k < images.len() ==> (#[trigger] images[k]).block < node.volume.index.blocks
+        && !(r.new > 0 && r.new == r.old && r.refs > 1 && images[k].block == r.new)
         && (forall|i: int| 0 <= i < 4096 && !allowed(r, images[k].block, i) ==> #[trigger] images[k].image[i] == reference(r, node, images[k].block)[i])
 }
 fn bytes_confined(before: &[u8], after: &[u8], r: Region, block: u32) -> (ok: bool)
@@ -86,7 +87,7 @@ pub fn check(node: &AllocatedInode<'_, '_>, new: u32, patches: &PatchSet) -> (re
     let old = crate::xattr::inode_pointer(node.raw()).unwrap(); if old >= blocks as u64 || new >= blocks { return None; } let old = old as u32;
     let refs = if old == 0 { 0u32 } else { let source = match index.source().block(old) { Some(source) => source, None => { return None; } }; bytes::read_le32(source.as_slice(), 4).unwrap() };
     if new > 0 && new != old { let role = match volume.census().role_of(new) { Some(role) => role, None => { return None; } }; if role.kind != 0 { return None; } }
-    if new > 0 && new == old && refs != 1 { return None; }
+    if new > 0 && new == old && refs == 0 { return None; }
     let position = match inode_table::position(index, number) { Some(position) => position, None => { return None; } }; if position / 4096 > u32::MAX as u64 || position % 4096 > 3840 { return None; }
     let account = if new > 0 && new != old { new } else if new == 0 && old > 0 && refs == 1 { old } else { 0u32 };
     let primary = match index.source().block(0) { Some(source) => source, None => { return None; } };
@@ -112,12 +113,14 @@ pub fn check(node: &AllocatedInode<'_, '_>, new: u32, patches: &PatchSet) -> (re
             logical.len() == 4096, logical@ == node.view().volume.index.groups[group as int].allocation.raw,
             index.view() == node.view().volume.index,
             forall|j: int| 0 <= j < k ==> (#[trigger] patches.view()[j]).block < blocks
+                && !(r.new > 0 && r.new == r.old && r.refs > 1 && patches.view()[j].block == r.new)
                 && (forall|i: int| 0 <= i < 4096 && !allowed(r, patches.view()[j].block, i) ==> #[trigger] patches.view()[j].image[i] == reference(r, node.view(), patches.view()[j].block)[i]),
             blocks == node.view().volume.index.blocks,
         decreases n - k,
     {
         proof { reveal(valid); }
         let image = patches.at(k).unwrap(); let block = image.block(); if block >= blocks { return None; }
+        if new > 0 && new == old && refs > 1 && block == new { return None; }
         let original = match index.source().block(block) { Some(source) => source, None => { return None; } };
         let before = if account > 0 && block == bitmap { logical } else { original.as_slice() };
         if !bytes_confined(before, image.as_slice(), r, block) { return None; }
@@ -149,5 +152,10 @@ pub proof fn another_inodes_bytes_in_the_same_block_are_outside_write_authority(
     requires confined(r, node, images), 0 <= k < images.len(), images[k].block == r.inode_block, 0 <= i < 4096, !(r.offset <= i < r.offset + 256),
     ensures images[k].image[i] == xattr_source::block_bytes(node.volume.index, r.inode_block as nat)[i],
 { reveal(valid); }
+
+pub proof fn retaining_a_shared_xattr_block_never_writes_its_bytes(r: Region, node: NodeView, images: Seq<crate::transaction::ImageView>, k: int)
+    requires confined(r, node, images), r.new > 0, r.new == r.old, r.refs > 1, 0 <= k < images.len(),
+    ensures images[k].block != r.new,
+{}
 
 }

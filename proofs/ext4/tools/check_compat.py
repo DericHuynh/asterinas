@@ -277,6 +277,22 @@ def main():
         "bypass_xattr_storage_constructor": ("pub fn misuse(n: &verified_ext4::allocated_inode::AllocatedInode<'_, '_>, v: &verified_ext4::xattr_store::Store) { let _ = verified_ext4::xattr_transaction::build(n, v, 0o100777, 1, 0); }\n", "E0603"),
         "confuse_data_grant_with_acl_authority": ("pub fn misuse(a: verified_ext4::acl_access::Authorization<'_, '_, '_>) { let _ = verified_ext4::acl_update::prepare(a, b\"\", 1, 0); }\n", "E0308"),
     })
+    misuse.update({
+        "forge_chmod_authority": ("pub fn misuse(a: verified_ext4::acl_chmod::Authorization<'_, '_, '_>) { let _ = verified_ext4::acl_chmod::Authorization { ..a }; }\n", "E0451"),
+        "replace_chmod_inner_authority": ("pub fn misuse<'n, 'v, 'a>(mut a: verified_ext4::acl_chmod::Authorization<'n, 'v, 'a>, b: verified_ext4::acl_update::Authorization<'n, 'v, 'a>) { a.grant = b; }\n", "E0616"),
+        "reuse_chmod_authority": ("pub fn misuse(a: verified_ext4::acl_chmod::Authorization<'_, '_, '_>) { let _ = verified_ext4::acl_chmod::prepare(a, 0o644, 1, 0); let _ = verified_ext4::acl_chmod::prepare(a, 0o777, 1, 0); }\n", "E0382"),
+        "confuse_acl_authority_with_chmod": ("pub fn misuse(a: verified_ext4::acl_update::Authorization<'_, '_, '_>) { let _ = verified_ext4::acl_chmod::prepare(a, 0o777, 1, 0); }\n", "E0308"),
+        "forge_chmod_candidate": ("pub fn misuse(c: verified_ext4::acl_chmod::Candidate<'_, '_, '_>) { let _ = verified_ext4::acl_chmod::Candidate { ..c }; }\n", "E0451"),
+        "redirect_chmod_candidate": ("pub fn misuse<'n, 'v, 'a>(mut c: verified_ext4::acl_chmod::Candidate<'n, 'v, 'a>, n: &'n verified_ext4::allocated_inode::AllocatedInode<'v, 'a>) { c.node = n; }\n", "E0616"),
+        "mutate_chmod_candidate_image": ("pub fn misuse(c: verified_ext4::acl_chmod::Candidate<'_, '_, '_>) { c.patches().at(0).unwrap().as_slice()[0] = 1; }\n", "E0594"),
+        "reuse_started_chmod": ("pub fn misuse(c: verified_ext4::acl_chmod::Candidate<'_, '_, '_>) { let _ = c.begin(); let _ = c.begin(); }\n", "E0382"),
+        "bypass_chmod_storage_constructor": ("pub fn misuse(n: &verified_ext4::allocated_inode::AllocatedInode<'_, '_>, v: &verified_ext4::xattr_store::Store) { let _ = verified_ext4::xattr_transaction::build_chmod(n, v, 0o107777, 1, 0); }\n", "E0603"),
+        "forge_acl_transform": ("pub fn misuse(t: verified_ext4::acl_transform::Transformed) { let _ = verified_ext4::acl_transform::Transformed { ..t }; }\n", "E0451"),
+        "mutate_acl_transform_bytes": ("pub fn misuse(t: verified_ext4::acl_transform::Transformed) { t.as_slice()[0] = 7; }\n", "E0594"),
+        "forge_inheritance_plan": ("pub fn misuse(p: verified_ext4::acl_inherit::Plan) { let _ = verified_ext4::acl_inherit::Plan { ..p }; }\n", "E0451"),
+        "redirect_inheritance_mode": ("pub fn misuse(mut p: verified_ext4::acl_inherit::Plan) { p.mode = 0o107777; }\n", "E0616"),
+        "mutate_inheritance_access_bytes": ("pub fn misuse(p: verified_ext4::acl_inherit::Plan) { p.access().unwrap()[0] = 7; }\n", "E0594"),
+    })
     for name, (source, code) in misuse.items():
         path = BUILD / (name + ".rs")
         path.write_text(source)

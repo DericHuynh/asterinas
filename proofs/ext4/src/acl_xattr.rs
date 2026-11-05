@@ -111,4 +111,67 @@ pub proof fn converted_acls_preserve_every_supplied_named_identifier(input: Seq<
     ensures value.entries[i].id == bytes::le32(input, 8 + i * 8),
 { assert(entry_matches(input, value, i)); }
 
+// Linux's version-2 userspace ABI reports a full eight-byte record for every
+// entry. Special tags use INVALID_ID even though their compact disk form has no
+// ID word. Numeric named IDs are already in the supplied filesystem mapping;
+// mount/user-namespace conversion belongs to the authenticated VFS boundary.
+pub open spec fn canonical_report_id(input: Seq<u8>, value: AclView, i: int) -> bool {
+    value.entries[i].tag == 2 || value.entries[i].tag == 8 || bytes::le32(input, 8 + i * 8) == 4294967295
+}
+pub open spec fn reported(input: Seq<u8>, value: AclView) -> bool {
+    represents(input, value) && forall|i: int| 0 <= i < value.entries.len() ==> #[trigger] canonical_report_id(input, value, i)
+}
+fn normalized_report_ids(input: &[u8], value: &Acl<'_>) -> (r: bool)
+    ensures value.wf(), r ==> reported(input@, value.view()),
+{
+    if !same_entries(input, value) { return false; }
+    let n = value.count(); let mut i = 0usize;
+    while i < n
+        invariant value.wf(), represents(input@, value.view()), n == value.view().entries.len(), i <= n <= 8191,
+            input.len() == 4 + 8 * n,
+            forall|j: int| 0 <= j < i ==> #[trigger] canonical_report_id(input@, value.view(), j),
+        decreases n - i,
+    {
+        let e = value.entry(i).unwrap();
+        if e.tag != 2 && e.tag != 8 && bytes::read_le32(input, 8 + i * 8).unwrap() != 4294967295 { return false; }
+        assert(canonical_report_id(input@, value.view(), i as int));
+        i += 1;
+    }
+    true
+}
+pub fn report(value: &Acl<'_>) -> (r: Option<Vec<u8>>)
+    ensures value.wf(), match r { Some(input) => reported(input@, value.view()), None => true },
+{
+    let n = value.count();
+    // The admitted xattr value limit is also the ABI output bound. A compact
+    // disk ACL may otherwise contain more entries than fit in this profile.
+    if n == 0 || n > 8191 { return None; }
+    let mut input = Vec::new(); input.push(2u8); input.push(0u8); input.push(0u8); input.push(0u8);
+    let mut i = 0usize;
+    while i < n
+        invariant value.wf(), n == value.view().entries.len(), i <= n <= 8191, input.len() == 4 + 8 * i,
+        decreases n - i,
+    {
+        let e = value.entry(i).unwrap();
+        let tag = bytes::encode_le16(e.tag); let permissions = bytes::encode_le16(e.permissions as u16);
+        let id = bytes::encode_le32(if e.tag == 2 || e.tag == 8 { e.id } else { 4294967295u32 });
+        input.push(tag[0]); input.push(tag[1]); input.push(permissions[0]); input.push(permissions[1]);
+        input.push(id[0]); input.push(id[1]); input.push(id[2]); input.push(id[3]);
+        i += 1;
+    }
+    if !normalized_report_ids(&input, value) { return None; }
+    Some(input)
+}
+pub proof fn reported_acls_preserve_named_ids_and_normalize_special_ids(input: Seq<u8>, value: AclView, i: int)
+    requires reported(input, value), 0 <= i < value.entries.len(),
+    ensures bytes::le16(input, 4 + i * 8) == value.entries[i].tag,
+        bytes::le16(input, 6 + i * 8) == value.entries[i].permissions,
+        if value.entries[i].tag == 2 || value.entries[i].tag == 8 {
+            bytes::le32(input, 8 + i * 8) == value.entries[i].id
+        } else { bytes::le32(input, 8 + i * 8) == 4294967295 },
+{
+    assert(entry_matches(input, value, i));
+    assert(canonical_report_id(input, value, i));
+}
+
 }
