@@ -293,6 +293,20 @@ def main():
         "redirect_inheritance_mode": ("pub fn misuse(mut p: verified_ext4::acl_inherit::Plan) { p.mode = 0o107777; }\n", "E0616"),
         "mutate_inheritance_access_bytes": ("pub fn misuse(p: verified_ext4::acl_inherit::Plan) { p.access().unwrap()[0] = 7; }\n", "E0594"),
     })
+    misuse.update({
+        "forge_ea_read_header": ("pub fn misuse(h: verified_ext4::ea_source::Header<'_, '_>) { let _ = verified_ext4::ea_source::Header { ..h }; }\n", "E0451"),
+        "forge_ea_source_node": ("pub fn misuse(n: verified_ext4::ea_source::Node<'_>) { let _ = verified_ext4::ea_source::Node { ..n }; }\n", "E0451"),
+        "redirect_ea_source_node_number": ("pub fn misuse(mut n: verified_ext4::ea_source::Node<'_>) { n.number = 12; }\n", "E0616"),
+        "mutate_ea_source_while_header_is_live": ("pub fn misuse(mut bytes: Vec<u8>) { let snapshot = verified_ext4::snapshot::Snapshot::from_bytes(&bytes); let header = verified_ext4::ea_source::parse(&snapshot).unwrap(); bytes[0] = 1; let _ = header.parameters(); }\n", "E0502"),
+        "forge_ea_xattr_reference": ("pub fn misuse(r: verified_ext4::ea_reference::Reference<'_>) { let _ = verified_ext4::ea_reference::Reference { ..r }; }\n", "E0451"),
+        "redirect_ea_xattr_reference": ("pub fn misuse(mut r: verified_ext4::ea_reference::Reference<'_>, e: verified_ext4::xattr_entry::Entry) { r.selected = e; }\n", "E0616"),
+        "forge_ea_value": ("pub fn misuse(v: verified_ext4::ea_value::Value) { let _ = verified_ext4::ea_value::Value { ..v }; }\n", "E0451"),
+        "replace_ea_value_bytes": ("pub fn misuse(mut v: verified_ext4::ea_value::Value) { v.data = Vec::new(); }\n", "E0616"),
+        "mutate_ea_value_block_mapping": ("pub fn misuse(v: verified_ext4::ea_value::Value) { v.blocks()[0] = 1; }\n", "E0594"),
+        "forge_ea_physical_ledger": ("pub fn misuse(l: verified_ext4::ea_refs::Ledger) { let _ = verified_ext4::ea_refs::Ledger { ..l }; }\n", "E0451"),
+        "replace_ea_physical_records": ("pub fn misuse(mut l: verified_ext4::ea_refs::Ledger) { l.records = Vec::new(); }\n", "E0616"),
+        "confuse_ordinary_index_with_ea_header": ("pub fn misuse(i: &verified_ext4::group_index::GroupIndex<'_>) { let _ = verified_ext4::ea_value::inspect(i, 12, 1, b\"key\", 4096); }\n", "E0308"),
+    })
     for name, (source, code) in misuse.items():
         path = BUILD / (name + ".rs")
         path.write_text(source)

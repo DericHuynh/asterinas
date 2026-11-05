@@ -191,8 +191,11 @@ The new executable contracts and named obligations are included in the pinned
 whole-crate verification manifest. Exact successful checking and test coverage
 are determined by the recorded evidence, not by these module descriptions.
 
-EA_INODE, quotas, trusted/security namespace mutation, atomic child creation,
+EA_INODE filesystem admission/update lifetimes, quotas, trusted/security namespace mutation, atomic child creation,
 authenticated idmapped userspace reporting, full admission completeness and actual CortenMM/
 OSTD inode/cache/allocator/device integration remain open. Kernel/full-feature/
 writable-mount gates remain false. No Linux page, folio or buffer-head ownership
 is introduced.
+
+An isolated [EA_INODE read/reference core](EA_INODE.md) exists independently;
+it does not admit EA-backed values into these ACL or xattr mutation factories.

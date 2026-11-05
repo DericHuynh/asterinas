@@ -289,3 +289,10 @@ pub mod acl_update;
 pub mod acl_transform;
 pub mod acl_chmod;
 pub mod acl_inherit;
+
+pub mod ea_inode;
+pub mod ea_source;
+pub mod ea_reference;
+pub mod ea_hash;
+pub mod ea_value;
+pub mod ea_refs;

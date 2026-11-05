@@ -83,6 +83,18 @@ Unbounded unlink/truncate work needs proved orphan/deferred-reclamation
 transactions. Large writes need an explicit short-write/prefix contract.
 Neither is silently treated as a single bounded atomic operation.
 
+The isolated EA_INODE core adds metadata/hash/reference codecs and source-bound
+initialized value inspection to the implementation scope (EA_INODE.md).
+Its F-READ contracts relate each returned value byte to an initialized mapping
+in the original snapshot; they do not establish VFS permission or global
+metadata/data ownership. F-CODEC includes raw EA reference-word interpretation
+and framed resealing, not authority to apply a reference edit. Caller-supplied
+physical/logical ledgers model distinct-entry counts and per-parent quota
+additions without satisfying the complete authenticated F-OWN census.
+Full EA_INODE F-ADMIT, allocation/orphan/quota F-OPS, and journal/crash closure
+remain open; the ordinary admission and mount/writer gates still reject it.
+Recorded evidence determines the exact checked implementation and obligations.
+
 ## Security and concurrent integration
 
 | ID | Obligation | Present artifact / missing work |

@@ -313,3 +313,29 @@ child against the parent's access ACL. Reverse version-2 ACL reporting similarly
 preserves supplied numeric named IDs and reports INVALID_ID for special entries;
 mount/user-namespace translation and authenticated userspace ID reporting remain
 VFS obligations.
+
+## Isolated EA_INODE core
+
+`ea_source::Header` retains actual source features and geometry, requires the
+superblock clean-state marker and RECOVER clear, and proves initialized allocated
+inode-table provenance. These markers do not establish whole-filesystem or
+journal admission. It is a separate type; the implementation does not strip
+EA_INODE to manufacture an ordinary `GroupIndex` or widen full admission.
+
+The private `ea_reference` and `ea_value` objects bind a complete parent xattr key,
+descriptor, allocated live value inode, initialized mappings and returned bytes
+to that same source. Dense mappings, distinct physical value blocks and complete
+CRC/entry-hash checks do not prove global metadata/data separation, absence of
+extra extents beyond EOF, full sector accounting, quota limits or authenticated
+VFS access. The modern reader excludes Linux's legacy Lustre classification;
+it does not implement that alternative lifetime protocol. Immutable host results
+grant no device requests, filesystem mutation or CortenMM/OSTD ownership.
+
+`ea_inode::Status::Unlinked` means only zero local references/links under the
+codec's zero-dtime profile. It does not prove orphan membership or reclamation.
+Reference-word edits return byte images with no caller authority, I/O or
+durability certificate. `ea_refs` physical and per-parent ledgers validate only
+caller-supplied structural records; they are not complete authenticated source
+censuses and cannot alone justify stored refcounts or quota changes.
+Full EA_INODE admission, lifetime, quota, concurrency and journal/device
+refinement remain required. Kernel/full-feature/writable-mount gates remain false.

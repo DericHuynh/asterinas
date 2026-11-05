@@ -9395,3 +9395,879 @@ mod acl_xattr_reporting {
         );
     }
 }
+
+// Native EA_INODE fixtures and regression tests for proofs/ext4/tests/compat.rs.
+// Isolated source-bound readers do not grant whole-filesystem admission or I/O.
+mod ea_inode_values {
+    use core::{
+        ea_inode::{self, Status},
+        ea_source, ea_value,
+        snapshot::Snapshot,
+    };
+
+    use super::{inline_xattr_updates::command, *};
+
+    struct Fixture {
+        bytes: Vec<u8>,
+        value: Vec<u8>,
+        table: u32,
+        inodes: u32,
+        seed: u32,
+        external: u32,
+    }
+    fn parameters(img: &[u8]) -> (u32, u32, u32) {
+        (
+            le32(img, 4104),
+            le32(img, 1024),
+            core::superblock::metadata_checksum_seed(&img[1024..2048]).unwrap(),
+        )
+    }
+    fn offset(table: u32, number: u32) -> usize {
+        table as usize * 4096 + (number as usize - 1) * 256
+    }
+    fn seal_raw(raw: &mut [u8], number: u32, seed: u32) {
+        let hash = core::inode::calculated_checksum(raw, number, seed).unwrap();
+        raw[124..126].copy_from_slice(&(hash as u16).to_le_bytes());
+        raw[130..132].copy_from_slice(&((hash >> 16) as u16).to_le_bytes());
+    }
+    fn entry_hash(name: &[u8], value_hash: u32) -> u32 {
+        let name_hash = name
+            .iter()
+            .fold(0u32, |hash, byte| hash.rotate_left(5) ^ u32::from(*byte));
+        name_hash.rotate_left(16) ^ value_hash
+    }
+    fn entry(raw: &mut [u8], at: usize, name: &[u8], size: u32, value_hash: u32) -> usize {
+        raw[at] = name.len() as u8;
+        raw[at + 1] = 1;
+        raw[at + 2..at + 4].copy_from_slice(&0u16.to_le_bytes());
+        raw[at + 4..at + 8].copy_from_slice(&14u32.to_le_bytes());
+        raw[at + 8..at + 12].copy_from_slice(&size.to_le_bytes());
+        raw[at + 12..at + 16].copy_from_slice(&entry_hash(name, value_hash).to_le_bytes());
+        raw[at + 16..at + 16 + name.len()].copy_from_slice(name);
+        at + 16 + (name.len() + 3) / 4 * 4
+    }
+    fn mappings(img: &[u8], table: u32, size: usize) -> Vec<u32> {
+        let at = offset(table, 14);
+        let raw = &img[at + 40..at + 100];
+        assert_eq!(core::bytes::read_le16(raw, 6), Some(0));
+        let mut result = vec![0; (size + 4095) / 4096];
+        for i in 0..core::bytes::read_le16(raw, 2).unwrap() as usize {
+            let e = core::extent::parse(raw, 12 + i * 12, le32(img, 1028)).unwrap();
+            assert!(e.initialized);
+            for j in 0..e.length {
+                let logical = (e.logical + j) as usize;
+                assert!(logical < result.len());
+                assert_eq!(result[logical], 0);
+                result[logical] = e.physical + j;
+            }
+        }
+        assert!(result.iter().all(|physical| *physical != 0));
+        result
+    }
+    fn fixture(prefix: &str, size: usize) -> Fixture {
+        fixture_with_features(prefix, size, false, false)
+    }
+    fn fixture_with_features(prefix: &str, size: usize, wide: bool, stored_seed: bool) -> Fixture {
+        assert!((4096..=65536).contains(&size));
+        let features = format!(
+            "none,has_journal,extent,filetype,sparse_super,large_file,extra_isize,metadata_csum,ea_inode{}{}",
+            if wide { ",64bit" } else { "" },
+            if stored_seed {
+                ",metadata_csum_seed"
+            } else {
+                ""
+            },
+        );
+        let path = format!("build/{prefix}.img");
+        let value_path = format!("build/{prefix}-value.bin");
+        let empty_path = format!("build/{prefix}-empty.bin");
+        let commands_path = format!("build/{prefix}-commands.txt");
+        let extracted_path = format!("build/{prefix}-extracted.bin");
+        let value: Vec<u8> = (0..size)
+            .map(|i| (i.wrapping_mul(73) + i / 251) as u8)
+            .collect();
+        std::fs::write(&value_path, &value[..4096]).unwrap();
+        std::fs::write(&empty_path, []).unwrap();
+        let mke2fs = std::env::var("MKE2FS_BIN").unwrap_or_else(|_| "mke2fs".into());
+        command(
+            &mke2fs,
+            &[
+                "-q",
+                "-F",
+                "-t",
+                "ext4",
+                "-b",
+                "4096",
+                "-I",
+                "256",
+                "-O",
+                &features,
+                "-E",
+                "lazy_itable_init=0,lazy_journal_init=0",
+                &path,
+                "8192",
+            ],
+            false,
+        );
+        let mut requests = vec![
+            "feature ext_attr".to_string(),
+            "ea_set / user.small local".to_string(),
+            format!("write {empty_path} /first"),
+            format!("write {empty_path} /second"),
+            format!("ea_set -f {value_path} /first user.big"),
+            format!("ea_set /first user.filler {}", "s".repeat(200)),
+        ];
+        for logical in 1..(size + 4095) / 4096 {
+            requests.push(format!("bmap -a <14> {logical}"));
+        }
+        requests.push("quit".into());
+        std::fs::write(&commands_path, requests.join("\n") + "\n").unwrap();
+        let debugfs = std::env::var("DEBUGFS_BIN").unwrap_or_else(|_| "debugfs".into());
+        command(&debugfs, &["-w", "-f", &commands_path, &path], false);
+        let mut img = std::fs::read(&path).unwrap();
+        let (table, inodes, seed) = parameters(&img);
+        let first = offset(table, 12);
+        let second = offset(table, 13);
+        let ea = offset(table, 14);
+        assert_eq!(le32(&img, first + 168), 14);
+        let external = le32(&img, first + 104);
+        assert!(external != 0);
+        let physical = mappings(&img, table, size);
+        for (i, block) in physical.iter().enumerate() {
+            let part = &value[i * 4096..value.len().min((i + 1) * 4096)];
+            let target = &mut img[*block as usize * 4096..(*block as usize + 1) * 4096];
+            target.fill(0);
+            target[..part.len()].copy_from_slice(part);
+        }
+        let value_hash = core::crc::crc32c(seed, &value);
+        img[ea + 4..ea + 8].copy_from_slice(&(size as u32).to_le_bytes());
+        img[ea + 8..ea + 12].copy_from_slice(&value_hash.to_le_bytes());
+        img[ea + 12..ea + 16].fill(0);
+        img[ea + 36..ea + 40].copy_from_slice(&3u32.to_le_bytes());
+        seal_raw(&mut img[ea..ea + 256], 14, seed);
+
+        // One physical external entry is shared by two parents. The EA inode
+        // has three references: two distinct inline entries plus this entry.
+        img[first + 160..first + 256].fill(0);
+        img[first + 160..first + 164].copy_from_slice(&core::xattr::MAGIC.to_le_bytes());
+        let next = entry(&mut img, first + 164, b"big", size as u32, value_hash);
+        entry(&mut img, next, b"alias", size as u32, value_hash);
+        img[second + 160..second + 256].fill(0);
+        img[second + 104..second + 108].copy_from_slice(&external.to_le_bytes());
+        let block = &mut img[external as usize * 4096..(external as usize + 1) * 4096];
+        block.fill(0);
+        block[..4].copy_from_slice(&core::xattr::MAGIC.to_le_bytes());
+        block[4..8].copy_from_slice(&2u32.to_le_bytes());
+        block[8..12].copy_from_slice(&1u32.to_le_bytes());
+        block[12..16].copy_from_slice(&entry_hash(b"shared", value_hash).to_le_bytes());
+        entry(block, 32, b"shared", size as u32, value_hash);
+        let checksum = core::xattr::checksum(block, external as u64, seed).unwrap();
+        block[16..20].copy_from_slice(&checksum.to_le_bytes());
+        let value_blocks = ((size + 4095) / 4096) as u32;
+        img[first + 28..first + 32].copy_from_slice(&(8 * (1 + 3 * value_blocks)).to_le_bytes());
+        img[second + 28..second + 32].copy_from_slice(&(8 * (1 + value_blocks)).to_le_bytes());
+        seal_raw(&mut img[first..first + 256], 12, seed);
+        seal_raw(&mut img[second..second + 256], 13, seed);
+        std::fs::write(&path, &img).unwrap();
+        let fsck = std::env::var("E2FSCK_BIN").unwrap_or_else(|_| "e2fsck".into());
+        command(&fsck, &["-fn", &path], false);
+        command(
+            &debugfs,
+            &[
+                "-R",
+                &format!("ea_get -f {extracted_path} /first user.big"),
+                &path,
+            ],
+            false,
+        );
+        assert_eq!(std::fs::read(&extracted_path).unwrap(), value);
+        command(
+            &debugfs,
+            &[
+                "-R",
+                &format!("ea_get -f {extracted_path} /second user.shared"),
+                &path,
+            ],
+            false,
+        );
+        assert_eq!(std::fs::read(&extracted_path).unwrap(), value);
+        for file in [
+            &path,
+            &value_path,
+            &empty_path,
+            &commands_path,
+            &extracted_path,
+        ] {
+            let _ = std::fs::remove_file(file);
+        }
+        Fixture {
+            bytes: img,
+            value,
+            table,
+            inodes,
+            seed,
+            external,
+        }
+    }
+
+    #[test]
+    fn linux_ea_inode_metadata_preserves_three_physical_references_with_a_shared_block() {
+        let fixture = fixture("ea-inode-physical-refs", 4096);
+        let raw = inode_bytes(&fixture.bytes, fixture.table, 14);
+        let info = ea_inode::parse(raw, 14, fixture.inodes, fixture.seed, Status::Live).unwrap();
+        assert_eq!(info.size, 4096);
+        assert_eq!(info.refs, 3);
+        assert_eq!(info.hash, core::crc::crc32c(fixture.seed, &fixture.value));
+        assert_eq!(
+            le32(&fixture.bytes, fixture.external as usize * 4096 + 4),
+            2
+        );
+        assert_eq!(le32(inode_bytes(&fixture.bytes, fixture.table, 12), 28), 32);
+        assert_eq!(le32(inode_bytes(&fixture.bytes, fixture.table, 13), 28), 16);
+        assert!(core::allocation::parse(Snapshot::from_bytes(&fixture.bytes)).is_none());
+        let snapshot = Snapshot::from_bytes(&fixture.bytes);
+        let header = ea_source::parse(&snapshot).unwrap();
+        let allocated = header.get(14).unwrap();
+        assert_eq!(allocated.raw(), raw);
+        assert_eq!(allocated.number(), 14);
+        assert_eq!(allocated.position(), offset(fixture.table, 14) as u64);
+    }
+
+    #[test]
+    fn ea_reference_codec_handles_zero_maximum_and_raw_timestamp_high_bits_without_mode_changes() {
+        let fixture = fixture("ea-inode-ref-boundaries", 4096);
+        let raw = inode_bytes(&fixture.bytes, fixture.table, 14);
+        let mutable = |i: usize| {
+            (12..16).contains(&i)
+                || (26..28).contains(&i)
+                || (36..40).contains(&i)
+                || (124..126).contains(&i)
+                || (130..136).contains(&i)
+        };
+        for refs in [0, 1, 0x8000_0000_0000_0000, u64::MAX] {
+            let changed =
+                ea_inode::set_refcount(raw, 14, fixture.inodes, fixture.seed, Status::Live, refs)
+                    .unwrap();
+            let status = if refs == 0 {
+                Status::Unlinked
+            } else {
+                Status::Live
+            };
+            let parsed =
+                ea_inode::parse(&changed, 14, fixture.inodes, fixture.seed, status).unwrap();
+            assert_eq!(parsed.refs, refs);
+            assert_eq!(parsed.hash, le32(raw, 8));
+            assert_eq!(parsed.mode, core::bytes::read_le16(raw, 0).unwrap());
+            assert_eq!(
+                le32(&changed, 132),
+                if refs >> 32 >= 0x8000_0000 { 1 } else { 0 }
+            );
+            for i in 0..256 {
+                if !mutable(i) {
+                    assert_eq!(changed[i], raw[i]);
+                }
+            }
+            let restored =
+                ea_inode::set_refcount(&changed, 14, fixture.inodes, fixture.seed, status, 3)
+                    .unwrap();
+            assert_eq!(
+                ea_inode::parse(&restored, 14, fixture.inodes, fixture.seed, Status::Live)
+                    .unwrap()
+                    .refs,
+                3
+            );
+        }
+        for hash in [0, 0x8000_0000, u32::MAX] {
+            for extra in [0, 1, u32::MAX] {
+                let mut altered = raw.to_vec();
+                altered[8..12].copy_from_slice(&hash.to_le_bytes());
+                altered[140..144].copy_from_slice(&extra.to_le_bytes());
+                seal_raw(&mut altered, 14, fixture.seed);
+                assert_eq!(
+                    ea_inode::parse(&altered, 14, fixture.inodes, fixture.seed, Status::Live)
+                        .unwrap()
+                        .hash,
+                    hash
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn ea_metadata_rejects_wrong_flags_nested_attributes_checksums_and_inconsistent_liveness() {
+        let fixture = fixture("ea-inode-invalid-metadata", 4096);
+        let raw = inode_bytes(&fixture.bytes, fixture.table, 14);
+        for (at, replacement) in [
+            (0usize, 0x4000u32),
+            (4, 0),
+            (4, ea_inode::MAX_VALUE + 1),
+            (20, 1),
+            (26, 0),
+            (32, 0x80000),
+            (104, fixture.external),
+            (108, 1),
+            (116, 1),
+            (118, 1),
+            (128, 0),
+            (152, 1),
+            (160, core::xattr::MAGIC),
+        ] {
+            let mut altered = raw.to_vec();
+            if [0, 26, 116, 118, 128].contains(&at) {
+                altered[at..at + 2].copy_from_slice(&(replacement as u16).to_le_bytes());
+            } else {
+                altered[at..at + 4].copy_from_slice(&replacement.to_le_bytes());
+            }
+            seal_raw(&mut altered, 14, fixture.seed);
+            assert!(
+                ea_inode::parse(&altered, 14, fixture.inodes, fixture.seed, Status::Live).is_none(),
+                "offset {at}"
+            );
+        }
+        let mut altered = raw.to_vec();
+        altered[100] ^= 1;
+        assert!(
+            ea_inode::parse(&altered, 14, fixture.inodes, fixture.seed, Status::Live).is_none()
+        );
+        assert!(ea_inode::parse(raw, 12, fixture.inodes, fixture.seed, Status::Live).is_none());
+        assert!(ea_inode::parse(raw, 14, fixture.inodes, fixture.seed ^ 1, Status::Live).is_none());
+        assert!(ea_inode::parse(raw, 14, fixture.inodes, fixture.seed, Status::Unlinked).is_none());
+    }
+
+    #[test]
+    fn source_bound_large_ea_reads_preserve_exact_bytes_aliases_and_physical_block_identity() {
+        for size in [16_384usize, 16_401, 65_536] {
+            let fixture = fixture(&format!("ea-value-large-{size}"), size);
+            let snapshot = Snapshot::from_bytes(&fixture.bytes);
+            let header = ea_source::parse(&snapshot).unwrap();
+            let first = ea_value::inspect(&header, 12, 1, b"big", 8).unwrap();
+            let alias = ea_value::inspect(&header, 12, 1, b"alias", 8).unwrap();
+            let shared = ea_value::inspect(&header, 12, 1, b"shared", 8).unwrap();
+            let peer = ea_value::inspect(&header, 13, 1, b"shared", 8).unwrap();
+            assert_eq!(first.as_slice(), fixture.value);
+            assert_eq!(first.inode_number(), 14);
+            assert!(first.same_bytes(&alias));
+            assert!(first.same_bytes(&shared));
+            assert!(first.same_bytes(&peer));
+            assert_eq!(first.blocks(), alias.blocks());
+            assert_eq!(first.blocks(), shared.blocks());
+            assert_eq!(first.blocks(), peer.blocks());
+            assert_eq!(
+                first.blocks(),
+                mappings(&fixture.bytes, fixture.table, size)
+                    .into_iter()
+                    .map(u64::from)
+                    .collect::<Vec<_>>()
+            );
+            assert_eq!(first.blocks().len(), (size + 4095) / 4096);
+            assert!(
+                core::image_validation::inspect(Snapshot::from_bytes(&fixture.bytes)).is_none()
+            );
+            assert!(ea_value::inspect(&header, 12, 1, b"missing", 8).is_none());
+            assert!(ea_value::inspect(&header, 12, 2, b"big", 8).is_none());
+            assert!(ea_value::inspect(&header, 0, 1, b"big", 8).is_none());
+            assert!(ea_value::inspect(&header, 14, 1, b"big", 8).is_none());
+            assert!(
+                ea_value::inspect(&header, 2, 1, b"small", 8).is_none(),
+                "local values are not EA inode values"
+            );
+            assert!(ea_value::inspect(&header, 12, 1, b"big", 0).is_none());
+            assert!(ea_value::inspect(&header, 12, 1, b"big", 4097).is_none());
+        }
+    }
+
+    #[test]
+    fn ea_value_rejects_changed_data_hashes_sizes_self_references_and_unallocated_values() {
+        let fixture = fixture("ea-value-corrupt-identity", 16_401);
+        let first = offset(fixture.table, 12);
+        let ea = offset(fixture.table, 14);
+        let rejected = |img: &[u8]| {
+            let snapshot = Snapshot::from_bytes(img);
+            let header = ea_source::parse(&snapshot).unwrap();
+            assert!(ea_value::inspect(&header, 12, 1, b"big", 8).is_none());
+        };
+        for number in [2u32, 12, 15] {
+            let mut img = fixture.bytes.clone();
+            img[first + 168..first + 172].copy_from_slice(&number.to_le_bytes());
+            seal_raw(&mut img[first..first + 256], 12, fixture.seed);
+            rejected(&img);
+        }
+        for (at, replacement) in [
+            (4usize, 16_400u32),
+            (8, le32(&fixture.bytes, ea + 8) ^ 1),
+            (32, 0x80000),
+            (104, fixture.external),
+        ] {
+            let mut img = fixture.bytes.clone();
+            img[ea + at..ea + at + 4].copy_from_slice(&replacement.to_le_bytes());
+            seal_raw(&mut img[ea..ea + 256], 14, fixture.seed);
+            rejected(&img);
+        }
+        let mut img = fixture.bytes.clone();
+        img[first + 176] ^= 1;
+        seal_raw(&mut img[first..first + 256], 12, fixture.seed);
+        rejected(&img);
+        let mut img = fixture.bytes.clone();
+        img[first + 172..first + 176].copy_from_slice(&16_400u32.to_le_bytes());
+        seal_raw(&mut img[first..first + 256], 12, fixture.seed);
+        rejected(&img);
+        let mut img = fixture.bytes.clone();
+        let physical = mappings(&img, fixture.table, fixture.value.len());
+        img[physical[0] as usize * 4096 + 73] ^= 1;
+        rejected(&img);
+        let mut img = fixture.bytes.clone();
+        img[ea + 100] ^= 1;
+        rejected(&img);
+    }
+
+    #[test]
+    fn ea_value_rejects_sparse_unwritten_and_repeated_physical_mappings() {
+        let fixture = fixture("ea-value-corrupt-mappings", 16_401);
+        let ea = offset(fixture.table, 14);
+        assert_eq!(core::bytes::read_le16(&fixture.bytes, ea + 42), Some(2));
+        let rejected = |img: &[u8]| {
+            let snapshot = Snapshot::from_bytes(img);
+            let header = ea_source::parse(&snapshot).unwrap();
+            assert!(ea_value::inspect(&header, 12, 1, b"big", 8).is_none());
+        };
+        let mut img = fixture.bytes.clone();
+        img[ea + 64..ea + 68].copy_from_slice(&2u32.to_le_bytes());
+        seal_raw(&mut img[ea..ea + 256], 14, fixture.seed);
+        rejected(&img);
+        let mut img = fixture.bytes.clone();
+        img[ea + 56..ea + 58].copy_from_slice(&0x8001u16.to_le_bytes());
+        seal_raw(&mut img[ea..ea + 256], 14, fixture.seed);
+        rejected(&img);
+        // Hold the exact logical bytes and all hashes fixed so this case
+        // specifically exercises the prohibition on physical block aliases.
+        let bytes = vec![0x5a; fixture.value.len()];
+        let mut img = with_value(&fixture, &bytes);
+        let original_maps = mappings(&img, fixture.table, bytes.len());
+        for physical in &original_maps {
+            img[*physical as usize * 4096..(*physical as usize + 1) * 4096].fill(0x5a);
+        }
+        {
+            let snapshot = Snapshot::from_bytes(&img);
+            let header = ea_source::parse(&snapshot).unwrap();
+            let value = ea_value::inspect(&header, 12, 1, b"big", 8).unwrap();
+            assert_eq!(value.as_slice(), bytes);
+        }
+        // The second original extent is four contiguous value blocks. Point
+        // the first extent at its first block too; both logical extents now
+        // read only 0x5a, including the former partial block's unused tail.
+        let duplicated = le32(&img, ea + 72);
+        img[ea + 60..ea + 64].copy_from_slice(&duplicated.to_le_bytes());
+        seal_raw(&mut img[ea..ea + 256], 14, fixture.seed);
+        let aliased = mappings(&img, fixture.table, bytes.len());
+        assert_eq!(aliased[0], aliased[1]);
+        let observed: Vec<_> = aliased
+            .iter()
+            .flat_map(|physical| {
+                img[*physical as usize * 4096..(*physical as usize + 1) * 4096]
+                    .iter()
+                    .copied()
+            })
+            .take(bytes.len())
+            .collect();
+        assert_eq!(observed, bytes);
+        assert_eq!(
+            core::crc::crc32c(fixture.seed, &observed),
+            le32(&img, ea + 8)
+        );
+        assert_eq!(
+            le32(&img, offset(fixture.table, 12) + 176),
+            entry_hash(b"big", le32(&img, ea + 8))
+        );
+        assert!(
+            ea_inode::parse(
+                &img[ea..ea + 256],
+                14,
+                fixture.inodes,
+                fixture.seed,
+                Status::Live
+            )
+            .is_some()
+        );
+        {
+            let snapshot = Snapshot::from_bytes(&img);
+            let seed = core::inode::inode_seed(fixture.seed, 14, le32(&img, ea + 100));
+            assert!(
+                core::extent_tree::audit(
+                    &snapshot,
+                    (ea + 40) as u64,
+                    le32(&img, 1028) as u64,
+                    4096,
+                    core::extent_node::BlockChecksum::Crc32c(seed),
+                    8
+                )
+                .is_ok()
+            );
+        }
+        rejected(&img);
+    }
+
+    fn forge_crc(mut value: Vec<u8>, seed: u32, target: u32) -> Vec<u8> {
+        let end = value.len();
+        value[end - 4..].fill(0);
+        let base = core::crc::crc32c(seed, &value);
+        let mut basis = [0u32; 32];
+        let mut masks = [0u32; 32];
+        for input in 0..32 {
+            value[end - 4 + input / 8] ^= 1 << (input % 8);
+            let mut delta = core::crc::crc32c(seed, &value) ^ base;
+            value[end - 4 + input / 8] ^= 1 << (input % 8);
+            let mut combination = 1u32 << input;
+            for bit in (0..32).rev() {
+                if delta & (1 << bit) != 0 {
+                    if basis[bit] == 0 {
+                        basis[bit] = delta;
+                        masks[bit] = combination;
+                        break;
+                    }
+                    delta ^= basis[bit];
+                    combination ^= masks[bit];
+                }
+            }
+        }
+        let mut delta = target ^ base;
+        let mut patch = 0u32;
+        for bit in (0..32).rev() {
+            if delta & (1 << bit) != 0 {
+                assert_ne!(basis[bit], 0);
+                delta ^= basis[bit];
+                patch ^= masks[bit];
+            }
+        }
+        assert_eq!(delta, 0);
+        value[end - 4..].copy_from_slice(&patch.to_le_bytes());
+        assert_eq!(core::crc::crc32c(seed, &value), target);
+        value
+    }
+    fn with_value(fixture: &Fixture, value: &[u8]) -> Vec<u8> {
+        assert_eq!(value.len(), fixture.value.len());
+        let mut img = fixture.bytes.clone();
+        for (i, block) in mappings(&img, fixture.table, value.len())
+            .iter()
+            .enumerate()
+        {
+            let part = &value[i * 4096..value.len().min((i + 1) * 4096)];
+            let raw = &mut img[*block as usize * 4096..(*block as usize + 1) * 4096];
+            raw.fill(0);
+            raw[..part.len()].copy_from_slice(part);
+        }
+        let hash = core::crc::crc32c(fixture.seed, value);
+        let first = offset(fixture.table, 12);
+        let ea = offset(fixture.table, 14);
+        img[ea + 8..ea + 12].copy_from_slice(&hash.to_le_bytes());
+        seal_raw(&mut img[ea..ea + 256], 14, fixture.seed);
+        img[first + 176..first + 180].copy_from_slice(&entry_hash(b"big", hash).to_le_bytes());
+        img[first + 196..first + 200].copy_from_slice(&entry_hash(b"alias", hash).to_le_bytes());
+        seal_raw(&mut img[first..first + 256], 12, fixture.seed);
+        let block =
+            &mut img[fixture.external as usize * 4096..(fixture.external as usize + 1) * 4096];
+        let entry_hash = entry_hash(b"shared", hash);
+        block[12..16].copy_from_slice(&entry_hash.to_le_bytes());
+        block[44..48].copy_from_slice(&entry_hash.to_le_bytes());
+        let checksum = core::xattr::checksum(block, fixture.external as u64, fixture.seed).unwrap();
+        block[16..20].copy_from_slice(&checksum.to_le_bytes());
+        img
+    }
+
+    #[test]
+    fn zero_and_high_bit_ea_hashes_are_values_and_crc_collisions_do_not_imply_equal_bytes() {
+        let fixture = fixture("ea-value-hash-boundaries", 4096);
+        let original_snapshot = Snapshot::from_bytes(&fixture.bytes);
+        let original_header = ea_source::parse(&original_snapshot).unwrap();
+        let original = ea_value::inspect(&original_header, 12, 1, b"big", 8).unwrap();
+        for target in [0, 0x8000_0000, u32::MAX, entry_hash(b"big", 0)] {
+            let value = forge_crc(fixture.value.clone(), fixture.seed, target);
+            let img = with_value(&fixture, &value);
+            let snapshot = Snapshot::from_bytes(&img);
+            let header = ea_source::parse(&snapshot).unwrap();
+            let result = ea_value::inspect(&header, 12, 1, b"big", 8).unwrap();
+            assert_eq!(result.as_slice(), value);
+            assert_eq!(le32(inode_bytes(&img, fixture.table, 14), 8), target);
+            if target == entry_hash(b"big", 0) {
+                assert_eq!(le32(inode_bytes(&img, fixture.table, 12), 176), 0);
+            }
+        }
+        let mut different = fixture.value.clone();
+        different[0] ^= 1;
+        let target = core::crc::crc32c(fixture.seed, &fixture.value);
+        let different = forge_crc(different, fixture.seed, target);
+        assert_ne!(different, fixture.value);
+        let img = with_value(&fixture, &different);
+        let snapshot = Snapshot::from_bytes(&img);
+        let header = ea_source::parse(&snapshot).unwrap();
+        let collision = ea_value::inspect(&header, 12, 1, b"big", 8).unwrap();
+        assert_eq!(
+            core::crc::crc32c(fixture.seed, collision.as_slice()),
+            target
+        );
+        assert!(!original.same_bytes(&collision));
+    }
+
+    #[test]
+    fn legacy_signed_high_byte_names_are_accepted_only_with_the_exact_value_hash() {
+        let fixture = fixture("ea-value-signed-name", 4096);
+        let mut img = fixture.bytes.clone();
+        let first = offset(fixture.table, 12);
+        let name = [0xffu8, b'x'];
+        let value_hash = core::crc::crc32c(fixture.seed, &fixture.value);
+        img[first + 160..first + 256].fill(0);
+        img[first + 160..first + 164].copy_from_slice(&core::xattr::MAGIC.to_le_bytes());
+        let at = entry(
+            &mut img,
+            first + 164,
+            b"big",
+            fixture.value.len() as u32,
+            value_hash,
+        );
+        entry(&mut img, at, &name, fixture.value.len() as u32, value_hash);
+        let signed = name.iter().fold(0u32, |hash, byte| {
+            hash.rotate_left(5) ^ (*byte as i8 as i32 as u32)
+        });
+        let signed = signed.rotate_left(16) ^ value_hash;
+        assert_ne!(signed, entry_hash(&name, value_hash));
+        img[at + 12..at + 16].copy_from_slice(&signed.to_le_bytes());
+        seal_raw(&mut img[first..first + 256], 12, fixture.seed);
+        let snapshot = Snapshot::from_bytes(&img);
+        let header = ea_source::parse(&snapshot).unwrap();
+        let result = ea_value::inspect(&header, 12, 1, &name, 8).unwrap();
+        assert_eq!(result.as_slice(), fixture.value);
+        let mut bad = img.clone();
+        bad[at + 12] ^= 1;
+        seal_raw(&mut bad[first..first + 256], 12, fixture.seed);
+        let snapshot = Snapshot::from_bytes(&bad);
+        let header = ea_source::parse(&snapshot).unwrap();
+        assert!(ea_value::inspect(&header, 12, 1, &name, 8).is_none());
+    }
+
+    #[test]
+    fn modern_ea_inspection_rejects_linux_lustre_backpointers_even_when_hashes_match_the_bytes() {
+        let fixture = fixture("ea-value-lustre-backpointer", 4096);
+        let first = offset(fixture.table, 12);
+        let ea = offset(fixture.table, 14);
+        assert_ne!(
+            le32(&fixture.bytes, first + 176),
+            le32(&fixture.bytes, ea + 8)
+        );
+        assert_eq!(
+            le32(&fixture.bytes, first + 100),
+            le32(&fixture.bytes, ea + 100)
+        );
+        let mut img = fixture.bytes.clone();
+        img[ea + 16..ea + 20].copy_from_slice(&12u32.to_le_bytes());
+        seal_raw(&mut img[ea..ea + 256], 14, fixture.seed);
+        let snapshot = Snapshot::from_bytes(&img);
+        let header = ea_source::parse(&snapshot).unwrap();
+        assert!(ea_value::inspect(&header, 12, 1, b"big", 8).is_none());
+        let peer = ea_value::inspect(&header, 13, 1, b"shared", 8).unwrap();
+        assert_eq!(
+            peer.as_slice(),
+            fixture.value,
+            "the legacy backpointer is parent-specific"
+        );
+        let mut different_generation = img.clone();
+        let generation = le32(&different_generation, first + 100).wrapping_add(1);
+        different_generation[ea + 100..ea + 104].copy_from_slice(&generation.to_le_bytes());
+        seal_raw(&mut different_generation[ea..ea + 256], 14, fixture.seed);
+        let snapshot = Snapshot::from_bytes(&different_generation);
+        let header = ea_source::parse(&snapshot).unwrap();
+        assert_eq!(
+            ea_value::inspect(&header, 12, 1, b"big", 8)
+                .unwrap()
+                .as_slice(),
+            fixture.value
+        );
+    }
+
+    #[test]
+    fn ea_source_headers_read_linux_32_and_64_byte_descriptors_with_both_checksum_seed_profiles() {
+        for wide in [false, true] {
+            for stored_seed in [false, true] {
+                let prefix = format!("ea-source-profile-{wide}-{stored_seed}");
+                let fixture = fixture_with_features(&prefix, 4096, wide, stored_seed);
+                let primary = &fixture.bytes[1024..2048];
+                let width = if wide { 64 } else { 32 };
+                assert_eq!(core::superblock::descriptor_length(primary), Some(width));
+                assert_eq!(le32(primary, 96) & 0x2000 != 0, stored_seed);
+                let snapshot = Snapshot::from_bytes(&fixture.bytes);
+                let header = ea_source::parse(&snapshot).unwrap();
+                assert_eq!(header.descriptor_width(), width);
+                assert_eq!(header.parameters().3, fixture.seed);
+                let node = header.get(14).unwrap();
+                assert_eq!(node.raw(), inode_bytes(&fixture.bytes, fixture.table, 14));
+                let value = ea_value::inspect(&header, 12, 1, b"big", 1).unwrap();
+                assert_eq!(value.as_slice(), fixture.value);
+                assert_eq!(value.blocks().len(), 1);
+                assert!(core::allocation::parse(Snapshot::from_bytes(&fixture.bytes)).is_none());
+            }
+        }
+    }
+}
+
+mod ea_reference_accounting {
+    use core::ea_refs::{self, Error, Kind, Ledger, Location, ParentReference, Reference};
+
+    fn reference(kind: Kind, owner: u64, offset: u32, size: u32) -> Reference {
+        Reference {
+            location: Location {
+                kind,
+                owner,
+                offset,
+            },
+            value: 14,
+            size,
+        }
+    }
+    fn records() -> [Reference; 3] {
+        [
+            reference(Kind::Inline, 12, 164, 16_401),
+            reference(Kind::Inline, 12, 184, 16_401),
+            reference(Kind::External, 2058, 32, 16_401),
+        ]
+    }
+    fn ok(result: Result<Ledger, (Ledger, Error)>) -> Ledger {
+        match result {
+            Ok(ledger) => ledger,
+            Err(_) => panic!("physical EA ledger operation rejected"),
+        }
+    }
+    fn serialized(ledger: &Ledger) -> Vec<(bool, u64, u32, u32, u32)> {
+        ledger
+            .records()
+            .iter()
+            .map(|r| {
+                (
+                    matches!(r.location.kind, Kind::External),
+                    r.location.owner,
+                    r.location.offset,
+                    r.value,
+                    r.size,
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn physical_ea_entries_and_per_parent_quota_charges_use_independent_ledgers() {
+        let records = records();
+        let ledger = Ledger::from_records(&records).unwrap();
+        assert_eq!(ledger.len(), 3);
+        assert_eq!(ledger.refs(14), 3);
+        assert_eq!(ledger.refs(15), 0);
+        let logical = [
+            ParentReference {
+                parent: 12,
+                physical: records[0],
+            },
+            ParentReference {
+                parent: 12,
+                physical: records[1],
+            },
+            ParentReference {
+                parent: 12,
+                physical: records[2],
+            },
+            ParentReference {
+                parent: 13,
+                physical: records[2],
+            },
+        ];
+        let first = ea_refs::quota_usage(&logical, 12, 4096).unwrap();
+        let second = ea_refs::quota_usage(&logical, 13, 4096).unwrap();
+        assert_eq!((first.ea_inodes, first.bytes), (3, 61_440));
+        assert_eq!((second.ea_inodes, second.bytes), (1, 20_480));
+        let large_clusters = ea_refs::quota_usage(&logical, 12, 65_536).unwrap();
+        assert_eq!(
+            (large_clusters.ea_inodes, large_clusters.bytes),
+            (3, 196_608)
+        );
+        let cloned = ok(ledger.clone_external(2058, 9000));
+        assert_eq!(cloned.len(), 4);
+        assert_eq!(cloned.refs(14), 4, "cloning creates one new physical entry");
+        let released = ok(cloned.remove(records[2].location));
+        assert_eq!(
+            released.refs(14),
+            3,
+            "destroying a physical entry drops one reference"
+        );
+        assert_eq!(released.len(), 3);
+    }
+
+    #[test]
+    fn rejected_physical_edits_return_the_unchanged_ledger_and_reject_conflicting_sizes() {
+        let records = records();
+        let ledger = Ledger::from_records(&records).unwrap();
+        let before = serialized(&ledger);
+        let (ledger, error) = match ledger.add(records[0]) {
+            Err(failure) => failure,
+            Ok(_) => panic!("duplicate location accepted"),
+        };
+        assert!(matches!(error, Error::DuplicateLocation));
+        assert_eq!(serialized(&ledger), before);
+        let conflicting = reference(Kind::External, 9000, 32, 4096);
+        let (ledger, error) = match ledger.add(conflicting) {
+            Err(failure) => failure,
+            Ok(_) => panic!("one EA inode admitted with two sizes"),
+        };
+        assert!(matches!(error, Error::ConflictingSize));
+        assert_eq!(serialized(&ledger), before);
+        let (ledger, error) = match ledger.clone_external(2058, 2058) {
+            Err(failure) => failure,
+            Ok(_) => panic!("self-clone accepted"),
+        };
+        assert!(matches!(error, Error::InvalidBlock));
+        assert_eq!(serialized(&ledger), before);
+        let missing = Location {
+            kind: Kind::External,
+            owner: 9000,
+            offset: 32,
+        };
+        let (ledger, error) = match ledger.remove(missing) {
+            Err(failure) => failure,
+            Ok(_) => panic!("missing physical entry removed"),
+        };
+        assert!(matches!(error, Error::Missing));
+        assert_eq!(serialized(&ledger), before);
+        assert!(Ledger::from_records(&[records[0], records[0]]).is_none());
+        assert!(Ledger::from_records(&[records[0], conflicting]).is_none());
+        let oversized: Vec<_> = (1..=ea_refs::MAX_RECORDS + 1)
+            .map(|owner| reference(Kind::External, owner as u64, 32, 16_401))
+            .collect();
+        assert!(Ledger::from_records(&oversized).is_none());
+    }
+
+    #[test]
+    fn quota_validation_rejects_duplicate_parent_entries_mismatched_inline_owners_and_zero_units() {
+        let records = records();
+        let external = ParentReference {
+            parent: 12,
+            physical: records[2],
+        };
+        assert!(ea_refs::quota_usage(&[external, external], 12, 4096).is_none());
+        let wrong_parent = ParentReference {
+            parent: 13,
+            physical: records[0],
+        };
+        assert!(ea_refs::quota_usage(&[wrong_parent], 13, 4096).is_none());
+        assert!(ea_refs::quota_usage(&[external], 0, 4096).is_none());
+        assert!(ea_refs::quota_usage(&[external], 12, 0).is_none());
+        let empty = ea_refs::quota_usage(&[], 12, 4096).unwrap();
+        assert_eq!((empty.ea_inodes, empty.bytes), (0, 0));
+        for bad in [
+            reference(Kind::External, 0, 32, 4096),
+            reference(Kind::External, u64::MAX, 32, 4096),
+            reference(Kind::External, 12, 31, 4096),
+            reference(Kind::Inline, 12, 32, 4096),
+            reference(Kind::Inline, 12, 164, 0),
+            reference(Kind::Inline, 12, 164, u32::MAX),
+        ] {
+            assert!(Ledger::from_records(&[bad]).is_none());
+        }
+        let mut bad = records[0];
+        bad.value = 0;
+        assert!(Ledger::from_records(&[bad]).is_none());
+    }
+}

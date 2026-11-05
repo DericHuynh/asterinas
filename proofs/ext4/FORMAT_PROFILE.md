@@ -9,6 +9,15 @@ full-feature target is tracked in [FEATURE_COVERAGE.md](FEATURE_COVERAGE.md);
 this document describes only the currently admitted structural subset.
 The accepted byte structures do not certify the whole volume.
 
+The isolated [EA_INODE read/reference core](EA_INODE.md) is separate from this
+ordinary profile. Its header retains the actual EA_INODE flag, requires the
+clean-state marker and RECOVER clear, and binds allocated inode-table bytes to
+the original snapshot. The ordinary whole-image allocation/namespace and writer
+admission paths still reject EA_INODE; isolated parsing does not enable a mount
+or widen those feature masks. Modern 16 MiB initialized value inspection and
+structural reference/quota contracts do not supply global ownership, a complete
+reference census, orphan lifetime, quota enforcement or durable updates.
+
 ## Implemented structural subset
 
 | Structure | Accepted representation |
