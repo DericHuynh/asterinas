@@ -174,6 +174,7 @@ proof fn assemble_record_shape(v: WindowView, first: nat, index: int, r: Record)
     ensures record_shape(v, first, index, r),
 { reveal(record_shape); }
 
+#[verifier::rlimit(40)]
 pub proof fn every_recognized_prefix_has_the_reserved_transaction_shape(v: WindowView, s: Source, first: nat, records: Seq<Record>)
     requires shaped(v, s, first), scan_trace::well_formed(records, s),
     ensures records.len() <= 2 * (v.txs.len() - first),

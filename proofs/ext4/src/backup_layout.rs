@@ -54,7 +54,9 @@ pub proof fn bootstrap_identity_preserves_every_backup_coordinate(before: Seq<u8
     requires crate::bootstrap_identity::primary_fixed(before, after),
     ensures present(before.subrange(1024, 2048), number) == present(after.subrange(1024, 2048), number),
 {
-    assert(bytes::le32(before, 1116) == bytes::le32(after, 1116));
+    let old_compat = bytes::le32(before, 1116) as u32; let new_compat = bytes::le32(after, 1116) as u32;
+    assert(old_compat & 0x200u32 == new_compat & 0x200u32) by (bit_vector)
+        requires old_compat & !8u32 == new_compat & !8u32;
     assert(bytes::le32(before, 1124) == bytes::le32(after, 1124));
     assert(bytes::le32(before, 1612) == bytes::le32(after, 1612));
     assert(bytes::le32(before, 1616) == bytes::le32(after, 1616));

@@ -74,6 +74,15 @@ impl<'a> Attributes<'a> {
     #[verifier::type_invariant]
     spec fn invariant(self) -> bool { self.wf() }
 
+    pub fn source_tables(&self) -> (r: (Option<&Table<'a>>, Option<&Table<'a>>))
+        ensures self.wf(), match r.0 { Some(table) => table.wf() && self.view().body.table == Some(table.view()), None => self.view().body.table is None },
+            match r.1 { Some(table) => table.wf() && self.view().external == Some(table.view()), None => self.view().external is None },
+    {
+        proof { use_type_invariant(self); }
+        let first = self.body.entry_table();
+        let second = match &self.external { Some(block) => Some(block.entries()), None => None };
+        (first, second)
+    }
     pub fn get(&self, namespace: u8, name: &[u8]) -> (r: Option<ValueRef<'a>>)
         ensures self.wf(), match r { Some(value) => contains(self.view(), namespace, name@, value.view()), None => absent(self.view(), namespace, name@) },
     {
@@ -144,6 +153,22 @@ pub proof fn a_full_xattr_key_cannot_select_two_different_values(v: AttributesVi
     let j = choose|j: int| 0 <= j < e.entries.len() && (#[trigger] e.entries[j]).namespace == namespace
         && xattr_entry::name(e.raw, e.entries[j]) == name && xattr_table::value_view(e.raw, e.entries[j]) == b;
     xattr_table::successful_tables_have_one_value_for_each_full_namespace_and_name_key(e, i, j);
+}
+
+pub proof fn same_source_has_identical_attributes(a: AttributesView, b: AttributesView)
+    requires valid(a), valid(b), a.index == b.index, a.number == b.number,
+    ensures a == b,
+{
+    if let Some(first) = a.body.table {
+        let second = b.body.table.unwrap();
+        crate::xattr_table_edit::two_complete_tables_from_the_same_bytes_have_identical_records(first, second);
+        assert(first == second);
+    }
+    if let Some(first) = a.external {
+        let second = b.external.unwrap();
+        crate::xattr_table_edit::two_complete_tables_from_the_same_bytes_have_identical_records(first, second);
+        assert(first == second);
+    }
 }
 
 }

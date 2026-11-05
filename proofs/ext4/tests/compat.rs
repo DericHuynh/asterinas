@@ -6894,7 +6894,7 @@ mod inline_xattr_updates {
 
     use super::*;
 
-    fn command(binary: &str, args: &[&str], modified: bool) -> Vec<u8> {
+    pub(super) fn command(binary: &str, args: &[&str], modified: bool) -> Vec<u8> {
         let output = std::process::Command::new(binary)
             .args(args)
             .output()
@@ -6907,7 +6907,7 @@ mod inline_xattr_updates {
         );
         output.stdout
     }
-    fn fixture(prefix: &str, external: bool) -> Vec<u8> {
+    pub(super) fn fixture(prefix: &str, external: bool) -> Vec<u8> {
         let path = format!("build/{prefix}.img");
         let acl_path = format!("build/{prefix}-acl.bin");
         let large_path = format!("build/{prefix}-large.bin");
@@ -6968,7 +6968,7 @@ mod inline_xattr_updates {
         }
         bytes
     }
-    fn named() -> Credentials {
+    pub(super) fn named() -> Credentials {
         Credentials {
             fsuid: 1234,
             in_inode_group: false,
@@ -6976,7 +6976,7 @@ mod inline_xattr_updates {
             dac_read_search: false,
         }
     }
-    fn attribute(img: &[u8], namespace: u8, name: &[u8]) -> Vec<u8> {
+    pub(super) fn attribute(img: &[u8], namespace: u8, name: &[u8]) -> Vec<u8> {
         let volume = allocation::parse(Snapshot::from_bytes(img)).unwrap();
         let attrs = xattr_inode::inspect(volume.index(), 12).unwrap();
         match attrs.get(namespace, name).unwrap() {
@@ -6984,7 +6984,7 @@ mod inline_xattr_updates {
             _ => panic!("local byte value"),
         }
     }
-    fn recover(mut img: Vec<u8>) -> Vec<u8> {
+    pub(super) fn recover(mut img: Vec<u8>) -> Vec<u8> {
         let source_bytes = img.clone();
         let source = Snapshot::from_bytes(&source_bytes);
         let mut recovery = core::recovery_admission::prepare(&source).unwrap();
@@ -7236,5 +7236,661 @@ mod inline_xattr_updates {
         let ro_node = allocated_inode::get(&ro_volume, 12).unwrap();
         let grant = acl_access::authorize(&ro_node, &user, &[], 2).unwrap();
         assert!(xattr_update::prepare(grant, b"note", b"after77", 123, 456).is_none());
+    }
+}
+
+mod xattr_lifecycle_updates {
+    use core::{
+        access::Credentials,
+        acl_access, allocated_inode, allocation,
+        recovery_request::Completion,
+        snapshot::Snapshot,
+        xattr, xattr_inode, xattr_lifecycle as update,
+        xattr_store::{Error as StoreError, Store},
+        xattr_table::ValueRef,
+    };
+
+    use super::{
+        inline_xattr_updates::{attribute, command, fixture, named, recover},
+        *,
+    };
+
+    fn ok<T>(value: Result<T, update::Error>) -> T {
+        match value {
+            Ok(value) => value,
+            Err(_) => panic!("xattr lifecycle candidate rejected"),
+        }
+    }
+    fn set(store: Store, namespace: u8, name: &[u8], value: &[u8], flags: u32) -> Store {
+        match store.set(namespace, name, value, flags) {
+            Ok(next) => next,
+            Err(_) => panic!("owned xattr set rejected"),
+        }
+    }
+    fn pointer(img: &[u8], number: u32) -> u32 {
+        let (_, group, _) = metadata(img);
+        xattr::inode_pointer(inode_bytes(img, group.inode_table, number)).unwrap() as u32
+    }
+    fn value(img: &[u8], number: u32, name: &[u8]) -> Option<Vec<u8>> {
+        let volume = allocation::parse(Snapshot::from_bytes(img)).unwrap();
+        let attrs = xattr_inode::inspect(volume.index(), number).unwrap();
+        match attrs.get(1, name) {
+            Some(ValueRef::Bytes(value)) => Some(value.to_vec()),
+            None => None,
+            _ => panic!("local values only"),
+        }
+    }
+    fn owner() -> Credentials {
+        Credentials {
+            fsuid: 0,
+            in_inode_group: true,
+            dac_override: false,
+            dac_read_search: false,
+        }
+    }
+    fn drive(
+        img: &[u8],
+        candidate: update::Candidate<'_, '_, '_>,
+        cuts: bool,
+    ) -> (Vec<u8>, Vec<(bool, Vec<u8>)>) {
+        let mut writer = candidate
+            .begin()
+            .expect("complete before/after writer admission");
+        let mut stable = img.to_vec();
+        let mut snapshots = Vec::new();
+        let mut committed = false;
+        loop {
+            let pending = match writer.dispatch() {
+                Ok(pending) => pending,
+                Err(done) => {
+                    assert!(done.finished());
+                    break;
+                }
+            };
+            if let core::recovery_io::Command::Write { block, image } = pending.pending_command() {
+                if core::bytes::read_be32(image, 0) == Some(0xc03b3998)
+                    && core::bytes::read_be32(image, 4) == Some(2)
+                {
+                    committed = true;
+                }
+                stable[block as usize * 4096..(block as usize + 1) * 4096].copy_from_slice(image);
+                if cuts {
+                    snapshots.push((committed, stable.clone()));
+                }
+            }
+            writer = pending.finish_pending(Completion::Succeeded);
+        }
+        assert!(core::image_validation::inspect(Snapshot::from_bytes(&stable)).is_some());
+        (stable, snapshots)
+    }
+    fn update(
+        img: &[u8],
+        name: &[u8],
+        data: Option<&[u8]>,
+        flags: u32,
+        credentials: &Credentials,
+        cuts: bool,
+    ) -> (Vec<u8>, Vec<(bool, Vec<u8>)>) {
+        let volume = allocation::parse(Snapshot::from_bytes(img)).unwrap();
+        let node = allocated_inode::get(&volume, 12).unwrap();
+        let groups: &[u32] = if credentials.in_inode_group {
+            &[0]
+        } else {
+            &[]
+        };
+        let grant = acl_access::authorize(&node, credentials, groups, 2).unwrap();
+        let candidate = match data {
+            Some(data) => match ok(update::set_user(
+                grant, name, data, flags, 123456789, 987654321,
+            )) {
+                Some(candidate) => candidate,
+                None => {
+                    return (img.to_vec(), Vec::new());
+                }
+            },
+            None => ok(update::remove_user(grant, name, 123456789, 987654321)),
+        };
+        drive(img, candidate, cuts)
+    }
+    fn linux_check(prefix: &str, img: &[u8]) -> Vec<u8> {
+        let path = format!("build/{prefix}.img");
+        std::fs::write(&path, img).unwrap();
+        let fsck = std::env::var("E2FSCK_BIN").unwrap_or_else(|_| "e2fsck".into());
+        command(&fsck, &["-fy", &path], true);
+        command(&fsck, &["-fn", &path], false);
+        let result = std::fs::read(&path).unwrap();
+        let _ = std::fs::remove_file(path);
+        result
+    }
+    fn shared(prefix: &str) -> Vec<u8> {
+        let mut img = fixture(prefix, true);
+        let path = format!("build/{prefix}-shared.img");
+        let data = format!("build/{prefix}-shared.bin");
+        std::fs::write(&path, &img).unwrap();
+        std::fs::write(&data, [0x59; 512]).unwrap();
+        let debugfs = std::env::var("DEBUGFS_BIN").unwrap_or_else(|_| "debugfs".into());
+        command(
+            &debugfs,
+            &["-w", "-R", "write build/fixture-file.bin /peer", &path],
+            false,
+        );
+        command(
+            &debugfs,
+            &[
+                "-w",
+                "-R",
+                &format!("ea_set -f {data} /peer user.large"),
+                &path,
+            ],
+            false,
+        );
+        img = std::fs::read(&path).unwrap();
+        let (_, group, seed) = metadata(&img);
+        let first = pointer(&img, 12);
+        let second = pointer(&img, 13);
+        assert_ne!(first, second);
+        let peer = group.inode_table as usize * 4096 + 12 * 256;
+        img[peer + 104..peer + 108].copy_from_slice(&first.to_le_bytes());
+        seal_inode_image(&mut img, group.inode_table, 13, seed);
+        let start = first as usize * 4096;
+        img[start + 4..start + 8].copy_from_slice(&2u32.to_le_bytes());
+        let crc = xattr::checksum(&img[start..start + 4096], first as u64, seed).unwrap();
+        img[start + 16..start + 20].copy_from_slice(&crc.to_le_bytes());
+        img[group.block_bitmap as usize * 4096 + second as usize / 8] &= !(1 << (second % 8));
+        seal_single_group_allocation(&mut img);
+        assert!(core::image_validation::inspect(Snapshot::from_bytes(&img)).is_some());
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_file(data);
+        img
+    }
+
+    #[test]
+    fn owned_xattrs_follow_linux_flag_precedence_and_preserve_errors_and_empty_values() {
+        let original = set(Store::new(), 1, b"a", b"", 1);
+        assert_eq!(original.item(0).unwrap().bytes(), b"");
+        let original = match original.set(1, b"a", b"changed", 1) {
+            Err((original, StoreError::Exists)) => original,
+            _ => panic!("CREATE existing"),
+        };
+        let original = match original.set(1, b"absent", b"changed", 2) {
+            Err((original, StoreError::Missing)) => original,
+            _ => panic!("REPLACE absent"),
+        };
+        let original = match original.set(1, b"a", b"changed", 3) {
+            Err((original, StoreError::Exists)) => original,
+            _ => panic!("both flags existing"),
+        };
+        let original = match original.set(1, b"absent", b"changed", 3) {
+            Err((original, StoreError::Missing)) => original,
+            _ => panic!("both flags absent"),
+        };
+        let original = match original.set(1, b"a", b"changed", 4) {
+            Err((original, StoreError::InvalidFlags)) => original,
+            _ => panic!("unknown flags"),
+        };
+        assert_eq!(original.item(0).unwrap().bytes(), b"");
+        let original = set(original, 2, b"", &[0, 1, 0, 2], 0);
+        let original = set(original, 1, b"a", b"longer\0value", 2);
+        let result = match original.remove(1, b"a") {
+            Ok(result) => result,
+            _ => panic!("remove existing"),
+        };
+        assert!(result.find(1, b"a").is_none());
+        assert_eq!(
+            result.item(result.find(2, b"").unwrap()).unwrap().bytes(),
+            &[0, 1, 0, 2]
+        );
+        assert!(matches!(
+            result.remove(1, b"a"),
+            Err((_, StoreError::Missing))
+        ));
+        assert!(matches!(
+            Store::new().set(0, b"a", b"", 0),
+            Err((_, StoreError::InvalidKey))
+        ));
+        assert!(matches!(
+            Store::new().set(1, b"a\0b", b"", 0),
+            Err((_, StoreError::InvalidKey))
+        ));
+        assert!(matches!(
+            Store::new().set(1, b"a", &[0; 65537], 0),
+            Err((_, StoreError::ValueTooLarge))
+        ));
+    }
+    #[test]
+    fn xattr_hashes_use_unsigned_names_little_endian_zero_padding_and_sticky_zero_entries() {
+        for name in [&b"a"[..], &b"\xff\x80name"[..], &b""[..]] {
+            for value in [&b""[..], &b"1"[..], &b"12345"[..], &b"\0\xff\x80\0"[..]] {
+                let mut hash = 0u32;
+                for byte in name {
+                    hash = hash.rotate_left(5) ^ u32::from(*byte);
+                }
+                for chunk in value.chunks(4) {
+                    let mut word = [0; 4];
+                    word[..chunk.len()].copy_from_slice(chunk);
+                    hash = hash.rotate_left(16) ^ u32::from_le_bytes(word);
+                }
+                assert_eq!(core::xattr_hash::entry_hash(name, value), Some(hash));
+            }
+        }
+        assert_eq!(core::xattr_hash::block_hash(&[1, 0, 2]), Some(0));
+        assert_eq!(core::xattr_hash::block_hash(&[1, 65536, 2]), Some(2));
+        let img = fixture("xattr-lifecycle-hashes", true);
+        let (_, _, seed) = metadata(&img);
+        let block = pointer(&img, 12) as usize;
+        let external = xattr::parse_block(
+            &img[block * 4096..(block + 1) * 4096],
+            block as u64,
+            seed,
+            true,
+            false,
+            le32(&img, 1024),
+        )
+        .unwrap();
+        for i in 0..external.entries().len() {
+            let (_, name) = external.entries().name(i).unwrap();
+            let ValueRef::Bytes(value) = external.entries().value(i).unwrap() else {
+                panic!("local")
+            };
+            assert_eq!(
+                core::xattr_hash::entry_hash(name, value),
+                Some(external.entries().metadata(i).unwrap().hash)
+            );
+        }
+    }
+    #[test]
+    fn packing_uses_both_storage_areas_at_the_exact_capacity_boundary() {
+        let mut values = Store::new();
+        for (name, len) in [(b"a", 40), (b"b", 24), (b"c", 24), (b"d", 3980)] {
+            values = set(values, 1, name, &vec![name[0]; len], 0);
+        }
+        let mut inode = vec![0; 256];
+        inode[128..130].copy_from_slice(&32u16.to_le_bytes());
+        let packed = core::xattr_pack::encode(&values, &inode, 55, 0x12345678, 100).unwrap();
+        let (body, external) = packed.into_parts();
+        let body = xattr::parse_body(&body, false, 100).unwrap();
+        assert_eq!(body.entry_table().unwrap().len(), 2);
+        let bytes = external.unwrap();
+        let external = xattr::parse_block(&bytes, 55, 0x12345678, true, false, 100).unwrap();
+        assert_eq!(external.entries().len(), 2);
+        assert!(body.entry_table().unwrap().find(1, b"b").is_some());
+        assert!(body.entry_table().unwrap().find(1, b"c").is_some());
+        let too_large = set(Store::new(), 1, b"d", &[1; 4080], 0);
+        assert!(core::xattr_pack::encode(&too_large, &inode, 55, 0, 100).is_none());
+    }
+    #[test]
+    fn create_resize_reuse_shrink_empty_and_remove_update_storage_and_sector_accounting() {
+        let img = fixture("xattr-lifecycle-storage", false);
+        let (_, group, _) = metadata(&img);
+        let acl = attribute(&img, 2, b"");
+        let free = le32(&img, 1036);
+        let count =
+            core::inode_blocks::decode(inode_bytes(&img, group.inode_table, 12), 4096, false)
+                .unwrap();
+        assert_eq!(pointer(&img, 12), 0);
+        let (grown, _) = update(&img, b"note", Some(&[0x43; 512]), 2, &named(), false);
+        let block = pointer(&grown, 12);
+        assert!(block > 0);
+        assert_eq!(le32(&grown, 1036), free - 1);
+        assert_eq!(
+            core::inode_blocks::decode(inode_bytes(&grown, group.inode_table, 12), 4096, false),
+            Some(count + 8)
+        );
+        let (resized, _) = update(&grown, b"note", Some(&[0x44; 1000]), 2, &named(), false);
+        assert_eq!(pointer(&resized, 12), block);
+        assert_eq!(le32(&resized, 1036), free - 1);
+        let (shrunk, _) = update(&resized, b"note", Some(b"x"), 2, &named(), false);
+        assert_eq!(pointer(&shrunk, 12), 0);
+        assert_eq!(le32(&shrunk, 1036), free);
+        assert_eq!(
+            core::inode_blocks::decode(inode_bytes(&shrunk, group.inode_table, 12), 4096, false),
+            Some(count)
+        );
+        let (empty, _) = update(&shrunk, b"empty", Some(b""), 1, &named(), false);
+        assert_eq!(value(&empty, 12, b"empty"), Some(Vec::new()));
+        let (removed, _) = update(&empty, b"empty", None, 0, &named(), false);
+        assert_eq!(value(&removed, 12, b"empty"), None);
+        let (last, _) = update(&removed, b"note", None, 0, &named(), false);
+        assert_eq!(value(&last, 12, b"note"), None);
+        assert_eq!(attribute(&last, 2, b""), acl);
+        assert_eq!(le32(&last, 1036), free);
+        let linux = linux_check("xattr-lifecycle-storage-final", &last);
+        assert_eq!(value(&linux, 12, b"note"), None);
+    }
+    #[test]
+    fn first_attribute_promotes_only_ext_attr_and_journals_the_feature_with_the_inode() {
+        let img = image();
+        assert_eq!(le32(&img, 1116) & 8, 0);
+        let (after, cuts) = update(&img, b"first", Some(b"new"), 1, &owner(), true);
+        assert_eq!(le32(&after, 1116), le32(&img, 1116) | 8);
+        assert_eq!(value(&after, 12, b"first"), Some(b"new".to_vec()));
+        for (committed, cut) in cuts {
+            let recovered = recover(cut);
+            assert_eq!(
+                value(&recovered, 12, b"first"),
+                committed.then(|| b"new".to_vec())
+            );
+        }
+        let linux = linux_check("xattr-lifecycle-promoted", &after);
+        assert_eq!(value(&linux, 12, b"first"), Some(b"new".to_vec()));
+    }
+    #[test]
+    fn shared_block_copy_on_write_preserves_peer_and_recovers_every_writer_cut() {
+        let img = shared("xattr-lifecycle-cow");
+        let old = pointer(&img, 12);
+        let (_, group, _) = metadata(&img);
+        let peer = inode_bytes(&img, group.inode_table, 13).to_vec();
+        let free = le32(&img, 1036);
+        let (after, cuts) = update(&img, b"large", Some(&[0x67; 700]), 2, &named(), true);
+        let new = pointer(&after, 12);
+        assert_ne!(new, old);
+        assert!(new > 0);
+        assert_eq!(le32(&after, 1036), free - 1);
+        assert_eq!(value(&after, 13, b"large"), Some(vec![0x59; 512]));
+        assert_eq!(inode_bytes(&after, group.inode_table, 13), peer);
+        assert_eq!(
+            &after[old as usize * 4096 + 32..(old as usize + 1) * 4096],
+            &img[old as usize * 4096 + 32..(old as usize + 1) * 4096]
+        );
+        assert_eq!(le32(&after, old as usize * 4096 + 4), 1);
+        let mut linux_cut = None;
+        for (committed, cut) in cuts {
+            if committed && linux_cut.is_none() {
+                linux_cut = Some(cut.clone());
+            }
+            let recovered = recover(cut);
+            assert_eq!(
+                value(&recovered, 12, b"large"),
+                Some(if committed {
+                    vec![0x67; 700]
+                } else {
+                    vec![0x59; 512]
+                })
+            );
+            assert_eq!(value(&recovered, 13, b"large"), Some(vec![0x59; 512]));
+            assert_eq!(
+                le32(&recovered, 1036),
+                if committed { free - 1 } else { free }
+            );
+        }
+        let linux = linux_check("xattr-lifecycle-cow-cut", &linux_cut.unwrap());
+        assert_eq!(value(&linux, 12, b"large"), Some(vec![0x67; 700]));
+        assert_eq!(value(&linux, 13, b"large"), Some(vec![0x59; 512]));
+    }
+    #[test]
+    fn removing_a_shared_external_value_detaches_without_freeing_the_peers_block() {
+        let img = shared("xattr-lifecycle-shared-remove");
+        let old = pointer(&img, 12);
+        let free = le32(&img, 1036);
+        let (after, _) = update(&img, b"large", None, 0, &named(), false);
+        assert_eq!(pointer(&after, 12), 0);
+        assert_eq!(pointer(&after, 13), old);
+        assert_eq!(le32(&after, 1036), free);
+        assert_eq!(le32(&after, old as usize * 4096 + 4), 1);
+        assert_eq!(value(&after, 13, b"large"), Some(vec![0x59; 512]));
+        linux_check("xattr-lifecycle-shared-remove-final", &after);
+    }
+    #[test]
+    fn lifecycle_rejections_leave_the_source_untouched_and_noops_need_no_transaction() {
+        let img = fixture("xattr-lifecycle-reject", false);
+        let volume = allocation::parse(Snapshot::from_bytes(&img)).unwrap();
+        let node = allocated_inode::get(&volume, 12).unwrap();
+        for (name, data, flags) in [
+            (&b"note"[..], &b"new"[..], 1),
+            (b"absent", b"new", 2),
+            (b"note", b"new", 3),
+            (b"absent", b"new", 3),
+            (b"note", b"new", 4),
+            (b"", b"new", 0),
+            (b"bad\0name", b"new", 0),
+            (b"note", &[1; 4080], 0),
+        ] {
+            let grant = acl_access::authorize(&node, &named(), &[], 2).unwrap();
+            assert!(update::set_user(grant, name, data, flags, 123, 0).is_err());
+        }
+        let grant = acl_access::authorize(&node, &named(), &[], 2).unwrap();
+        assert!(matches!(
+            update::set_user(grant, b"note", b"before7", 2, 123, 0),
+            Ok(None)
+        ));
+        let read = acl_access::authorize(&node, &owner(), &[0], 4).unwrap();
+        assert!(matches!(
+            update::set_user(read, b"note", b"new", 0, 123, 0),
+            Err(update::Error::Permission)
+        ));
+        let grant = acl_access::authorize(&node, &named(), &[], 2).unwrap();
+        assert!(matches!(
+            update::remove_user(grant, b"absent", 123, 0),
+            Err(update::Error::Values(StoreError::Missing))
+        ));
+        assert_eq!(attribute(&img, 1, b"note"), b"before7");
+        assert_eq!(pointer(&img, 12), 0);
+    }
+    #[test]
+    fn rebuilding_an_aliased_input_preserves_the_acl_and_separates_its_value_storage() {
+        let mut img = fixture("xattr-lifecycle-alias", false);
+        let (_, group, seed) = metadata(&img);
+        let raw = inode_bytes(&img, group.inode_table, 12);
+        let body = xattr::parse_body(raw, false, le32(&img, 1024)).unwrap();
+        let table = body.entry_table().unwrap();
+        let note = table.metadata(table.find(1, b"note").unwrap()).unwrap();
+        let acl = table.metadata(table.find(2, b"").unwrap()).unwrap();
+        let at = group.inode_table as usize * 4096 + 11 * 256;
+        img[at + note.position + 2..at + note.position + 4]
+            .copy_from_slice(&((acl.value_offset - 164) as u16).to_le_bytes());
+        seal_inode_image(&mut img, group.inode_table, 12, seed);
+        let old_acl = attribute(&img, 2, b"");
+        let (after, _) = update(
+            &img,
+            b"note",
+            Some(b"rebuilt-longer-value"),
+            2,
+            &named(),
+            false,
+        );
+        assert_eq!(attribute(&after, 2, b""), old_acl);
+        assert_eq!(
+            value(&after, 12, b"note"),
+            Some(b"rebuilt-longer-value".to_vec())
+        );
+        linux_check("xattr-lifecycle-alias-result", &after);
+    }
+    #[test]
+    fn directory_user_xattrs_preserve_the_namespace_and_the_journal_inode_in_the_same_block() {
+        let img = image();
+        let volume = allocation::parse(Snapshot::from_bytes(&img)).unwrap();
+        let node = allocated_inode::get(&volume, 2).unwrap();
+        let grant = acl_access::authorize(&node, &owner(), &[0], 2).unwrap();
+        let candidate = ok(update::set_user(grant, b"directory", b"value", 1, 123, 0)).unwrap();
+        let (after, _) = drive(&img, candidate, false);
+        let (_, group, _) = metadata(&img);
+        assert_eq!(
+            inode_bytes(&after, group.inode_table, 8),
+            inode_bytes(&img, group.inode_table, 8)
+        );
+        assert_eq!(value(&after, 2, b"directory"), Some(b"value".to_vec()));
+        linux_check("xattr-lifecycle-directory", &after);
+    }
+    #[test]
+    fn lifecycle_accounting_composes_with_64bit_descriptors_stored_seeds_and_huge_units() {
+        for wide in [false, true] {
+            for huge in [false, true] {
+                let prefix = format!("xattr-lifecycle-formats-{wide}-{huge}");
+                let path = format!("build/{prefix}.img");
+                let features = format!(
+                    "none,has_journal,extent,filetype,sparse_super,large_file,extra_isize,metadata_csum,metadata_csum_seed{}{}",
+                    if wide { ",64bit" } else { "" },
+                    if huge { ",huge_file" } else { "" }
+                );
+                super::group64_tests::command(
+                    "MKE2FS",
+                    &[
+                        "-q",
+                        "-F",
+                        "-t",
+                        "ext4",
+                        "-b",
+                        "4096",
+                        "-I",
+                        "256",
+                        "-O",
+                        &features,
+                        "-E",
+                        "lazy_itable_init=0,lazy_journal_init=0",
+                        &path,
+                        "16384",
+                    ],
+                    false,
+                );
+                super::group64_tests::command(
+                    "DEBUGFS",
+                    &["-w", "-R", "write build/fixture-file.bin /payload", &path],
+                    false,
+                );
+                let mut img = std::fs::read(&path).unwrap();
+                let (_, group, seed) = metadata(&img);
+                let at = group.inode_table as usize * 4096 + 11 * 256;
+                if huge {
+                    let sectors = le32(&img, at + 28);
+                    assert_eq!(sectors % 8, 0);
+                    img[at + 28..at + 32].copy_from_slice(&(sectors / 8).to_le_bytes());
+                    let flags = le32(&img, at + 32) | core::inode_blocks::HUGE_FLAG;
+                    img[at + 32..at + 36].copy_from_slice(&flags.to_le_bytes());
+                    seal_inode_image(&mut img, group.inode_table, 12, seed);
+                }
+                let sectors = core::inode_blocks::decode(
+                    inode_bytes(&img, group.inode_table, 12),
+                    4096,
+                    huge,
+                )
+                .unwrap();
+                let free = le32(&img, 1036);
+                let (after, _) = update(&img, b"storage", Some(&[0x79; 512]), 1, &owner(), false);
+                assert_eq!(
+                    core::inode_blocks::decode(
+                        inode_bytes(&after, group.inode_table, 12),
+                        4096,
+                        huge
+                    ),
+                    Some(sectors + 8)
+                );
+                assert_eq!(le32(&after, 1036), free - 1);
+                let (removed, _) = update(&after, b"storage", None, 0, &owner(), false);
+                assert_eq!(pointer(&removed, 12), 0);
+                assert_eq!(le32(&removed, 1036), free);
+                assert_eq!(
+                    core::inode_blocks::decode(
+                        inode_bytes(&removed, group.inode_table, 12),
+                        4096,
+                        huge
+                    ),
+                    Some(sectors)
+                );
+                linux_check(&prefix, &removed);
+                let _ = std::fs::remove_file(path);
+            }
+        }
+    }
+    #[test]
+    fn allocation_accounting_materializes_the_logical_lazy_bitmap_and_preserves_other_bits() {
+        for wide in [false, true] {
+            let path = format!("build/xattr-lifecycle-lazy-{wide}.img");
+            let features = format!(
+                "none,has_journal,extent,filetype,sparse_super,large_file,extra_isize,metadata_csum{}",
+                if wide { ",64bit" } else { "" }
+            );
+            super::group64_tests::command(
+                "MKE2FS",
+                &[
+                    "-q",
+                    "-F",
+                    "-t",
+                    "ext4",
+                    "-b",
+                    "4096",
+                    "-I",
+                    "256",
+                    "-N",
+                    "16384",
+                    "-O",
+                    &features,
+                    "-E",
+                    "lazy_itable_init=0,lazy_journal_init=0",
+                    &path,
+                    "106496",
+                ],
+                false,
+            );
+            let mut img = std::fs::read(&path).unwrap();
+            let width = if wide { 64 } else { 32 };
+            let (_, _, seed) = metadata(&img);
+            let descriptor = 4096 + width;
+            assert_ne!(
+                core::bytes::read_le16(&img, descriptor + 18).unwrap() & 2,
+                0
+            );
+            let bitmap = le32(&img, descriptor) as usize;
+            img[bitmap * 4096..(bitmap + 1) * 4096].fill(0xa5);
+            // The stale physical bitmap is outside the lazy group's source authority.
+            let volume = allocation::parse(Snapshot::from_bytes(&img)).unwrap();
+            let meta = volume.index().get(1).unwrap();
+            let logical = meta.bitmaps().0.raw_image();
+            let block = (32768..65536)
+                .find(|b| volume.census().role_of(*b).unwrap().kind == 0)
+                .unwrap();
+            let bit = block % 32768;
+            let patches = core::xattr_block_update::accounting(&volume, block, true).unwrap();
+            let shadow = volume.index().source().overlay(&patches).unwrap();
+            let index = core::group_index::parse(shadow).unwrap();
+            let updated = index.get(1).unwrap();
+            let mut expected = logical.to_vec();
+            expected[bit as usize / 8] |= 1 << (bit % 8);
+            assert_eq!(updated.bitmaps().0.raw_image(), expected);
+            assert_eq!(
+                core::bytes::read_le16(updated.descriptor(), 18).unwrap() & 2,
+                0
+            );
+            assert_eq!(
+                updated.bitmaps().0.free_count() + 1,
+                meta.bitmaps().0.free_count()
+            );
+            assert_eq!(
+                le32(patches.get(0).unwrap().as_slice(), 1036) + 1,
+                le32(&img, 1036)
+            );
+            assert_eq!(
+                core::crc::crc32c(seed, updated.bitmaps().0.raw_image()) as u16,
+                core::bytes::read_le16(updated.descriptor(), 24).unwrap()
+            );
+            let _ = std::fs::remove_file(path);
+        }
+    }
+    #[test]
+    fn generated_xattr_padding_and_hashes_are_checked_beyond_structural_parsing() {
+        let values = set(Store::new(), 1, b"a", &[0x77; 201], 0);
+        let mut inode = vec![0; 256];
+        inode[128..130].copy_from_slice(&32u16.to_le_bytes());
+        let packed = core::xattr_pack::encode(&values, &inode, 55, 0x12345678, 100).unwrap();
+        let (_, external) = packed.into_parts();
+        let raw = external.unwrap();
+        let original = xattr::parse_block(&raw, 55, 0x12345678, true, false, 100).unwrap();
+        assert!(core::xattr_canonical::check(original.entries(), true));
+        let e = original.entries().metadata(0).unwrap();
+        for byte in [
+            e.position + 16 + e.name_length,
+            e.value_offset + e.value_size as usize,
+            e.position + 12,
+            12,
+        ] {
+            let mut corrupt = raw.clone();
+            corrupt[byte] ^= 0x91;
+            let checksum = xattr::checksum(&corrupt, 55, 0x12345678).unwrap();
+            corrupt[16..20].copy_from_slice(&checksum.to_le_bytes());
+            let parsed = xattr::parse_block(&corrupt, 55, 0x12345678, true, false, 100).unwrap();
+            assert!(
+                !core::xattr_canonical::check(parsed.entries(), true),
+                "padding/hash at {byte}"
+            );
+        }
     }
 }
