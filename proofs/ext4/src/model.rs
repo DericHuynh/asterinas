@@ -285,3 +285,7 @@ pub mod xattr_transaction;
 pub mod xattr_commit;
 
 pub mod acl_update;
+
+pub mod acl_transform;
+pub mod acl_chmod;
+pub mod acl_inherit;

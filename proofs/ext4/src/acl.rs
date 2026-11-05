@@ -117,6 +117,9 @@ impl<'a> Acl<'a> {
     pub open spec fn wf(&self) -> bool { valid(self.view()) }
     #[verifier::type_invariant]
     spec fn invariant(self) -> bool { self.wf() }
+    pub fn as_slice(&self) -> (r: &[u8]) ensures self.wf(), r@ == self.view().raw {
+        proof { use_type_invariant(self); } self.raw
+    }
     pub fn count(&self) -> (r: usize) ensures self.wf(), r == self.view().entries.len() { proof { use_type_invariant(self); } self.entries.len() }
     pub fn entry(&self, index: usize) -> (r: Option<Entry>)
         ensures self.wf(), match r { Some(e) => index < self.view().entries.len() && e == self.view().entries[index as int], None => index >= self.view().entries.len() },

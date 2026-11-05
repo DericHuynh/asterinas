@@ -42,7 +42,7 @@ impl<'n, 'v, 'a> Authorization<'n, 'v, 'a> {
         && self.kind == self.view().kind && self.in_group == self.view().in_group }
     #[verifier::type_invariant]
     spec fn invariant(self) -> bool { self.wf() }
-    fn release(self) -> (r: (&'n AllocatedInode<'v, 'a>, Credentials, Kind, bool, Ghost<AuthorizationView>))
+    pub(crate) fn release(self) -> (r: (&'n AllocatedInode<'v, 'a>, Credentials, Kind, bool, Ghost<AuthorizationView>))
         ensures self.wf(), authorized(r.4@), r.4@ == self.view(), r.0.wf(), r.0.view() == self.view().node,
             r.1 == self.view().credentials, r.2 == self.view().kind, r.3 == self.view().in_group,
     { proof { use_type_invariant(&self); reveal(authorized); } (self.node, self.credentials, self.kind, self.in_group, self.certificate) }
@@ -97,7 +97,7 @@ pub open spec fn unchanged(a: AuthorizationView, input: Seq<u8>) -> bool {
 pub struct UpdateView { pub authority: AuthorizationView, pub input: Seq<u8>, pub plan: Plan, pub storage: StorageView }
 #[verifier::opaque]
 pub open spec fn valid(v: UpdateView) -> bool {
-    planned(v.authority, v.input, v.plan) && storage::valid(v.storage)
+    planned(v.authority, v.input, v.plan) && storage::valid(v.storage) && !v.storage.chmod
         && !feature_policy::readonly(v.authority.node.volume.index.source.subrange(1024, 2048))
         && v.storage.node == v.authority.node && v.storage.desired == v.plan.desired && v.storage.mode.mode == v.plan.mode
 }

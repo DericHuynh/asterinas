@@ -70,4 +70,65 @@ pub proof fn permission_changes_preserve_every_unrelated_inode_byte(v: Change, i
     ensures v.after[i] == v.before[i],
 { reveal(valid); }
 
+
+// Unlike `valid`, this codec admits all permission and special bits used by
+// chmod. Its output is still only a byte image; a source-bound operation must
+// independently prove ownership and scoped capability policy before using it.
+pub open spec fn chmod_allowed(old: u16, next: u16) -> bool {
+    old & !0o7777u16 == next & !0o7777u16
+}
+#[verifier::opaque]
+pub open spec fn chmod_valid(v: Change) -> bool {
+    v.before.len() == 256 && v.after.len() == 256
+        && inode::metadata_accepted_with_features(v.before, v.number, v.inodes, v.seed, v.huge)
+        && inode::metadata_accepted_with_features(v.after, v.number, v.inodes, v.seed, v.huge)
+        && chmod_allowed(bytes::le16(v.before, 0) as u16, v.mode) && bytes::le16(v.after, 0) == v.mode
+        && framed(v.before, v.after)
+        && (bytes::le16(v.before, 0) == v.mode ==> v.after == v.before)
+}
+fn check_chmod(before: &[u8], after: &[u8], mode: u16, number: u32, inodes: u32, seed: u32, huge: bool) -> (r: bool)
+    ensures r ==> chmod_valid(Change { before: before@, after: after@, mode, number, inodes, seed, huge }),
+{
+    hide(inode::checksum);
+    if before.len() != 256 || after.len() != 256 { return false; }
+    if inode::parse_metadata_with_features(before, number, inodes, seed, huge).is_none()
+        || inode::parse_metadata_with_features(after, number, inodes, seed, huge).is_none() { return false; }
+    let old = bytes::read_le16(before, 0).unwrap();
+    if old & !0o7777u16 != mode & !0o7777u16 || bytes::read_le16(after, 0).unwrap() != mode { return false; }
+    if old == mode && !bytes::equal(before, after) { return false; }
+    let mut i = 0usize;
+    while i < 256
+        invariant before.len() == 256, after.len() == 256, i <= 256,
+            forall|j: int| 0 <= j < i && !(0 <= j < 2) && !(124 <= j < 126) && !(130 <= j < 132) ==> #[trigger] after@[j] == before@[j],
+        decreases 256 - i,
+    { if !(0 <= i && i < 2) && !(124 <= i && i < 126) && !(130 <= i && i < 132) && after[i] != before[i] { return false; } i += 1; }
+    assert(chmod_valid(Change { before: before@, after: after@, mode, number, inodes, seed, huge })) by { reveal(chmod_valid); }
+    true
+}
+pub fn encode_chmod(before: &[u8], mode: u16, number: u32, inodes: u32, seed: u32, huge: bool) -> (r: Option<Vec<u8>>)
+    ensures match r { Some(after) => chmod_valid(Change { before: before@, after: after@, mode, number, inodes, seed, huge }), None => true },
+{
+    hide(inode::checksum);
+    if before.len() != 256 { return None; }
+    let old = bytes::read_le16(before, 0).unwrap();
+    let mut after = Vec::new(); let mut i = 0usize;
+    while i < 256 invariant before.len() == 256, i <= 256, after@ == before@.take(i as int), decreases 256 - i,
+    { after.push(before[i]); assert(after@ =~= before@.take(i as int + 1)); i += 1; }
+    if old != mode {
+        let word = bytes::encode_le16(mode); bytes::write_bytes(after.as_mut_slice(), 0, &word);
+        let crc = inode::calculated_checksum(&after, number, seed).unwrap(); let word = bytes::encode_le32(crc);
+        bytes::write_bytes(after.as_mut_slice(), 124, &word[..2]); bytes::write_bytes(after.as_mut_slice(), 130, &word[2..]);
+    }
+    if !check_chmod(before, &after, mode, number, inodes, seed, huge) { return None; }
+    Some(after)
+}
+pub proof fn chmod_changes_preserve_file_type(v: Change)
+    requires chmod_valid(v),
+    ensures bytes::le16(v.after, 0) as u16 & !0o7777u16 == bytes::le16(v.before, 0) as u16 & !0o7777u16,
+{ reveal(chmod_valid); }
+pub proof fn chmod_changes_preserve_every_unrelated_inode_byte(v: Change, i: int)
+    requires chmod_valid(v), 0 <= i < 256, !(0 <= i < 2), !(124 <= i < 126), !(130 <= i < 132),
+    ensures v.after[i] == v.before[i],
+{ reveal(chmod_valid); }
+
 }

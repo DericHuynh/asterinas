@@ -7362,7 +7362,7 @@ mod xattr_lifecycle_updates {
         let _ = std::fs::remove_file(path);
         result
     }
-    fn shared(prefix: &str) -> Vec<u8> {
+    pub(super) fn shared(prefix: &str) -> Vec<u8> {
         let mut img = fixture(prefix, true);
         let path = format!("build/{prefix}-shared.img");
         let data = format!("build/{prefix}-shared.bin");
@@ -8518,5 +8518,880 @@ mod acl_xattr_updates {
                 let _ = std::fs::remove_file(path);
             }
         }
+    }
+}
+
+// Execute the emitted ACL transformations; native checks do not discharge proofs.
+mod acl_mode_transforms {
+    use core::{acl, acl_transform, acl_xattr};
+
+    fn disk(entries: &[(u16, u16, u32)]) -> Vec<u8> {
+        let mut input = 2u32.to_le_bytes().to_vec();
+        for (tag, permissions, id) in entries {
+            input.extend(tag.to_le_bytes());
+            input.extend(permissions.to_le_bytes());
+            input.extend(id.to_le_bytes());
+        }
+        acl_xattr::decode(&input).unwrap().as_slice().to_vec()
+    }
+
+    fn entries(acl: &acl::Acl<'_>) -> Vec<(u16, u8, u32)> {
+        (0..acl.count())
+            .map(|i| {
+                let e = acl.entry(i).unwrap();
+                (e.tag, e.permissions, e.id)
+            })
+            .collect()
+    }
+
+    fn extended() -> Vec<u8> {
+        disk(&[
+            (1, 6, u32::MAX),
+            (2, 7, 1234),
+            (2, 5, 9876),
+            (4, 3, u32::MAX),
+            (8, 6, 4567),
+            (16, 5, u32::MAX),
+            (32, 2, u32::MAX),
+        ])
+    }
+
+    #[test]
+    fn chmod_updates_owner_mask_other_and_preserves_named_entries_ids_and_group_obj() {
+        let raw = extended();
+        let before = raw.clone();
+        let original = acl::parse(&raw).unwrap();
+        for bits in 0u16..=0o777 {
+            let requested = 0o106000 | bits;
+            let changed = acl_transform::chmod(&original, requested).unwrap();
+            let parsed = changed.parsed().unwrap();
+            assert_eq!(changed.mode(), requested);
+            assert!(changed.extended());
+            assert_eq!(
+                entries(&parsed),
+                vec![
+                    (1, ((bits >> 6) & 7) as u8, 0),
+                    (2, 7, 1234),
+                    (2, 5, 9876),
+                    (4, 3, 0),
+                    (8, 6, 4567),
+                    (16, ((bits >> 3) & 7) as u8, 0),
+                    (32, (bits & 7) as u8, 0),
+                ]
+            );
+            let repeated = acl_transform::chmod(&parsed, requested).unwrap();
+            assert_eq!(repeated.as_slice(), changed.as_slice());
+        }
+        assert_eq!(raw, before, "chmod transforms a clone of the source ACL");
+    }
+
+    #[test]
+    fn chmod_uses_group_obj_without_a_mask_and_retains_mask_only_acls() {
+        let basic = disk(&[(1, 6, 0), (4, 3, 0), (32, 2, 0)]);
+        let basic_acl = acl::parse(&basic).unwrap();
+        let masked = disk(&[(1, 6, 0), (4, 3, 0), (16, 5, 0), (32, 2, 0)]);
+        let masked_acl = acl::parse(&masked).unwrap();
+        for bits in 0u16..=0o777 {
+            let basic_changed = acl_transform::chmod(&basic_acl, bits).unwrap();
+            assert!(!basic_changed.extended());
+            assert_eq!(
+                entries(&basic_changed.parsed().unwrap()),
+                vec![
+                    (1, ((bits >> 6) & 7) as u8, 0),
+                    (4, ((bits >> 3) & 7) as u8, 0),
+                    (32, (bits & 7) as u8, 0),
+                ]
+            );
+            let masked_changed = acl_transform::chmod(&masked_acl, bits).unwrap();
+            assert!(masked_changed.extended());
+            assert_eq!(
+                entries(&masked_changed.parsed().unwrap()),
+                vec![
+                    (1, ((bits >> 6) & 7) as u8, 0),
+                    (4, 3, 0),
+                    (16, ((bits >> 3) & 7) as u8, 0),
+                    (32, (bits & 7) as u8, 0),
+                ]
+            );
+        }
+    }
+
+    #[test]
+    fn inherited_extended_acl_intersects_requested_classes_without_changing_named_permissions() {
+        let raw = extended();
+        let before = raw.clone();
+        let default = acl::parse(&raw).unwrap();
+        for bits in 0u16..=0o777 {
+            let requested = 0o046000 | bits;
+            let inherited = acl_transform::inherit(&default, requested).unwrap();
+            let parsed = inherited.parsed().unwrap();
+            assert!(inherited.extended());
+            let owner = 6 & ((bits >> 6) & 7) as u8;
+            let group = 5 & ((bits >> 3) & 7) as u8;
+            let other = 2 & (bits & 7) as u8;
+            assert_eq!(
+                inherited.mode(),
+                (requested & !0o777)
+                    | (u16::from(owner) << 6)
+                    | (u16::from(group) << 3)
+                    | u16::from(other)
+            );
+            assert_eq!(
+                entries(&parsed),
+                vec![
+                    (1, owner, 0),
+                    (2, 7, 1234),
+                    (2, 5, 9876),
+                    (4, 3, 0),
+                    (8, 6, 4567),
+                    (16, group, 0),
+                    (32, other, 0),
+                ]
+            );
+            for (uid, groups) in [
+                (1000, vec![]),
+                (1234, vec![]),
+                (9876, vec![]),
+                (2000, vec![200]),
+                (2000, vec![4567]),
+                (2000, vec![200, 4567]),
+                (3000, vec![]),
+            ] {
+                for request in 0..=7 {
+                    assert!(
+                        !parsed.allows(1000, 200, uid, &groups, request)
+                            || default.allows(1000, 200, uid, &groups, request),
+                        "inheritance broadened source rights: mode={bits:o}, uid={uid}, request={request}"
+                    );
+                }
+            }
+        }
+        assert_eq!(
+            raw, before,
+            "the child's default ACL remains the original bytes"
+        );
+    }
+
+    #[test]
+    fn inherited_basic_acl_intersects_group_obj_and_can_fold_to_mode() {
+        let raw = disk(&[(1, 6, 0), (4, 3, 0), (32, 2, 0)]);
+        let default = acl::parse(&raw).unwrap();
+        for bits in 0u16..=0o777 {
+            let requested = 0o102000 | bits;
+            let inherited = acl_transform::inherit(&default, requested).unwrap();
+            assert!(!inherited.extended());
+            let owner = 6 & ((bits >> 6) & 7) as u8;
+            let group = 3 & ((bits >> 3) & 7) as u8;
+            let other = 2 & (bits & 7) as u8;
+            assert_eq!(
+                inherited.mode(),
+                (requested & !0o777)
+                    | (u16::from(owner) << 6)
+                    | (u16::from(group) << 3)
+                    | u16::from(other)
+            );
+            assert_eq!(
+                entries(&inherited.parsed().unwrap()),
+                vec![(1, owner, 0), (4, group, 0), (32, other, 0)]
+            );
+        }
+    }
+
+    #[test]
+    fn mask_only_inheritance_preserves_group_obj_and_cannot_fold_even_when_mode_is_zero() {
+        let raw = disk(&[(1, 7, 0), (4, 7, 0), (16, 6, 0), (32, 7, 0)]);
+        let default = acl::parse(&raw).unwrap();
+        let inherited = acl_transform::inherit(&default, 0o040000).unwrap();
+        assert!(inherited.extended());
+        assert_eq!(inherited.mode(), 0o040000);
+        assert_eq!(
+            entries(&inherited.parsed().unwrap()),
+            vec![(1, 0, 0), (4, 7, 0), (16, 0, 0), (32, 0, 0)]
+        );
+        assert_eq!(default.entry(2).unwrap().permissions, 6);
+    }
+}
+
+// ACL chmod uses the complete writer on the same Linux-created fixtures.
+mod acl_chmod_updates {
+    use core::{
+        access, acl_access, acl_chmod as chmod, acl_transform,
+        acl_update::{self as update, Credentials, Kind},
+        acl_xattr, allocated_inode, allocation,
+        recovery_request::Completion,
+        snapshot::Snapshot,
+        xattr_inode,
+        xattr_table::ValueRef,
+    };
+
+    use super::{
+        inline_xattr_updates::{command, fixture, recover},
+        *,
+    };
+
+    fn owner() -> Credentials {
+        Credentials {
+            fsuid: 0,
+            fowner: false,
+            fsetid: false,
+        }
+    }
+    fn wire(entries: &[(u16, u16, u32)]) -> Vec<u8> {
+        let mut raw = 2u32.to_le_bytes().to_vec();
+        for (tag, bits, id) in entries {
+            raw.extend(tag.to_le_bytes());
+            raw.extend(bits.to_le_bytes());
+            raw.extend(id.to_le_bytes());
+        }
+        raw
+    }
+    fn mode(img: &[u8], number: u32) -> u16 {
+        let (_, group, _) = metadata(img);
+        core::bytes::read_le16(inode_bytes(img, group.inode_table, number), 0).unwrap()
+    }
+    fn set_mode(img: &mut [u8], number: u32, value: u16) {
+        let (_, group, seed) = metadata(img);
+        let at = group.inode_table as usize * 4096 + (number as usize - 1) * 256;
+        img[at..at + 2].copy_from_slice(&value.to_le_bytes());
+        seal_inode_image(img, group.inode_table, number, seed);
+    }
+    fn attribute(img: &[u8], number: u32, ns: u8, name: &[u8]) -> Option<Vec<u8>> {
+        let volume = allocation::parse(Snapshot::from_bytes(img)).unwrap();
+        let attrs = xattr_inode::inspect(volume.index(), number).unwrap();
+        match attrs.get(ns, name) {
+            Some(ValueRef::Bytes(raw)) => Some(raw.to_vec()),
+            None => None,
+            _ => panic!("local value"),
+        }
+    }
+    fn drive(
+        img: &[u8],
+        mut writer: core::writer_admission::CheckedWriter<'_, '_>,
+        cuts: bool,
+    ) -> (Vec<u8>, Vec<(bool, Vec<u8>)>) {
+        let mut stable = img.to_vec();
+        let mut snapshots = Vec::new();
+        let mut committed = false;
+        loop {
+            let pending = match writer.dispatch() {
+                Ok(pending) => pending,
+                Err(done) => {
+                    assert!(done.finished());
+                    break;
+                }
+            };
+            if let core::recovery_io::Command::Write { block, image } = pending.pending_command() {
+                if core::bytes::read_be32(image, 0) == Some(0xc03b3998)
+                    && core::bytes::read_be32(image, 4) == Some(2)
+                {
+                    committed = true;
+                }
+                stable[block as usize * 4096..(block as usize + 1) * 4096].copy_from_slice(image);
+                if cuts {
+                    snapshots.push((committed, stable.clone()));
+                }
+            }
+            writer = pending.finish_pending(Completion::Succeeded);
+        }
+        assert!(core::image_validation::inspect(Snapshot::from_bytes(&stable)).is_some());
+        (stable, snapshots)
+    }
+    fn apply(
+        img: &[u8],
+        number: u32,
+        requested: u16,
+        credentials: &Credentials,
+        groups: &[u32],
+        cuts: bool,
+    ) -> (Vec<u8>, Vec<(bool, Vec<u8>)>) {
+        let volume = allocation::parse(Snapshot::from_bytes(img)).unwrap();
+        let node = allocated_inode::get(&volume, number).unwrap();
+        let grant = chmod::authorize(&node, credentials, groups).expect("chmod owner/capability");
+        let candidate = match chmod::prepare(grant, requested, 123456789, 987654321) {
+            Ok(Some(candidate)) => candidate,
+            Ok(None) => return (img.to_vec(), Vec::new()),
+            Err(_) => panic!("chmod rejected"),
+        };
+        drive(
+            img,
+            candidate.begin().expect("full chmod writer admission"),
+            cuts,
+        )
+    }
+    fn set_acl(img: &[u8], number: u32, kind: Kind, raw: &[u8]) -> Vec<u8> {
+        let volume = allocation::parse(Snapshot::from_bytes(img)).unwrap();
+        let node = allocated_inode::get(&volume, number).unwrap();
+        let grant = update::authorize(&node, &owner(), &[0], kind).unwrap();
+        let candidate = match update::prepare(grant, raw, 123456788, 123456789) {
+            Ok(Some(candidate)) => candidate,
+            _ => panic!("fixture ACL mutation"),
+        };
+        drive(img, candidate.begin().unwrap(), false).0
+    }
+    fn linux(prefix: &str, img: &[u8]) -> Vec<u8> {
+        let path = format!("build/{prefix}.img");
+        std::fs::write(&path, img).unwrap();
+        let fsck = std::env::var("E2FSCK_BIN").unwrap_or_else(|_| "e2fsck".into());
+        command(&fsck, &["-fy", &path], true);
+        command(&fsck, &["-fn", &path], false);
+        let result = std::fs::read(&path).unwrap();
+        let _ = std::fs::remove_file(path);
+        result
+    }
+    fn named_allowed(img: &[u8], request: u8) -> bool {
+        let volume = allocation::parse(Snapshot::from_bytes(img)).unwrap();
+        let node = allocated_inode::get(&volume, 12).unwrap();
+        let credentials = access::Credentials {
+            fsuid: 1234,
+            in_inode_group: false,
+            dac_override: false,
+            dac_read_search: false,
+        };
+        acl_access::authorize(&node, &credentials, &[], request).is_some()
+    }
+
+    #[test]
+    fn chmod_without_an_acl_sets_special_bits_and_applies_group_fsetid_policy() {
+        let img = image();
+        assert_eq!(le32(&img, 1116) & 8, 0);
+        for in_group in [false, true] {
+            for fsetid in [false, true] {
+                let credentials = Credentials { fsetid, ..owner() };
+                let groups: &[u32] = if in_group { &[0] } else { &[] };
+                let (after, _) = apply(&img, 12, 0o7750, &credentials, groups, false);
+                assert_eq!(
+                    mode(&after, 12),
+                    if in_group || fsetid {
+                        0o107750
+                    } else {
+                        0o105750
+                    }
+                );
+                assert_eq!(attribute(&after, 12, 2, b""), None);
+                assert_eq!(le32(&after, 1116), le32(&img, 1116));
+                assert_eq!(le32(&after, 1036), le32(&img, 1036));
+                linux(&format!("acl-chmod-special-{in_group}-{fsetid}"), &after);
+            }
+        }
+    }
+
+    #[test]
+    fn chmod_changes_only_access_acl_owner_mask_other_and_keeps_default_and_other_values() {
+        let img = fixture("acl-chmod-preserve", true);
+        let before_acl = attribute(&img, 12, 2, b"").unwrap();
+        let before = core::acl::parse(&before_acl).unwrap();
+        let expected = acl_transform::chmod(&before, 0o100751).unwrap();
+        let (after, _) = apply(&img, 12, 0o751, &owner(), &[0], false);
+        assert_eq!(mode(&after, 12), 0o100751);
+        assert_eq!(
+            attribute(&after, 12, 2, b""),
+            Some(expected.as_slice().to_vec())
+        );
+        assert_eq!(attribute(&after, 12, 1, b"note"), Some(b"before7".to_vec()));
+        assert_eq!(attribute(&after, 12, 1, b"large"), Some(vec![0x59; 512]));
+        let acl = core::acl::parse(expected.as_slice()).unwrap();
+        assert_eq!(acl.entry(1).unwrap().id, 1234);
+        assert_eq!(acl.entry(1).unwrap().permissions, 2);
+        assert_eq!(acl.entry(2).unwrap().permissions, 0);
+        linux("acl-chmod-preserve-result", &after);
+
+        let access = wire(&[(1, 7, 0), (2, 6, 1234), (4, 5, 0), (16, 5, 0), (32, 1, 0)]);
+        let default = wire(&[(1, 7, 0), (2, 7, 4567), (4, 7, 0), (16, 7, 0), (32, 7, 0)]);
+        let directory = set_acl(&after, 2, Kind::Access, &access);
+        let directory = set_acl(&directory, 2, Kind::Default, &default);
+        let old_default = attribute(&directory, 2, 3, b"").unwrap();
+        let old_payload = attribute(&directory, 12, 2, b"").unwrap();
+        let (changed, _) = apply(&directory, 2, 0o1700, &owner(), &[0], false);
+        assert_eq!(mode(&changed, 2), 0o041700);
+        assert_eq!(attribute(&changed, 2, 3, b""), Some(old_default));
+        assert_eq!(attribute(&changed, 12, 2, b""), Some(old_payload));
+        linux("acl-chmod-directory-result", &changed);
+    }
+
+    #[test]
+    fn chmod_folds_a_basic_access_acl_but_retains_a_mask_only_access_acl() {
+        let path = "build/acl-chmod-basic.img";
+        let acl_path = "build/acl-chmod-basic.bin";
+        let raw = wire(&[(1, 6, 0), (4, 2, 0), (32, 0, 0)]);
+        std::fs::write(path, image()).unwrap();
+        std::fs::write(acl_path, raw).unwrap();
+        let debugfs = std::env::var("DEBUGFS_BIN").unwrap_or_else(|_| "debugfs".into());
+        for request in [
+            "feature ext_attr".to_string(),
+            format!("ea_set -f {acl_path} /payload system.posix_acl_access"),
+            "sif /payload mode 0100620".to_string(),
+        ] {
+            command(&debugfs, &["-w", "-R", &request, path], false);
+        }
+        let img = std::fs::read(path).unwrap();
+        assert!(attribute(&img, 12, 2, b"").is_some());
+        let (folded, _) = apply(&img, 12, 0o640, &owner(), &[0], false);
+        assert_eq!(mode(&folded, 12), 0o100640);
+        assert_eq!(attribute(&folded, 12, 2, b""), None);
+        linux("acl-chmod-basic-result", &folded);
+        let masked = wire(&[(1, 6, 0), (4, 7, 0), (16, 2, 0), (32, 0, 0)]);
+        let img = set_acl(&folded, 12, Kind::Access, &masked);
+        let (after, _) = apply(&img, 12, 0, &owner(), &[0], false);
+        assert_eq!(mode(&after, 12), 0o100000);
+        let raw = attribute(&after, 12, 2, b"").expect("MASK alone is extended");
+        let acl = core::acl::parse(&raw).unwrap();
+        assert_eq!(acl.entry(1).unwrap().permissions, 7);
+        assert_eq!(acl.entry(2).unwrap().permissions, 0);
+        linux("acl-chmod-mask-only-result", &after);
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_file(acl_path);
+    }
+
+    #[test]
+    fn chmod_owner_authority_is_distinct_from_acl_write_access_and_fsetid() {
+        let mut img = fixture("acl-chmod-authority", false);
+        assert!(named_allowed(&img, 2));
+        let volume = allocation::parse(Snapshot::from_bytes(&img)).unwrap();
+        let node = allocated_inode::get(&volume, 12).unwrap();
+        let named = Credentials {
+            fsuid: 1234,
+            fowner: false,
+            fsetid: false,
+        };
+        assert!(chmod::authorize(&node, &named, &[]).is_none());
+        let (_, group, seed) = metadata(&img);
+        let at = group.inode_table as usize * 4096 + 11 * 256;
+        img[at + 2..at + 4].copy_from_slice(&1000u16.to_le_bytes());
+        seal_inode_image(&mut img, group.inode_table, 12, seed);
+        let volume = allocation::parse(Snapshot::from_bytes(&img)).unwrap();
+        let node = allocated_inode::get(&volume, 12).unwrap();
+        assert!(chmod::authorize(&node, &owner(), &[]).is_none());
+        assert!(
+            chmod::authorize(
+                &node,
+                &Credentials {
+                    fsetid: true,
+                    ..owner()
+                },
+                &[]
+            )
+            .is_none()
+        );
+        let (after, _) = apply(
+            &img,
+            12,
+            0o2640,
+            &Credentials {
+                fowner: true,
+                ..owner()
+            },
+            &[],
+            false,
+        );
+        assert_eq!(
+            mode(&after, 12),
+            0o100640,
+            "FOWNER alone does not preserve requested SGID"
+        );
+        assert_eq!(
+            core::bytes::read_le16(inode_bytes(&after, group.inode_table, 12), 2),
+            Some(1000)
+        );
+        linux("acl-chmod-authority-result", &after);
+    }
+
+    #[test]
+    fn chmod_rejects_outside_mode_bits_readonly_sources_and_updates_ctime_for_unchanged_modes() {
+        let img = fixture("acl-chmod-invalid", false);
+        let volume = allocation::parse(Snapshot::from_bytes(&img)).unwrap();
+        let node = allocated_inode::get(&volume, 12).unwrap();
+        for requested in [0o10000, 0o100640, u16::MAX] {
+            let grant = chmod::authorize(&node, &owner(), &[0]).unwrap();
+            assert!(chmod::prepare(grant, requested, 1, 0).is_err());
+        }
+        let grant = chmod::authorize(&node, &owner(), &[0]).unwrap();
+        assert!(matches!(
+            chmod::prepare(grant, mode(&img, 12) & 0o7777, 1, 0),
+            Ok(Some(_))
+        ));
+        let (same, _) = apply(&img, 12, mode(&img, 12) & 0o7777, &owner(), &[0], false);
+        assert_eq!(mode(&same, 12), mode(&img, 12));
+        let (_, group, _) = metadata(&same);
+        let before = inode_bytes(&img, group.inode_table, 12);
+        let after = inode_bytes(&same, group.inode_table, 12);
+        assert_ne!(
+            core::inode_time_fields::get_time(before, core::inode_time_fields::Field::Ctime)
+                .unwrap()
+                .seconds,
+            core::inode_time_fields::get_time(after, core::inode_time_fields::Field::Ctime)
+                .unwrap()
+                .seconds
+        );
+        assert_eq!(le32(after, 36), le32(before, 36) + 1);
+        let mut readonly = img.clone();
+        let flags = le32(&readonly, 1124) | 0x1000;
+        readonly[1124..1128].copy_from_slice(&flags.to_le_bytes());
+        let checksum = core::crc::crc32c(0xffffffff, &readonly[1024..2044]);
+        readonly[2044..2048].copy_from_slice(&checksum.to_le_bytes());
+        let volume = allocation::parse(Snapshot::from_bytes(&readonly)).unwrap();
+        let node = allocated_inode::get(&volume, 12).unwrap();
+        let grant = chmod::authorize(&node, &owner(), &[0]).unwrap();
+        assert!(chmod::prepare(grant, 0o620, 1, 0).is_err());
+        let mut sgid = img.clone();
+        set_mode(&mut sgid, 12, 0o102620);
+        let (cleared, _) = apply(&sgid, 12, 0o2620, &owner(), &[], false);
+        assert_eq!(mode(&cleared, 12), 0o100620);
+    }
+
+    #[test]
+    fn every_chmod_writer_cut_recovers_mode_acl_rights_and_storage_together() {
+        let img = fixture("acl-chmod-crash", true);
+        let old = attribute(&img, 12, 2, b"").unwrap();
+        let before = core::acl::parse(&old).unwrap();
+        let expected = acl_transform::chmod(&before, 0o100640)
+            .unwrap()
+            .as_slice()
+            .to_vec();
+        let free = le32(&img, 1036);
+        let (after, cuts) = apply(&img, 12, 0o640, &owner(), &[0], true);
+        assert!(!cuts.is_empty());
+        assert_eq!(mode(&after, 12), 0o100640);
+        assert_eq!(attribute(&after, 12, 2, b""), Some(expected.clone()));
+        let mut committed = None;
+        for (done, cut) in cuts {
+            if done && committed.is_none() {
+                committed = Some(cut.clone());
+            }
+            let recovered = recover(cut);
+            assert_eq!(mode(&recovered, 12), if done { 0o100640 } else { 0o100620 });
+            assert_eq!(
+                attribute(&recovered, 12, 2, b""),
+                Some(if done { expected.clone() } else { old.clone() })
+            );
+            assert_eq!(
+                attribute(&recovered, 12, 1, b"note"),
+                Some(b"before7".to_vec())
+            );
+            assert_eq!(
+                attribute(&recovered, 12, 1, b"large"),
+                Some(vec![0x59; 512])
+            );
+            assert_eq!(named_allowed(&recovered, 2), !done);
+            assert_eq!(le32(&recovered, 1036), free);
+        }
+        let linux = linux("acl-chmod-crash-linux", &committed.unwrap());
+        assert_eq!(mode(&linux, 12), 0o100640);
+        assert_eq!(attribute(&linux, 12, 2, b""), Some(expected));
+    }
+    #[test]
+    fn unchanged_acl_chmod_retains_shared_storage_and_updates_only_the_target_inode() {
+        let img = super::xattr_lifecycle_updates::shared("acl-chmod-retained-shared");
+        let (_, group, _) = metadata(&img);
+        let old = le32(inode_bytes(&img, group.inode_table, 12), 104);
+        let peer = inode_bytes(&img, group.inode_table, 13).to_vec();
+        let block = img[old as usize * 4096..(old as usize + 1) * 4096].to_vec();
+        assert_eq!(le32(&block, 4), 2);
+        let volume = allocation::parse(Snapshot::from_bytes(&img)).unwrap();
+        let node = allocated_inode::get(&volume, 12).unwrap();
+        let attributes = xattr_inode::inspect(volume.index(), 12).unwrap();
+        let (body, external) = attributes.source_tables();
+        let canonical = (
+            body.map(|t| core::xattr_canonical::check(t, false)),
+            external.map(|t| core::xattr_canonical::check(t, true)),
+        );
+        // Linux permits a zero block sharing-hash hint. A retained block must
+        // not need rebuilding merely to normalize this optional hint.
+        assert_eq!(le32(&block, 12), 0);
+        assert_eq!(canonical, (Some(true), Some(false)));
+        let grant = chmod::authorize(&node, &owner(), &[0]).unwrap();
+        let candidate = match chmod::prepare(grant, 0o4620, 123456789, 0) {
+            Ok(Some(candidate)) => candidate,
+            Err(chmod::Error::Storage(core::xattr_transaction::Error::Admission)) => {
+                panic!("retained storage admission, input canonical={canonical:?}")
+            }
+            _ => panic!("retained shared storage, input canonical={canonical:?}"),
+        };
+        assert_eq!(
+            candidate.patches().len(),
+            1,
+            "no allocator or shared block write"
+        );
+        assert_ne!(candidate.patches().at(0).unwrap().block(), old);
+        let (after, cuts) = drive(&img, candidate.begin().unwrap(), true);
+        assert_eq!(mode(&after, 12), 0o104620);
+        assert_eq!(inode_bytes(&after, group.inode_table, 13), peer);
+        assert_eq!(
+            &after[old as usize * 4096..(old as usize + 1) * 4096],
+            block
+        );
+        assert_eq!(le32(&after, 1036), le32(&img, 1036));
+        for (committed, cut) in cuts {
+            let recovered = recover(cut);
+            assert_eq!(
+                mode(&recovered, 12),
+                if committed { 0o104620 } else { 0o100620 }
+            );
+            assert_eq!(inode_bytes(&recovered, group.inode_table, 13), peer);
+            assert_eq!(
+                &recovered[old as usize * 4096..(old as usize + 1) * 4096],
+                block
+            );
+        }
+        linux("acl-chmod-retained-shared-result", &after);
+    }
+}
+
+// Native tests for the source-bound creation/inheritance planner. The planner
+// grants no create/write authority and these tests do not claim child creation.
+mod acl_inheritance_plans {
+    use core::{acl, acl_inherit, acl_xattr, allocated_inode, allocation, snapshot::Snapshot};
+
+    use super::{inline_xattr_updates::command, *};
+
+    fn wire(entries: &[(u16, u16, u32)]) -> Vec<u8> {
+        let mut raw = 2u32.to_le_bytes().to_vec();
+        for (tag, permissions, id) in entries {
+            raw.extend(tag.to_le_bytes());
+            raw.extend(permissions.to_le_bytes());
+            raw.extend(id.to_le_bytes());
+        }
+        raw
+    }
+    fn fixture(prefix: &str, raw: &[u8]) -> Vec<u8> {
+        let path = format!("build/{prefix}.img");
+        let acl_path = format!("build/{prefix}-default.bin");
+        std::fs::write(&path, image()).unwrap();
+        std::fs::write(&acl_path, raw).unwrap();
+        let debugfs = std::env::var("DEBUGFS_BIN").unwrap_or_else(|_| "debugfs".into());
+        command(&debugfs, &["-w", "-R", "feature ext_attr", &path], false);
+        command(
+            &debugfs,
+            &[
+                "-w",
+                "-R",
+                &format!("ea_set -f {acl_path} / system.posix_acl_default"),
+                &path,
+            ],
+            false,
+        );
+        let img = std::fs::read(&path).unwrap();
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_file(acl_path);
+        assert!(core::image_validation::inspect(Snapshot::from_bytes(&img)).is_some());
+        img
+    }
+
+    #[test]
+    fn a_parent_without_a_default_acl_applies_umask_and_supplies_no_child_acls() {
+        let img = image();
+        let volume = allocation::parse(Snapshot::from_bytes(&img)).unwrap();
+        let parent = allocated_inode::get(&volume, 2).unwrap();
+        for (requested, umask, expected) in [
+            (0o106777, 0o022, 0o106755),
+            (0o042777, 0o777, 0o042000),
+            (0o100000, 0, 0o100000),
+        ] {
+            let plan = acl_inherit::prepare(&parent, requested, umask).unwrap();
+            assert_eq!(plan.mode(), expected);
+            assert!(plan.access().is_none());
+            assert!(plan.default().is_none());
+        }
+    }
+
+    #[test]
+    fn inherited_access_uses_the_default_acl_instead_of_umask_and_preserves_named_ids() {
+        let wire = wire(&[(1, 6, 0), (2, 7, 1234), (4, 3, 0), (16, 5, 0), (32, 2, 0)]);
+        let img = fixture("acl-inherit-extended", &wire);
+        let original = img.clone();
+        let volume = allocation::parse(Snapshot::from_bytes(&img)).unwrap();
+        let parent = allocated_inode::get(&volume, 2).unwrap();
+        let plan = acl_inherit::prepare(&parent, 0o100777, 0o777).unwrap();
+        assert_eq!(plan.mode(), 0o100652);
+        assert!(
+            plan.default().is_none(),
+            "regular files do not get a default ACL"
+        );
+        let access = acl::parse(plan.access().unwrap()).unwrap();
+        assert_eq!(access.entry(0).unwrap().permissions, 6);
+        assert_eq!(access.entry(1).unwrap().id, 1234);
+        assert_eq!(access.entry(1).unwrap().permissions, 7);
+        assert_eq!(access.entry(2).unwrap().permissions, 3);
+        assert_eq!(access.entry(3).unwrap().permissions, 5);
+        assert_eq!(access.entry(4).unwrap().permissions, 2);
+        assert_eq!(img, original, "planning must not change parent storage");
+    }
+
+    #[test]
+    fn a_child_directory_keeps_the_unrestricted_original_default_and_gets_a_masked_access_clone() {
+        let wire = wire(&[(1, 6, 0), (2, 7, 1234), (4, 3, 0), (16, 5, 0), (32, 2, 0)]);
+        let img = fixture("acl-inherit-directory", &wire);
+        let disk = acl_xattr::decode(&wire).unwrap().as_slice().to_vec();
+        let volume = allocation::parse(Snapshot::from_bytes(&img)).unwrap();
+        let parent = allocated_inode::get(&volume, 2).unwrap();
+        let plan = acl_inherit::prepare(&parent, 0o042770, 0o777).unwrap();
+        assert_eq!(plan.mode(), 0o042650);
+        assert_eq!(plan.default().unwrap(), disk);
+        let access = acl::parse(plan.access().unwrap()).unwrap();
+        let default = acl::parse(plan.default().unwrap()).unwrap();
+        assert_eq!(access.entry(4).unwrap().permissions, 0);
+        assert_eq!(default.entry(4).unwrap().permissions, 2);
+        assert_eq!(default.entry(1).unwrap().id, 1234);
+        assert_eq!(default.entry(1).unwrap().permissions, 7);
+    }
+
+    #[test]
+    fn basic_default_acls_fold_the_child_access_into_mode_but_remain_directory_defaults() {
+        let wire = wire(&[(1, 6, 0), (4, 3, 0), (32, 2, 0)]);
+        let img = fixture("acl-inherit-basic", &wire);
+        let disk = acl_xattr::decode(&wire).unwrap().as_slice().to_vec();
+        let volume = allocation::parse(Snapshot::from_bytes(&img)).unwrap();
+        let parent = allocated_inode::get(&volume, 2).unwrap();
+        let file = acl_inherit::prepare(&parent, 0o100777, 0o777).unwrap();
+        assert_eq!(file.mode(), 0o100632);
+        assert!(file.access().is_none());
+        assert!(file.default().is_none());
+        let directory = acl_inherit::prepare(&parent, 0o040777, 0o777).unwrap();
+        assert_eq!(directory.mode(), 0o040632);
+        assert!(directory.access().is_none());
+        assert_eq!(directory.default().unwrap(), disk);
+    }
+
+    #[test]
+    fn mask_only_defaults_remain_extended_at_zero_mode_and_symlinks_skip_acl_and_umask() {
+        let wire = wire(&[(1, 7, 0), (4, 7, 0), (16, 6, 0), (32, 7, 0)]);
+        let img = fixture("acl-inherit-mask-only", &wire);
+        let volume = allocation::parse(Snapshot::from_bytes(&img)).unwrap();
+        let parent = allocated_inode::get(&volume, 2).unwrap();
+        let file = acl_inherit::prepare(&parent, 0o100000, 0).unwrap();
+        assert_eq!(file.mode(), 0o100000);
+        let access = acl::parse(file.access().unwrap()).unwrap();
+        assert_eq!(access.entry(1).unwrap().permissions, 7);
+        assert_eq!(access.entry(2).unwrap().permissions, 0);
+        let link = acl_inherit::prepare(&parent, 0o120777, 0o777).unwrap();
+        assert_eq!(link.mode(), 0o120777);
+        assert!(link.access().is_none());
+        assert!(link.default().is_none());
+        let no_default = image();
+        let volume = allocation::parse(Snapshot::from_bytes(&no_default)).unwrap();
+        let parent = allocated_inode::get(&volume, 2).unwrap();
+        let link = acl_inherit::prepare(&parent, 0o120777, 0o777).unwrap();
+        assert_eq!(link.mode(), 0o120777);
+    }
+
+    #[test]
+    fn inheritance_rejects_a_nondirectory_parent_and_a_missing_child_file_type() {
+        let img = image();
+        let volume = allocation::parse(Snapshot::from_bytes(&img)).unwrap();
+        let file = allocated_inode::get(&volume, 12).unwrap();
+        assert!(acl_inherit::prepare(&file, 0o100644, 0o022).is_none());
+        let parent = allocated_inode::get(&volume, 2).unwrap();
+        assert!(acl_inherit::prepare(&parent, 0o777, 0o022).is_none());
+    }
+}
+// Native regression tests for the reverse compact-ext4 -> Linux UAPI codec.
+// Append to proofs/ext4/tests/compat.rs after acl_xattr::report is exported.
+mod acl_xattr_reporting {
+    use core::{acl, acl_xattr};
+
+    fn wire(entries: &[(u16, u16, u32)]) -> Vec<u8> {
+        let mut raw = 2u32.to_le_bytes().to_vec();
+        for (tag, permissions, id) in entries {
+            raw.extend(tag.to_le_bytes());
+            raw.extend(permissions.to_le_bytes());
+            raw.extend(id.to_le_bytes());
+        }
+        raw
+    }
+
+    #[test]
+    fn reporting_preserves_named_ids_and_normalizes_every_short_entry_id() {
+        let input = wire(&[
+            (1, 7, 100),
+            (2, 0, 0),
+            (2, 5, u32::MAX - 1),
+            (4, 3, 200),
+            (8, 6, 0),
+            (8, 0, u32::MAX - 1),
+            (16, 5, 300),
+            (32, 1, 400),
+        ]);
+        let compact = acl_xattr::decode(&input).unwrap();
+        let parsed = compact.parsed().unwrap();
+        let reported = acl_xattr::report(&parsed).unwrap();
+        assert_eq!(
+            reported,
+            wire(&[
+                (1, 7, u32::MAX),
+                (2, 0, 0),
+                (2, 5, u32::MAX - 1),
+                (4, 3, u32::MAX),
+                (8, 6, 0),
+                (8, 0, u32::MAX - 1),
+                (16, 5, u32::MAX),
+                (32, 1, u32::MAX),
+            ])
+        );
+        let roundtrip = acl_xattr::decode(&reported).unwrap();
+        assert_eq!(roundtrip.as_slice(), compact.as_slice());
+        let reported_again = acl_xattr::report(&roundtrip.parsed().unwrap()).unwrap();
+        assert_eq!(reported_again, reported);
+    }
+
+    #[test]
+    fn basic_and_mask_only_acls_roundtrip_without_adding_or_removing_entries() {
+        for entries in [
+            vec![(1, 6, 0), (4, 0, 1), (32, 0, 2)],
+            vec![(1, 0, 0), (4, 7, 1), (16, 0, 2), (32, 7, 3)],
+        ] {
+            let compact = acl_xattr::decode(&wire(&entries)).unwrap();
+            let reported = acl_xattr::report(&compact.parsed().unwrap()).unwrap();
+            assert_eq!(reported.len(), 4 + entries.len() * 8);
+            for (i, (tag, permissions, _)) in entries.iter().enumerate() {
+                let at = 4 + i * 8;
+                assert_eq!(&reported[at..at + 2], &tag.to_le_bytes());
+                assert_eq!(&reported[at + 2..at + 4], &permissions.to_le_bytes());
+                assert_eq!(&reported[at + 4..at + 8], &u32::MAX.to_le_bytes());
+            }
+            assert_eq!(
+                acl_xattr::decode(&reported).unwrap().as_slice(),
+                compact.as_slice()
+            );
+        }
+    }
+
+    fn compact_with_named_users(named: u32) -> Vec<u8> {
+        let mut raw = 1u32.to_le_bytes().to_vec();
+        raw.extend(1u16.to_le_bytes());
+        raw.extend(7u16.to_le_bytes());
+        for id in 0..named {
+            raw.extend(2u16.to_le_bytes());
+            raw.extend(((id % 8) as u16).to_le_bytes());
+            raw.extend(id.to_le_bytes());
+        }
+        for (tag, permissions) in [(4u16, 5u16), (16, 7), (32, 1)] {
+            raw.extend(tag.to_le_bytes());
+            raw.extend(permissions.to_le_bytes());
+        }
+        raw
+    }
+
+    #[test]
+    fn reporting_accepts_8191_entries_and_rejects_the_next_valid_compact_acl() {
+        let raw = compact_with_named_users(8187);
+        assert_eq!(raw.len(), 65_516);
+        let parsed = acl::parse(&raw).unwrap();
+        assert_eq!(parsed.count(), 8191);
+        let reported = acl_xattr::report(&parsed).unwrap();
+        assert_eq!(reported.len(), 65_532);
+        assert_eq!(&reported[..4], &2u32.to_le_bytes());
+        let roundtrip = acl_xattr::decode(&reported).unwrap();
+        assert_eq!(roundtrip.as_slice(), raw);
+        assert_eq!(roundtrip.parsed().unwrap().entry(1).unwrap().id, 0);
+        assert_eq!(roundtrip.parsed().unwrap().entry(8187).unwrap().id, 8186);
+
+        let too_many = compact_with_named_users(8188);
+        assert_eq!(too_many.len(), 65_524);
+        assert!(too_many.len() <= 65_536);
+        let parsed = acl::parse(&too_many).unwrap();
+        assert_eq!(parsed.count(), 8192);
+        assert!(
+            acl_xattr::report(&parsed).is_none(),
+            "expanded UAPI exceeds 64 KiB"
+        );
     }
 }
