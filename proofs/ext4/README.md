@@ -9,12 +9,13 @@ and a [concurrent block/extent/transaction protocol](CONCURRENCY.md).
 It is not a complete filesystem and is not registered with the kernel VFS.
 No mount or filesystem write path is enabled.
 
-The pinned entire-crate Verus run checks **2529 obligations with zero errors**,
-including 767 named proof functions and 674 named executable functions.
-298 host interoperability/regression tests pass: 236 metadata and 62 journal.
-The run includes the [EA-enabled namespace](EA_NAMESPACE.md) and the bounded
-[concurrent namespace mutation core](NS_MUTATION.md), with 23 added mutation
-regressions, 195 total negative API checks and six verifier gates.
+The pinned entire-crate Verus run checks **2682 obligations with zero errors**,
+including 790 named proof functions and 691 named executable functions.
+328 host interoperability/regression tests pass.
+The run includes the [EA-enabled namespace](EA_NAMESPACE.md), the bounded
+[concurrent rename core](NS_MUTATION.md), and [cross-directory moves, hard links
+and nonlast unlinks](CROSS_DIRECTORY_NAMESPACE.md).
+There are 212 negative API checks and six verifier gates.
 [Proof status](proof-status.json) and [recorded evidence](verification-evidence.json)
 state the exact scope; tests do not discharge formal obligations.
 
@@ -22,10 +23,11 @@ state the exact scope; tests do not discharge formal obligations.
 
 | Component | Behavior and verification scope |
 | --- | --- |
+| `ns_dir_edit.rs`, `ns_inode_links.rs`, `ns_namespace_relation.rs`, `ns_namespace_edit.rs`, `ns_edit_prepared.rs` | Checked bounded host cross-directory NOREPLACE moves of regular files and directories, regular hard links and nonlast regular unlinks in existing linear-directory blocks. Exact full-key/generation transformation, dotdot and parent counts, ancestry exclusion, source-bound byte codecs, shared table-block coalescing, full EA result readmission and affine version-checked publication compose. See [cross-directory namespace operations](CROSS_DIRECTORY_NAMESPACE.md). Indexed mutations, allocation, last-link/orphan/reclamation, VFS authorization, actual OSTD/CortenMM and durable EA journaling remain open. |
 | `ns_rename_block.rs`, `ns_inode_touch.rs`, `ns_rename.rs`, `ns_mutation_model.rs`, `ns_checkout.rs`, `ns_prepared.rs`, `ns_mutation.rs` | New host concurrent preparation/publication contracts: exact same-parent NOREPLACE record rename, narrow inode timestamp/version/checksum framing, complete EA-enabled result admission, owned immutable checkouts, full source/revision comparison, nonwrapping epochs and finite publication histories. See [namespace mutation](NS_MUTATION.md). The pinned whole-crate run checks these contracts; broader operations, stale rebasing, credentials, actual OSTD/CortenMM locking, mounted caches and EA-enabled journal/durability composition remain open. |
-| `ea_namespace_nodes.rs`, `ea_directory.rs`, `ea_directory_index.rs`, `ea_namespace_counts.rs`, `ea_namespace_parent.rs`, `ea_namespace_topology.rs`, `ea_namespace.rs` | New EA-enabled immutable namespace implementation and proof contracts: exact ordinary source nodes, complete source-owned directory blocks and HTree settings, full-key source lookup/absence, typed generations, exact links, canonical parents and rooted directory/regular-file reachability. See [EA namespace](EA_NAMESPACE.md). The pinned whole-crate run checks these contracts; actual JBD2 admission, mutations, full EA filesystem admission and CortenMM/kernel/mount integration remain open. |
+| `ea_namespace_nodes.rs`, `ea_directory.rs`, `ea_directory_index.rs`, `ea_namespace_counts.rs`, `ea_namespace_parent.rs`, `ea_namespace_topology.rs`, `ea_namespace.rs` | New EA-enabled immutable namespace implementation and proof contracts: exact ordinary source nodes, complete source-owned directory blocks and HTree settings, full-key source lookup/absence, typed generations, exact links, canonical parents and rooted directory/regular-file reachability. See [EA namespace](EA_NAMESPACE.md). The pinned whole-crate run checks these contracts; actual JBD2 admission, durable namespace and EA lifecycle mutations, full EA filesystem admission and CortenMM/kernel/mount integration remain open. Bounded host mutations are checked separately in [NS_MUTATION.md](NS_MUTATION.md) and [CROSS_DIRECTORY_NAMESPACE.md](CROSS_DIRECTORY_NAMESPACE.md). |
 | `dir_hash.rs` | All six Linux unkeyed filename hashes with exact modular word operations, byte packing, seed selection, half-MD4/TEA rounds and result normalization. See [directory hashes](DIRECTORY_HASHES.md). These compose with bounded source-bound DIR_INDEX admission in [HTree admission](HTREE_ADMISSION.md). Keyed encryption and Unicode casefold remain open. |
-| `htree_names.rs`, `htree_range.rs`, `directory_htree.rs`, `directory_piece.rs` | Complete source-bound DIR_INDEX and bounded LARGEDIR admission: inherited/collision intervals, Linux candidate-path closure, full-name uniqueness and source absence, initialized physical ownership, canonical dot/index/leaf records and whole-image namespace composition. See [HTree admission](HTREE_ADMISSION.md). Mutations, other formats and runtime integration remain open. |
+| `htree_names.rs`, `htree_range.rs`, `directory_htree.rs`, `directory_piece.rs` | Complete source-bound DIR_INDEX and bounded LARGEDIR admission: inherited/collision intervals, Linux candidate-path closure, full-name uniqueness and source absence, initialized physical ownership, canonical dot/index/leaf records and whole-image namespace composition. See [HTree admission](HTREE_ADMISSION.md). Index insertion/deletion/split/merge, other formats and runtime integration remain open. |
 | `htree_topology.rs` | Complete supplied logical-tree traversal, exact root/child claim projection, parsed leaf records, no logical reuse and no orphan blocks. See [HTree topology](HTREE_TOPOLOGY.md). Source/hash/full-name/namespace composition is checked by [HTree admission](HTREE_ADMISSION.md); structural mutations and runtime authority remain open. |
 | `htree.rs` | Standalone Linux HTree root/internal table codecs, exact used-prefix/tail CRC domain, logical child bounds and collision-aware binary search. See [HTree routing](HTREE_ROUTING.md). Composes with complete tree/name/source admission; operations and runtime authority remain open. |
 | `acl.rs`, `acl_xattr.rs`, `acl_access.rs`, `acl_update.rs`, `inode_mode.rs` | Compact/v2 ACL correspondence and complete-parse uniqueness, source-bound permission decisions, access/default mutation, owner/scoped FOWNER policy, SGID/FSETID rules, mode-only folding and all-home crash closure. Numeric version-2 reporting, ACL chmod and creation planning extend these contracts below. See [POSIX ACLs](POSIX_ACL.md). Authentication/idmaps/LSM, atomic child creation, idmapped userspace reporting and kernel runtime remain open. |
@@ -224,8 +226,9 @@ lookup absence, link counts and rooted topology, including a regular-file entry
 witness in a rooted directory. The pinned whole-crate run checks these
 contracts and compiles their implementation. The directory profile rejects data
 extents beyond block-aligned i_size instead of leaving allocated directory
-bytes outside the captured catalogue. Actual JBD2 state/admission, mutations
-and CortenMM/OSTD runtime remain open; no full EA filesystem, writable, kernel
+bytes outside the captured catalogue. Bounded host mutations are checked separately
+in [NS_MUTATION.md](NS_MUTATION.md) and [CROSS_DIRECTORY_NAMESPACE.md](CROSS_DIRECTORY_NAMESPACE.md).
+Actual JBD2 state/admission, durable namespace mutations and CortenMM/OSTD runtime remain open; no full EA filesystem, writable, kernel
 or mount gate is enabled. Recorded evidence determines the exact checked
 contracts and source.
 
@@ -301,8 +304,8 @@ from the missing implementation/refinement work.
 The full design is **not implemented or proved**.
 In particular, these are still missing:
 
-- Filesystem operation implementations,
-  including allocation, create/unlink/rename, orphan handling, permissions integration and fsync.
+- Full mounted filesystem operation implementations,
+  including allocation, create, final unlink, replacing rename, orphan handling, permissions integration and fsync.
 - Unmount ordering and actual device atomicity, quiescence and reuse refinement.
   The complete admitted writer history remains serialized; the additional closed-window model permits interleaved commit/checkpoint lanes with one pending request. Actual runtime exclusion and device refinement remain open.
 - CortenMM/OSTD frame, sleeping-lock, BIO, DMA and device-persistence adapters,

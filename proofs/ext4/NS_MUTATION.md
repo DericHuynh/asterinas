@@ -163,14 +163,18 @@ No Linux page, folio or buffer-head ownership is imported.
 
 ## Open operation and durability boundaries
 
-Hard link and nonlast unlink need new exact insertion/removal codecs and link
-counter transitions. Last-link unlink, rmdir and replacing a sole-linked victim
-also need orphan/live-handle lifetime and reclamation/accounting closure.
+The separate [cross-directory extension](CROSS_DIRECTORY_NAMESPACE.md) adds
+bounded regular hard links, nonlast regular unlinks and cross-parent NOREPLACE
+moves using existing linear-directory record capacity. Directory moves update
+dotdot and both parent counts and exclude the destination ancestry.
+These operations share the exact-source publication protocol described here.
+
+Last-link unlink, rmdir and replacement of a sole-linked victim still need
+orphan/live-handle lifetime and reclamation/accounting closure.
 Create/mkdir require allocation, initialization, generation freshness, bitmap
 and group counters, security/ACL inheritance and lifecycle proofs.
-Cross-parent directory moves require dotdot and parent-count updates and stable
-ancestry; exchange/whiteout and replacing rename add distinct transformations.
-Those are not implemented by this same-parent NOREPLACE path.
+Replacing rename, exchange and whiteout need further exact transformations.
+Directory growth and indexed insertion/deletion remain open.
 
 Publication means an admitted new host namespace version is visible.
 It does not mean the directory or file has been fsynced, that the exact patches
