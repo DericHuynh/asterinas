@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Owned immutable checkout for independent rename preparation.
+//! Owned immutable checkout for independent namespace preparation.
 
 use vstd::prelude::*;
-use crate::{ea_namespace::NamespaceView, ns_mutation_model as model, ns_prepared::Prepared, ns_rename, snapshot::Snapshot};
+use crate::{ea_namespace::NamespaceView, ns_mutation_model as model, ns_prepared::Prepared, ns_edit_prepared::EditPrepared, ns_namespace_edit, ns_rename, snapshot::Snapshot};
 
 verus! {
 
@@ -65,6 +65,78 @@ impl Checkout {
         assert(model::prepared_valid(proposal)) by { reveal(model::prepared_valid); }
         Ok(Prepared::create(self.bytes, self.epoch, self.certificate, update))
     }
+    fn finish_edit(self, update: ns_namespace_edit::Update) -> (r: EditPrepared)
+        requires update.wf(), ns_namespace_edit::valid(update.view()), update.view().source == self.source_view(),
+        ensures r.wf(), model::prepared_valid(r.view()), r.operation() == update.view(),
+            r.view().epoch == self.epoch_view(), r.view().before == self.source_view(),
+    {
+        proof {
+            use_type_invariant(&self);
+            ns_namespace_edit::candidate_images_are_certified_and_have_equal_length(update.view());
+        }
+        EditPrepared::create(self.bytes, self.epoch, self.certificate, update)
+    }
+
+    pub fn prepare_move_noreplace(self, source_directory: u32, old_name: &[u8],
+        destination_directory: u32, new_name: &[u8], seconds: i64, nanos: u32)
+        -> (r: Result<EditPrepared, ns_namespace_edit::Error>)
+        ensures match r { Ok(prepared) => prepared.wf() && model::prepared_valid(prepared.view())
+            && prepared.view().epoch == self.epoch_view() && prepared.view().before == self.source_view()
+            && prepared.operation().operation == ns_namespace_edit::Operation::Rename
+            && prepared.operation().source_directory == source_directory
+            && prepared.operation().destination_directory == destination_directory
+            && prepared.operation().old_name == old_name@ && prepared.operation().new_name == new_name@
+            && prepared.operation().seconds == seconds as int && prepared.operation().nanos == nanos as nat
+            && ns_namespace_edit::valid(prepared.operation()), Err(_) => true },
+    {
+        proof { use_type_invariant(&self); }
+        let source = Snapshot::from_bytes(&self.bytes);
+        let update = match ns_namespace_edit::prepare_rename(&source, source_directory, old_name,
+            destination_directory, new_name, seconds, nanos, self.inode_budget, self.node_budget, self.byte_budget) {
+            Ok(update) => update, Err(error) => { return Err(error); }
+        };
+        Ok(self.finish_edit(update))
+    }
+
+    pub fn prepare_link(self, source_directory: u32, old_name: &[u8],
+        destination_directory: u32, new_name: &[u8], seconds: i64, nanos: u32)
+        -> (r: Result<EditPrepared, ns_namespace_edit::Error>)
+        ensures match r { Ok(prepared) => prepared.wf() && model::prepared_valid(prepared.view())
+            && prepared.view().epoch == self.epoch_view() && prepared.view().before == self.source_view()
+            && prepared.operation().operation == ns_namespace_edit::Operation::Link
+            && prepared.operation().source_directory == source_directory
+            && prepared.operation().destination_directory == destination_directory
+            && prepared.operation().old_name == old_name@ && prepared.operation().new_name == new_name@
+            && prepared.operation().seconds == seconds as int && prepared.operation().nanos == nanos as nat
+            && ns_namespace_edit::valid(prepared.operation()), Err(_) => true },
+    {
+        proof { use_type_invariant(&self); }
+        let source = Snapshot::from_bytes(&self.bytes);
+        let update = match ns_namespace_edit::prepare_link(&source, source_directory, old_name,
+            destination_directory, new_name, seconds, nanos, self.inode_budget, self.node_budget, self.byte_budget) {
+            Ok(update) => update, Err(error) => { return Err(error); }
+        };
+        Ok(self.finish_edit(update))
+    }
+
+    pub fn prepare_unlink(self, directory: u32, name: &[u8], seconds: i64, nanos: u32)
+        -> (r: Result<EditPrepared, ns_namespace_edit::Error>)
+        ensures match r { Ok(prepared) => prepared.wf() && model::prepared_valid(prepared.view())
+            && prepared.view().epoch == self.epoch_view() && prepared.view().before == self.source_view()
+            && prepared.operation().operation == ns_namespace_edit::Operation::Unlink
+            && prepared.operation().source_directory == directory && prepared.operation().old_name == name@
+            && prepared.operation().seconds == seconds as int && prepared.operation().nanos == nanos as nat
+            && ns_namespace_edit::valid(prepared.operation()), Err(_) => true },
+    {
+        proof { use_type_invariant(&self); }
+        let source = Snapshot::from_bytes(&self.bytes);
+        let update = match ns_namespace_edit::prepare_unlink(&source, directory, name, seconds, nanos,
+            self.inode_budget, self.node_budget, self.byte_budget) {
+            Ok(update) => update, Err(error) => { return Err(error); }
+        };
+        Ok(self.finish_edit(update))
+    }
+
 }
 
 }

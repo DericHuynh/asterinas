@@ -346,3 +346,13 @@ pub mod ns_checkout;
 pub mod ns_prepared;
 
 pub mod ns_mutation;
+
+pub mod ns_dir_edit;
+
+pub mod ns_inode_links;
+
+pub mod ns_namespace_relation;
+
+pub mod ns_namespace_edit;
+
+pub mod ns_edit_prepared;

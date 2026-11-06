@@ -13349,3 +13349,1163 @@ mod ns_concurrent_mutation {
         check_namespace(store.bytes(), &[(12, &name)], &[(12, &old, 13)]);
     }
 }
+
+// Cross-directory namespace changes execute the emitted verified library on
+// Linux-created EA images. Host locks and threads only exercise publication.
+mod ns_cross_directory_mutation {
+    use core::{
+        ea_namespace,
+        inode_time_fields::{self, Field},
+        ns_mutation::{Checkout, EditPrepared, PublishError, Store},
+        snapshot::Snapshot,
+    };
+
+    use super::{
+        ea_inode_values::{Fixture, fixture_with_features, offset, seal_raw},
+        inline_xattr_updates::command,
+        *,
+    };
+
+    const SECONDS: i64 = 1_700_000_200;
+    const NANOS: u32 = 234_567_890;
+    type Binding = (u32, Vec<u8>, u32, u32, u8);
+
+    struct Tree {
+        ea: Fixture,
+        destination: u32,
+        child: u32,
+        inside: u32,
+    }
+
+    fn fsck(raw: &[u8], prefix: &str) {
+        let path = format!("build/{prefix}.img");
+        std::fs::write(&path, raw).unwrap();
+        let executable = std::env::var("E2FSCK_BIN").unwrap_or_else(|_| "e2fsck".into());
+        command(&executable, &["-fn", &path], false);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    fn debugfs(raw: &[u8], prefix: &str, requests: &str) -> Vec<u8> {
+        let path = format!("build/{prefix}-work.img");
+        let script = format!("build/{prefix}-commands.txt");
+        std::fs::write(&path, raw).unwrap();
+        std::fs::write(&script, requests).unwrap();
+        let executable = std::env::var("DEBUGFS_BIN").unwrap_or_else(|_| "debugfs".into());
+        command(&executable, &["-w", "-f", &script, &path], false);
+        let result = std::fs::read(&path).unwrap();
+        for file in [path, script] {
+            std::fs::remove_file(file).unwrap();
+        }
+        result
+    }
+
+    fn tree_profile(prefix: &str, wide: bool, stored_seed: bool) -> Tree {
+        let mut ea = fixture_with_features(prefix, 4096, wide, stored_seed);
+        ea.bytes = debugfs(
+            &ea.bytes,
+            prefix,
+            "mkdir /dest\nmkdir /child\nmkdir /child/inside\n",
+        );
+        let (destination, child, inside) = {
+            let snapshot = Snapshot::from_bytes(&ea.bytes);
+            let namespace = ea_namespace::inspect(&snapshot, u32::MAX, 8, 4096).unwrap();
+            let destination = namespace.lookup(2, b"dest").unwrap().identity().1;
+            let child = namespace.lookup(2, b"child").unwrap().identity().1;
+            let inside = namespace.lookup(child, b"inside").unwrap().identity().1;
+            (destination, child, inside)
+        };
+        fsck(&ea.bytes, &format!("{prefix}-baseline"));
+        Tree {
+            ea,
+            destination,
+            child,
+            inside,
+        }
+    }
+
+    fn tree(prefix: &str) -> Tree {
+        tree_profile(prefix, false, false)
+    }
+
+    fn open(raw: &[u8], limit: u64) -> Store {
+        Store::open(raw, limit, u32::MAX, 8, 4096).expect("complete EA namespace")
+    }
+
+    fn move_name(checkout: Checkout, from: u32, old: &[u8], to: u32, new: &[u8]) -> EditPrepared {
+        match checkout.prepare_move_noreplace(from, old, to, new, SECONDS, NANOS) {
+            Ok(prepared) => prepared,
+            Err(_) => panic!("cross-directory rename rejected"),
+        }
+    }
+
+    fn link(checkout: Checkout, from: u32, old: &[u8], to: u32, new: &[u8]) -> EditPrepared {
+        match checkout.prepare_link(from, old, to, new, SECONDS, NANOS) {
+            Ok(prepared) => prepared,
+            Err(_) => panic!("regular hard link rejected"),
+        }
+    }
+
+    fn unlink(checkout: Checkout, directory: u32, name: &[u8]) -> EditPrepared {
+        match checkout.prepare_unlink(directory, name, SECONDS, NANOS) {
+            Ok(prepared) => prepared,
+            Err(_) => panic!("non-last regular unlink rejected"),
+        }
+    }
+
+    fn publish(store: &mut Store, prepared: EditPrepared) -> u64 {
+        match store.publish_edit(prepared) {
+            Ok(epoch) => epoch,
+            Err(_) => panic!("namespace edit publication rejected"),
+        }
+    }
+
+    fn bindings(raw: &[u8]) -> Vec<Binding> {
+        let snapshot = Snapshot::from_bytes(raw);
+        let namespace = ea_namespace::inspect(&snapshot, u32::MAX, 8, 4096).unwrap();
+        let mut result: Vec<_> = (0..namespace.index().len())
+            .map(|i| {
+                let entry = namespace.index().get(i).unwrap();
+                let (directory, target, generation, kind) = entry.identity();
+                (directory, entry.name().to_vec(), target, generation, kind)
+            })
+            .collect();
+        result.sort();
+        result
+    }
+
+    fn assert_bindings(
+        before: &[u8],
+        after: &[u8],
+        removed: &[(u32, &[u8])],
+        added: &[(u32, &[u8], u32, u8)],
+    ) {
+        let mut expected = bindings(before);
+        for &(directory, name) in removed {
+            let count = expected.len();
+            expected.retain(|entry| entry.0 != directory || entry.1.as_slice() != name);
+            assert_eq!(expected.len() + 1, count, "missing source key {name:?}");
+        }
+        let snapshot = Snapshot::from_bytes(before);
+        let namespace = ea_namespace::inspect(&snapshot, u32::MAX, 8, 4096).unwrap();
+        for &(directory, name, target, kind) in added {
+            let generation = namespace.index().nodes().get(target).unwrap().generation;
+            expected.push((directory, name.to_vec(), target, generation, kind));
+        }
+        expected.sort();
+        assert_eq!(
+            bindings(after),
+            expected,
+            "complete key/target/generation/type catalogue"
+        );
+    }
+
+    fn links(raw: &[u8], table: u32, number: u32) -> u16 {
+        core::bytes::read_le16(raw, offset(table, number) + 26).unwrap()
+    }
+
+    fn set_links(raw: &mut [u8], f: &Fixture, number: u32, count: u16) {
+        let at = offset(f.table, number);
+        raw[at + 26..at + 28].copy_from_slice(&count.to_le_bytes());
+        seal_raw(&mut raw[at..at + 256], number, f.seed);
+    }
+
+    fn version(raw: &[u8]) -> u64 {
+        le32(raw, 36) as u64 + ((le32(raw, 152) as u64) << 32)
+    }
+
+    fn assert_metadata(before: &[u8], after: &[u8], parent: bool, link_delta: i32) {
+        assert_eq!(version(after), version(before) + 1);
+        let ctime = inode_time_fields::get_time(after, Field::Ctime).unwrap();
+        assert_eq!((ctime.seconds, ctime.nanoseconds), (SECONDS, NANOS));
+        if parent {
+            let mtime = inode_time_fields::get_time(after, Field::Mtime).unwrap();
+            assert_eq!((mtime.seconds, mtime.nanoseconds), (SECONDS, NANOS));
+        }
+        assert_eq!(
+            core::bytes::read_le16(after, 26).unwrap() as i32,
+            core::bytes::read_le16(before, 26).unwrap() as i32 + link_delta
+        );
+        for i in 0..256 {
+            let mutable = (12..16).contains(&i)
+                || (26..28).contains(&i)
+                || (36..40).contains(&i)
+                || (124..126).contains(&i)
+                || (130..136).contains(&i)
+                || (152..156).contains(&i)
+                || parent && ((16..20).contains(&i) || (136..140).contains(&i));
+            if !mutable {
+                assert_eq!(after[i], before[i], "unrelated inode byte {i}");
+            }
+        }
+    }
+
+    fn assert_inode(f: &Fixture, after: &[u8], number: u32, parent: bool, delta: i32) {
+        let at = offset(f.table, number);
+        assert_metadata(&f.bytes[at..at + 256], &after[at..at + 256], parent, delta);
+    }
+
+    fn assert_ea(f: &Fixture, after: &[u8]) {
+        let ea = offset(f.table, 14);
+        assert_eq!(&after[ea..ea + 256], &f.bytes[ea..ea + 256]);
+        let external = f.external as usize * 4096;
+        assert_eq!(
+            &after[external..external + 4096],
+            &f.bytes[external..external + 4096]
+        );
+        for number in [12u32, 13] {
+            let at = offset(f.table, number);
+            for span in [28..32, 104..108, 160..256] {
+                assert_eq!(
+                    &after[at + span.start..at + span.end],
+                    &f.bytes[at + span.start..at + span.end]
+                );
+            }
+        }
+        let snapshot = Snapshot::from_bytes(after);
+        let namespace = ea_namespace::inspect(&snapshot, u32::MAX, 8, 4096).unwrap();
+        assert_eq!(
+            namespace
+                .allocation()
+                .integrity()
+                .value(0)
+                .unwrap()
+                .as_slice(),
+            f.value
+        );
+    }
+
+    fn assert_only_existing_blocks_changed(
+        f: &Fixture,
+        after: &[u8],
+        inodes: &[u32],
+        directories: &[u32],
+    ) {
+        let mut allowed: Vec<usize> = inodes
+            .iter()
+            .map(|&number| offset(f.table, number) / 4096)
+            .collect();
+        let snapshot = Snapshot::from_bytes(&f.bytes);
+        let namespace = ea_namespace::inspect(&snapshot, u32::MAX, 8, 4096).unwrap();
+        for i in 0..namespace.index().directory_count() {
+            let directory = namespace.index().directory(i).unwrap();
+            if directories.contains(&directory.number()) {
+                for logical in 0..directory.block_count() {
+                    allowed.push(directory.physical_block(logical).unwrap() as usize);
+                }
+            }
+        }
+        assert_eq!(after.len(), f.bytes.len());
+        for block in 0..after.len() / 4096 {
+            if !allowed.contains(&block) {
+                let at = block * 4096;
+                assert_eq!(
+                    &after[at..at + 4096],
+                    &f.bytes[at..at + 4096],
+                    "unrelated block {block}"
+                );
+            }
+        }
+        for number in 1..=f.inodes {
+            if !inodes.contains(&number) {
+                let at = offset(f.table, number);
+                assert_eq!(
+                    &after[at..at + 256],
+                    &f.bytes[at..at + 256],
+                    "unrelated inode {number}"
+                );
+            }
+        }
+        assert_ea(f, after);
+    }
+
+    fn assert_unchanged(store: &Store, before: &[u8]) {
+        assert_eq!(store.epoch(), 0);
+        assert_eq!(store.bytes(), before);
+    }
+
+    fn alias(t: &mut Tree, prefix: &str) {
+        let mut raw = debugfs(&t.ea.bytes, prefix, "ln /first /dest/alias\n");
+        set_links(&mut raw, &t.ea, 12, 2);
+        t.ea.bytes = raw;
+        fsck(&t.ea.bytes, &format!("{prefix}-alias-baseline"));
+    }
+
+    #[test]
+    fn regular_cross_parent_move_preserves_exact_bindings_metadata_and_ea_in_all_four_profiles() {
+        for wide in [false, true] {
+            for stored_seed in [false, true] {
+                let prefix = format!("ns-cross-file-{wide}-{stored_seed}");
+                let t = tree_profile(&prefix, wide, stored_seed);
+                let mut store = open(&t.ea.bytes, 8);
+                let prepared = move_name(store.checkout(), 2, b"first", t.destination, b"moved");
+                assert_eq!(prepared.epoch(), 0);
+                assert_eq!(prepared.before_bytes(), t.ea.bytes);
+                assert_bindings(
+                    &t.ea.bytes,
+                    prepared.bytes(),
+                    &[(2, b"first")],
+                    &[(t.destination, b"moved", 12, 1)],
+                );
+                assert_unchanged(&store, &t.ea.bytes);
+                assert_eq!(publish(&mut store, prepared), 1);
+                assert_inode(&t.ea, store.bytes(), 2, true, 0);
+                assert_inode(&t.ea, store.bytes(), t.destination, true, 0);
+                assert_inode(&t.ea, store.bytes(), 12, false, 0);
+                assert_eq!(offset(t.ea.table, 2) / 4096, offset(t.ea.table, 12) / 4096);
+                assert_eq!(
+                    offset(t.ea.table, 12) / 4096,
+                    offset(t.ea.table, t.destination) / 4096
+                );
+                assert_only_existing_blocks_changed(
+                    &t.ea,
+                    store.bytes(),
+                    &[2, t.destination, 12],
+                    &[2, t.destination],
+                );
+                fsck(store.bytes(), &format!("{prefix}-result"));
+            }
+        }
+    }
+
+    #[test]
+    fn directory_move_updates_dotdot_parent_links_and_descendant_depth_in_all_four_profiles() {
+        for wide in [false, true] {
+            for stored_seed in [false, true] {
+                let prefix = format!("ns-cross-directory-{wide}-{stored_seed}");
+                let t = tree_profile(&prefix, wide, stored_seed);
+                let mut store = open(&t.ea.bytes, 8);
+                let prepared = move_name(store.checkout(), 2, b"child", t.destination, b"moved");
+                publish(&mut store, prepared);
+                assert_bindings(
+                    &t.ea.bytes,
+                    store.bytes(),
+                    &[(2, b"child"), (t.child, b"..")],
+                    &[
+                        (t.destination, b"moved", t.child, 2),
+                        (t.child, b"..", t.destination, 2),
+                    ],
+                );
+                let snapshot = Snapshot::from_bytes(store.bytes());
+                let namespace = ea_namespace::inspect(&snapshot, u32::MAX, 8, 4096).unwrap();
+                assert_eq!(namespace.parent(t.child), Some(t.destination));
+                assert_eq!(namespace.parent(t.inside), Some(t.child));
+                assert_eq!(namespace.depth(t.child), Some(2));
+                assert_eq!(namespace.depth(t.inside), Some(3));
+                assert_inode(&t.ea, store.bytes(), 2, true, -1);
+                assert_inode(&t.ea, store.bytes(), t.destination, true, 1);
+                assert_inode(&t.ea, store.bytes(), t.child, false, 0);
+                assert_only_existing_blocks_changed(
+                    &t.ea,
+                    store.bytes(),
+                    &[2, t.destination, t.child],
+                    &[2, t.destination, t.child],
+                );
+                fsck(store.bytes(), &format!("{prefix}-result"));
+            }
+        }
+    }
+
+    #[test]
+    fn hard_link_and_non_last_unlink_preserve_ea_reference_storage_under_all_four_profiles() {
+        for wide in [false, true] {
+            for stored_seed in [false, true] {
+                let prefix = format!("ns-cross-link-unlink-{wide}-{stored_seed}");
+                let t = tree_profile(&prefix, wide, stored_seed);
+                let mut store = open(&t.ea.bytes, 8);
+                let prepared = link(store.checkout(), 2, b"first", t.destination, b"alias");
+                assert_bindings(
+                    &t.ea.bytes,
+                    prepared.bytes(),
+                    &[],
+                    &[(t.destination, b"alias", 12, 1)],
+                );
+                publish(&mut store, prepared);
+                assert_inode(&t.ea, store.bytes(), t.destination, true, 0);
+                assert_inode(&t.ea, store.bytes(), 12, false, 1);
+                assert_only_existing_blocks_changed(
+                    &t.ea,
+                    store.bytes(),
+                    &[t.destination, 12],
+                    &[t.destination],
+                );
+                fsck(store.bytes(), &format!("{prefix}-linked"));
+                let before_unlink = store.bytes().to_vec();
+                let prepared = unlink(store.checkout(), 2, b"first");
+                assert_eq!(publish(&mut store, prepared), 2);
+                assert_bindings(&before_unlink, store.bytes(), &[(2, b"first")], &[]);
+                for (number, parent, delta) in [(2, true, 0), (12, false, -1)] {
+                    let at = offset(t.ea.table, number);
+                    assert_metadata(
+                        &before_unlink[at..at + 256],
+                        &store.bytes()[at..at + 256],
+                        parent,
+                        delta,
+                    );
+                }
+                assert_eq!(links(store.bytes(), t.ea.table, 12), 1);
+                assert_only_existing_blocks_changed(
+                    &t.ea,
+                    store.bytes(),
+                    &[2, t.destination, 12],
+                    &[2, t.destination],
+                );
+                fsck(store.bytes(), &format!("{prefix}-unlinked"));
+            }
+        }
+    }
+
+    #[test]
+    fn a_same_parent_regular_link_changes_parent_and_target_once() {
+        let t = tree("ns-cross-same-parent-link");
+        let mut store = open(&t.ea.bytes, 4);
+        let prepared = link(store.checkout(), 2, b"first", 2, b"alias");
+        publish(&mut store, prepared);
+        assert_bindings(&t.ea.bytes, store.bytes(), &[], &[(2, b"alias", 12, 1)]);
+        assert_inode(&t.ea, store.bytes(), 2, true, 0);
+        assert_inode(&t.ea, store.bytes(), 12, false, 1);
+        assert_only_existing_blocks_changed(&t.ea, store.bytes(), &[2, 12], &[2]);
+        fsck(store.bytes(), "ns-cross-same-parent-link-result");
+    }
+
+    #[test]
+    fn a_directory_can_move_back_to_root_without_losing_descendants() {
+        let t = tree("ns-cross-round-trip");
+        let mut store = open(&t.ea.bytes, 4);
+        let forward = move_name(store.checkout(), 2, b"child", t.destination, b"moved");
+        publish(&mut store, forward);
+        let back = move_name(store.checkout(), t.destination, b"moved", 2, b"child");
+        assert_eq!(publish(&mut store, back), 2);
+        assert_eq!(bindings(store.bytes()), bindings(&t.ea.bytes));
+        for number in [2, t.destination, t.child] {
+            assert_eq!(
+                links(store.bytes(), t.ea.table, number),
+                links(&t.ea.bytes, t.ea.table, number)
+            );
+        }
+        assert_ea(&t.ea, store.bytes());
+        fsck(store.bytes(), "ns-cross-round-trip-result");
+    }
+
+    #[test]
+    fn noreplace_rejects_an_existing_cross_parent_alias_to_the_same_inode() {
+        let mut t = tree("ns-cross-alias-noreplace");
+        alias(&mut t, "ns-cross-alias-noreplace");
+        let store = open(&t.ea.bytes, 4);
+        assert!(
+            store
+                .checkout()
+                .prepare_move_noreplace(2, b"first", t.destination, b"alias", SECONDS, NANOS)
+                .is_err()
+        );
+        assert!(
+            store
+                .checkout()
+                .prepare_link(2, b"first", t.destination, b"alias", SECONDS, NANOS)
+                .is_err()
+        );
+        assert_unchanged(&store, &t.ea.bytes);
+    }
+
+    #[test]
+    fn noreplace_rejects_existing_directory_and_different_regular_destinations() {
+        let t = tree("ns-cross-existing-destination");
+        let store = open(&t.ea.bytes, 4);
+        assert!(
+            store
+                .checkout()
+                .prepare_move_noreplace(t.child, b"inside", 2, b"first", SECONDS, NANOS)
+                .is_err()
+        );
+        assert!(
+            store
+                .checkout()
+                .prepare_move_noreplace(2, b"first", t.child, b"inside", SECONDS, NANOS)
+                .is_err()
+        );
+        assert!(
+            store
+                .checkout()
+                .prepare_move_noreplace(t.child, b"inside", 2, b"second", SECONDS, NANOS)
+                .is_err()
+        );
+        assert!(
+            store
+                .checkout()
+                .prepare_link(2, b"first", 2, b"second", SECONDS, NANOS)
+                .is_err()
+        );
+        assert_unchanged(&store, &t.ea.bytes);
+    }
+
+    #[test]
+    fn missing_source_and_non_directory_parents_cannot_prepare_cross_edits() {
+        let t = tree("ns-cross-missing-parents");
+        let store = open(&t.ea.bytes, 4);
+        assert!(
+            store
+                .checkout()
+                .prepare_move_noreplace(2, b"missing", t.destination, b"new", SECONDS, NANOS)
+                .is_err()
+        );
+        assert!(
+            store
+                .checkout()
+                .prepare_link(2, b"missing", t.destination, b"new", SECONDS, NANOS)
+                .is_err()
+        );
+        assert!(
+            store
+                .checkout()
+                .prepare_unlink(2, b"missing", SECONDS, NANOS)
+                .is_err()
+        );
+        for number in [0, 8, 12, 14, u32::MAX] {
+            assert!(
+                store
+                    .checkout()
+                    .prepare_move_noreplace(2, b"first", number, b"new", SECONDS, NANOS)
+                    .is_err()
+            );
+            assert!(
+                store
+                    .checkout()
+                    .prepare_move_noreplace(number, b"first", t.destination, b"new", SECONDS, NANOS)
+                    .is_err()
+            );
+            assert!(
+                store
+                    .checkout()
+                    .prepare_link(2, b"first", number, b"new", SECONDS, NANOS)
+                    .is_err()
+            );
+            assert!(
+                store
+                    .checkout()
+                    .prepare_unlink(number, b"first", SECONDS, NANOS)
+                    .is_err()
+            );
+        }
+        assert_unchanged(&store, &t.ea.bytes);
+    }
+
+    #[test]
+    fn cross_edits_reject_dot_dotdot_empty_slash_nul_and_overlong_names() {
+        let t = tree("ns-cross-invalid-names");
+        let store = open(&t.ea.bytes, 4);
+        let long = vec![b'x'; 256];
+        for name in [
+            b"".as_slice(),
+            b".",
+            b"..",
+            b"a/b",
+            b"a\0b",
+            long.as_slice(),
+        ] {
+            assert!(
+                store
+                    .checkout()
+                    .prepare_move_noreplace(2, name, t.destination, b"new", SECONDS, NANOS)
+                    .is_err()
+            );
+            assert!(
+                store
+                    .checkout()
+                    .prepare_move_noreplace(2, b"first", t.destination, name, SECONDS, NANOS)
+                    .is_err()
+            );
+            assert!(
+                store
+                    .checkout()
+                    .prepare_link(2, name, t.destination, b"new", SECONDS, NANOS)
+                    .is_err()
+            );
+            assert!(
+                store
+                    .checkout()
+                    .prepare_link(2, b"first", t.destination, name, SECONDS, NANOS)
+                    .is_err()
+            );
+            assert!(
+                store
+                    .checkout()
+                    .prepare_unlink(2, name, SECONDS, NANOS)
+                    .is_err()
+            );
+        }
+        assert_unchanged(&store, &t.ea.bytes);
+    }
+
+    #[test]
+    fn directory_move_cannot_make_itself_or_a_descendant_its_parent() {
+        let t = tree("ns-cross-cycle");
+        let store = open(&t.ea.bytes, 4);
+        for destination in [t.child, t.inside] {
+            assert!(
+                store
+                    .checkout()
+                    .prepare_move_noreplace(2, b"child", destination, b"loop", SECONDS, NANOS)
+                    .is_err()
+            );
+        }
+        assert_unchanged(&store, &t.ea.bytes);
+    }
+
+    #[test]
+    fn directories_cannot_be_hard_linked_or_unlinked_by_the_regular_file_operations() {
+        let t = tree("ns-cross-directory-guards");
+        let store = open(&t.ea.bytes, 4);
+        assert!(
+            store
+                .checkout()
+                .prepare_link(2, b"child", t.destination, b"alias", SECONDS, NANOS)
+                .is_err()
+        );
+        assert!(
+            store
+                .checkout()
+                .prepare_unlink(2, b"child", SECONDS, NANOS)
+                .is_err()
+        );
+        assert!(
+            store
+                .checkout()
+                .prepare_unlink(t.child, b"inside", SECONDS, NANOS)
+                .is_err()
+        );
+        assert_unchanged(&store, &t.ea.bytes);
+    }
+
+    #[test]
+    fn last_regular_unlink_rejects_without_orphaning_an_ea_parent() {
+        let t = tree("ns-cross-last-unlink");
+        let store = open(&t.ea.bytes, 4);
+        for name in [b"first".as_slice(), b"second"] {
+            assert!(
+                store
+                    .checkout()
+                    .prepare_unlink(2, name, SECONDS, NANOS)
+                    .is_err()
+            );
+        }
+        assert_unchanged(&store, &t.ea.bytes);
+        assert_ea(&t.ea, store.bytes());
+    }
+
+    #[test]
+    fn dir_nlink_parent_markers_are_inspectable_but_directory_moves_are_rejected() {
+        let t = tree("ns-cross-dir-nlink");
+        for parent in [2, t.destination] {
+            let mut raw = t.ea.bytes.clone();
+            let flags = le32(&raw, 1124) | 0x20;
+            raw[1124..1128].copy_from_slice(&flags.to_le_bytes());
+            let checksum = core::crc::crc32c(0xffffffff, &raw[1024..2044]);
+            raw[2044..2048].copy_from_slice(&checksum.to_le_bytes());
+            set_links(&mut raw, &t.ea, parent, 1);
+            let store = open(&raw, 4);
+            assert!(
+                store
+                    .checkout()
+                    .prepare_move_noreplace(2, b"child", t.destination, b"moved", SECONDS, NANOS)
+                    .is_err()
+            );
+            assert_unchanged(&store, &raw);
+        }
+    }
+
+    #[test]
+    fn readonly_namespace_rejects_move_link_and_non_last_unlink() {
+        let mut t = tree("ns-cross-readonly");
+        alias(&mut t, "ns-cross-readonly");
+        let mut raw = t.ea.bytes.clone();
+        let flags = le32(&raw, 1124) | core::feature_policy::READONLY;
+        raw[1124..1128].copy_from_slice(&flags.to_le_bytes());
+        let checksum = core::crc::crc32c(0xffffffff, &raw[1024..2044]);
+        raw[2044..2048].copy_from_slice(&checksum.to_le_bytes());
+        let store = open(&raw, 4);
+        assert!(
+            store
+                .checkout()
+                .prepare_move_noreplace(2, b"first", t.destination, b"new", SECONDS, NANOS)
+                .is_err()
+        );
+        assert!(
+            store
+                .checkout()
+                .prepare_link(2, b"first", t.destination, b"new", SECONDS, NANOS)
+                .is_err()
+        );
+        assert!(
+            store
+                .checkout()
+                .prepare_unlink(2, b"first", SECONDS, NANOS)
+                .is_err()
+        );
+        assert_unchanged(&store, &raw);
+    }
+
+    #[test]
+    fn every_edit_rejects_unrepresentable_timestamps_before_publication() {
+        let mut t = tree("ns-cross-invalid-time");
+        alias(&mut t, "ns-cross-invalid-time");
+        let store = open(&t.ea.bytes, 4);
+        for (seconds, nanos) in [(SECONDS, 1_000_000_000), (i64::MAX, 0), (i64::MIN, 0)] {
+            assert!(
+                store
+                    .checkout()
+                    .prepare_move_noreplace(2, b"first", t.destination, b"new", seconds, nanos)
+                    .is_err()
+            );
+            assert!(
+                store
+                    .checkout()
+                    .prepare_link(2, b"first", t.destination, b"new", seconds, nanos)
+                    .is_err()
+            );
+            assert!(
+                store
+                    .checkout()
+                    .prepare_unlink(2, b"first", seconds, nanos)
+                    .is_err()
+            );
+        }
+        assert_unchanged(&store, &t.ea.bytes);
+    }
+
+    #[test]
+    fn cross_move_and_link_reject_destination_inode_version_exhaustion() {
+        let t = tree("ns-cross-version-exhaustion");
+        for number in [2, t.destination, 12] {
+            let mut raw = t.ea.bytes.clone();
+            let at = offset(t.ea.table, number);
+            let value = core::xattr_replace::MAX_VERSION;
+            raw[at + 36..at + 40].copy_from_slice(&(value as u32).to_le_bytes());
+            raw[at + 152..at + 156].copy_from_slice(&((value >> 32) as u32).to_le_bytes());
+            seal_raw(&mut raw[at..at + 256], number, t.ea.seed);
+            let store = open(&raw, 4);
+            assert!(
+                store
+                    .checkout()
+                    .prepare_move_noreplace(2, b"first", t.destination, b"new", SECONDS, NANOS)
+                    .is_err()
+            );
+            if number != 2 {
+                assert!(
+                    store
+                        .checkout()
+                        .prepare_link(2, b"first", t.destination, b"new", SECONDS, NANOS)
+                        .is_err()
+                );
+            }
+            assert_unchanged(&store, &raw);
+        }
+    }
+
+    #[test]
+    fn stale_disjoint_cross_moves_retry_without_losing_either_binding() {
+        let t = tree("ns-cross-stale");
+        let mut store = open(&t.ea.bytes, 4);
+        let first = move_name(store.checkout(), 2, b"first", t.destination, b"alpha");
+        let second = move_name(store.checkout(), 2, b"second", t.child, b"beta");
+        assert_eq!(publish(&mut store, first), 1);
+        let current = store.bytes().to_vec();
+        assert!(matches!(
+            store.publish_edit(second),
+            Err(PublishError::Stale)
+        ));
+        assert_eq!(store.bytes(), current);
+        let retry = move_name(store.checkout(), 2, b"second", t.child, b"beta");
+        assert_eq!(publish(&mut store, retry), 2);
+        assert_bindings(
+            &t.ea.bytes,
+            store.bytes(),
+            &[(2, b"first"), (2, b"second")],
+            &[(t.destination, b"alpha", 12, 1), (t.child, b"beta", 13, 1)],
+        );
+        assert_ea(&t.ea, store.bytes());
+        fsck(store.bytes(), "ns-cross-stale-result");
+    }
+
+    #[test]
+    fn moving_a_destination_below_the_source_invalidates_an_old_ancestor_check() {
+        let t = tree("ns-cross-stale-ancestor");
+        let mut store = open(&t.ea.bytes, 4);
+        let stale = move_name(store.checkout(), 2, b"child", t.destination, b"moved");
+        let ancestor_change = move_name(store.checkout(), 2, b"dest", t.inside, b"nested");
+        publish(&mut store, ancestor_change);
+        let current = store.bytes().to_vec();
+        assert!(matches!(
+            store.publish_edit(stale),
+            Err(PublishError::Stale)
+        ));
+        assert_eq!(store.bytes(), current);
+        assert!(
+            store
+                .checkout()
+                .prepare_move_noreplace(2, b"child", t.destination, b"moved", SECONDS, NANOS)
+                .is_err()
+        );
+        assert_eq!(store.epoch(), 1);
+        assert_eq!(store.bytes(), current);
+        fsck(store.bytes(), "ns-cross-stale-ancestor-result");
+    }
+
+    #[test]
+    fn a_prepared_link_cannot_reintroduce_a_source_removed_by_a_concurrent_move() {
+        let t = tree("ns-cross-stale-link");
+        let mut store = open(&t.ea.bytes, 4);
+        let stale = link(store.checkout(), 2, b"first", t.child, b"alias");
+        let winner = move_name(store.checkout(), 2, b"first", t.destination, b"moved");
+        publish(&mut store, winner);
+        let current = store.bytes().to_vec();
+        assert!(matches!(
+            store.publish_edit(stale),
+            Err(PublishError::Stale)
+        ));
+        assert_eq!(store.bytes(), current);
+        assert!(
+            store
+                .checkout()
+                .prepare_link(2, b"first", t.child, b"alias", SECONDS, NANOS)
+                .is_err()
+        );
+        assert_eq!(links(store.bytes(), t.ea.table, 12), 1);
+        fsck(store.bytes(), "ns-cross-stale-link-result");
+    }
+
+    #[test]
+    fn a_prepared_unlink_cannot_erase_a_concurrent_alias_move() {
+        let mut t = tree("ns-cross-stale-unlink");
+        alias(&mut t, "ns-cross-stale-unlink");
+        let mut store = open(&t.ea.bytes, 4);
+        let stale = unlink(store.checkout(), t.destination, b"alias");
+        let winner = move_name(store.checkout(), t.destination, b"alias", t.child, b"moved");
+        publish(&mut store, winner);
+        let current = store.bytes().to_vec();
+        assert!(matches!(
+            store.publish_edit(stale),
+            Err(PublishError::Stale)
+        ));
+        assert_eq!(store.bytes(), current);
+        let retry = unlink(store.checkout(), t.child, b"moved");
+        assert_eq!(publish(&mut store, retry), 2);
+        assert_bindings(
+            &t.ea.bytes,
+            store.bytes(),
+            &[(t.destination, b"alias")],
+            &[],
+        );
+        assert_eq!(links(store.bytes(), t.ea.table, 12), 1);
+        fsck(store.bytes(), "ns-cross-stale-unlink-result");
+    }
+
+    #[test]
+    fn old_readers_and_prepared_before_bytes_remain_immutable_after_cross_publication() {
+        let t = tree("ns-cross-old-reader");
+        let mut store = open(&t.ea.bytes, 4);
+        let old = store.checkout();
+        let prepared = move_name(store.checkout(), 2, b"first", t.destination, b"moved");
+        let retained = prepared.before_bytes().to_vec();
+        let snapshot = Snapshot::from_bytes(old.bytes());
+        let namespace = ea_namespace::inspect(&snapshot, u32::MAX, 8, 4096).unwrap();
+        publish(&mut store, prepared);
+        assert_eq!(retained, t.ea.bytes);
+        assert_eq!(old.bytes(), retained);
+        assert_eq!(old.epoch(), 0);
+        assert_eq!(namespace.lookup(2, b"first").unwrap().identity().1, 12);
+        assert!(namespace.lookup(t.destination, b"moved").is_none());
+        assert_bindings(
+            &t.ea.bytes,
+            store.bytes(),
+            &[(2, b"first")],
+            &[(t.destination, b"moved", 12, 1)],
+        );
+    }
+
+    #[test]
+    fn parallel_cross_moves_have_one_winner_and_a_fresh_retry_preserves_both() {
+        let t = tree("ns-cross-parallel");
+        let store = open(&t.ea.bytes, 4);
+        let work = [
+            (
+                store.checkout(),
+                2,
+                b"first".as_slice(),
+                t.destination,
+                b"alpha".as_slice(),
+            ),
+            (
+                store.checkout(),
+                2,
+                b"second".as_slice(),
+                t.child,
+                b"beta".as_slice(),
+            ),
+        ];
+        let shared = std::sync::Mutex::new(store);
+        let barrier = std::sync::Barrier::new(2);
+        let results = std::thread::scope(|scope| {
+            let workers: Vec<_> = work
+                .into_iter()
+                .enumerate()
+                .map(|(id, (checkout, from, old, to, new))| {
+                    let shared = &shared;
+                    let barrier = &barrier;
+                    scope.spawn(move || {
+                        barrier.wait();
+                        let prepared = move_name(checkout, from, old, to, new);
+                        let won = match shared.lock().unwrap().publish_edit(prepared) {
+                            Ok(epoch) => {
+                                assert_eq!(epoch, 1);
+                                true
+                            }
+                            Err(PublishError::Stale) => false,
+                            Err(_) => panic!("unexpected publication error"),
+                        };
+                        (id, won)
+                    })
+                })
+                .collect();
+            workers
+                .into_iter()
+                .map(|worker| worker.join().unwrap())
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(results.iter().filter(|(_, won)| *won).count(), 1);
+        let loser = results.iter().find(|(_, won)| !*won).unwrap().0;
+        let mut store = shared.into_inner().unwrap();
+        let (old, to, new) = if loser == 0 {
+            (b"first".as_slice(), t.destination, b"alpha".as_slice())
+        } else {
+            (b"second".as_slice(), t.child, b"beta".as_slice())
+        };
+        let retry = move_name(store.checkout(), 2, old, to, new);
+        assert_eq!(publish(&mut store, retry), 2);
+        assert_bindings(
+            &t.ea.bytes,
+            store.bytes(),
+            &[(2, b"first"), (2, b"second")],
+            &[(t.destination, b"alpha", 12, 1), (t.child, b"beta", 13, 1)],
+        );
+        assert_ea(&t.ea, store.bytes());
+        fsck(store.bytes(), "ns-cross-parallel-result");
+    }
+
+    #[test]
+    fn link_move_unlink_and_directory_move_compose_over_current_namespace_revisions() {
+        let t = tree("ns-cross-compose");
+        let mut store = open(&t.ea.bytes, 8);
+        let add = link(store.checkout(), 2, b"first", t.child, b"alias");
+        assert_eq!(publish(&mut store, add), 1);
+        let rename = move_name(store.checkout(), t.child, b"alias", t.destination, b"moved");
+        assert_eq!(publish(&mut store, rename), 2);
+        let remove = unlink(store.checkout(), 2, b"first");
+        assert_eq!(publish(&mut store, remove), 3);
+        let directory = move_name(store.checkout(), 2, b"child", t.destination, b"subtree");
+        assert_eq!(publish(&mut store, directory), 4);
+        assert_bindings(
+            &t.ea.bytes,
+            store.bytes(),
+            &[(2, b"first"), (2, b"child"), (t.child, b"..")],
+            &[
+                (t.destination, b"moved", 12, 1),
+                (t.destination, b"subtree", t.child, 2),
+                (t.child, b"..", t.destination, 2),
+            ],
+        );
+        assert_eq!(links(store.bytes(), t.ea.table, 12), 1);
+        assert_ea(&t.ea, store.bytes());
+        fsck(store.bytes(), "ns-cross-compose-result");
+    }
+
+    #[test]
+    fn same_epoch_cross_preparation_cannot_publish_to_a_different_valid_source() {
+        let t = tree("ns-cross-source-mismatch");
+        let first = open(&t.ea.bytes, 4);
+        let prepared = move_name(first.checkout(), 2, b"first", t.destination, b"moved");
+        let mut raw = t.ea.bytes.clone();
+        let at = offset(t.ea.table, 13);
+        let generation = le32(&raw, at + 100).wrapping_add(1);
+        raw[at + 100..at + 104].copy_from_slice(&generation.to_le_bytes());
+        seal_raw(&mut raw[at..at + 256], 13, t.ea.seed);
+        let mut second = open(&raw, 4);
+        assert!(matches!(
+            second.publish_edit(prepared),
+            Err(PublishError::SourceMismatch)
+        ));
+        assert_unchanged(&second, &raw);
+    }
+
+    #[test]
+    fn exhausted_publication_budget_consumes_no_cross_edit_or_partial_metadata() {
+        let t = tree("ns-cross-exhausted");
+        let mut store = open(&t.ea.bytes, 0);
+        let prepared = link(store.checkout(), 2, b"first", t.destination, b"alias");
+        assert!(matches!(
+            store.publish_edit(prepared),
+            Err(PublishError::Exhausted)
+        ));
+        assert_unchanged(&store, &t.ea.bytes);
+    }
+
+    #[test]
+    fn dropping_or_panicking_after_cross_preparation_publishes_no_bytes() {
+        let t = tree("ns-cross-drop");
+        let store = open(&t.ea.bytes, 4);
+        drop(move_name(
+            store.checkout(),
+            2,
+            b"child",
+            t.destination,
+            b"moved",
+        ));
+        let checkout = store.checkout();
+        let destination = t.destination;
+        assert!(
+            std::thread::spawn(move || {
+                let _prepared = link(checkout, 2, b"first", destination, b"alias");
+                panic!("abandoned worker");
+            })
+            .join()
+            .is_err()
+        );
+        assert_unchanged(&store, &t.ea.bytes);
+    }
+
+    #[test]
+    fn destination_record_exhaustion_rejects_move_and_link_without_directory_growth() {
+        let mut t = tree("ns-cross-no-space");
+        let mut requests = String::new();
+        for index in 0..15 {
+            let name = format!("{index:03}{}", "x".repeat(252));
+            requests.push_str(&format!("ln /second /dest/{name}\n"));
+        }
+        requests.push_str(&format!("ln /second /dest/{}\n", "z".repeat(92)));
+        let mut raw = debugfs(&t.ea.bytes, "ns-cross-no-space", &requests);
+        set_links(&mut raw, &t.ea, 13, 17);
+        t.ea.bytes = raw;
+        fsck(&t.ea.bytes, "ns-cross-no-space-baseline");
+        let snapshot = Snapshot::from_bytes(&t.ea.bytes);
+        let namespace = ea_namespace::inspect(&snapshot, u32::MAX, 8, 4096).unwrap();
+        let destination = (0..namespace.index().directory_count())
+            .map(|i| namespace.index().directory(i).unwrap())
+            .find(|directory| directory.number() == t.destination)
+            .unwrap();
+        assert_eq!(destination.block_count(), 1);
+        let store = open(&t.ea.bytes, 4);
+        assert!(matches!(
+            store.checkout().prepare_move_noreplace(
+                2,
+                b"first",
+                t.destination,
+                b"moved",
+                SECONDS,
+                NANOS
+            ),
+            Err(core::ns_namespace_edit::Error::NoSpace)
+        ));
+        assert!(matches!(
+            store
+                .checkout()
+                .prepare_link(2, b"first", t.destination, b"alias", SECONDS, NANOS),
+            Err(core::ns_namespace_edit::Error::NoSpace)
+        ));
+        assert_unchanged(&store, &t.ea.bytes);
+    }
+
+    #[test]
+    fn maximum_and_non_utf8_names_survive_move_link_and_unlink() {
+        let t = tree("ns-cross-name-bytes");
+        let mut store = open(&t.ea.bytes, 8);
+        let longest = vec![b'z'; 255];
+        let non_utf8 = [0xff, 0x80, b'x'];
+        let renamed = move_name(store.checkout(), 2, b"first", t.destination, &longest);
+        publish(&mut store, renamed);
+        let added = link(
+            store.checkout(),
+            t.destination,
+            &longest,
+            t.child,
+            &non_utf8,
+        );
+        publish(&mut store, added);
+        let removed = unlink(store.checkout(), t.destination, &longest);
+        assert_eq!(publish(&mut store, removed), 3);
+        assert_bindings(
+            &t.ea.bytes,
+            store.bytes(),
+            &[(2, b"first")],
+            &[(t.child, &non_utf8, 12, 1)],
+        );
+        assert_eq!(links(store.bytes(), t.ea.table, 12), 1);
+        assert_ea(&t.ea, store.bytes());
+        fsck(store.bytes(), "ns-cross-name-bytes-result");
+    }
+
+    #[test]
+    fn non_last_unlink_rejects_parent_or_target_inode_version_exhaustion() {
+        let mut t = tree("ns-cross-unlink-version");
+        alias(&mut t, "ns-cross-unlink-version");
+        for number in [2, 12] {
+            let mut raw = t.ea.bytes.clone();
+            let at = offset(t.ea.table, number);
+            let value = core::xattr_replace::MAX_VERSION;
+            raw[at + 36..at + 40].copy_from_slice(&(value as u32).to_le_bytes());
+            raw[at + 152..at + 156].copy_from_slice(&((value >> 32) as u32).to_le_bytes());
+            seal_raw(&mut raw[at..at + 256], number, t.ea.seed);
+            let store = open(&raw, 4);
+            assert!(
+                store
+                    .checkout()
+                    .prepare_unlink(2, b"first", SECONDS, NANOS)
+                    .is_err()
+            );
+            assert_unchanged(&store, &raw);
+        }
+    }
+    #[test]
+    fn same_parent_and_cross_parent_publications_share_one_revision_and_conflict_boundary() {
+        let t = tree("ns-cross-same-parent-interoperation");
+        let mut store = open(&t.ea.bytes, 8);
+        let stale = move_name(store.checkout(), 2, b"first", t.destination, b"moved");
+        let same_parent = match store
+            .checkout()
+            .prepare_rename_noreplace(2, b"first", b"renamed", SECONDS, NANOS)
+        {
+            Ok(prepared) => prepared,
+            Err(_) => panic!("same-parent rename rejected"),
+        };
+        match store.publish(same_parent) {
+            Ok(epoch) => assert_eq!(epoch, 1),
+            Err(_) => panic!("same-parent publication rejected"),
+        }
+        assert!(matches!(
+            store.publish_edit(stale),
+            Err(PublishError::Stale)
+        ));
+        let fresh = move_name(store.checkout(), 2, b"renamed", t.destination, b"moved");
+        assert_eq!(publish(&mut store, fresh), 2);
+        let stale_same_parent = match store
+            .checkout()
+            .prepare_rename_noreplace(2, b"second", b"other", SECONDS, NANOS)
+        {
+            Ok(prepared) => prepared,
+            Err(_) => panic!("same-parent rename rejected"),
+        };
+        let add = link(store.checkout(), t.destination, b"moved", t.child, b"alias");
+        assert_eq!(publish(&mut store, add), 3);
+        let current = store.bytes().to_vec();
+        assert!(matches!(
+            store.publish(stale_same_parent),
+            Err(PublishError::Stale)
+        ));
+        assert_eq!(store.bytes(), current);
+        assert_bindings(
+            &t.ea.bytes,
+            store.bytes(),
+            &[(2, b"first")],
+            &[(t.destination, b"moved", 12, 1), (t.child, b"alias", 12, 1)],
+        );
+        assert_ea(&t.ea, store.bytes());
+        fsck(store.bytes(), "ns-cross-same-parent-interoperation-result");
+    }
+}

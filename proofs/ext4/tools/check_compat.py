@@ -392,6 +392,27 @@ def main():
         'substitute_arbitrary_patches_for_namespace_preparation': ('pub fn misuse(s: &mut verified_ext4::ns_mutation::Store) { let _ = s.publish(verified_ext4::patch_set::PatchSet::new()); }\n', 'E0308'),
         'substitute_static_namespace_for_mutation_preparation': ("pub fn misuse(s: &mut verified_ext4::ns_mutation::Store, n: verified_ext4::ea_namespace::Namespace<'_, '_>) { let _ = s.publish(n); }\n", 'E0308'),
     })
+    misuse.update({
+        'forge_namespace_edit_prepared': ('pub fn misuse(p: verified_ext4::ns_mutation::EditPrepared) { let _ = verified_ext4::ns_mutation::EditPrepared { ..p }; }\n', 'E0451'),
+        'replace_namespace_edit_update': ('pub fn misuse(mut p: verified_ext4::ns_mutation::EditPrepared, q: verified_ext4::ns_namespace_edit::Update) { p.update = q; }\n', 'E0616'),
+        'mutate_namespace_edit_before_bytes': ('pub fn misuse(p: verified_ext4::ns_mutation::EditPrepared) { p.before_bytes()[0] = 0; }\n', 'E0594'),
+        'mutate_namespace_edit_after_bytes': ('pub fn misuse(p: verified_ext4::ns_mutation::EditPrepared) { p.bytes()[0] = 0; }\n', 'E0594'),
+        'republish_consumed_namespace_edit': ('pub fn misuse(s: &mut verified_ext4::ns_mutation::Store, p: verified_ext4::ns_mutation::EditPrepared) { let _ = s.publish_edit(p); let _ = s.publish_edit(p); }\n', 'E0382'),
+        'reuse_checkout_after_cross_move': ('pub fn misuse(c: verified_ext4::ns_mutation::Checkout) { let _ = c.prepare_move_noreplace(2, b"first", 15, b"moved", 0, 0); let _ = c.prepare_link(2, b"first", 15, b"alias", 0, 0); }\n', 'E0382'),
+        'reuse_checkout_after_regular_unlink': ('pub fn misuse(c: verified_ext4::ns_mutation::Checkout) { let _ = c.prepare_unlink(2, b"first", 0, 0); let _ = c.bytes(); }\n', 'E0382'),
+        'move_namespace_edit_from_shared_borrow': ('pub fn misuse(p: &verified_ext4::ns_mutation::EditPrepared) { let _owned = *p; }\n', 'E0507'),
+        'consume_namespace_edit_while_result_is_borrowed': ('pub fn misuse(s: &mut verified_ext4::ns_mutation::Store, p: verified_ext4::ns_mutation::EditPrepared) { let bytes = p.bytes(); let _ = s.publish_edit(p); let _ = bytes.len(); }\n', 'E0505'),
+        'consume_namespace_edit_while_before_is_borrowed': ('pub fn misuse(s: &mut verified_ext4::ns_mutation::Store, p: verified_ext4::ns_mutation::EditPrepared) { let bytes = p.before_bytes(); let _ = s.publish_edit(p); let _ = bytes.len(); }\n', 'E0505'),
+        'publish_edit_while_namespace_source_is_borrowed': ('pub fn misuse(s: &mut verified_ext4::ns_mutation::Store, p: verified_ext4::ns_mutation::EditPrepared) { let bytes = s.bytes(); let _ = s.publish_edit(p); let _ = bytes.len(); }\n', 'E0502'),
+        'substitute_cross_edit_for_same_parent_preparation': ('pub fn misuse(s: &mut verified_ext4::ns_mutation::Store, p: verified_ext4::ns_mutation::EditPrepared) { let _ = s.publish(p); }\n', 'E0308'),
+        'substitute_same_parent_preparation_for_cross_edit': ('pub fn misuse(s: &mut verified_ext4::ns_mutation::Store, p: verified_ext4::ns_mutation::Prepared) { let _ = s.publish_edit(p); }\n', 'E0308'),
+        'substitute_arbitrary_patches_for_namespace_edit': ('pub fn misuse(s: &mut verified_ext4::ns_mutation::Store) { let _ = s.publish_edit(verified_ext4::patch_set::PatchSet::new()); }\n', 'E0308'),
+    })
+    misuse.update({
+        'extract_namespace_edit_owned_result': ('pub fn misuse(p: verified_ext4::ns_mutation::EditPrepared) { let _ = p.into_result(); }\n', 'E0624'),
+        'forge_namespace_edit_update': ('pub fn misuse(u: verified_ext4::ns_namespace_edit::Update) { let _ = verified_ext4::ns_namespace_edit::Update { ..u }; }\n', 'E0451'),
+        'mutate_namespace_edit_update_bytes': ('pub fn misuse(u: verified_ext4::ns_namespace_edit::Update) { u.bytes()[0] = 0; }\n', 'E0594'),
+    })
     for name, (source, code) in misuse.items():
         path = BUILD / (name + ".rs")
         path.write_text(source)
