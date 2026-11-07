@@ -174,6 +174,64 @@ proof fn assemble_record_shape(v: WindowView, first: nat, index: int, r: Record)
     ensures record_shape(v, first, index, r),
 { reveal(record_shape); }
 
+// Keep raw scan adjacency independent of the wide window and its metadata.
+proof fn the_last_recognized_record_follows_its_prefix(records: Seq<Record>, s: Source)
+    requires scan_trace::well_formed(records, s), records.len() > 0,
+    ensures scan_trace::well_formed(records.drop_last(), s),
+        scan_trace::record_ok(records.last(), s),
+        records.last().start == scan_trace::end(records.drop_last()),
+        records.last().sequence as nat == scan_trace::next_sequence(records.drop_last(), s.first),
+        scan_trace::end(records) == records.last().end,
+        scan_trace::next_sequence(records, s.first) == records.last().sequence as nat
+            + if records.last().kind == 2 { 1nat } else { 0nat },
+{
+    assert(records.drop_last() =~= records.take(records.len() as int - 1));
+    scan_trace::prefix_preserves_well_formedness(records, (records.len() - 1) as nat, s);
+    reveal(scan_trace::well_formed);
+    assert(scan_trace::record_ok(records[records.len() as int - 1], s));
+    if records.len() == 1 {
+        assert(records.last() == records[0]);
+    } else {
+        assert(records.drop_last().last() == records[records.len() as int - 2]);
+    }
+}
+
+proof fn a_shaped_stream_has_the_reserved_start(v: WindowView, s: Source, first: nat)
+    requires shaped(v, s, first),
+    ensures window::valid(v), first < v.txs.len(), s.first as nat == v.first as nat + first,
+{
+    hide(crc::fold);
+    reveal(shaped);
+}
+
+// One record advances only the numeric cursor and its local shape. Prefix
+// catalogue assembly and raw scan adjacency stay outside this query.
+proof fn one_record_extends_the_reserved_prefix(v: WindowView, s: Source, first: nat, count: nat, r: Record)
+    requires shaped(v, s, first), count <= 2 * (v.txs.len() - first),
+        scan_trace::record_ok(r, s),
+        r.start as nat == cursor(v, first, first + count / 2, count % 2 == 1),
+        r.sequence as nat == v.first as nat + first + count / 2,
+    ensures record_shape(v, first, count as int, r),
+        count + 1 <= 2 * (v.txs.len() - first),
+        r.sequence as nat + if r.kind == 2 { 1nat } else { 0nat }
+            == v.first as nat + first + (count + 1) / 2,
+        r.end as nat == cursor(v, first, first + (count + 1) / 2, (count + 1) % 2 == 1),
+{
+    hide(crc::fold);
+    a_shaped_stream_has_the_reserved_start(v, s, first);
+    vstd::arithmetic::div_mod::lemma_fundamental_div_mod(count as int, 2);
+    vstd::arithmetic::div_mod::lemma_fundamental_div_mod(count as int + 1, 2);
+    let t = first + count / 2;
+    let payload = count % 2 == 1;
+    one_record_at_a_cursor(v, s, first, t, payload, r);
+    assemble_record_shape(v, first, count as int, r);
+    if !payload {
+        assert((count + 1) / 2 == count / 2 && (count + 1) % 2 == 1);
+    } else {
+        assert((count + 1) / 2 == count / 2 + 1 && (count + 1) % 2 == 0);
+    }
+}
+
 #[verifier::rlimit(40)]
 pub proof fn every_recognized_prefix_has_the_reserved_transaction_shape(v: WindowView, s: Source, first: nat, records: Seq<Record>)
     requires shaped(v, s, first), scan_trace::well_formed(records, s),
@@ -184,32 +242,18 @@ pub proof fn every_recognized_prefix_has_the_reserved_transaction_shape(v: Windo
     decreases records.len(),
 {
     hide(crc::fold);
-    reveal(shaped);
-    reveal(scan_trace::well_formed);
+    a_shaped_stream_has_the_reserved_start(v, s, first);
     if records.len() == 0 {
         offset_bounds(v, first, first);
     } else {
+        the_last_recognized_record_follows_its_prefix(records, s);
         let prev = records.drop_last();
-        assert(prev =~= records.take(records.len() as int - 1));
-        scan_trace::prefix_preserves_well_formedness(records, (records.len() - 1) as nat, s);
         every_recognized_prefix_has_the_reserved_transaction_shape(v, s, first, prev);
         let n = prev.len();
-        vstd::arithmetic::div_mod::lemma_fundamental_div_mod(n as int, 2);
-        vstd::arithmetic::div_mod::lemma_fundamental_div_mod(n as int + 1, 2);
-        let t = first + n / 2;
-        let payload = n % 2 == 1;
-        assert(records.last().sequence as nat == v.first as nat + t);
-        assert(records.last().start as nat == cursor(v, first, t, payload));
-        one_record_at_a_cursor(v, s, first, t, payload, records.last());
-        assemble_record_shape(v, first, n as int, records.last());
-        assert(record_shape(v, first, n as int, records.last()));
+        one_record_extends_the_reserved_prefix(v, s, first, n, records.last());
         assert forall|i: int| 0 <= i < records.len() implies #[trigger] record_shape(v, first, i, records[i]) by {
             if i < n { assert(record_shape(v, first, i, prev[i])); }
-        }
-        if !payload {
-            assert((n + 1) / 2 == n / 2 && (n + 1) % 2 == 1);
-        } else {
-            assert((n + 1) / 2 == n / 2 + 1 && (n + 1) % 2 == 0);
+            else { assert(i == n); }
         }
     }
 }

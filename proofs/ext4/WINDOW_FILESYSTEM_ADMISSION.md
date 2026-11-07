@@ -118,3 +118,10 @@ protected inode-8 edits with valid CRCs, all 64 prefixes at source shadow depth
 30, patch replacement at capacity, and sticky abort/error behavior. These tests
 supplement the entire-crate Verus proofs. Production, full-feature,
 concurrent-filesystem and mount/write gates remain false.
+
+The bounded [EA namespace durable transaction](EA_DURABLE_NAMESPACE.md) adds a
+separate EA-aware single-transaction writer, raw crash-cut journal discovery and
+checked repaired-shadow recovery. Its explicit atomic-block, flush,
+exclusive-source and restart-quiescence premises require CortenMM/OSTD and
+actual-device refinement. Full EA filesystem, concurrent EA windows, mounted
+operation and hardware durability gates remain open.

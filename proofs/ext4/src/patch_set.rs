@@ -283,4 +283,19 @@ pub proof fn a_single_patch_selects_exactly_its_target(image: ImageView, block: 
 }
 
 
+
+/// An exact raw primary marker can be projected without opening a filesystem
+/// header predicate or the whole-image patch application in its caller.
+pub(crate) proof fn a_primary_marker_replaces_exactly_block_zero(source: Seq<u8>, marker: Seq<u8>)
+    requires source.len() >= 4096, marker.len() == 4096,
+    ensures apply(source, seq![ImageView { block: 0, image: marker }]).len() == source.len(),
+        apply(source, seq![ImageView { block: 0, image: marker }]).subrange(0, 4096) == marker,
+{
+    let image = ImageView { block: 0, image: marker };
+    let patches = seq![image];
+    assert(valid(patches)) by { reveal(valid); }
+    a_single_patch_selects_exactly_its_target(image, 0);
+    applying_a_patch_replaces_exactly_its_block(source, patches, 0);
+}
+
 }

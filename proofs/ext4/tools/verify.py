@@ -104,7 +104,7 @@ def main():
             LOCK["model_root"],
         ]
         process = subprocess.run(
-            report["command"], cwd=ROOT, capture_output=True, text=True, timeout=2100,
+            report["command"], cwd=ROOT, capture_output=True, text=True, timeout=2700,
         )
         (BUILD / "verus.stdout").write_text(process.stdout)
         (BUILD / "verus.stderr").write_text(process.stderr)

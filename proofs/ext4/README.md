@@ -9,9 +9,9 @@ and a [concurrent block/extent/transaction protocol](CONCURRENCY.md).
 It is not a complete filesystem and is not registered with the kernel VFS.
 No mount or filesystem write path is enabled.
 
-The pinned entire-crate Verus run checks **2901 obligations with zero errors**,
-including 829 named proof functions and 712 named executable functions.
-358 host interoperability/regression tests pass.
+The pinned entire-crate Verus run checks **3122 obligations with zero errors**,
+including 900 named proof functions and 774 named executable functions.
+364 host interoperability/regression tests pass.
 The run includes the [EA-enabled namespace](EA_NAMESPACE.md), the bounded
 [concurrent rename core](NS_MUTATION.md), [cross-directory moves, hard links
 and nonlast unlinks](CROSS_DIRECTORY_NAMESPACE.md), bounded
@@ -233,7 +233,9 @@ extents beyond block-aligned i_size instead of leaving allocated directory
 bytes outside the captured catalogue. Bounded host mutations are checked separately
 in [NS_MUTATION.md](NS_MUTATION.md), [CROSS_DIRECTORY_NAMESPACE.md](CROSS_DIRECTORY_NAMESPACE.md),
 [FILE_RENAME.md](FILE_RENAME.md) and [DIRECTORY_EXCHANGE.md](DIRECTORY_EXCHANGE.md).
-Actual JBD2 state/admission, durable namespace mutations and CortenMM/OSTD runtime remain open; no full EA filesystem, writable, kernel
+The separate [durable EA transaction](EA_DURABLE_NAMESPACE.md) connects these
+checked patches to one serial JBD2 commit/checkpoint and actual-byte recovery.
+CortenMM/OSTD runtime remains open; no full EA filesystem, writable, kernel
 or mount gate is enabled. Recorded evidence determines the exact checked
 contracts and source.
 
@@ -266,7 +268,7 @@ The negative checks include an actual failing Verus assertion in a disposable co
 The separate timeout regression fault-injects a disposable runner and checks
 current partial logs, stale-log/artifact invalidation and failure reporting. It
 executes no verifier subprocess and supplies no formal filesystem proof evidence.
-282 negative Rust compilation checks reject certificate/source substitution, edit/queue ownership violations, request reuse/forgery, completion redirection, state replacement, command mutation and finishing through a live command loan.
+330 negative Rust compilation checks reject certificate/source substitution, edit/queue ownership violations, request reuse/forgery, completion redirection, state replacement, command mutation and finishing through a live command loan.
 [CI](../../.github/workflows/verify_ext4.yml) runs the same checks.
 
 The emitted host library exercises proof erasure and Linux byte compatibility.
@@ -324,3 +326,10 @@ The host snapshot type does not certify an OSTD frame or DMA loan.
 
 Read [FORMAT_PROFILE.md](FORMAT_PROFILE.md), [TRUST_BOUNDARY.md](TRUST_BOUNDARY.md)
 and [sources.json](sources.json) before extending the implementation.
+
+The bounded [EA namespace durable transaction](EA_DURABLE_NAMESPACE.md) adds a
+separate EA-aware single-transaction writer, raw crash-cut journal discovery and
+checked repaired-shadow recovery. Its explicit atomic-block, flush,
+exclusive-source and restart-quiescence premises require CortenMM/OSTD and
+actual-device refinement. Full EA filesystem, concurrent EA windows, mounted
+operation and hardware durability gates remain open.

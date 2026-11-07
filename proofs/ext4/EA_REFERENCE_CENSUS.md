@@ -62,7 +62,8 @@ as an attribute table; no blanket zero-padding condition is inferred.
 EA values may occupy ordinary inode numbers or the supported reserved 3/4 slots.
 No allocated zero-reference EA inode is admitted as an orphan.
 
-The header requires the superblock clean-state marker, RECOVER clear and
+The raw header requires the superblock clean-state marker, retains the actual
+RECOVER bit for journal inspection, and requires
 `s_last_orphan == 0`; ORPHAN_FILE and ORPHAN_PRESENT remain unsupported by the
 feature policy. These exclusions do not prove that a journal is empty or that
 a namespace/mount is valid. The local `ea_inode::Unlinked` codec state remains
@@ -162,3 +163,8 @@ require composition before full filesystem admission. Authenticated allocation, 
 orphan/reclamation, concurrent lock/cache protocols and durable crash recovery
 remain unfinished. Runtime execution must use Asterinas's CortenMM/OSTD
 framekernel memory, ownership, locking and device interfaces.
+
+Raw EA structural admission accepts actual RECOVER bytes; it does not certify
+journal replay or clean state. Legacy namespace mutation still uses clean-only
+namespace inspection. The separate [durable path](EA_DURABLE_NAMESPACE.md)
+scans and repairs actual journal bytes before full namespace admission.

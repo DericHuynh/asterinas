@@ -370,3 +370,19 @@ pub mod ns_exchange_relation;
 pub mod ns_exchange;
 
 pub mod ns_exchange_prepared;
+
+pub mod ea_bootstrap;
+
+pub mod ea_super_state;
+
+pub mod ns_journal_prepared;
+
+pub mod ea_write_io;
+
+pub mod ea_writer_admission;
+
+pub mod ea_recovery_admission;
+
+pub mod ea_recovery_image;
+
+pub mod ea_write_bootstrap;

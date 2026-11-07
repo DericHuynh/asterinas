@@ -139,3 +139,10 @@ invariant-preservation proof and a nonempty reachable example. Arbitrary finite
 interleavings must be covered by induction over the same transition relation.
 Tests supplement those proofs; they do not replace a missing transition or
 assumption about actual locks, devices or CortenMM ownership.
+
+The bounded [EA namespace durable transaction](EA_DURABLE_NAMESPACE.md) adds a
+separate EA-aware single-transaction writer, raw crash-cut journal discovery and
+checked repaired-shadow recovery. Its explicit atomic-block, flush,
+exclusive-source and restart-quiescence premises require CortenMM/OSTD and
+actual-device refinement. Full EA filesystem, concurrent EA windows, mounted
+operation and hardware durability gates remain open.

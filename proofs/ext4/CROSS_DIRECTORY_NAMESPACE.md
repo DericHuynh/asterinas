@@ -175,3 +175,10 @@ independent host protocol instead rejects every stale source revision under
 one exclusive publication boundary. Its correctness rests on that explicit
 protocol and whole result admission, not an inherited inode-number lock-order
 argument. No Linux defect is claimed.
+
+The separate [EA namespace durable transaction](EA_DURABLE_NAMESPACE.md)
+consumes checked proposals from these components. It adds one bounded serial
+JBD2 writer, actual EA crash-cut discovery and raw recovery construction under
+an explicit device contract. Mounted durable publication, full validator
+acceptance completeness, universal repeated EA restart/admission closure and
+CortenMM/OSTD device refinement remain open.

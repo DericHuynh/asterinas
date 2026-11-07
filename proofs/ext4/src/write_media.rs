@@ -45,7 +45,15 @@ pub(crate) proof fn program_context(v: write_io::Images)
     requires write_io::valid_images(v),
     ensures transaction::wf(v.tx), v.journal_block == v.tx.layout.start,
 {
-    reveal(write_io::valid_images);
+    write_io::valid_images_implies_transport_images(v);
+    program_context_transport(v)
+}
+
+pub(crate) proof fn program_context_transport(v: write_io::Images)
+    requires write_io::transport_images(v),
+    ensures transaction::wf(v.tx), v.journal_block == v.tx.layout.start,
+{
+    reveal(write_io::transport_images);
 }
 
 proof fn home_target(v: write_io::Images, index: int)
@@ -62,8 +70,18 @@ pub proof fn repeated_addresses_are_separated_by_a_completed_fence(v: write_io::
         write_device::is_write(later, v.tx.payloads.len()), earlier < later, address(v, earlier) == address(v, later),
     ensures write_device::fence_after(earlier, v.tx.payloads.len()) < later,
 {
+    write_io::valid_images_implies_transport_images(v);
+    repeated_addresses_are_separated_by_a_completed_fence_transport(v, earlier, later)
+}
+
+#[verifier::rlimit(30)]
+pub proof fn repeated_addresses_are_separated_by_a_completed_fence_transport(v: write_io::Images, earlier: nat, later: nat)
+    requires write_io::transport_images(v), write_device::is_write(earlier, v.tx.payloads.len()),
+        write_device::is_write(later, v.tx.payloads.len()), earlier < later, address(v, earlier) == address(v, later),
+    ensures write_device::fence_after(earlier, v.tx.payloads.len()) < later,
+{
     hide(crate::crc::fold);
-    program_context(v);
+    program_context_transport(v);
     let count = v.tx.payloads.len();
     if 8 + count <= earlier < 8 + 2 * count {
         let i = (earlier - (8 + count)) as int;
@@ -136,13 +154,25 @@ pub proof fn a_ledger_persistence_event_refines_one_atomic_block_write(m: Machin
         == disk(m, before, v).insert(address(v, k), image(v, k)),
         disk(m, before, v).dom() == before.dom(),
 {
-    program_context(v);
+    write_io::valid_images_implies_transport_images(v);
+    a_ledger_persistence_event_refines_one_atomic_block_write_transport(m, before, v, k)
+}
+
+pub proof fn a_ledger_persistence_event_refines_one_atomic_block_write_transport(m: Machine, before: Disk,
+    v: write_io::Images, k: nat)
+    requires write_io::transport_images(v), write_device::inv(m, v.tx.payloads.len()),
+        write_device::enabled(m, write_device::Event::Persist(k)), targets_exist(before, v),
+    ensures disk(write_device::next(m, write_device::Event::Persist(k), v.tx.payloads.len()), before, v)
+        == disk(m, before, v).insert(address(v, k), image(v, k)),
+        disk(m, before, v).dom() == before.dom(),
+{
+    program_context_transport(v);
     let count = v.tx.payloads.len();
     assert(k < write_device::total(count));
     assert forall|j: nat| k < j < write_device::total(count) && write_device::is_write(j, count) && m.stable.contains(j)
         implies #[trigger] address(v, j) != address(v, k) by {
         if address(v, j) == address(v, k) {
-            repeated_addresses_are_separated_by_a_completed_fence(v, k, j);
+            repeated_addresses_are_separated_by_a_completed_fence_transport(v, k, j);
             assert(m.issued.contains(j));
             assert(j <= crate::write_protocol::completed_count(m.io, count));
             assert(m.stable.contains(k));
@@ -202,8 +232,19 @@ pub proof fn each_log_record_address_has_one_writer(v: write_io::Images, k: nat,
         write_device::is_write(j, v.tx.payloads.len()), j != k,
     ensures address(v, j) != address(v, k),
 {
+    write_io::valid_images_implies_transport_images(v);
+    each_log_record_address_has_one_writer_transport(v, k, j)
+}
+
+#[verifier::rlimit(30)]
+pub proof fn each_log_record_address_has_one_writer_transport(v: write_io::Images, k: nat, j: nat)
+    requires write_io::transport_images(v),
+        4 <= k < 5 + v.tx.payloads.len() || k == 6 + v.tx.payloads.len(),
+        write_device::is_write(j, v.tx.payloads.len()), j != k,
+    ensures address(v, j) != address(v, k),
+{
     hide(crate::crc::fold);
-    program_context(v);
+    program_context_transport(v);
     let count = v.tx.payloads.len();
     if 8 + count <= j < 8 + 2 * count { home_target(v, (j - (8 + count)) as int); }
 }
@@ -213,12 +254,21 @@ pub proof fn journal_record_bytes_follow_the_issued_snapshot(m: Machine, before:
         4 <= k < 5 + v.tx.payloads.len() || k == 6 + v.tx.payloads.len(),
     ensures disk(m, before, v)[address(v, k)] == if m.stable.contains(k) { image(v, k) } else { before[address(v, k)] },
 {
-    program_context(v);
+    write_io::valid_images_implies_transport_images(v);
+    journal_record_bytes_follow_the_issued_snapshot_transport(m, before, v, k)
+}
+
+pub proof fn journal_record_bytes_follow_the_issued_snapshot_transport(m: Machine, before: Disk, v: write_io::Images, k: nat)
+    requires write_io::transport_images(v), targets_exist(before, v),
+        4 <= k < 5 + v.tx.payloads.len() || k == 6 + v.tx.payloads.len(),
+    ensures disk(m, before, v)[address(v, k)] == if m.stable.contains(k) { image(v, k) } else { before[address(v, k)] },
+{
+    program_context_transport(v);
     assert(write_device::is_write(k, v.tx.payloads.len()));
     assert(before.dom().contains(address(v, k)));
     assert forall|j: nat| j < write_device::total(v.tx.payloads.len()) && j != k
         && write_device::is_write(j, v.tx.payloads.len()) && m.stable.contains(j)
-        implies #[trigger] address(v, j) != address(v, k) by { each_log_record_address_has_one_writer(v, k, j); }
+        implies #[trigger] address(v, j) != address(v, k) by { each_log_record_address_has_one_writer_transport(v, k, j); }
     a_unique_address_is_either_old_or_its_frozen_image(before, v, m.stable, k, write_device::total(v.tx.payloads.len()));
 }
 
@@ -234,9 +284,19 @@ pub proof fn every_program_write_has_a_complete_bounded_image(v: write_io::Image
         address(v, k) < v.tx.layout.fs_blocks,
         address(v, k) as nat * 4096 + 4096 <= v.partition_bytes,
 {
-    program_context(v);
+    write_io::valid_images_implies_transport_images(v);
+    every_program_write_has_a_complete_bounded_image_transport(v, k)
+}
+
+pub proof fn every_program_write_has_a_complete_bounded_image_transport(v: write_io::Images, k: nat)
+    requires write_io::transport_images(v), write_device::is_write(k, v.tx.payloads.len()),
+    ensures command(v, k) is Write, image(v, k).len() == 4096,
+        address(v, k) < v.tx.layout.fs_blocks,
+        address(v, k) as nat * 4096 + 4096 <= v.partition_bytes,
+{
+    program_context_transport(v);
     index_state_is_valid(v.tx.payloads.len(), k);
-    write_io::expected_command_is_confined(v, write_device::at(k, v.tx.payloads.len()));
+    write_io::expected_transport_command_is_confined(v, write_device::at(k, v.tx.payloads.len()));
 }
 
 proof fn mapped_survives_one_block_write(before: Disk, layout: crate::layout::LayoutView, block: u32, bytes: Seq<u8>)
@@ -255,11 +315,20 @@ pub proof fn apply_preserves_initialized_journal_mapping(before: Disk, v: write_
     ensures crate::journal_view::mapped(apply(before, v, stable, limit), v.tx.layout),
     decreases limit,
 {
+    write_io::valid_images_implies_transport_images(v);
+    apply_preserves_initialized_journal_mapping_transport(before, v, stable, limit)
+}
+
+pub proof fn apply_preserves_initialized_journal_mapping_transport(before: Disk, v: write_io::Images, stable: Set<nat>, limit: nat)
+    requires write_io::transport_images(v), crate::journal_view::mapped(before, v.tx.layout),
+    ensures crate::journal_view::mapped(apply(before, v, stable, limit), v.tx.layout),
+    decreases limit,
+{
     if limit > 0 {
         let k = (limit - 1) as nat;
-        apply_preserves_initialized_journal_mapping(before, v, stable, k);
+        apply_preserves_initialized_journal_mapping_transport(before, v, stable, k);
         if write_device::is_write(k, v.tx.payloads.len()) && stable.contains(k) {
-            every_program_write_has_a_complete_bounded_image(v, k);
+            every_program_write_has_a_complete_bounded_image_transport(v, k);
             mapped_survives_one_block_write(apply(before, v, stable, k), v.tx.layout, address(v, k), image(v, k));
         }
     }
@@ -270,7 +339,16 @@ pub proof fn journal_writes_stay_in_the_reserved_record_range(v: write_io::Image
     ensures v.tx.layout.start <= address(v, k) < v.tx.layout.start as int + v.tx.layout.journal_blocks ==>
         address(v, k) == v.journal_block || v.journal_block as int + 1 <= address(v, k) <= v.journal_block as int + v.tx.payloads.len() + 2,
 {
-    program_context(v);
+    write_io::valid_images_implies_transport_images(v);
+    journal_writes_stay_in_the_reserved_record_range_transport(v, k)
+}
+
+pub proof fn journal_writes_stay_in_the_reserved_record_range_transport(v: write_io::Images, k: nat)
+    requires write_io::transport_images(v), write_device::is_write(k, v.tx.payloads.len()),
+    ensures v.tx.layout.start <= address(v, k) < v.tx.layout.start as int + v.tx.layout.journal_blocks ==>
+        address(v, k) == v.journal_block || v.journal_block as int + 1 <= address(v, k) <= v.journal_block as int + v.tx.payloads.len() + 2,
+{
+    program_context_transport(v);
     let count = v.tx.payloads.len();
     if 8 + count <= k < 8 + 2 * count { home_target(v, (k - (8 + count)) as int); }
 }
@@ -280,7 +358,16 @@ pub proof fn only_activation_and_retirement_write_the_journal_superblock(v: writ
         k != 2, k != 9 + 2 * v.tx.payloads.len(),
     ensures address(v, k) != v.journal_block,
 {
-    program_context(v);
+    write_io::valid_images_implies_transport_images(v);
+    only_activation_and_retirement_write_the_journal_superblock_transport(v, k)
+}
+
+pub proof fn only_activation_and_retirement_write_the_journal_superblock_transport(v: write_io::Images, k: nat)
+    requires write_io::transport_images(v), write_device::is_write(k, v.tx.payloads.len()),
+        k != 2, k != 9 + 2 * v.tx.payloads.len(),
+    ensures address(v, k) != v.journal_block,
+{
+    program_context_transport(v);
     let count = v.tx.payloads.len();
     if 8 + count <= k < 8 + 2 * count { home_target(v, (k - (8 + count)) as int); }
 }
@@ -290,11 +377,20 @@ pub proof fn untouched_journal_blocks_retain_their_initial_bytes(m: Machine, bef
         v.tx.payloads.len() + 3 <= logical < v.tx.layout.journal_blocks,
     ensures disk(m, before, v)[(v.journal_block + logical) as u32] == before[(v.journal_block + logical) as u32],
 {
-    program_context(v);
+    write_io::valid_images_implies_transport_images(v);
+    untouched_journal_blocks_retain_their_initial_bytes_transport(m, before, v, logical)
+}
+
+pub proof fn untouched_journal_blocks_retain_their_initial_bytes_transport(m: Machine, before: Disk, v: write_io::Images, logical: u32)
+    requires write_io::transport_images(v), before.dom().contains((v.journal_block + logical) as u32),
+        v.tx.payloads.len() + 3 <= logical < v.tx.layout.journal_blocks,
+    ensures disk(m, before, v)[(v.journal_block + logical) as u32] == before[(v.journal_block + logical) as u32],
+{
+    program_context_transport(v);
     let block = (v.journal_block + logical) as u32;
     assert forall|k: nat| k < write_device::total(v.tx.payloads.len())
         && write_device::is_write(k, v.tx.payloads.len()) && m.stable.contains(k)
-        implies #[trigger] address(v, k) != block by { journal_writes_stay_in_the_reserved_record_range(v, k); }
+        implies #[trigger] address(v, k) != block by { journal_writes_stay_in_the_reserved_record_range_transport(v, k); }
     apply_frames_every_unwritten_block(before, v, m.stable, write_device::total(v.tx.payloads.len()), block);
 }
 
@@ -303,7 +399,16 @@ pub proof fn journal_superblock_is_one_of_the_ordered_state_images(m: Machine, b
     ensures disk(m, before, v)[v.journal_block] == if m.stable.contains(9 + 2 * v.tx.payloads.len()) { v.tail }
         else if m.stable.contains(2) { v.activation } else { before[v.journal_block] },
 {
-    program_context(v);
+    write_io::valid_images_implies_transport_images(v);
+    journal_superblock_is_one_of_the_ordered_state_images_transport(m, before, v)
+}
+
+pub proof fn journal_superblock_is_one_of_the_ordered_state_images_transport(m: Machine, before: Disk, v: write_io::Images)
+    requires write_io::transport_images(v), targets_exist(before, v),
+    ensures disk(m, before, v)[v.journal_block] == if m.stable.contains(9 + 2 * v.tx.payloads.len()) { v.tail }
+        else if m.stable.contains(2) { v.activation } else { before[v.journal_block] },
+{
+    program_context_transport(v);
     let count = v.tx.payloads.len();
     let tail = 9 + 2 * count;
     if m.stable.contains(tail) {
@@ -314,7 +419,7 @@ pub proof fn journal_superblock_is_one_of_the_ordered_state_images(m: Machine, b
         assert(before.dom().contains(address(v, 2)));
         assert forall|j: nat| j < write_device::total(count) && j != 2 && write_device::is_write(j, count) && m.stable.contains(j)
             implies #[trigger] address(v, j) != address(v, 2) by {
-            only_activation_and_retirement_write_the_journal_superblock(v, j);
+            only_activation_and_retirement_write_the_journal_superblock_transport(v, j);
         }
         a_unique_address_is_either_old_or_its_frozen_image(before, v, m.stable, 2, write_device::total(count));
     }
@@ -325,7 +430,16 @@ pub proof fn a_stable_home_write_has_its_exact_afterimage(m: Machine, before: Di
         m.stable.contains(8 + v.tx.payloads.len() + index),
     ensures disk(m, before, v)[v.tx.original[index as int].block] == v.tx.original[index as int].image,
 {
-    program_context(v);
+    write_io::valid_images_implies_transport_images(v);
+    a_stable_home_write_has_its_exact_afterimage_transport(m, before, v, index)
+}
+
+pub proof fn a_stable_home_write_has_its_exact_afterimage_transport(m: Machine, before: Disk, v: write_io::Images, index: nat)
+    requires write_io::transport_images(v), index < v.tx.original.len(),
+        m.stable.contains(8 + v.tx.payloads.len() + index),
+    ensures disk(m, before, v)[v.tx.original[index as int].block] == v.tx.original[index as int].image,
+{
+    program_context_transport(v);
     let count = v.tx.payloads.len();
     let k = 8 + count + index;
     home_target(v, index as int);
@@ -346,8 +460,19 @@ pub proof fn before_checkpoint_block_zero_is_only_the_recovery_flag_image(m: Mac
     ensures disk(m, before, v).dom().contains(0),
         disk(m, before, v)[0] == if m.stable.contains(0) { v.dirty } else { before[0] },
 {
+    write_io::valid_images_implies_transport_images(v);
+    before_checkpoint_block_zero_is_only_the_recovery_flag_image_transport(m, before, v)
+}
+
+#[verifier::rlimit(20)]
+pub proof fn before_checkpoint_block_zero_is_only_the_recovery_flag_image_transport(m: Machine, before: Disk, v: write_io::Images)
+    requires write_io::transport_images(v), before.dom().contains(0),
+        forall|i: nat| i < v.tx.payloads.len() ==> !#[trigger] m.stable.contains(8 + v.tx.payloads.len() + i),
+    ensures disk(m, before, v).dom().contains(0),
+        disk(m, before, v)[0] == if m.stable.contains(0) { v.dirty } else { before[0] },
+{
     hide(crate::crc::fold);
-    program_context(v);
+    program_context_transport(v);
     let count = v.tx.payloads.len();
     assert forall|j: nat| j < write_device::total(count) && j != 0 && write_device::is_write(j, count) && m.stable.contains(j)
         implies #[trigger] address(v, j) != address(v, 0) by {
@@ -372,6 +497,21 @@ pub proof fn a_successful_flush_refines_finitely_many_issued_atomic_writes(m: Ma
             && disk(r.0[i + 1], before, v) == disk(r.0[i], before, v).insert(address(v, k), image(v, k))),
         disk(r.0[r.0.len() as int - 2], before, v) == disk(r.0.last(), before, v),
 {
+    write_io::valid_images_implies_transport_images(v);
+    a_successful_flush_refines_finitely_many_issued_atomic_writes_transport(m, before, v)
+}
+
+pub proof fn a_successful_flush_refines_finitely_many_issued_atomic_writes_transport(m: Machine, before: Disk,
+    v: write_io::Images) -> (r: (Seq<Machine>, Seq<write_device::Event>))
+    requires write_io::transport_images(v), write_device::inv(m, v.tx.payloads.len()), targets_exist(before, v),
+        m.io.pending, write_device::is_fence(crate::write_protocol::completed_count(m.io, v.tx.payloads.len()), v.tx.payloads.len()),
+    ensures write_device::execution(r.0, r.1, v.tx.payloads.len()), r.0[0] == m,
+        r.0.last() == write_device::next(m, write_device::Event::Complete(true), v.tx.payloads.len()),
+        r.1.len() > 0,
+        forall|i: int| 0 <= i < r.1.len() - 1 ==> ((#[trigger] r.1[i]) matches write_device::Event::Persist(k)
+            && disk(r.0[i + 1], before, v) == disk(r.0[i], before, v).insert(address(v, k), image(v, k))),
+        disk(r.0[r.0.len() as int - 2], before, v) == disk(r.0.last(), before, v),
+{
     let count = v.tx.payloads.len();
     let (states, events) = write_device::a_successful_flush_has_a_finite_persistence_refinement(m, count);
     write_device::every_finite_io_interleaving(states, events, count);
@@ -382,7 +522,7 @@ pub proof fn a_successful_flush_refines_finitely_many_issued_atomic_writes(m: Ma
         assert(write_device::inv(states[i], count));
         assert(write_device::enabled(states[i], write_device::Event::Persist(k)));
         assert(states[i + 1] == write_device::next(states[i], write_device::Event::Persist(k), count));
-        a_ledger_persistence_event_refines_one_atomic_block_write(states[i], before, v, k);
+        a_ledger_persistence_event_refines_one_atomic_block_write_transport(states[i], before, v, k);
     }
     (states, events)
 }
@@ -395,8 +535,20 @@ pub proof fn without_a_stable_home_target_zero_only_dirty_marking_changes_block_
     ensures disk(m, before, v).dom().contains(0),
         disk(m, before, v)[0] == if m.stable.contains(0) { v.dirty } else { before[0] },
 {
+    write_io::valid_images_implies_transport_images(v);
+    without_a_stable_home_target_zero_only_dirty_marking_changes_block_zero_transport(m, before, v)
+}
+
+#[verifier::rlimit(20)]
+pub proof fn without_a_stable_home_target_zero_only_dirty_marking_changes_block_zero_transport(m: Machine, before: Disk, v: write_io::Images)
+    requires write_io::transport_images(v), before.dom().contains(0),
+        forall|i: nat| i < v.tx.payloads.len() && v.tx.original[i as int].block == 0
+            ==> !#[trigger] m.stable.contains(8 + v.tx.payloads.len() + i),
+    ensures disk(m, before, v).dom().contains(0),
+        disk(m, before, v)[0] == if m.stable.contains(0) { v.dirty } else { before[0] },
+{
     hide(crate::crc::fold);
-    program_context(v);
+    program_context_transport(v);
     let count = v.tx.payloads.len();
     assert forall|j: nat| j < write_device::total(count) && j != 0 && write_device::is_write(j, count) && m.stable.contains(j)
         implies #[trigger] address(v, j) != address(v, 0) by {
@@ -407,6 +559,52 @@ pub proof fn without_a_stable_home_target_zero_only_dirty_marking_changes_block_
     }
     a_unique_address_is_either_old_or_its_frozen_image(before, v, m.stable, 0, write_device::total(count));
     apply_keeps_every_existing_block(before, v, m.stable, write_device::total(count));
+}
+
+
+/// Whole-block atomic transport may update neighboring inode slots while
+/// preserving an exact source-bound slice, such as all 256 bytes of inode 8.
+pub proof fn apply_preserves_a_fixed_block_slice(before: Disk, v: write_io::Images, stable: Set<nat>,
+    limit: nat, block: u32, first: int, end: int)
+    requires before.dom().contains(block), before[block].len() == 4096, 0 <= first <= end <= 4096,
+        forall|k: nat| k < limit && write_device::is_write(k, v.tx.payloads.len())
+            && stable.contains(k) && address(v, k) == block ==>
+                (#[trigger] image(v, k)).len() == 4096
+                && image(v, k).subrange(first, end) == before[block].subrange(first, end),
+    ensures apply(before, v, stable, limit).dom().contains(block),
+        apply(before, v, stable, limit)[block].len() == 4096,
+        apply(before, v, stable, limit)[block].subrange(first, end) == before[block].subrange(first, end),
+    decreases limit,
+{
+    if limit > 0 {
+        let k = (limit - 1) as nat;
+        apply_preserves_a_fixed_block_slice(before, v, stable, k, block, first, end);
+        if write_device::is_write(k, v.tx.payloads.len()) && stable.contains(k) && address(v, k) == block {
+            assert(image(v, k).len() == 4096);
+            assert(image(v, k).subrange(first, end) == before[block].subrange(first, end));
+        }
+    }
+}
+
+
+/// Payloads at block two or later keep every transport write away from the
+/// primary group-descriptor block, independent of filesystem feature policy.
+pub proof fn all_transport_writer_commands_avoid_block_one(images: write_io::Images)
+    requires write_io::transport_images(images),
+        forall|i: int| 0 <= i < images.tx.original.len() ==> (#[trigger] images.tx.original[i]).block >= 2,
+    ensures forall|k: nat| write_device::is_write(k, images.tx.payloads.len()) ==>
+        #[trigger] address(images, k) != 1,
+{
+    program_context_transport(images);
+    let count = images.tx.payloads.len();
+    assert forall|k: nat| write_device::is_write(k, count) implies
+        #[trigger] address(images, k) != 1 by {
+        if 8 + count <= k < 8 + 2 * count {
+            let i = (k - (8 + count)) as int;
+            assert(0 <= i < images.tx.original.len());
+            assert(images.tx.original[i].block >= 2);
+        }
+    }
 }
 
 }

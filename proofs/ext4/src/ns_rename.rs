@@ -19,6 +19,7 @@ pub enum Error { Invalid, ReadOnly, NotFound, Exists, NoSpace, Rejected }
 
 pub open spec fn certified(c: NamespaceView, source: Seq<u8>) -> bool {
     ea_namespace::valid(c) && c.allocation.integrity.references.index.header.source == source
+        && !crate::super_state::is_dirty(source)
 }
 pub open spec fn renamed(before: Seq<EntryView>, after: Seq<EntryView>, entry: usize,
     directory: u32, old_name: Seq<u8>, new_name: Seq<u8>, target: u32, generation: u32) -> bool {

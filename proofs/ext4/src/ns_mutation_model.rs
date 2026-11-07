@@ -24,6 +24,7 @@ pub struct CheckoutView { pub epoch: u64, pub source: Seq<u8>, pub certificate: 
 pub open spec fn certified(certificate: NamespaceView, source: Seq<u8>) -> bool {
     ea_namespace::valid(certificate)
         && certificate.allocation.integrity.references.index.header.source == source
+        && !crate::super_state::is_dirty(source)
 }
 #[verifier::opaque]
 pub open spec fn valid(v: View) -> bool {

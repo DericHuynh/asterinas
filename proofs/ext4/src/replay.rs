@@ -277,6 +277,33 @@ impl ReplayPlan {
             exists|p: int| 0 <= p < self.selection().len() && self.selection()[p] == j)
     }
 
+    /// Conservatively checks every parsed committed candidate, including writes
+    /// later suppressed by revoke or replacement selection.
+    pub fn has_no_primary_writes(&self) -> (r: bool)
+        ensures r == (forall|i: int| 0 <= i < self.log().len() ==>
+            (#[trigger] self.log()[i]).block != 0),
+    {
+        let mut i = 0usize;
+        while i < self.writes.len()
+            invariant i <= self.writes.len(),
+                forall|j: int| 0 <= j < i ==> (#[trigger] self.writes@[j].view()).block != 0,
+            decreases self.writes.len() - i,
+        {
+            if self.writes[i].block() == 0 {
+                assert(self.log()[i as int].block == 0);
+                return false;
+            }
+            proof {
+                assert forall|j: int| 0 <= j < i + 1 implies
+                    (#[trigger] self.writes@[j].view()).block != 0 by {
+                    if j < i { assert(self.writes@[j].view().block != 0); }
+                }
+            }
+            i += 1;
+        }
+        true
+    }
+
     pub fn len(&self) -> (r: usize) ensures self.refines(), r == self.selection().len() {
         proof { use_type_invariant(self); }
         self.selected.len()

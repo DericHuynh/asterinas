@@ -153,21 +153,35 @@ pub proof fn every_fresh_header_is_an_issued_metadata_image(m: Machine, before: 
         || logical as nat == v.tx.payloads.len() + 2
             && write_media::disk(m, before, v)[(v.tx.layout.start + logical) as u32] == v.tx.commit,
 {
+    write_recognition::ordinary_context_implies_transport_context(before, v);
+    every_fresh_header_is_an_issued_metadata_image_transport(m, before, v, logical, candidate)
+}
+
+pub proof fn every_fresh_header_is_an_issued_metadata_image_transport(m: Machine, before: Disk, v: write_io::Images,
+    logical: u32, candidate: u32)
+    requires write_recognition::transport_context(before, v), 1 <= logical < v.tx.layout.journal_blocks,
+        v.tx.sequence <= candidate,
+        jbd2::header_ok(write_media::disk(m, before, v)[(v.tx.layout.start + logical) as u32], candidate),
+    ensures candidate == v.tx.sequence,
+        logical == 1 && write_media::disk(m, before, v)[(v.tx.layout.start + logical) as u32] == v.tx.descriptor
+        || logical as nat == v.tx.payloads.len() + 2
+            && write_media::disk(m, before, v)[(v.tx.layout.start + logical) as u32] == v.tx.commit,
+{
     hide(crc::fold);
-    reveal(write_io::valid_images);
+    reveal(write_io::transport_images);
     let count = v.tx.payloads.len();
     freshness::an_old_journal_block_cannot_have_a_current_or_later_header(before, v.tx.layout,
         bytes::be32(v.initial_journal, 24) as u32, v.tx.sequence, logical, candidate);
     if logical == 1 {
-        write_media::journal_record_bytes_follow_the_issued_snapshot(m, before, v, 4);
+        write_media::journal_record_bytes_follow_the_issued_snapshot_transport(m, before, v, 4);
     } else if 2 <= logical < count + 2 {
         let index = logical as int - 2;
-        write_media::journal_record_bytes_follow_the_issued_snapshot(m, before, v, 5 + index as nat);
+        write_media::journal_record_bytes_follow_the_issued_snapshot_transport(m, before, v, 5 + index as nat);
         freshness::an_encoded_payload_cannot_be_a_metadata_header(v.tx, index, candidate);
     } else if logical as nat == count + 2 {
-        write_media::journal_record_bytes_follow_the_issued_snapshot(m, before, v, 6 + count);
+        write_media::journal_record_bytes_follow_the_issued_snapshot_transport(m, before, v, 6 + count);
     } else {
-        write_media::untouched_journal_blocks_retain_their_initial_bytes(m, before, v, logical);
+        write_media::untouched_journal_blocks_retain_their_initial_bytes_transport(m, before, v, logical);
     }
 }
 
@@ -175,11 +189,19 @@ pub proof fn every_writer_media_has_a_shaped_active_stream(m: Machine, before: D
     requires write_recognition::context(before, v),
     ensures shaped(v.tx, write_recognition::source(m, before, v)),
 {
+    write_recognition::ordinary_context_implies_transport_context(before, v);
+    every_writer_media_has_a_shaped_active_stream_transport(m, before, v)
+}
+
+pub proof fn every_writer_media_has_a_shaped_active_stream_transport(m: Machine, before: Disk, v: write_io::Images)
+    requires write_recognition::transport_context(before, v),
+    ensures shaped(v.tx, write_recognition::source(m, before, v)),
+{
     hide(crc::fold);
-    reveal(write_io::valid_images);
+    reveal(write_io::transport_images);
     let source = write_recognition::source(m, before, v);
     let media = write_media::disk(m, before, v);
-    write_media::apply_preserves_initialized_journal_mapping(before, v, m.stable, write_device::total(v.tx.payloads.len()));
+    write_media::apply_preserves_initialized_journal_mapping_transport(before, v, m.stable, write_device::total(v.tx.payloads.len()));
     assert forall|ordinal: u32, sequence: u32| ordinal < source.blocks - 1 && v.tx.sequence <= sequence
         && #[trigger] jbd2::header_ok(scan::block_at(source.journal, source.blocks, 1, ordinal), sequence) implies
         sequence == v.tx.sequence
@@ -188,7 +210,7 @@ pub proof fn every_writer_media_has_a_shaped_active_stream(m: Machine, before: D
                 && scan::block_at(source.journal, source.blocks, 1, ordinal) == v.tx.commit) by {
         journal_view::scanned_block_is_the_reserved_ring_image(media, v.tx.layout, 1, ordinal);
         assert(ring::position(1, source.blocks, 1, ordinal) == ordinal as nat + 1);
-        every_fresh_header_is_an_issued_metadata_image(m, before, v, (ordinal + 1) as u32, sequence);
+        every_fresh_header_is_an_issued_metadata_image_transport(m, before, v, (ordinal + 1) as u32, sequence);
     }
     reveal(shaped);
 }
@@ -197,18 +219,26 @@ pub proof fn every_writer_crash_snapshot_is_admitted(m: Machine, before: Disk, v
     requires write_recognition::context(before, v), layout.wf(), layout.view() == v.tx.layout,
     ensures scan_budget::admitted(journal_view::snapshot(write_media::disk(m, before, v), v.tx.layout), v.tx.uuid, layout),
 {
+    write_recognition::ordinary_context_implies_transport_context(before, v);
+    every_writer_crash_snapshot_is_admitted_transport(m, before, v, layout)
+}
+
+pub proof fn every_writer_crash_snapshot_is_admitted_transport(m: Machine, before: Disk, v: write_io::Images, layout: &JournalLayout)
+    requires write_recognition::transport_context(before, v), layout.wf(), layout.view() == v.tx.layout,
+    ensures scan_budget::admitted(journal_view::snapshot(write_media::disk(m, before, v), v.tx.layout), v.tx.uuid, layout),
+{
     hide(crc::fold);
-    reveal(write_io::valid_images);
+    reveal(write_io::transport_images);
     let media = write_media::disk(m, before, v);
     let journal = journal_view::snapshot(media, v.tx.layout);
-    write_media::apply_preserves_initialized_journal_mapping(before, v, m.stable, write_device::total(v.tx.payloads.len()));
-    write_media::journal_superblock_is_one_of_the_ordered_state_images(m, before, v);
+    write_media::apply_preserves_initialized_journal_mapping_transport(before, v, m.stable, write_device::total(v.tx.payloads.len()));
+    write_media::journal_superblock_is_one_of_the_ordered_state_images_transport(m, before, v);
     journal_view::snapshot_block_is_the_physical_image(media, v.tx.layout, 0);
     if m.stable.contains(9 + 2 * v.tx.payloads.len()) {
         assert(journal.subrange(0, 1024) =~= v.tail.subrange(0, 1024));
     } else if m.stable.contains(2) {
         assert(journal.subrange(0, 1024) =~= v.activation.subrange(0, 1024));
-        every_writer_media_has_a_shaped_active_stream(m, before, v);
+        every_writer_media_has_a_shaped_active_stream_transport(m, before, v);
         a_shaped_writer_journal_fits_scan_limits(v.tx, write_recognition::source(m, before, v));
         assert(scan_budget::source(journal, v.tx.uuid, layout) == write_recognition::source(m, before, v));
     } else {
@@ -299,6 +329,106 @@ pub proof fn every_writer_crash_snapshot_can_prepare_recovery(m: Machine, before
         every_committed_writer_stream_satisfies_the_superblock_replay_policy(m, before, v);
     }
     reveal(recovery_profile::input_ok);
+}
+
+
+/// All finite serial issue/completion/persistence/error/abort traces preserve
+/// actual scanner admission under the explicit atomic-block/flush ledger.
+pub proof fn every_finite_transport_interleaving_has_actual_scanner_admission(states: Seq<Machine>,
+    events: Seq<write_device::Event>, before: Disk, v: write_io::Images, layout: &JournalLayout)
+    requires write_recognition::transport_context(before, v), layout.wf(), layout.view() == v.tx.layout,
+        write_device::execution(states, events, v.tx.payloads.len()), states[0] == write_device::initial(),
+    ensures forall|i: int| 0 <= i < states.len() ==> #[trigger] write_device::inv(states[i], v.tx.payloads.len())
+        && scan_budget::admitted(journal_view::snapshot(write_media::disk(states[i], before, v), v.tx.layout), v.tx.uuid, layout),
+{
+    write_io::transport_command_context(v);
+    write_device::initialization(v.tx.payloads.len());
+    write_device::every_finite_io_interleaving(states, events, v.tx.payloads.len());
+    assert forall|i: int| 0 <= i < states.len() implies #[trigger] write_device::inv(states[i], v.tx.payloads.len())
+        && scan_budget::admitted(journal_view::snapshot(write_media::disk(states[i], before, v), v.tx.layout), v.tx.uuid, layout) by {
+        every_writer_crash_snapshot_is_admitted_transport(states[i], before, v, layout);
+    }
+}
+
+
+/// Actual parsed committed streams contain exactly the encoded non-primary
+/// originals. Source provenance and completed fences establish exact bytes
+/// without interpreting checksum equality as byte equality.
+#[verifier::rlimit(30)]
+pub proof fn every_committed_writer_stream_excludes_primary_targets_transport(
+    m: Machine, before: Disk, v: write_io::Images)
+    requires write_recognition::transport_context(before, v),
+        write_device::inv(m, v.tx.payloads.len()),
+        forall|i: int| 0 <= i < v.tx.original.len() ==> (#[trigger] v.tx.original[i]).block != 0,
+    ensures crate::recovery_io::ea_non_primary_streams(write_recognition::source(m, before, v)),
+{
+    hide(crc::fold);
+    hide(transaction::wf);
+    reveal(write_io::transport_images);
+    let media = write_media::disk(m, before, v);
+    let source = write_recognition::source(m, before, v);
+    every_writer_media_has_a_shaped_active_stream_transport(m, before, v);
+    write_media::apply_preserves_initialized_journal_mapping_transport(
+        before, v, m.stable, write_device::total(v.tx.payloads.len()));
+    reveal(crate::recovery_io::ea_non_primary_streams);
+    assert forall|records: Seq<Record>| #[trigger] scan_trace::well_formed(records, source)
+        && (records.len() == 0 || records.last().kind == 2) implies
+        (forall|i: int| 0 <= i < scan_trace::writes(records).len() ==>
+            (#[trigger] scan_trace::writes(records)[i]).block != 0) by {
+        a_shaped_journal_has_only_small_recognized_prefixes(v.tx, source, records);
+        if records.len() == 0 {
+            assert(records =~= Seq::<Record>::empty());
+            scan_trace::empty_records(source);
+        } else {
+            assert(records.len() == 2);
+            assert(scan_trace::record_ok(records[1], source)) by { reveal(scan_trace::well_formed); }
+            record_header(records[1], source);
+            let ordinal = records[1].start;
+            assert(records[1].sequence == v.tx.sequence) by {
+                reveal(scan_trace::well_formed);
+                assert(records[0].kind == 1);
+            }
+            journal_view::scanned_block_is_the_reserved_ring_image(media, v.tx.layout, 1, ordinal);
+            assert(ring::position(1, source.blocks, 1, ordinal) == ordinal as nat + 1);
+            assert(freshness::commit_header(
+                media[(v.tx.layout.start + ordinal + 1) as u32], v.tx.sequence));
+            write_recognition::every_fresh_commit_header_is_the_persisted_commit_record_transport(
+                m, before, v, (ordinal + 1) as u32);
+            write_recognition::a_persisted_commit_has_the_complete_encoded_log_transport(m, before, v);
+            transaction_refinement::encoded_transaction_has_a_complete_committed_certificate(v.tx, source);
+            assert(records =~= transaction_refinement::records(v.tx)) by {
+                assert forall|i: int| 0 <= i < records.len() implies
+                    #[trigger] records[i] == transaction_refinement::records(v.tx)[i] by {
+                    scan_trace::well_formed_prefixes_agree_at_every_common_position(
+                        records, transaction_refinement::records(v.tx), source, i as nat);
+                }
+            }
+            assert(scan_trace::writes(records) == transaction_refinement::log(v.tx));
+            assert forall|i: int| 0 <= i < scan_trace::writes(records).len() implies
+                (#[trigger] scan_trace::writes(records)[i]).block != 0 by {
+                assert(i < v.tx.original.len());
+                assert(scan_trace::writes(records)[i].block == v.tx.original[i].block);
+            }
+        }
+    }
+}
+
+/// The EA writer's stronger payload guard supplies the generic non-primary
+/// requirement without granting ordinary-profile filesystem authority.
+pub proof fn every_committed_ea_writer_stream_excludes_primary_targets(
+    m: Machine, before: Disk, v: write_io::Images)
+    requires write_recognition::transport_context(before, v),
+        write_device::inv(m, v.tx.payloads.len()), crate::ea_write_io::valid_images(v),
+    ensures crate::recovery_io::ea_non_primary_streams(write_recognition::source(m, before, v)),
+{
+    hide(crate::crc::fold);
+    hide(crate::ea_source::header_accepted);
+    reveal(crate::ea_write_io::valid_images);
+    assert forall|i: int| 0 <= i < v.tx.original.len() implies
+        (#[trigger] v.tx.original[i]).block != 0 by {
+        assert(v.tx.original[i].block >= 2);
+    }
+    every_committed_writer_stream_excludes_primary_targets_transport(m, before, v);
 }
 
 }
