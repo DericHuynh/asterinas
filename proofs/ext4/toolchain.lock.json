@@ -227,7 +227,11 @@
     "src/ns_edit_prepared.rs",
     "src/ns_inode_links.rs",
     "src/ns_namespace_edit.rs",
-    "src/ns_namespace_relation.rs"
+    "src/ns_namespace_relation.rs",
+    "src/ns_file_rename.rs",
+    "src/ns_file_rename_prepared.rs",
+    "src/ns_file_rename_relation.rs",
+    "src/ns_record_target.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -1019,7 +1023,27 @@
     "ns_namespace_relation::accepted_additions_have_the_exact_target_generation",
     "ns_namespace_relation::accepted_removals_leave_no_old_name",
     "ns_namespace_relation::every_unrelated_full_key_retains_its_exact_binding",
-    "ns_namespace_edit::every_prepared_patch_has_an_actual_inode_or_directory_block_witness"
+    "ns_namespace_edit::every_prepared_patch_has_an_actual_inode_or_directory_block_witness",
+    "ns_file_rename::candidate_images_are_certified_and_have_equal_length",
+    "ns_file_rename::prepared_edits_have_exact_operation",
+    "ns_file_rename::prepared_edits_never_authorize_READONLY_source_images",
+    "ns_file_rename::prepared_edits_preserve_every_unrelated_source_byte",
+    "ns_file_rename::prepared_inode_edits_have_exact_links_times_and_versions",
+    "ns_file_rename::prepared_patches_target_only_checked_directory_and_inode_table_blocks",
+    "ns_file_rename::same_inode_operations_preserve_every_source_byte",
+    "ns_file_rename_prepared::prepared_file_renames_retain_their_exact_source_and_result",
+    "ns_file_rename_relation::every_unrelated_full_key_retains_its_exact_binding",
+    "ns_file_rename_relation::exchange_swaps_both_exact_inode_generations",
+    "ns_file_rename_relation::replacing_rename_removes_only_the_source_and_keeps_the_victim_linked",
+    "ns_file_rename_relation::same_inode_rename_preserves_every_full_key",
+    "ns_mutation::accepted_file_renames_preserve_admission_and_the_exact_operation",
+    "ns_record_target::replacement_frames_every_other_directory_byte",
+    "ns_record_target::replacement_preserves_every_other_record",
+    "ns_record_target::replacement_preserves_record_ordinals_full_names_and_spans",
+    "ns_record_target::replacement_sets_exact_target_type_and_preserves_leaf_checksums",
+    "ns_file_rename::every_prepared_patch_has_an_actual_inode_or_directory_block_witness",
+    "ns_file_rename::prepared_directory_edits_have_exact_source_and_requested_record_witnesses",
+    "ns_file_rename::prepared_inode_edits_preserve_extent_sector_and_EA_bytes"
   ],
   "required_flags": [
     "--no-cheating",
@@ -1718,6 +1742,18 @@
     "ns_namespace_edit::prepare_link",
     "ns_namespace_edit::prepare_rename",
     "ns_namespace_edit::prepare_unlink",
-    "ns_namespace_relation::check"
+    "ns_namespace_relation::check",
+    "ns_checkout::prepare_rename_exchange",
+    "ns_checkout::prepare_rename_replace",
+    "ns_file_rename::bytes",
+    "ns_file_rename::patches",
+    "ns_file_rename::prepare_exchange",
+    "ns_file_rename::prepare_replace",
+    "ns_file_rename_prepared::before_bytes",
+    "ns_file_rename_prepared::bytes",
+    "ns_file_rename_prepared::epoch",
+    "ns_file_rename_relation::check",
+    "ns_mutation::publish_file_rename",
+    "ns_record_target::replace"
   ]
 }

@@ -356,3 +356,11 @@ pub mod ns_namespace_relation;
 pub mod ns_namespace_edit;
 
 pub mod ns_edit_prepared;
+
+pub mod ns_record_target;
+
+pub mod ns_file_rename_relation;
+
+pub mod ns_file_rename;
+
+pub mod ns_file_rename_prepared;

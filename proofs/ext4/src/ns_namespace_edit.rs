@@ -251,7 +251,7 @@ proof fn allocation_ordinary_at(v: crate::ea_allocation::AllocationView, ordinal
 }
 
 // Bind the captured inode to its exact admitted source slot.
-proof fn namespace_inode_node_is_exact(namespace: crate::ea_namespace::NamespaceView,
+pub(crate) proof fn namespace_inode_node_is_exact(namespace: crate::ea_namespace::NamespaceView,
     number: u32, node: crate::ea_source::NodeView)
     requires crate::ea_namespace::valid(namespace),
         crate::ea_namespace_nodes::active(namespace.index.nodes, number),
@@ -290,7 +290,7 @@ proof fn namespace_inode_node_is_exact(namespace: crate::ea_namespace::Namespace
 
 // The binding is to the actual retained source tree and final ownership
 // certificate, not to checksum equality or an independently supplied block.
-proof fn captured_piece_is_encoder_view(v: ea_directory::DirectoryView, logical: u32, raw: Seq<u8>,
+pub(crate) proof fn captured_piece_is_encoder_view(v: ea_directory::DirectoryView, logical: u32, raw: Seq<u8>,
     inodes: u32, metadata_seed: u32, indexed: bool, large: bool)
     requires ea_directory::valid(v), logical < v.pieces.len(), logical < v.physical.len(),
         (v.physical[logical as int] as nat + 1) * 4096 <= v.volume.integrity.references.index.header.source.len(),
@@ -335,7 +335,7 @@ proof fn namespace_inode_node_identity(namespace: NamespaceView, number: u32, no
 }
 
 
-proof fn assemble_inode_binding(namespace:NamespaceView,node:ea_source::NodeView,change:ns_inode_links::Change,ordinal:usize)
+pub(crate) proof fn assemble_inode_binding(namespace:NamespaceView,node:ea_source::NodeView,change:ns_inode_links::Change,ordinal:usize)
     requires ea_namespace::valid(namespace),crate::ea_namespace_nodes::active(namespace.index.nodes,node.number),
         ordinal==namespace.index.nodes.slots[node.number as int].ordinal,ordinal<namespace.allocation.ordinary.len(),
         node==namespace.allocation.ordinary[ordinal as int].parent.node,ea_source::node_valid(node),
@@ -1359,7 +1359,7 @@ spec fn discovered_inputs(source:Seq<u8>,before:NamespaceView,operation:Operatio
         old_name,new_name,target,generation,file_type,source_parent_generation,destination_parent_generation,
         seconds,nanos,patches:Seq::empty(),inode_edits:Seq::empty(),directory_edits:Seq::empty(),ancestry:path})
 }
-proof fn namespace_components_share_one_allocation(before:&ea_namespace::Namespace<'_,'_>)
+pub(crate) proof fn namespace_components_share_one_allocation(before:&ea_namespace::Namespace<'_,'_>)
     requires before.wf(),
     ensures before.view().index.volume==before.view().allocation,
         before.view().tree.index==before.view().index,
