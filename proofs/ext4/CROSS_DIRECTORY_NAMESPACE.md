@@ -34,10 +34,18 @@ A saved byte offset or old inode number alone is not an operation identity.
 | `prepare_link` | Keep the exact source full key and add one previously absent destination key to the same regular inode; every other binding remains exact | Increment that ordinary regular inode's link count by one; touch its ctime/version and the changed destination parent's ctime/mtime/version | Directory source, existing destination, link ceiling `65000`, insufficient supported capacity, unsupported layout |
 | `prepare_unlink` | Remove one exact regular-file full key and keep every other binding exact | Decrement that same inode's count by one, retaining at least one link; touch its ctime/version and the changed parent's ctime/mtime/version | Directory source, dot/root operands, and removal of a last link |
 
-The move API implements the absent-destination case. It does not provide
-replacement, exchange, whiteout or the successful same-inode replacement no-op
-of ordinary Linux `rename`. The existing same-parent API retains its separate
-contract. No fresh inode or block is allocated and no inode or block is released.
+These three APIs retain their original contracts. The move API implements
+the absent-destination case; these APIs do not provide replacement, exchange,
+whiteout or the successful same-inode replacement no-op of ordinary Linux
+`rename`. The existing same-parent API retains its separate contract.
+No fresh inode or block is allocated and no inode or block is released.
+
+The separate [regular-file replacement and exchange path](FILE_RENAME.md)
+adds `prepare_rename_replace` and `prepare_rename_exchange`, published through
+`publish_file_rename`. Both full keys must exist and name regular inodes;
+a distinct replacement victim must remain linked. Same-inode operations
+preserve every source byte. The component table below continues to describe
+the original cross-directory move, link and unlink implementation.
 
 Directory link count `1` is interpreted as an unknown count only by the
 source-selected DIR_NLINK admission rule for directories. The bounded directory

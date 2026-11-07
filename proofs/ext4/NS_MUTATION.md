@@ -29,6 +29,12 @@ EA-enabled journal/bootstrap/recovery composition remain separate boundaries.
 | `ns_mutation_model.rs` | Defines current and prepared image certificates, total capture/publication transitions, exact-source and revision matching, counter exhaustion and arbitrary finite history preservation | Actual scheduler fairness, physical locks, I/O and operation families outside this subset |
 | `ns_checkout.rs`, `ns_prepared.rs`, `ns_mutation.rs` | Owns a certified image, clones immutable checkouts, prepares outside store publication and installs the consumed prepared result only after exact revision/source comparisons; success replaces the complete image/certificate and advances one epoch, while rejection preserves current state | Efficient shared frame-backed snapshots, OSTD guard refinement, mounted caches and durable publication |
 
+The separate [regular-file replacement and exchange path](FILE_RENAME.md) adds
+`prepare_rename_replace`, `prepare_rename_exchange` and `publish_file_rename`.
+Both keys must already name regular inodes; a distinct replaced victim must
+retain another link. Same-inode operations preserve every source byte.
+The original NOREPLACE contract and its prepared type remain unchanged.
+
 ## Concrete rename semantics
 
 The source key is the full `(parent inode, old name bytes)` pair, resolved from a
@@ -173,7 +179,9 @@ Last-link unlink, rmdir and replacement of a sole-linked victim still need
 orphan/live-handle lifetime and reclamation/accounting closure.
 Create/mkdir require allocation, initialization, generation freshness, bitmap
 and group counters, security/ACL inheritance and lifecycle proofs.
-Replacing rename, exchange and whiteout need further exact transformations.
+The separate [regular-file path](FILE_RENAME.md) checks existing-destination
+replacement, exchange and same-inode no-ops within its bounded scope.
+Directory replacement, directory/mixed exchange and whiteout need further exact transformations.
 Directory growth and indexed insertion/deletion remain open.
 
 Publication means an admitted new host namespace version is visible.
