@@ -231,7 +231,10 @@
     "src/ns_file_rename.rs",
     "src/ns_file_rename_prepared.rs",
     "src/ns_file_rename_relation.rs",
-    "src/ns_record_target.rs"
+    "src/ns_record_target.rs",
+    "src/ns_exchange.rs",
+    "src/ns_exchange_prepared.rs",
+    "src/ns_exchange_relation.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -1043,7 +1046,26 @@
     "ns_record_target::replacement_sets_exact_target_type_and_preserves_leaf_checksums",
     "ns_file_rename::every_prepared_patch_has_an_actual_inode_or_directory_block_witness",
     "ns_file_rename::prepared_directory_edits_have_exact_source_and_requested_record_witnesses",
-    "ns_file_rename::prepared_inode_edits_preserve_extent_sector_and_EA_bytes"
+    "ns_file_rename::prepared_inode_edits_preserve_extent_sector_and_EA_bytes",
+    "ns_exchange::candidate_images_are_certified_and_have_equal_length",
+    "ns_exchange::every_moved_directory_has_an_exact_dotdot_edit",
+    "ns_exchange::every_prepared_patch_has_an_actual_inode_or_directory_block_witness",
+    "ns_exchange::prepared_directory_edits_have_exact_source_and_requested_record_witnesses",
+    "ns_exchange::prepared_edits_have_exact_operation",
+    "ns_exchange::prepared_edits_never_authorize_READONLY_source_images",
+    "ns_exchange::prepared_edits_preserve_every_unrelated_source_byte",
+    "ns_exchange::prepared_exchange_results_have_rooted_directory_topology",
+    "ns_exchange::prepared_inode_edits_have_exact_links_times_and_versions",
+    "ns_exchange::prepared_inode_edits_preserve_extent_sector_and_EA_bytes",
+    "ns_exchange::prepared_patches_target_only_checked_directory_and_inode_table_blocks",
+    "ns_exchange::same_inode_operations_preserve_every_source_byte",
+    "ns_exchange_prepared::prepared_exchanges_retain_their_exact_source_and_result",
+    "ns_exchange_relation::every_unrelated_full_key_has_an_exact_predecessor",
+    "ns_exchange_relation::every_unrelated_full_key_retains_its_exact_binding",
+    "ns_exchange_relation::exchange_swaps_both_exact_typed_inode_generations",
+    "ns_exchange_relation::exchanged_directories_have_the_exact_new_parents",
+    "ns_exchange_relation::same_inode_exchange_preserves_every_full_key",
+    "ns_mutation::accepted_exchanges_preserve_admission_and_the_exact_operation"
   ],
   "required_flags": [
     "--no-cheating",
@@ -1754,6 +1776,15 @@
     "ns_file_rename_prepared::epoch",
     "ns_file_rename_relation::check",
     "ns_mutation::publish_file_rename",
-    "ns_record_target::replace"
+    "ns_record_target::replace",
+    "ns_checkout::prepare_exchange",
+    "ns_exchange::bytes",
+    "ns_exchange::patches",
+    "ns_exchange::prepare_exchange",
+    "ns_exchange_prepared::before_bytes",
+    "ns_exchange_prepared::bytes",
+    "ns_exchange_prepared::epoch",
+    "ns_exchange_relation::check",
+    "ns_mutation::publish_exchange"
   ]
 }

@@ -35,6 +35,13 @@ Both keys must already name regular inodes; a distinct replaced victim must
 retain another link. Same-inode operations preserve every source byte.
 The original NOREPLACE contract and its prepared type remain unchanged.
 
+The separate [directory and mixed exchange path](DIRECTORY_EXCHANGE.md) adds
+`Checkout::prepare_exchange` and `Store::publish_exchange` with private
+`ExchangePrepared`. Existing ordinary regular, directory and mixed targets
+swap exact identities; admitted same-inode regular aliases and same-key
+directory operations preserve every source byte. The shared publication
+history model and existing operation contracts remain unchanged.
+
 ## Concrete rename semantics
 
 The source key is the full `(parent inode, old name bytes)` pair, resolved from a
@@ -181,7 +188,9 @@ Create/mkdir require allocation, initialization, generation freshness, bitmap
 and group counters, security/ACL inheritance and lifecycle proofs.
 The separate [regular-file path](FILE_RENAME.md) checks existing-destination
 replacement, exchange and same-inode no-ops within its bounded scope.
-Directory replacement, directory/mixed exchange and whiteout need further exact transformations.
+The separate [bounded exchange path](DIRECTORY_EXCHANGE.md) checks ordinary
+directory/mixed exchange, dotdot and parent counts, and final cycle rejection.
+Directory replacement and whiteout need further exact transformations.
 Directory growth and indexed insertion/deletion remain open.
 
 Publication means an admitted new host namespace version is visible.

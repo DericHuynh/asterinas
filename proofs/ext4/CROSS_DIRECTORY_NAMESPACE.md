@@ -47,6 +47,13 @@ a distinct replacement victim must remain linked. Same-inode operations
 preserve every source byte. The component table below continues to describe
 the original cross-directory move, link and unlink implementation.
 
+The separate [directory and mixed exchange path](DIRECTORY_EXCHANGE.md) adds
+`prepare_exchange` and `publish_exchange` for two existing ordinary regular,
+directory or mixed bindings. It checks exact dotdot parent/generation changes,
+mixed-type parent-count deltas and complete resulting topology. Zero parent
+count delta permits an already source-admitted DIR_NLINK marker `1`;
+nonzero mixed cross-parent deltas reject parent counts at or below `1`.
+
 Directory link count `1` is interpreted as an unknown count only by the
 source-selected DIR_NLINK admission rule for directories. The bounded directory
 move rejects parents with this marker. It performs ordinary exact parent-count
