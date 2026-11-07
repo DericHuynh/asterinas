@@ -9,14 +9,15 @@ and a [concurrent block/extent/transaction protocol](CONCURRENCY.md).
 It is not a complete filesystem and is not registered with the kernel VFS.
 No mount or filesystem write path is enabled.
 
-The pinned entire-crate Verus run checks **2797 obligations with zero errors**,
-including 810 named proof functions and 703 named executable functions.
-343 host interoperability/regression tests pass.
+The pinned entire-crate Verus run checks **2901 obligations with zero errors**,
+including 829 named proof functions and 712 named executable functions.
+358 host interoperability/regression tests pass.
 The run includes the [EA-enabled namespace](EA_NAMESPACE.md), the bounded
 [concurrent rename core](NS_MUTATION.md), [cross-directory moves, hard links
-and nonlast unlinks](CROSS_DIRECTORY_NAMESPACE.md), and bounded
-[regular-file replacement and exchange](FILE_RENAME.md).
-There are 247 negative API checks and six verifier gates.
+and nonlast unlinks](CROSS_DIRECTORY_NAMESPACE.md), bounded
+[regular-file replacement and exchange](FILE_RENAME.md), and bounded
+[directory and mixed exchange](DIRECTORY_EXCHANGE.md).
+There are 282 negative API checks and six verifier gates.
 [Proof status](proof-status.json) and [recorded evidence](verification-evidence.json)
 state the exact scope; tests do not discharge formal obligations.
 
@@ -24,10 +25,11 @@ state the exact scope; tests do not discharge formal obligations.
 
 | Component | Behavior and verification scope |
 | --- | --- |
-| `ns_record_target.rs`, `ns_file_rename_relation.rs`, `ns_file_rename.rs`, `ns_file_rename_prepared.rs` | Checked bounded host replacement of an existing regular-file destination whose distinct victim remains linked, regular-file exchange, and byte-exact same-inode no-ops. Exact full-key/generation/type transformation, link/time/version and unrelated-byte frames, latest same-block staging, complete EA result readmission and consuming exact-source/revision publication compose. See [regular-file replacement and exchange](FILE_RENAME.md). Directory/mixed exchanges, last-link/orphan lifetime, allocation, VFS authorization, CortenMM/OSTD, mount and durable EA journaling remain open. |
+| `ns_exchange.rs`, `ns_exchange_relation.rs`, `ns_exchange_prepared.rs` | Checked bounded host exchange of existing ordinary regular-file, directory and mixed bindings. Exact full-key/inode/generation/type swaps, directory dotdot and parent-count deltas, byte-exact same-inode no-ops, staged shared blocks, operand/parent time and host-version policy, complete EA result topology admission and consuming exact-source/revision publication compose. See [directory and mixed exchange](DIRECTORY_EXCHANGE.md). Changed directory pieces use existing linear blocks only; directory replacement, allocation/reclamation, orphan lifetime, credentials, CortenMM/OSTD, mount and durable EA journaling remain open. |
+| `ns_record_target.rs`, `ns_file_rename_relation.rs`, `ns_file_rename.rs`, `ns_file_rename_prepared.rs` | Checked bounded host replacement of an existing regular-file destination whose distinct victim remains linked, regular-file exchange, and byte-exact same-inode no-ops. Exact full-key/generation/type transformation, link/time/version and unrelated-byte frames, latest same-block staging, complete EA result readmission and consuming exact-source/revision publication compose. See [regular-file replacement and exchange](FILE_RENAME.md). This regular-file path excludes directory/mixed exchange, checked separately in [DIRECTORY_EXCHANGE.md](DIRECTORY_EXCHANGE.md); last-link/orphan lifetime, allocation, VFS authorization, CortenMM/OSTD, mount and durable EA journaling remain open. |
 | `ns_dir_edit.rs`, `ns_inode_links.rs`, `ns_namespace_relation.rs`, `ns_namespace_edit.rs`, `ns_edit_prepared.rs` | Checked bounded host cross-directory NOREPLACE moves of regular files and directories, regular hard links and nonlast regular unlinks in existing linear-directory blocks. Exact full-key/generation transformation, dotdot and parent counts, ancestry exclusion, source-bound byte codecs, shared table-block coalescing, full EA result readmission and affine version-checked publication compose. See [cross-directory namespace operations](CROSS_DIRECTORY_NAMESPACE.md). Indexed mutations, allocation, last-link/orphan/reclamation, VFS authorization, actual OSTD/CortenMM and durable EA journaling remain open. |
 | `ns_rename_block.rs`, `ns_inode_touch.rs`, `ns_rename.rs`, `ns_mutation_model.rs`, `ns_checkout.rs`, `ns_prepared.rs`, `ns_mutation.rs` | New host concurrent preparation/publication contracts: exact same-parent NOREPLACE record rename, narrow inode timestamp/version/checksum framing, complete EA-enabled result admission, owned immutable checkouts, full source/revision comparison, nonwrapping epochs and finite publication histories. See [namespace mutation](NS_MUTATION.md). The pinned whole-crate run checks these contracts; broader operations, stale rebasing, credentials, actual OSTD/CortenMM locking, mounted caches and EA-enabled journal/durability composition remain open. |
-| `ea_namespace_nodes.rs`, `ea_directory.rs`, `ea_directory_index.rs`, `ea_namespace_counts.rs`, `ea_namespace_parent.rs`, `ea_namespace_topology.rs`, `ea_namespace.rs` | New EA-enabled immutable namespace implementation and proof contracts: exact ordinary source nodes, complete source-owned directory blocks and HTree settings, full-key source lookup/absence, typed generations, exact links, canonical parents and rooted directory/regular-file reachability. See [EA namespace](EA_NAMESPACE.md). The pinned whole-crate run checks these contracts; actual JBD2 admission, durable namespace and EA lifecycle mutations, full EA filesystem admission and CortenMM/kernel/mount integration remain open. Bounded host mutations are checked separately in [NS_MUTATION.md](NS_MUTATION.md), [CROSS_DIRECTORY_NAMESPACE.md](CROSS_DIRECTORY_NAMESPACE.md) and [FILE_RENAME.md](FILE_RENAME.md). |
+| `ea_namespace_nodes.rs`, `ea_directory.rs`, `ea_directory_index.rs`, `ea_namespace_counts.rs`, `ea_namespace_parent.rs`, `ea_namespace_topology.rs`, `ea_namespace.rs` | New EA-enabled immutable namespace implementation and proof contracts: exact ordinary source nodes, complete source-owned directory blocks and HTree settings, full-key source lookup/absence, typed generations, exact links, canonical parents and rooted directory/regular-file reachability. See [EA namespace](EA_NAMESPACE.md). The pinned whole-crate run checks these contracts; actual JBD2 admission, durable namespace and EA lifecycle mutations, full EA filesystem admission and CortenMM/kernel/mount integration remain open. Bounded host mutations are checked separately in [NS_MUTATION.md](NS_MUTATION.md), [CROSS_DIRECTORY_NAMESPACE.md](CROSS_DIRECTORY_NAMESPACE.md), [FILE_RENAME.md](FILE_RENAME.md) and [DIRECTORY_EXCHANGE.md](DIRECTORY_EXCHANGE.md). |
 | `dir_hash.rs` | All six Linux unkeyed filename hashes with exact modular word operations, byte packing, seed selection, half-MD4/TEA rounds and result normalization. See [directory hashes](DIRECTORY_HASHES.md). These compose with bounded source-bound DIR_INDEX admission in [HTree admission](HTREE_ADMISSION.md). Keyed encryption and Unicode casefold remain open. |
 | `htree_names.rs`, `htree_range.rs`, `directory_htree.rs`, `directory_piece.rs` | Complete source-bound DIR_INDEX and bounded LARGEDIR admission: inherited/collision intervals, Linux candidate-path closure, full-name uniqueness and source absence, initialized physical ownership, canonical dot/index/leaf records and whole-image namespace composition. See [HTree admission](HTREE_ADMISSION.md). Index insertion/deletion/split/merge, other formats and runtime integration remain open. |
 | `htree_topology.rs` | Complete supplied logical-tree traversal, exact root/child claim projection, parsed leaf records, no logical reuse and no orphan blocks. See [HTree topology](HTREE_TOPOLOGY.md). Source/hash/full-name/namespace composition is checked by [HTree admission](HTREE_ADMISSION.md); structural mutations and runtime authority remain open. |
@@ -229,7 +231,8 @@ witness in a rooted directory. The pinned whole-crate run checks these
 contracts and compiles their implementation. The directory profile rejects data
 extents beyond block-aligned i_size instead of leaving allocated directory
 bytes outside the captured catalogue. Bounded host mutations are checked separately
-in [NS_MUTATION.md](NS_MUTATION.md), [CROSS_DIRECTORY_NAMESPACE.md](CROSS_DIRECTORY_NAMESPACE.md) and [FILE_RENAME.md](FILE_RENAME.md).
+in [NS_MUTATION.md](NS_MUTATION.md), [CROSS_DIRECTORY_NAMESPACE.md](CROSS_DIRECTORY_NAMESPACE.md),
+[FILE_RENAME.md](FILE_RENAME.md) and [DIRECTORY_EXCHANGE.md](DIRECTORY_EXCHANGE.md).
 Actual JBD2 state/admission, durable namespace mutations and CortenMM/OSTD runtime remain open; no full EA filesystem, writable, kernel
 or mount gate is enabled. Recorded evidence determines the exact checked
 contracts and source.
@@ -263,7 +266,7 @@ The negative checks include an actual failing Verus assertion in a disposable co
 The separate timeout regression fault-injects a disposable runner and checks
 current partial logs, stale-log/artifact invalidation and failure reporting. It
 executes no verifier subprocess and supplies no formal filesystem proof evidence.
-247 negative Rust compilation checks reject certificate/source substitution, edit/queue ownership violations, request reuse/forgery, completion redirection, state replacement, command mutation and finishing through a live command loan.
+282 negative Rust compilation checks reject certificate/source substitution, edit/queue ownership violations, request reuse/forgery, completion redirection, state replacement, command mutation and finishing through a live command loan.
 [CI](../../.github/workflows/verify_ext4.yml) runs the same checks.
 
 The emitted host library exercises proof erasure and Linux byte compatibility.

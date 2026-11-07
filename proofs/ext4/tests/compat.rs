@@ -15577,3 +15577,1192 @@ mod ns_regular_replacing_rename {
         }
     }
 }
+mod ns_directory_exchange {
+    use core::{
+        ea_namespace,
+        inode_time_fields::{self, Field},
+        ns_mutation::{Checkout, ExchangePrepared, PublishError, Store},
+        snapshot::Snapshot,
+    };
+
+    use super::{
+        ea_inode_values::{Fixture, fixture_with_features, offset, seal_raw},
+        inline_xattr_updates::command,
+        *,
+    };
+
+    const SECONDS: i64 = 1_700_000_400;
+    const NANOS: u32 = 456_789_012;
+    type Binding = (u32, Vec<u8>, u32, u32, u8);
+
+    struct Tree {
+        ea: Fixture,
+        destination: u32,
+        child: u32,
+        inside: u32,
+        peer: u32,
+        victim: u32,
+        victim_inside: u32,
+    }
+
+    fn fsck(raw: &[u8], prefix: &str) {
+        let path = format!("build/{prefix}-fsck.img");
+        std::fs::write(&path, raw).unwrap();
+        let executable = std::env::var("E2FSCK_BIN").unwrap_or_else(|_| "e2fsck".into());
+        command(&executable, &["-fn", &path], false);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    fn debugfs(raw: &[u8], prefix: &str, requests: &str) -> Vec<u8> {
+        let path = format!("build/{prefix}-work.img");
+        let script = format!("build/{prefix}-commands.txt");
+        std::fs::write(&path, raw).unwrap();
+        std::fs::write(&script, requests).unwrap();
+        let executable = std::env::var("DEBUGFS_BIN").unwrap_or_else(|_| "debugfs".into());
+        command(&executable, &["-w", "-f", &script, &path], false);
+        let result = std::fs::read(&path).unwrap();
+        for file in [path, script] {
+            std::fs::remove_file(file).unwrap();
+        }
+        result
+    }
+
+    fn seal_directory(raw: &mut [u8], f: &Fixture, number: u32, physical: u32) {
+        let generation = le32(raw, offset(f.table, number) + 100);
+        let seed = core::inode::inode_seed(f.seed, number, generation);
+        let at = physical as usize * 4096;
+        let checksum = core::crc::crc32c(seed, &raw[at..at + 4084]);
+        raw[at + 4092..at + 4096].copy_from_slice(&checksum.to_le_bytes());
+    }
+
+    fn set_generation(raw: &mut [u8], f: &Fixture, number: u32, generation: u32) {
+        let blocks = {
+            let snapshot = Snapshot::from_bytes(raw);
+            let namespace = ea_namespace::inspect(&snapshot, u32::MAX, 8, 4096).unwrap();
+            (0..namespace.index().directory_count())
+                .filter_map(|i| namespace.index().directory(i))
+                .filter(|directory| directory.number() == number)
+                .flat_map(|directory| {
+                    (0..directory.block_count())
+                        .map(|i| directory.physical_block(i).unwrap())
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>()
+        };
+        let at = offset(f.table, number);
+        raw[at + 100..at + 104].copy_from_slice(&generation.to_le_bytes());
+        seal_raw(&mut raw[at..at + 256], number, f.seed);
+        for physical in blocks {
+            seal_directory(raw, f, number, physical);
+        }
+    }
+
+    fn set_links(raw: &mut [u8], f: &Fixture, number: u32, count: u16) {
+        let at = offset(f.table, number);
+        raw[at + 26..at + 28].copy_from_slice(&count.to_le_bytes());
+        seal_raw(&mut raw[at..at + 256], number, f.seed);
+    }
+
+    fn tree_profile(prefix: &str, wide: bool, stored_seed: bool) -> Tree {
+        let mut ea = fixture_with_features(prefix, 4096, wide, stored_seed);
+        let mut raw = debugfs(
+            &ea.bytes,
+            prefix,
+            "mkdir /dest\nmkdir /child\nmkdir /child/inside\nmkdir /peer\nmkdir /dest/victim\nmkdir /dest/victim/inside\nln /second /dest/file\n",
+        );
+        set_links(&mut raw, &ea, 13, 2);
+        let (destination, child, inside, peer, victim, victim_inside) = {
+            let snapshot = Snapshot::from_bytes(&raw);
+            let namespace = ea_namespace::inspect(&snapshot, u32::MAX, 8, 4096).unwrap();
+            let get = |parent, name: &[u8]| namespace.lookup(parent, name).unwrap().identity().1;
+            let destination = get(2, b"dest");
+            let child = get(2, b"child");
+            let victim = get(destination, b"victim");
+            (
+                destination,
+                child,
+                get(child, b"inside"),
+                get(2, b"peer"),
+                victim,
+                get(victim, b"inside"),
+            )
+        };
+        // Distinct generations expose a dotdot update bound to the wrong parent.
+        for (number, generation) in [
+            (2, 0x1020_3040),
+            (destination, 0xa1b2_c3d4),
+            (child, 0x5566_7788),
+            (victim, 0x8877_6655),
+        ] {
+            set_generation(&mut raw, &ea, number, generation);
+        }
+        ea.bytes = raw;
+        fsck(&ea.bytes, &format!("{prefix}-baseline"));
+        Tree {
+            ea,
+            destination,
+            child,
+            inside,
+            peer,
+            victim,
+            victim_inside,
+        }
+    }
+
+    fn tree(prefix: &str) -> Tree {
+        tree_profile(prefix, false, false)
+    }
+
+    fn open(raw: &[u8], limit: u64) -> Store {
+        Store::open(raw, limit, u32::MAX, 8, 4096).expect("complete EA namespace")
+    }
+
+    fn exchange(
+        checkout: Checkout,
+        from: u32,
+        old: &[u8],
+        to: u32,
+        new: &[u8],
+    ) -> ExchangePrepared {
+        match checkout.prepare_exchange(from, old, to, new, SECONDS, NANOS) {
+            Ok(prepared) => prepared,
+            Err(_) => panic!("general exchange preparation rejected"),
+        }
+    }
+
+    fn publish(store: &mut Store, prepared: ExchangePrepared) -> u64 {
+        match store.publish_exchange(prepared) {
+            Ok(epoch) => epoch,
+            Err(_) => panic!("general exchange publication rejected"),
+        }
+    }
+
+    fn bindings(raw: &[u8]) -> Vec<Binding> {
+        let snapshot = Snapshot::from_bytes(raw);
+        let namespace = ea_namespace::inspect(&snapshot, u32::MAX, 8, 4096).unwrap();
+        let mut result: Vec<_> = (0..namespace.index().len())
+            .map(|i| {
+                let entry = namespace.index().get(i).unwrap();
+                let (parent, target, generation, kind) = entry.identity();
+                (parent, entry.name().to_vec(), target, generation, kind)
+            })
+            .collect();
+        result.sort();
+        result
+    }
+
+    fn assert_bindings(before: &[u8], after: &[u8], changes: &[(u32, &[u8], u32, u8)]) {
+        let mut expected = bindings(before);
+        let snapshot = Snapshot::from_bytes(before);
+        let namespace = ea_namespace::inspect(&snapshot, u32::MAX, 8, 4096).unwrap();
+        for &(parent, name, target, kind) in changes {
+            let old_len = expected.len();
+            expected.retain(|entry| entry.0 != parent || entry.1.as_slice() != name);
+            assert_eq!(expected.len() + 1, old_len, "exact source key {name:?}");
+            let generation = namespace.index().nodes().get(target).unwrap().generation;
+            expected.push((parent, name.to_vec(), target, generation, kind));
+        }
+        expected.sort();
+        assert_eq!(
+            bindings(after),
+            expected,
+            "complete keys, targets, generations and types"
+        );
+    }
+
+    fn assert_directory_bytes(before: &[u8], after: &[u8], changes: &[(u32, &[u8], u32, u8)]) {
+        let snapshot = Snapshot::from_bytes(before);
+        let namespace = ea_namespace::inspect(&snapshot, u32::MAX, 8, 4096).unwrap();
+        for i in 0..namespace.index().directory_count() {
+            let directory = namespace.index().directory(i).unwrap();
+            for logical in 0..directory.block_count() {
+                let block = directory.physical_block(logical).unwrap() as usize * 4096;
+                let mut mutable = Vec::new();
+                let mut position = block;
+                while position < block + 4084 {
+                    let length = before[position + 6] as usize;
+                    let name = &before[position + 8..position + 8 + length];
+                    if let Some(&(_, _, target, kind)) = changes
+                        .iter()
+                        .find(|&&(owner, key, _, _)| owner == directory.number() && key == name)
+                    {
+                        assert_eq!(le32(after, position), target);
+                        assert_eq!(after[position + 7], kind);
+                        mutable.extend(position..position + 4);
+                        mutable.push(position + 7);
+                    }
+                    let span = core::bytes::read_le16(before, position + 4).unwrap() as usize;
+                    assert!(span >= 8 && position + span <= block + 4084);
+                    position += span;
+                }
+                if !mutable.is_empty() {
+                    mutable.extend(block + 4092..block + 4096);
+                }
+                for position in block..block + 4096 {
+                    if !mutable.contains(&position) {
+                        assert_eq!(
+                            after[position],
+                            before[position],
+                            "directory {} unrelated byte {position}",
+                            directory.number()
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    fn version(raw: &[u8]) -> u64 {
+        le32(raw, 36) as u64 + ((le32(raw, 152) as u64) << 32)
+    }
+
+    fn set_version(raw: &mut [u8], f: &Fixture, number: u32, value: u64) {
+        let at = offset(f.table, number);
+        raw[at + 36..at + 40].copy_from_slice(&(value as u32).to_le_bytes());
+        raw[at + 152..at + 156].copy_from_slice(&((value >> 32) as u32).to_le_bytes());
+        seal_raw(&mut raw[at..at + 256], number, f.seed);
+    }
+
+    fn assert_inode(
+        f: &Fixture,
+        after: &[u8],
+        number: u32,
+        parent: bool,
+        link_delta: i32,
+        version_delta: u64,
+    ) {
+        let at = offset(f.table, number);
+        let before = &f.bytes[at..at + 256];
+        let after = &after[at..at + 256];
+        assert_eq!(
+            version(after),
+            version(before) + version_delta,
+            "inode {number} version"
+        );
+        let ctime = inode_time_fields::get_time(after, Field::Ctime).unwrap();
+        assert_eq!((ctime.seconds, ctime.nanoseconds), (SECONDS, NANOS));
+        if parent {
+            let mtime = inode_time_fields::get_time(after, Field::Mtime).unwrap();
+            assert_eq!((mtime.seconds, mtime.nanoseconds), (SECONDS, NANOS));
+        }
+        assert_eq!(
+            core::bytes::read_le16(after, 26).unwrap() as i32,
+            core::bytes::read_le16(before, 26).unwrap() as i32 + link_delta,
+            "inode {number} links"
+        );
+        for i in 0..256 {
+            let mutable = (12..16).contains(&i)
+                || link_delta != 0 && (26..28).contains(&i)
+                || (36..40).contains(&i)
+                || (124..126).contains(&i)
+                || (130..136).contains(&i)
+                || (152..156).contains(&i)
+                || parent && ((16..20).contains(&i) || (136..140).contains(&i));
+            if !mutable {
+                assert_eq!(after[i], before[i], "inode {number} unrelated byte {i}");
+            }
+        }
+    }
+
+    fn assert_frame(f: &Fixture, after: &[u8], inodes: &[u32], directories: &[u32]) {
+        let mut allowed: Vec<usize> = inodes
+            .iter()
+            .map(|&number| offset(f.table, number) / 4096)
+            .collect();
+        let snapshot = Snapshot::from_bytes(&f.bytes);
+        let namespace = ea_namespace::inspect(&snapshot, u32::MAX, 8, 4096).unwrap();
+        for i in 0..namespace.index().directory_count() {
+            let directory = namespace.index().directory(i).unwrap();
+            if directories.contains(&directory.number()) {
+                for logical in 0..directory.block_count() {
+                    allowed.push(directory.physical_block(logical).unwrap() as usize);
+                }
+            }
+        }
+        assert_eq!(after.len(), f.bytes.len());
+        for block in 0..after.len() / 4096 {
+            if !allowed.contains(&block) {
+                let at = block * 4096;
+                assert_eq!(
+                    &after[at..at + 4096],
+                    &f.bytes[at..at + 4096],
+                    "unrelated block {block}"
+                );
+            }
+        }
+        for number in 1..=f.inodes {
+            if !inodes.contains(&number) {
+                let at = offset(f.table, number);
+                assert_eq!(
+                    &after[at..at + 256],
+                    &f.bytes[at..at + 256],
+                    "unrelated inode {number}"
+                );
+            }
+        }
+        for number in [12, 13] {
+            let at = offset(f.table, number);
+            for span in [28..32, 104..108, 160..256] {
+                assert_eq!(
+                    &after[at + span.start..at + span.end],
+                    &f.bytes[at + span.start..at + span.end],
+                    "retained EA reference byte span"
+                );
+            }
+        }
+        let external = f.external as usize * 4096;
+        assert_eq!(
+            &after[external..external + 4096],
+            &f.bytes[external..external + 4096]
+        );
+        let snapshot = Snapshot::from_bytes(after);
+        let namespace = ea_namespace::inspect(&snapshot, u32::MAX, 8, 4096).unwrap();
+        assert_eq!(
+            namespace
+                .allocation()
+                .integrity()
+                .value(0)
+                .unwrap()
+                .as_slice(),
+            f.value
+        );
+    }
+
+    fn assert_unchanged(store: &Store, before: &[u8]) {
+        assert_eq!(store.epoch(), 0);
+        assert_eq!(store.bytes(), before);
+    }
+
+    fn assert_noop(
+        raw: &[u8],
+        from: u32,
+        old: &[u8],
+        to: u32,
+        new: &[u8],
+        seconds: i64,
+        nanos: u32,
+    ) {
+        let snapshot = Snapshot::from_bytes(raw);
+        let update = match core::ns_exchange::prepare_exchange(
+            &snapshot,
+            from,
+            old,
+            to,
+            new,
+            seconds,
+            nanos,
+            u32::MAX,
+            8,
+            4096,
+        ) {
+            Ok(update) => update,
+            Err(_) => panic!("same-inode exchange rejected"),
+        };
+        assert_eq!(update.patches().len(), 0);
+        assert_eq!(update.bytes(), raw);
+        let mut store = open(raw, 4);
+        let prepared = match store
+            .checkout()
+            .prepare_exchange(from, old, to, new, seconds, nanos)
+        {
+            Ok(prepared) => prepared,
+            Err(_) => panic!("same-inode host exchange rejected"),
+        };
+        assert_eq!(prepared.before_bytes(), raw);
+        assert_eq!(prepared.bytes(), raw);
+        assert_eq!(publish(&mut store, prepared), 1);
+        assert_eq!(store.bytes(), raw);
+    }
+
+    #[test]
+    fn directory_and_mixed_exchanges_preserve_exact_namespace_metadata_and_ea_in_all_four_profiles()
+    {
+        // Linux v7.0 fs/ext4/namei.c ext4_cross_rename updates each operand once
+        // and calls ext4_update_dir twice when both names share a parent.
+        for wide in [false, true] {
+            for stored_seed in [false, true] {
+                let prefix = format!("ns-directory-exchange-{wide}-{stored_seed}");
+                let t = tree_profile(&prefix, wide, stored_seed);
+                for (case, from, old, to, new, source, source_kind, target, target_kind) in [
+                    (
+                        "dirs-same",
+                        2,
+                        b"child".as_slice(),
+                        2,
+                        b"peer".as_slice(),
+                        t.child,
+                        2,
+                        t.peer,
+                        2,
+                    ),
+                    (
+                        "file-dir-same",
+                        2,
+                        b"first".as_slice(),
+                        2,
+                        b"child".as_slice(),
+                        12,
+                        1,
+                        t.child,
+                        2,
+                    ),
+                    (
+                        "dir-file-same",
+                        2,
+                        b"child".as_slice(),
+                        2,
+                        b"second".as_slice(),
+                        t.child,
+                        2,
+                        13,
+                        1,
+                    ),
+                    (
+                        "dirs-cross",
+                        2,
+                        b"child".as_slice(),
+                        t.destination,
+                        b"victim".as_slice(),
+                        t.child,
+                        2,
+                        t.victim,
+                        2,
+                    ),
+                    (
+                        "file-dir-cross",
+                        2,
+                        b"first".as_slice(),
+                        t.destination,
+                        b"victim".as_slice(),
+                        12,
+                        1,
+                        t.victim,
+                        2,
+                    ),
+                    (
+                        "dir-file-cross",
+                        2,
+                        b"child".as_slice(),
+                        t.destination,
+                        b"file".as_slice(),
+                        t.child,
+                        2,
+                        13,
+                        1,
+                    ),
+                    (
+                        "files-cross",
+                        2,
+                        b"first".as_slice(),
+                        t.destination,
+                        b"file".as_slice(),
+                        12,
+                        1,
+                        13,
+                        1,
+                    ),
+                ] {
+                    let mut store = open(&t.ea.bytes, 4);
+                    let prepared = exchange(store.checkout(), from, old, to, new);
+                    assert_eq!(prepared.before_bytes(), t.ea.bytes);
+                    assert_eq!(
+                        store.bytes(),
+                        t.ea.bytes,
+                        "preparation has no partial publication"
+                    );
+                    assert_eq!(publish(&mut store, prepared), 1);
+                    let mut changes = vec![
+                        (from, old, target, target_kind),
+                        (to, new, source, source_kind),
+                    ];
+                    let cross = from != to;
+                    let delta = if cross {
+                        i32::from(target_kind == 2) - i32::from(source_kind == 2)
+                    } else {
+                        0
+                    };
+                    if cross && source_kind == 2 {
+                        changes.push((source, b"..", to, 2));
+                    }
+                    if cross && target_kind == 2 {
+                        changes.push((target, b"..", from, 2));
+                    }
+                    assert_bindings(&t.ea.bytes, store.bytes(), &changes);
+                    assert_directory_bytes(&t.ea.bytes, store.bytes(), &changes);
+                    assert_inode(
+                        &t.ea,
+                        store.bytes(),
+                        from,
+                        true,
+                        delta,
+                        if cross { 1 } else { 2 },
+                    );
+                    if cross {
+                        assert_inode(&t.ea, store.bytes(), to, true, -delta, 1);
+                    }
+                    assert_inode(&t.ea, store.bytes(), source, false, 0, 1);
+                    assert_inode(&t.ea, store.bytes(), target, false, 0, 1);
+                    let snapshot = Snapshot::from_bytes(store.bytes());
+                    let namespace = ea_namespace::inspect(&snapshot, u32::MAX, 8, 4096).unwrap();
+                    if source_kind == 2 {
+                        assert_eq!(namespace.parent(source), Some(to));
+                    }
+                    if target_kind == 2 {
+                        assert_eq!(namespace.parent(target), Some(from));
+                    }
+                    assert_eq!(namespace.parent(t.inside), Some(t.child));
+                    assert_eq!(namespace.parent(t.victim_inside), Some(t.victim));
+                    let child_parent = if source == t.child {
+                        to
+                    } else if target == t.child {
+                        from
+                    } else {
+                        2
+                    };
+                    let victim_parent = if source == t.victim {
+                        to
+                    } else if target == t.victim {
+                        from
+                    } else {
+                        t.destination
+                    };
+                    assert_eq!(
+                        namespace.depth(t.inside),
+                        Some(if child_parent == 2 { 2 } else { 3 })
+                    );
+                    assert_eq!(
+                        namespace.depth(t.victim_inside),
+                        Some(if victim_parent == 2 { 2 } else { 3 })
+                    );
+                    let mut directories = vec![from, to];
+                    if cross && source_kind == 2 {
+                        directories.push(source);
+                    }
+                    if cross && target_kind == 2 {
+                        directories.push(target);
+                    }
+                    assert_frame(
+                        &t.ea,
+                        store.bytes(),
+                        &[from, to, source, target],
+                        &directories,
+                    );
+                    fsck(store.bytes(), &format!("{prefix}-{case}"));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn same_key_directory_and_regular_alias_exchanges_are_byte_exact_noops() {
+        let mut t = tree("ns-directory-exchange-noop");
+        let mut raw = debugfs(
+            &t.ea.bytes,
+            "ns-directory-exchange-noop-alias",
+            "ln /first /dest/alias\nln /first /alias\n",
+        );
+        set_links(&mut raw, &t.ea, 12, 3);
+        for number in [2, t.destination, t.child, 12] {
+            set_version(&mut raw, &t.ea, number, core::xattr_replace::MAX_VERSION);
+        }
+        t.ea.bytes = raw;
+        fsck(&t.ea.bytes, "ns-directory-exchange-noop-baseline");
+        for (from, old, to, new) in [
+            (2, b"child".as_slice(), 2, b"child".as_slice()),
+            (2, b"first".as_slice(), 2, b"first".as_slice()),
+            (2, b"first".as_slice(), 2, b"alias".as_slice()),
+            (2, b"first".as_slice(), t.destination, b"alias".as_slice()),
+        ] {
+            for (seconds, nanos) in [
+                (SECONDS, NANOS),
+                (i64::MIN, 0),
+                (i64::MAX, 0),
+                (SECONDS, 1_000_000_000),
+            ] {
+                assert_noop(&t.ea.bytes, from, old, to, new, seconds, nanos);
+            }
+        }
+    }
+
+    #[test]
+    fn indexed_same_inode_noops_bypass_linear_layout_guards() {
+        let raw =
+            super::ea_namespace_admission::indexed_image("ns-directory-exchange-indexed-noop");
+        let name = format!("0000-{}", "x".repeat(210));
+        assert_noop(
+            &raw,
+            12,
+            name.as_bytes(),
+            12,
+            name.as_bytes(),
+            i64::MIN,
+            1_000_000_000,
+        );
+        let second = format!("0001-{}", "x".repeat(210));
+        let store = open(&raw, 4);
+        assert!(
+            store
+                .checkout()
+                .prepare_exchange(12, name.as_bytes(), 12, second.as_bytes(), SECONDS, NANOS)
+                .is_err()
+        );
+        assert_unchanged(&store, &raw);
+    }
+
+    #[test]
+    fn source_directory_record_type_mismatch_is_rejected_even_after_checksum_resealing() {
+        let t = tree("ns-directory-exchange-source-type");
+        let mut raw = t.ea.bytes.clone();
+        let (physical, position) = {
+            let snapshot = Snapshot::from_bytes(&raw);
+            let namespace = ea_namespace::inspect(&snapshot, u32::MAX, 8, 4096).unwrap();
+            let root = (0..namespace.index().directory_count())
+                .filter_map(|i| namespace.index().directory(i))
+                .find(|directory| directory.number() == 2)
+                .unwrap();
+            let physical = root.physical_block(0).unwrap();
+            let block = physical as usize * 4096;
+            let mut position = block;
+            loop {
+                let length = raw[position + 6] as usize;
+                if &raw[position + 8..position + 8 + length] == b"child" {
+                    break (physical, position);
+                }
+                position += core::bytes::read_le16(&raw, position + 4).unwrap() as usize;
+                assert!(position < block + 4084);
+            }
+        };
+        raw[position + 7] = 1;
+        seal_directory(&mut raw, &t.ea, 2, physical);
+        assert!(Store::open(&raw, 4, u32::MAX, 8, 4096).is_none());
+        let snapshot = Snapshot::from_bytes(&raw);
+        assert!(
+            core::ns_exchange::prepare_exchange(
+                &snapshot,
+                2,
+                b"child",
+                t.destination,
+                b"victim",
+                SECONDS,
+                NANOS,
+                u32::MAX,
+                8,
+                4096
+            )
+            .is_err()
+        );
+        assert_eq!(raw[position + 7], 1);
+    }
+
+    #[test]
+    fn dir_nlink_unknown_parents_allow_zero_delta_exchanges_and_refuse_mixed_cross_delta() {
+        let mut t = tree("ns-directory-exchange-dir-nlink");
+        let exact_links = [
+            core::bytes::read_le16(&t.ea.bytes, offset(t.ea.table, 2) + 26).unwrap(),
+            core::bytes::read_le16(&t.ea.bytes, offset(t.ea.table, t.destination) + 26).unwrap(),
+        ];
+        let mut raw = t.ea.bytes.clone();
+        let flags = le32(&raw, 1124) | 0x20;
+        raw[1124..1128].copy_from_slice(&flags.to_le_bytes());
+        let checksum = core::crc::crc32c(0xffffffff, &raw[1024..2044]);
+        raw[2044..2048].copy_from_slice(&checksum.to_le_bytes());
+        for parent in [2, t.destination] {
+            set_links(&mut raw, &t.ea, parent, 1);
+        }
+        t.ea.bytes = raw;
+        for (to, old, new) in [
+            (2, b"child".as_slice(), b"peer".as_slice()),
+            (t.destination, b"child".as_slice(), b"victim".as_slice()),
+            (2, b"first".as_slice(), b"child".as_slice()),
+            (t.destination, b"first".as_slice(), b"file".as_slice()),
+        ] {
+            let mut store = open(&t.ea.bytes, 4);
+            let prepared = exchange(store.checkout(), 2, old, to, new);
+            publish(&mut store, prepared);
+            assert_inode(
+                &t.ea,
+                store.bytes(),
+                2,
+                true,
+                0,
+                if to == 2 { 2 } else { 1 },
+            );
+            if to != 2 {
+                assert_inode(&t.ea, store.bytes(), to, true, 0, 1);
+            }
+            // Small linear marker fixtures exercise the admitted DIR_NLINK
+            // convention; e2fsck only accepts Linux's indexed overflow form.
+            assert_eq!(
+                core::bytes::read_le16(store.bytes(), offset(t.ea.table, 2) + 26),
+                Some(1)
+            );
+            assert_eq!(
+                core::bytes::read_le16(store.bytes(), offset(t.ea.table, t.destination) + 26),
+                Some(1)
+            );
+        }
+        for marked in [2, t.destination] {
+            let mut raw = t.ea.bytes.clone();
+            let exact = exact_links[if marked == 2 { 1 } else { 0 }];
+            set_links(
+                &mut raw,
+                &t.ea,
+                if marked == 2 { t.destination } else { 2 },
+                exact,
+            );
+            let store = open(&raw, 4);
+            for (old, new) in [
+                (b"first".as_slice(), b"victim".as_slice()),
+                (b"child".as_slice(), b"file".as_slice()),
+            ] {
+                assert!(
+                    store
+                        .checkout()
+                        .prepare_exchange(2, old, t.destination, new, SECONDS, NANOS)
+                        .is_err()
+                );
+                assert_unchanged(&store, &raw);
+            }
+        }
+    }
+
+    #[test]
+    fn both_operands_require_existing_proper_keys_and_ordinary_directory_parents() {
+        let t = tree("ns-directory-exchange-invalid-operands");
+        let store = open(&t.ea.bytes, 4);
+        for (from, old, to, new) in [
+            (
+                2,
+                b"missing".as_slice(),
+                t.destination,
+                b"victim".as_slice(),
+            ),
+            (2, b"child".as_slice(), t.destination, b"missing".as_slice()),
+            (12, b"child".as_slice(), t.destination, b"victim".as_slice()),
+            (2, b"child".as_slice(), 13, b"victim".as_slice()),
+            (14, b"child".as_slice(), t.destination, b"victim".as_slice()),
+            (2, b"child".as_slice(), 8, b"victim".as_slice()),
+            (0, b"child".as_slice(), t.destination, b"victim".as_slice()),
+            (
+                2,
+                b"child".as_slice(),
+                t.ea.inodes + 1,
+                b"victim".as_slice(),
+            ),
+        ] {
+            assert!(
+                store
+                    .checkout()
+                    .prepare_exchange(from, old, to, new, SECONDS, NANOS)
+                    .is_err()
+            );
+            assert_unchanged(&store, &t.ea.bytes);
+        }
+        for invalid in [
+            b"".as_slice(),
+            b".",
+            b"..",
+            b"a/b",
+            b"a\0b",
+            &vec![b'x'; 256],
+        ] {
+            for source in [true, false] {
+                let (old, new) = if source {
+                    (invalid, b"victim".as_slice())
+                } else {
+                    (b"child".as_slice(), invalid)
+                };
+                assert!(
+                    store
+                        .checkout()
+                        .prepare_exchange(2, old, t.destination, new, SECONDS, NANOS)
+                        .is_err()
+                );
+                assert_unchanged(&store, &t.ea.bytes);
+            }
+        }
+    }
+
+    #[test]
+    fn operand_parent_aliases_and_nested_directory_cycles_are_rejected_atomically() {
+        let t = tree("ns-directory-exchange-cycles");
+        let store = open(&t.ea.bytes, 4);
+        for (from, old, to, new) in [
+            (2, b"child".as_slice(), t.child, b"inside".as_slice()),
+            (t.child, b"inside".as_slice(), 2, b"child".as_slice()),
+            (2, b"child".as_slice(), t.inside, b"..".as_slice()),
+            (2, b"child".as_slice(), t.child, b".".as_slice()),
+            (2, b"dest".as_slice(), t.destination, b"victim".as_slice()),
+            (t.destination, b"victim".as_slice(), 2, b"dest".as_slice()),
+        ] {
+            assert!(
+                store
+                    .checkout()
+                    .prepare_exchange(from, old, to, new, SECONDS, NANOS)
+                    .is_err()
+            );
+            assert_unchanged(&store, &t.ea.bytes);
+        }
+        let raw = debugfs(
+            &t.ea.bytes,
+            "ns-directory-exchange-nested",
+            "mkdir /child/inside/deeper\n",
+        );
+        let store = open(&raw, 4);
+        assert!(
+            store
+                .checkout()
+                .prepare_exchange(2, b"child", t.inside, b"deeper", SECONDS, NANOS)
+                .is_err()
+        );
+        assert_unchanged(&store, &raw);
+    }
+
+    #[test]
+    fn readonly_images_reject_real_exchanges_and_same_inode_noops() {
+        let t = tree("ns-directory-exchange-readonly");
+        let mut raw = t.ea.bytes.clone();
+        let flags = le32(&raw, 1124) | core::feature_policy::READONLY;
+        raw[1124..1128].copy_from_slice(&flags.to_le_bytes());
+        let checksum = core::crc::crc32c(0xffffffff, &raw[1024..2044]);
+        raw[2044..2048].copy_from_slice(&checksum.to_le_bytes());
+        let store = open(&raw, 4);
+        for (to, new) in [
+            (t.destination, b"victim".as_slice()),
+            (2, b"peer".as_slice()),
+            (2, b"child".as_slice()),
+        ] {
+            assert!(
+                store
+                    .checkout()
+                    .prepare_exchange(2, b"child", to, new, SECONDS, NANOS)
+                    .is_err()
+            );
+            assert_unchanged(&store, &raw);
+        }
+    }
+
+    #[test]
+    fn invalid_timestamps_and_each_touched_version_limit_never_publish_partial_metadata() {
+        let t = tree("ns-directory-exchange-metadata-limits");
+        for (to, new) in [
+            (2, b"peer".as_slice()),
+            (t.destination, b"victim".as_slice()),
+        ] {
+            for (seconds, nanos) in [(i64::MIN, 0), (i64::MAX, 0), (SECONDS, 1_000_000_000)] {
+                let store = open(&t.ea.bytes, 4);
+                assert!(
+                    store
+                        .checkout()
+                        .prepare_exchange(2, b"child", to, new, seconds, nanos)
+                        .is_err()
+                );
+                assert_unchanged(&store, &t.ea.bytes);
+            }
+            for number in [2, to, t.child, if to == 2 { t.peer } else { t.victim }] {
+                let mut raw = t.ea.bytes.clone();
+                set_version(&mut raw, &t.ea, number, core::xattr_replace::MAX_VERSION);
+                let store = open(&raw, 4);
+                assert!(
+                    store
+                        .checkout()
+                        .prepare_exchange(2, b"child", to, new, SECONDS, NANOS)
+                        .is_err()
+                );
+                assert_unchanged(&store, &raw);
+            }
+        }
+        let mut raw = t.ea.bytes.clone();
+        set_version(&mut raw, &t.ea, 2, core::xattr_replace::MAX_VERSION - 1);
+        let store = open(&raw, 4);
+        assert!(
+            store
+                .checkout()
+                .prepare_exchange(2, b"child", 2, b"peer", SECONDS, NANOS)
+                .is_err(),
+            "same parent needs two version increments"
+        );
+        assert_unchanged(&store, &raw);
+        let mut cross = open(&raw, 4);
+        let prepared = exchange(cross.checkout(), 2, b"child", t.destination, b"victim");
+        publish(&mut cross, prepared);
+        assert_eq!(
+            version(&cross.bytes()[offset(t.ea.table, 2)..offset(t.ea.table, 2) + 256]),
+            core::xattr_replace::MAX_VERSION
+        );
+    }
+
+    #[test]
+    fn old_exchange_cannot_overwrite_reparenting_and_fresh_retry_rechecks_the_new_hierarchy() {
+        let t = tree("ns-directory-exchange-hierarchy-race");
+        let mut store = open(&t.ea.bytes, 8);
+        let old_reader = store.checkout();
+        let stale = exchange(store.checkout(), 2, b"child", t.destination, b"victim");
+        let winner = match store
+            .checkout()
+            .prepare_move_noreplace(2, b"dest", t.child, b"dest", SECONDS, NANOS)
+        {
+            Ok(prepared) => prepared,
+            Err(_) => panic!("hierarchy fixture move rejected"),
+        };
+        assert!(matches!(store.publish_edit(winner), Ok(1)));
+        let current = store.bytes().to_vec();
+        assert!(matches!(
+            store.publish_exchange(stale),
+            Err(PublishError::Stale)
+        ));
+        assert_eq!(store.bytes(), current);
+        assert_eq!(store.epoch(), 1);
+        assert_eq!(old_reader.bytes(), t.ea.bytes);
+        assert!(
+            store
+                .checkout()
+                .prepare_exchange(2, b"child", t.destination, b"victim", SECONDS, NANOS)
+                .is_err(),
+            "fresh exchange would create a disconnected cycle"
+        );
+        assert_eq!(store.bytes(), current);
+        fsck(store.bytes(), "ns-directory-exchange-hierarchy-winner");
+    }
+
+    #[test]
+    fn stale_exchange_cannot_restore_a_concurrently_renamed_operand_or_binding() {
+        let t = tree("ns-directory-exchange-stale-key");
+        let mut store = open(&t.ea.bytes, 8);
+        let stale = exchange(store.checkout(), 2, b"child", t.destination, b"victim");
+        let winner = match store
+            .checkout()
+            .prepare_rename_noreplace(2, b"child", b"moved", SECONDS, NANOS)
+        {
+            Ok(prepared) => prepared,
+            Err(_) => panic!("same-parent rename rejected"),
+        };
+        assert!(matches!(store.publish(winner), Ok(1)));
+        let current = store.bytes().to_vec();
+        assert!(matches!(
+            store.publish_exchange(stale),
+            Err(PublishError::Stale)
+        ));
+        assert_eq!(store.bytes(), current);
+        let fresh = exchange(store.checkout(), 2, b"moved", t.destination, b"victim");
+        assert_eq!(publish(&mut store, fresh), 2);
+        assert_bindings(
+            &current,
+            store.bytes(),
+            &[
+                (2, b"moved", t.victim, 2),
+                (t.destination, b"victim", t.child, 2),
+                (t.child, b"..", t.destination, 2),
+                (t.victim, b"..", 2, 2),
+            ],
+        );
+        fsck(store.bytes(), "ns-directory-exchange-stale-key-result");
+    }
+
+    #[test]
+    fn noops_and_real_exchanges_obey_source_bytes_revision_and_publication_exhaustion() {
+        let t = tree("ns-directory-exchange-publication");
+        for noop in [false, true] {
+            let first = open(&t.ea.bytes, 4);
+            let prepare = |checkout| {
+                if noop {
+                    exchange(checkout, 2, b"child", 2, b"child")
+                } else {
+                    exchange(checkout, 2, b"child", t.destination, b"victim")
+                }
+            };
+            let mismatch = prepare(first.checkout());
+            let mut raw = t.ea.bytes.clone();
+            set_version(&mut raw, &t.ea, 13, 7);
+            let mut different = open(&raw, 4);
+            assert!(matches!(
+                different.publish_exchange(mismatch),
+                Err(PublishError::SourceMismatch)
+            ));
+            assert_unchanged(&different, &raw);
+            let mut exhausted = open(&t.ea.bytes, 0);
+            let prepared = prepare(exhausted.checkout());
+            assert!(matches!(
+                exhausted.publish_exchange(prepared),
+                Err(PublishError::Exhausted)
+            ));
+            assert_unchanged(&exhausted, &t.ea.bytes);
+            let mut store = open(&t.ea.bytes, 1);
+            let stale = prepare(store.checkout());
+            let winner = exchange(store.checkout(), 2, b"first", t.destination, b"file");
+            assert_eq!(publish(&mut store, winner), 1);
+            let current = store.bytes().to_vec();
+            assert!(matches!(
+                store.publish_exchange(stale),
+                Err(PublishError::Stale)
+            ));
+            let fresh = prepare(store.checkout());
+            assert!(matches!(
+                store.publish_exchange(fresh),
+                Err(PublishError::Exhausted)
+            ));
+            assert_eq!(store.epoch(), 1);
+            assert_eq!(store.bytes(), current);
+        }
+    }
+
+    #[test]
+    fn parallel_old_workers_have_one_atomic_winner_and_fresh_exchange_preserves_both_updates() {
+        use std::sync::{Barrier, Mutex};
+        let t = tree("ns-directory-exchange-parallel");
+        let shared = Mutex::new(open(&t.ea.bytes, 8));
+        let prepared = Barrier::new(2);
+        let results = std::thread::scope(|scope| {
+            let workers: Vec<_> = [true, false]
+                .into_iter()
+                .map(|directories| {
+                    let shared = &shared;
+                    let prepared = &prepared;
+                    let t = &t;
+                    scope.spawn(move || {
+                        let checkout = shared.lock().unwrap().checkout();
+                        let candidate = if directories {
+                            exchange(checkout, 2, b"child", t.destination, b"victim")
+                        } else {
+                            exchange(checkout, 2, b"first", t.destination, b"file")
+                        };
+                        assert_eq!(candidate.before_bytes(), t.ea.bytes);
+                        prepared.wait();
+                        let mut store = shared.lock().unwrap();
+                        let before = store.bytes().to_vec();
+                        match store.publish_exchange(candidate) {
+                            Ok(epoch) => {
+                                assert_eq!(epoch, 1);
+                                (directories, true)
+                            }
+                            Err(PublishError::Stale) => {
+                                assert_eq!(store.bytes(), before);
+                                (directories, false)
+                            }
+                            Err(_) => panic!("unexpected exchange publication rejection"),
+                        }
+                    })
+                })
+                .collect();
+            workers
+                .into_iter()
+                .map(|worker| worker.join().unwrap())
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(results.iter().filter(|(_, won)| *won).count(), 1);
+        let directories_won = results
+            .iter()
+            .any(|(directories, won)| *directories && *won);
+        let mut store = shared.into_inner().unwrap();
+        let retry = if directories_won {
+            exchange(store.checkout(), 2, b"first", t.destination, b"file")
+        } else {
+            exchange(store.checkout(), 2, b"child", t.destination, b"victim")
+        };
+        assert_eq!(publish(&mut store, retry), 2);
+        assert_bindings(
+            &t.ea.bytes,
+            store.bytes(),
+            &[
+                (2, b"child", t.victim, 2),
+                (t.destination, b"victim", t.child, 2),
+                (t.child, b"..", t.destination, 2),
+                (t.victim, b"..", 2, 2),
+                (2, b"first", 13, 1),
+                (t.destination, b"file", 12, 1),
+            ],
+        );
+        fsck(store.bytes(), "ns-directory-exchange-parallel-result");
+    }
+
+    #[test]
+    fn dropping_and_panicking_workers_leave_the_published_namespace_and_capacity_intact() {
+        let t = tree("ns-directory-exchange-drop");
+        let mut store = open(&t.ea.bytes, 1);
+        drop(exchange(
+            store.checkout(),
+            2,
+            b"child",
+            t.destination,
+            b"victim",
+        ));
+        let checkout = store.checkout();
+        assert!(
+            std::thread::spawn(move || {
+                let _prepared = exchange(checkout, 2, b"child", t.destination, b"victim");
+                panic!("unpublished exchange worker");
+            })
+            .join()
+            .is_err()
+        );
+        assert_unchanged(&store, &t.ea.bytes);
+        let prepared = exchange(store.checkout(), 2, b"child", t.destination, b"victim");
+        assert_eq!(publish(&mut store, prepared), 1);
+    }
+
+    #[test]
+    fn maximum_length_and_non_utf8_full_keys_survive_directory_exchange() {
+        let mut t = tree("ns-directory-exchange-key-bytes");
+        let left = "x".repeat(254) + "a";
+        let right = "x".repeat(254) + "b";
+        t.ea.bytes = debugfs(
+            &t.ea.bytes,
+            "ns-directory-exchange-key-bytes",
+            &format!("mkdir /{left}\nmkdir /dest/{right}\n"),
+        );
+        let mut store = open(&t.ea.bytes, 8);
+        let (left_target, right_target) = {
+            let snapshot = Snapshot::from_bytes(store.bytes());
+            let namespace = ea_namespace::inspect(&snapshot, u32::MAX, 8, 4096).unwrap();
+            (
+                namespace.lookup(2, left.as_bytes()).unwrap().identity().1,
+                namespace
+                    .lookup(t.destination, right.as_bytes())
+                    .unwrap()
+                    .identity()
+                    .1,
+            )
+        };
+        let prepared = exchange(
+            store.checkout(),
+            2,
+            left.as_bytes(),
+            t.destination,
+            right.as_bytes(),
+        );
+        publish(&mut store, prepared);
+        assert_bindings(
+            &t.ea.bytes,
+            store.bytes(),
+            &[
+                (2, left.as_bytes(), right_target, 2),
+                (t.destination, right.as_bytes(), left_target, 2),
+                (left_target, b"..", t.destination, 2),
+                (right_target, b"..", 2, 2),
+            ],
+        );
+        let binary = [b'c', 0xff, b'i', b'l', b'd'];
+        let rename = match store
+            .checkout()
+            .prepare_rename_noreplace(2, b"child", &binary, SECONDS, NANOS)
+        {
+            Ok(prepared) => prepared,
+            Err(_) => panic!("non-UTF-8 directory key rejected"),
+        };
+        assert!(matches!(store.publish(rename), Ok(2)));
+        let before = store.bytes().to_vec();
+        let prepared = exchange(store.checkout(), 2, &binary, t.destination, b"victim");
+        assert_eq!(publish(&mut store, prepared), 3);
+        assert_bindings(
+            &before,
+            store.bytes(),
+            &[
+                (2, &binary, t.victim, 2),
+                (t.destination, b"victim", t.child, 2),
+                (t.child, b"..", t.destination, 2),
+                (t.victim, b"..", 2, 2),
+            ],
+        );
+        fsck(store.bytes(), "ns-directory-exchange-key-bytes-result");
+    }
+}

@@ -364,3 +364,9 @@ pub mod ns_file_rename_relation;
 pub mod ns_file_rename;
 
 pub mod ns_file_rename_prepared;
+
+pub mod ns_exchange_relation;
+
+pub mod ns_exchange;
+
+pub mod ns_exchange_prepared;

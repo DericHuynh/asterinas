@@ -195,4 +195,3 @@ pub proof fn replacement_frames_every_other_directory_byte(c: Change, i: int)
 { reveal(valid); }
 
 }
-

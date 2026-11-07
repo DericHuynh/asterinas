@@ -18,9 +18,9 @@ Absent destinations use `prepare_rename_noreplace` within one parent and
 
 | Check | Current result |
 | --- | --- |
-| Pinned whole-crate Verus checking and compilation | 2797 obligations, zero errors; 810 named proofs and 703 named executable functions |
-| Native interoperability/regressions | 343 passed (281 metadata, 62 journal), including 15 regular-file rename tests |
-| Ownership/privacy rejection checks | All 247 current cases rejected |
+| Pinned whole-crate Verus checking and compilation | 2901 obligations, zero errors; 829 named proofs and 712 named executable functions |
+| Native interoperability/regressions | 358 passed (296 metadata, 62 journal), including 15 regular-file rename tests |
+| Ownership/privacy rejection checks | All 282 current cases rejected |
 | Negative verifier gates | All 6 cases rejected |
 | Runner timeout regression | Passed; diagnostic cleanup only, no verifier proof evidence |
 
@@ -69,9 +69,11 @@ candidates reject under the same publication guards. The revision is local to on
 ## Remaining boundaries
 
 The actual READONLY feature remains a rejection condition. Changed directories
-use the supported linear layout. Last-link replacement, directories and mixed
-exchanges, whiteout, allocation, orphan/live-handle lifetime, reclamation and
-directory growth need separate implementations and proofs. Kernel VFS
+use the supported linear layout. This regular-file path excludes directory
+and mixed exchange; the separate [bounded exchange path](DIRECTORY_EXCHANGE.md)
+checks those ordinary existing-target operations. Last-link replacement,
+directory replacement, whiteout, allocation, orphan/live-handle lifetime,
+reclamation and directory growth need separate implementations and proofs. Kernel VFS
 permissions, sticky-bit/idmap/LSM rules, quota and project-inheritance policy are
 not supplied by this host operation.
 

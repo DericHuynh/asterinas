@@ -22,9 +22,10 @@ concurrency:
 jobs:
   verus:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 120
     env:
       RUSTUP_TOOLCHAIN: 1.99.1
+      RUST_TEST_THREADS: 2
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - name: Install Rust and Linux format tools
@@ -41,6 +42,8 @@ jobs:
         run: python3 proofs/ext4/tools/verify.py
       - name: Check rejection of invalid verification inputs
         run: python3 proofs/ext4/tools/check_gate.py
+      - name: Check verification timeout diagnostics
+        run: python3 proofs/ext4/tools/check_timeout.py
       - name: Exercise the emitted code on Linux ext4 metadata
         run: python3 proofs/ext4/tools/check_compat.py
       - name: Save verification evidence
