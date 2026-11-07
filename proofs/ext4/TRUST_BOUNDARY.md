@@ -317,7 +317,7 @@ VFS obligations.
 ## Isolated EA_INODE core
 
 `ea_source::Header` retains actual source features and geometry, requires the
-superblock clean-state marker and RECOVER clear, and proves initialized allocated
+superblock clean-state marker, retains RECOVER when present, and proves initialized allocated
 inode-table provenance. These markers do not establish whole-filesystem or
 journal admission. It is a separate type; the implementation does not strip
 EA_INODE to manufacture an ordinary `GroupIndex` or widen full admission.
@@ -367,8 +367,8 @@ ownership remains a separate admission boundary.
 
 This is the source-bound layer missing from bare `ea_refs`/graph helpers;
 arbitrary caller-supplied ledgers do not gain its certificate. The graph/census
-still authenticates no physical device, caller or VFS handle. The header requires
-RECOVER clear and unsupported orphan-work markers absent; allocated zero-ref EA values are
+still authenticates no physical device, caller or VFS handle. The raw header retains the actual RECOVER bit and rejects unsupported orphan-work
+markers; allocated zero-ref EA values are
 rejected, and reserved body tables must parse and be absent. Those constraints
 do not supply a journal, namespace or orphan-lifetime proof.
 
@@ -444,6 +444,15 @@ with invalid namespace or journal bytes can still satisfy allocation ownership.
 
 Host-owned candidate duplication and immutable observations grant no allocation,
 credential, mutation, lock, BIO or persistence authority. Full filesystem EA
-admission, every kernel/full-feature/writable-mount gate and durable EA lifecycle
-remain closed. Future runtime execution must refine CortenMM/OSTD framekernel
+admission, every kernel/full-feature/writable-mount gate and general durable EA
+allocation/orphan lifecycle remain closed. The separate single-transaction
+[EA namespace durable path](EA_DURABLE_NAMESPACE.md) adds guarded actual journal
+admission and recovery. Future runtime execution must refine CortenMM/OSTD framekernel
 ownership and device contracts. See [EA allocation](EA_ALLOCATION.md).
+
+The bounded [EA namespace durable transaction](EA_DURABLE_NAMESPACE.md) adds a
+separate EA-aware single-transaction writer, raw crash-cut journal discovery and
+checked repaired-shadow recovery. Its explicit atomic-block, flush,
+exclusive-source and restart-quiescence premises require CortenMM/OSTD and
+actual-device refinement. Full EA filesystem, concurrent EA windows, mounted
+operation and hardware durability gates remain open.

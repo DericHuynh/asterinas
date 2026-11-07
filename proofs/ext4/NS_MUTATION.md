@@ -19,7 +19,8 @@ checked source, artifacts and scope.
 This is host-image mutation with a checked publication protocol. It does not
 authorize a VFS operation, mutate a mounted filesystem or acknowledge durable
 JBD2 commit. Runtime credentials, OSTD locks, CortenMM frame access and actual
-EA-enabled journal/bootstrap/recovery composition remain separate boundaries.
+mounted operation semantics remain separate boundaries. The additional
+[EA durable path](EA_DURABLE_NAMESPACE.md) consumes the checked patches.
 
 | Design component | Implementation and contract | Remaining boundary |
 | --- | --- | --- |
@@ -196,8 +197,9 @@ Directory growth and indexed insertion/deletion remain open.
 Publication means an admitted new host namespace version is visible.
 It does not mean the directory or file has been fsynced, that the exact patches
 are committed/checkpointed, or that a crash can recover that namespace.
-Existing ordinary-profile writer/window admission must not be substituted for
-the actual EA-enabled JBD2 state/bootstrap/recovery composition.
+The separate [EA durable path](EA_DURABLE_NAMESPACE.md) supplies a bounded
+single-transaction JBD2 composition under an explicit device contract. Ordinary
+writer/window admission retains its existing profile guards.
 The full EA filesystem, full feature, writable mount and kernel/CortenMM gates
 remain false. Permission, sticky-bit, idmap and LSM mediation remain outside this
 non-authority host operation.
@@ -213,3 +215,10 @@ records after HTree changes, and separates overwritten/last-link orphan handling
 Those checks motivate exact current-source binding and the explicit operation
 limits above. Their lock proof is not inherited by a different host protocol.
 No Linux defect is claimed.
+
+The bounded [EA namespace durable transaction](EA_DURABLE_NAMESPACE.md) adds a
+separate EA-aware single-transaction writer, raw crash-cut journal discovery and
+checked repaired-shadow recovery. Its explicit atomic-block, flush,
+exclusive-source and restart-quiescence premises require CortenMM/OSTD and
+actual-device refinement. Full EA filesystem, concurrent EA windows, mounted
+operation and hardware durability gates remain open.

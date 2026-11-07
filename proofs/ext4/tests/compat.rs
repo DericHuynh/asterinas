@@ -16766,3 +16766,746 @@ mod ns_directory_exchange {
         fsck(store.bytes(), "ns-directory-exchange-key-bytes-result");
     }
 }
+// Exact EA namespace proposals through the serial JBD2 durability boundary.
+// This cache models atomic 4 KiB writes and successful flushes draining prior
+// writes. Restart snapshots discard volatile work after device quiescence;
+// abort and failed completion alone never cancel submitted writes.
+mod ea_durable_namespace {
+    use core::{
+        ea_bootstrap, ea_namespace, ea_recovery_admission, ea_writer_admission,
+        ns_journal_prepared::Prepared, ns_mutation::Store, recovery_io::Command,
+        recovery_request::Completion, snapshot::Snapshot,
+    };
+
+    use super::{
+        ea_inode_values::{Fixture, fixture_with_features, offset, seal_raw},
+        inline_xattr_updates::command,
+        *,
+    };
+
+    const SECONDS: i64 = 1_835_912_345;
+    const NANOS: u32 = 314_159_265;
+
+    struct Tree {
+        ea: Fixture,
+        destination: u32,
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum Operation {
+        Rename,
+        Move,
+        FileExchange,
+        DirectoryExchange,
+        MixedExchange,
+    }
+
+    fn tree(prefix: &str, wide: bool, stored_seed: bool) -> Tree {
+        let mut ea = fixture_with_features(prefix, 4096, wide, stored_seed);
+        let path = format!("build/{prefix}-tree.img");
+        let script = format!("build/{prefix}-tree.txt");
+        std::fs::write(&path, &ea.bytes).unwrap();
+        std::fs::write(
+            &script,
+            "mkdir /dest\nmkdir /child\nmkdir /child/inside\nmkdir /peer\nmkdir /dest/victim\nmkdir /dest/victim/inside\nln /second /dest/file\n",
+        ).unwrap();
+        let debugfs = std::env::var("DEBUGFS_BIN").unwrap_or_else(|_| "debugfs".into());
+        command(&debugfs, &["-w", "-f", &script, &path], false);
+        ea.bytes = std::fs::read(&path).unwrap();
+        for path in [path, script] {
+            std::fs::remove_file(path).unwrap();
+        }
+        // debugfs ln deliberately leaves the caller to maintain i_links_count.
+        let at = offset(ea.table, 13);
+        ea.bytes[at + 26..at + 28].copy_from_slice(&2u16.to_le_bytes());
+        seal_raw(&mut ea.bytes[at..at + 256], 13, ea.seed);
+        let destination = {
+            let source = Snapshot::from_bytes(&ea.bytes);
+            ea_namespace::inspect(&source, u32::MAX, 8, 4096)
+                .unwrap()
+                .lookup(2, b"dest")
+                .unwrap()
+                .identity()
+                .1
+        };
+        Tree { ea, destination }
+    }
+
+    fn proposal(tree: &Tree, operation: Operation) -> Prepared {
+        let store = Store::open(&tree.ea.bytes, 16, u32::MAX, 8, 4096).unwrap();
+        let checkout = store.checkout();
+        match operation {
+            Operation::Rename => Prepared::rename(
+                match checkout.prepare_rename_noreplace(2, b"first", b"renamed", SECONDS, NANOS) {
+                    Ok(p) => p,
+                    Err(_) => panic!("same-parent preparation"),
+                },
+            ),
+            Operation::Move => Prepared::edit(
+                match checkout.prepare_move_noreplace(
+                    2,
+                    b"child",
+                    tree.destination,
+                    b"moved",
+                    SECONDS,
+                    NANOS,
+                ) {
+                    Ok(p) => p,
+                    Err(_) => panic!("cross-parent preparation"),
+                },
+            ),
+            Operation::FileExchange => Prepared::file_rename(
+                match checkout.prepare_rename_exchange(
+                    2,
+                    b"first",
+                    tree.destination,
+                    b"file",
+                    SECONDS,
+                    NANOS,
+                ) {
+                    Ok(p) => p,
+                    Err(_) => panic!("regular exchange preparation"),
+                },
+            ),
+            Operation::DirectoryExchange => Prepared::exchange(
+                match checkout.prepare_exchange(
+                    2,
+                    b"child",
+                    tree.destination,
+                    b"victim",
+                    SECONDS,
+                    NANOS,
+                ) {
+                    Ok(p) => p,
+                    Err(_) => panic!("directory exchange preparation"),
+                },
+            ),
+            Operation::MixedExchange => Prepared::exchange(
+                match checkout.prepare_exchange(
+                    2,
+                    b"first",
+                    tree.destination,
+                    b"victim",
+                    SECONDS,
+                    NANOS,
+                ) {
+                    Ok(p) => p,
+                    Err(_) => panic!("mixed exchange preparation"),
+                },
+            ),
+        }
+    }
+
+    fn begin<'s, 'a>(
+        source: &'s Snapshot<'a>,
+        prepared: Prepared,
+    ) -> ea_writer_admission::CheckedWriter<'s, 'a> {
+        match ea_writer_admission::prepare(source, prepared, u32::MAX, 8, 4096) {
+            Ok(writer) => writer,
+            Err(error) => panic!("durable EA admission: {error:?}"),
+        }
+    }
+
+    #[derive(Clone)]
+    struct Cache {
+        stable: Vec<u8>,
+        queued: Vec<(u32, Vec<u8>)>,
+    }
+
+    impl Cache {
+        fn new(raw: &[u8]) -> Self {
+            Self {
+                stable: raw.to_vec(),
+                queued: Vec::new(),
+            }
+        }
+
+        fn capture(&mut self, command: Command<'_>) -> bool {
+            match command {
+                Command::Write { block, image } => {
+                    assert_eq!(image.len(), 4096);
+                    assert!((block as usize + 1) * 4096 <= self.stable.len());
+                    assert!(
+                        self.queued.iter().all(|(older, _)| *older != block),
+                        "a repeated address requires its predecessor's flush"
+                    );
+                    self.queued.push((block, image.to_vec()));
+                    true
+                }
+                Command::Flush => false,
+            }
+        }
+
+        fn persist(&mut self, index: usize) {
+            let (block, bytes) = self.queued.remove(index);
+            let at = block as usize * 4096;
+            self.stable[at..at + 4096].copy_from_slice(&bytes);
+        }
+
+        fn drain(&mut self) {
+            while !self.queued.is_empty() {
+                self.persist(self.queued.len() - 1);
+            }
+        }
+
+        fn late(&mut self, pattern: usize) {
+            for index in (0..self.queued.len()).rev() {
+                if pattern == 1 || pattern == 2 && index % 2 == 0 {
+                    self.persist(index);
+                }
+            }
+        }
+    }
+
+    fn assert_homes(actual: &[u8], expected: &[u8], journal: (u32, u32), context: &str) {
+        assert_eq!(actual.len(), expected.len());
+        for block in 1..actual.len() / 4096 {
+            if journal.0 as usize <= block && block < (journal.0 + journal.1) as usize {
+                continue;
+            }
+            let at = block * 4096;
+            assert_eq!(
+                &actual[at..at + 4096],
+                &expected[at..at + 4096],
+                "{context}: exact nonjournal home block {block}"
+            );
+        }
+    }
+
+    fn assert_namespace(raw: &[u8], expected: &[u8], fixture: &Fixture) {
+        let source = Snapshot::from_bytes(raw);
+        let namespace = ea_namespace::inspect_journal(&source, u32::MAX, 8, 4096)
+            .expect("complete repaired EA allocation and namespace");
+        let expected_source = Snapshot::from_bytes(expected);
+        let expected = ea_namespace::inspect(&expected_source, u32::MAX, 8, 4096).unwrap();
+        let bindings = |namespace: &core::ea_namespace::Namespace<'_, '_>| {
+            let mut result: Vec<_> = (0..namespace.index().len())
+                .map(|i| {
+                    let entry = namespace.index().get(i).unwrap();
+                    (entry.identity(), entry.name().to_vec())
+                })
+                .collect();
+            result.sort();
+            result
+        };
+        assert_eq!(bindings(&namespace), bindings(&expected));
+        for number in 1..=fixture.inodes {
+            assert_eq!(namespace.parent(number), expected.parent(number));
+            assert_eq!(namespace.depth(number), expected.depth(number));
+        }
+        assert_eq!(
+            namespace
+                .allocation()
+                .integrity()
+                .value(0)
+                .unwrap()
+                .as_slice(),
+            fixture.value
+        );
+        let ea = offset(fixture.table, 14);
+        assert_eq!(&raw[ea..ea + 256], &fixture.bytes[ea..ea + 256]);
+        let external = fixture.external as usize * 4096;
+        assert_eq!(
+            &raw[external..external + 4096],
+            &fixture.bytes[external..external + 4096]
+        );
+    }
+
+    fn linux_journal_only(crash: &[u8], expected: &[u8], journal: (u32, u32), label: &str) {
+        let path = format!("build/ea-durable-{label}.img");
+        std::fs::write(&path, crash).unwrap();
+        let executable = std::env::var("E2FSCK_BIN").unwrap_or_else(|_| "e2fsck".into());
+        // Full -fy could repair an incorrect namespace and mask a replay bug.
+        command(&executable, &["-E", "journal_only", "-fy", &path], true);
+        let replayed = std::fs::read(&path).unwrap();
+        assert_homes(&replayed, expected, journal, label);
+        // e2fsprogs may update primary/journal recovery bookkeeping. Every
+        // directory, inode, EA and data home above must already be exact.
+        command(&executable, &["-fn", &path], false);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    fn recover(crash: &[u8], expected: &[u8], fixture: &Fixture, journal: (u32, u32)) -> Vec<u8> {
+        let source = Snapshot::from_bytes(crash);
+        let boot = ea_bootstrap::locate(&source).expect("fresh bitmap-free EA discovery");
+        assert_eq!(
+            (boot.layout().physical_start(), boot.layout().blocks()),
+            journal
+        );
+        let mut recovery = ea_recovery_admission::prepare(&source, u32::MAX, 8, 4096)
+            .expect("actual repaired shadow must pass complete EA admission");
+        let mut cache = Cache::new(crash);
+        loop {
+            let pending = match recovery.dispatch() {
+                Ok(pending) => pending,
+                Err(done) => {
+                    recovery = done;
+                    break;
+                }
+            };
+            if !cache.capture(pending.pending_command()) {
+                cache.drain();
+            }
+            recovery = pending.finish_pending(Completion::Succeeded);
+        }
+        assert!(recovery.finished() && !recovery.failed());
+        assert!(cache.queued.is_empty());
+        assert_eq!(
+            &cache.stable[..4096],
+            &crash[..4096],
+            "recovery never changes primary bytes"
+        );
+        assert_homes(&cache.stable, expected, journal, "checked cold recovery");
+        assert_namespace(&cache.stable, expected, fixture);
+        cache.stable
+    }
+
+    fn durable_prefix(crash: &[u8], first: u32, journal: (u32, u32), uuid: &[u8]) -> usize {
+        let source = Snapshot::from_bytes(crash);
+        let boot = ea_bootstrap::locate(&source).unwrap();
+        assert_eq!(
+            (boot.layout().physical_start(), boot.layout().blocks()),
+            journal
+        );
+        assert_eq!(boot.journal_uuid(), uuid);
+        let bytes = boot.capture_journal();
+        let header = core::journal_superblock::parse(&bytes[..1024], uuid, journal.1).unwrap();
+        let scanned = core::scan::recover(&bytes, uuid, boot.layout().duplicate()).unwrap();
+        let retired = usize::from(header.start == 0 && header.sequence == first + 1);
+        let committed = retired + scanned.committed_transactions() as usize;
+        assert!(committed <= 1);
+        committed
+    }
+
+    #[test]
+    fn every_prepared_adapter_reaches_exact_durable_ea_homes_under_all_four_source_profiles() {
+        for wide in [false, true] {
+            for stored_seed in [false, true] {
+                let mut tree = tree(
+                    &format!("ea-durable-success-{wide}-{stored_seed}"),
+                    wide,
+                    stored_seed,
+                );
+                if wide && stored_seed {
+                    let start = {
+                        let source = Snapshot::from_bytes(&tree.ea.bytes);
+                        ea_bootstrap::locate(&source)
+                            .unwrap()
+                            .layout()
+                            .physical_start() as usize
+                            * 4096
+                    };
+                    assert_eq!(core::bytes::read_be32(&tree.ea.bytes, start + 40), Some(0));
+                    tree.ea.bytes[start + 48..start + 64].fill(0x75);
+                    assert_ne!(
+                        &tree.ea.bytes[start + 48..start + 64],
+                        &tree.ea.bytes[1128..1144]
+                    );
+                }
+                for operation in [
+                    Operation::Rename,
+                    Operation::Move,
+                    Operation::FileExchange,
+                    Operation::DirectoryExchange,
+                    Operation::MixedExchange,
+                ] {
+                    let prepared = proposal(&tree, operation);
+                    let expected_homes = prepared.bytes().to_vec();
+                    let source = Snapshot::from_bytes(&tree.ea.bytes);
+                    assert!(
+                        core::bootstrap::locate(&source).is_none(),
+                        "ordinary admission still rejects EA"
+                    );
+                    let mut writer = begin(&source, prepared);
+                    let engine = writer.engine_ref();
+                    let (journal, tail) = engine.retirement_image();
+                    let blocks = ea_bootstrap::locate(&source).unwrap().layout().blocks();
+                    let mut exact = expected_homes.clone();
+                    exact[..4096].copy_from_slice(engine.dirty_marker());
+                    for index in 0..engine.log_record_count() {
+                        let (block, bytes) = engine.log_record(index).unwrap();
+                        exact[block as usize * 4096..(block as usize + 1) * 4096]
+                            .copy_from_slice(bytes);
+                    }
+                    exact[journal as usize * 4096..(journal as usize + 1) * 4096]
+                        .copy_from_slice(tail);
+                    let mut cache = Cache::new(&tree.ea.bytes);
+                    let mut flushes = 0;
+                    loop {
+                        let pending = match writer.dispatch() {
+                            Ok(pending) => pending,
+                            Err(done) => {
+                                writer = done;
+                                break;
+                            }
+                        };
+                        if !cache.capture(pending.pending_command()) {
+                            cache.drain();
+                            flushes += 1;
+                        }
+                        writer = pending.finish_pending(Completion::Succeeded);
+                    }
+                    assert!(writer.finished() && writer.acknowledged() && !writer.failed());
+                    assert_eq!(flushes, 6);
+                    assert!(
+                        cache.queued.is_empty(),
+                        "finished success has no late writes"
+                    );
+                    assert_eq!(cache.stable, exact, "exact complete issued byte image");
+                    assert_namespace(&cache.stable, &expected_homes, &tree.ea);
+                    recover(&cache.stable, &expected_homes, &tree.ea, (journal, blocks));
+                    linux_journal_only(
+                        &cache.stable,
+                        &expected_homes,
+                        (journal, blocks),
+                        &format!("success-{wide}-{stored_seed}-{operation:?}"),
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn repeated_recovery_crashes_repair_partial_ea_homes_before_full_namespace_admission() {
+        let tree = tree("ea-durable-recovery-cuts", true, true);
+        let source = Snapshot::from_bytes(&tree.ea.bytes);
+        let prepared = proposal(&tree, Operation::Move);
+        let expected = prepared.bytes().to_vec();
+        let mut writer = begin(&source, prepared);
+        let boot = ea_bootstrap::locate(&source).unwrap();
+        let journal = (boot.layout().physical_start(), boot.layout().blocks());
+        let mut cache = Cache::new(&tree.ea.bytes);
+        while !writer.acknowledged() {
+            let pending = writer.dispatch().ok().unwrap();
+            if !cache.capture(pending.pending_command()) {
+                cache.drain();
+            }
+            writer = pending.finish_pending(Completion::Succeeded);
+        }
+        let pending = writer.dispatch().ok().unwrap();
+        assert!(cache.capture(pending.pending_command()));
+        cache.drain();
+        let stopped = pending.abort_pending().finish_pending(Completion::Failed);
+        assert!(stopped.failed() && stopped.acknowledged());
+        let partial = cache.stable;
+        let partial_source = Snapshot::from_bytes(&partial);
+        assert!(
+            ea_namespace::inspect_journal(&partial_source, u32::MAX, 8, 4096).is_none(),
+            "coordinated home writes need not form a valid namespace before replay"
+        );
+        assert!(ea_bootstrap::locate(&partial_source).is_some());
+        let recovery = ea_recovery_admission::prepare(&partial_source, u32::MAX, 8, 4096).unwrap();
+        let requests = recovery.engine_ref().replay_plan().len() + 3;
+        drop(recovery);
+        for cut in 0..requests {
+            let mut recovery =
+                ea_recovery_admission::prepare(&partial_source, u32::MAX, 8, 4096).unwrap();
+            let mut cache = Cache::new(&partial);
+            for _ in 0..cut {
+                let pending = recovery.dispatch().ok().unwrap();
+                if !cache.capture(pending.pending_command()) {
+                    cache.drain();
+                }
+                recovery = pending.finish_pending(Completion::Succeeded);
+            }
+            let pending = recovery.dispatch().ok().unwrap();
+            cache.capture(pending.pending_command());
+            let stopped = pending.abort_pending().finish_pending(Completion::Failed);
+            assert!(stopped.failed() && !stopped.finished());
+            assert!(stopped.dispatch().is_err());
+            for pattern in 0..3 {
+                let mut crash = cache.clone();
+                crash.late(pattern);
+                let retry_source = Snapshot::from_bytes(&crash.stable);
+                let retry = ea_recovery_admission::prepare(&retry_source, u32::MAX, 8, 4096)
+                    .expect("fresh repaired-shadow admission survives a failed recovery");
+                let pending = retry.dispatch().ok().unwrap();
+                let mut again = Cache::new(&crash.stable);
+                again.capture(pending.pending_command());
+                let stopped = pending.finish_pending(Completion::Failed);
+                assert!(stopped.failed());
+                again.late((pattern + 1) % 3);
+                recover(&again.stable, &expected, &tree.ea, journal);
+            }
+        }
+        linux_journal_only(&partial, &expected, journal, "recovery-partial-homes");
+    }
+
+    #[test]
+    fn every_namespace_request_cut_recovers_exact_before_or_after_with_late_failed_and_aborted_writes()
+     {
+        let tree = tree("ea-durable-cuts", false, false);
+        for operation in [
+            Operation::Move,
+            Operation::DirectoryExchange,
+            Operation::MixedExchange,
+        ] {
+            let source = Snapshot::from_bytes(&tree.ea.bytes);
+            let prepared = proposal(&tree, operation);
+            let after = prepared.bytes().to_vec();
+            let writer = begin(&source, prepared);
+            let engine = writer.engine_ref();
+            let first = core::bytes::read_be32(engine.log_record(0).unwrap().1, 8).unwrap();
+            let boot = ea_bootstrap::locate(&source).unwrap();
+            let journal = (boot.layout().physical_start(), boot.layout().blocks());
+            let uuid = boot.journal_uuid().to_vec();
+            let count = engine.original_count();
+            let requests = 11 + 2 * count;
+            drop(writer);
+            let mut saw_partial_invalid = false;
+            let mut saw_unacknowledged_commit = false;
+            for cut in 0..requests {
+                for failed in [false, true] {
+                    let mut writer = begin(&source, proposal(&tree, operation));
+                    let mut cache = Cache::new(&tree.ea.bytes);
+                    for _ in 0..cut {
+                        let pending = writer.dispatch().ok().unwrap();
+                        if !cache.capture(pending.pending_command()) {
+                            cache.drain();
+                        }
+                        writer = pending.finish_pending(Completion::Succeeded);
+                    }
+                    let acknowledged = writer.acknowledged();
+                    let pending = writer.dispatch().ok().unwrap();
+                    let write = cache.capture(pending.pending_command());
+                    // Even an aborted successful flush must drain all earlier
+                    // writes before its report. Failed flushes promise nothing.
+                    if !failed && !write {
+                        cache.drain();
+                    }
+                    let stopped = if failed {
+                        pending.finish_pending(Completion::Failed)
+                    } else {
+                        pending
+                            .abort_pending()
+                            .finish_pending(Completion::Succeeded)
+                    };
+                    assert!(stopped.failed() && !stopped.finished());
+                    assert_eq!(stopped.acknowledged(), acknowledged);
+                    assert!(stopped.dispatch().is_err());
+                    for pattern in 0..3 {
+                        let mut crash = cache.clone();
+                        crash.late(pattern);
+                        // Remaining queued writes are lost only after reset
+                        // quiescence; late() happened after failure/abort.
+                        let committed = durable_prefix(&crash.stable, first, journal, &uuid);
+                        assert!(usize::from(acknowledged) <= committed);
+                        saw_unacknowledged_commit |= committed == 1 && !acknowledged;
+                        let expected = if committed == 0 {
+                            &tree.ea.bytes
+                        } else {
+                            &after
+                        };
+                        let static_source = Snapshot::from_bytes(&crash.stable);
+                        saw_partial_invalid |= committed == 1
+                            && ea_namespace::inspect_journal(&static_source, u32::MAX, 8, 4096)
+                                .is_none();
+                        let label = format!("cut-{operation:?}-{cut}-{failed}-{pattern}");
+                        recover(&crash.stable, expected, &tree.ea, journal);
+                        if failed
+                            && pattern == 1
+                            && [
+                                0,
+                                3,
+                                count + 5,
+                                count + 6,
+                                count + 7,
+                                count + 8,
+                                requests - 3,
+                                requests - 1,
+                            ]
+                            .contains(&cut)
+                        {
+                            linux_journal_only(&crash.stable, expected, journal, &label);
+                        }
+                    }
+                }
+            }
+            assert!(
+                saw_partial_invalid,
+                "a coordinated partial home prefix must require replay"
+            );
+            assert!(
+                saw_unacknowledged_commit,
+                "persisted commit may precede its success report"
+            );
+        }
+    }
+
+    #[test]
+    fn durable_factory_rejects_source_substitution_and_byte_exact_noops_before_io() {
+        let tree = tree("ea-durable-rejections", false, false);
+        let mut other = tree.ea.bytes.clone();
+        other[4095] ^= 1;
+        let source = Snapshot::from_bytes(&other);
+        assert!(matches!(
+            ea_writer_admission::prepare(
+                &source,
+                proposal(&tree, Operation::Move),
+                u32::MAX,
+                8,
+                4096
+            ),
+            Err(ea_writer_admission::Error::SourceMismatch)
+        ));
+        let store = Store::open(&tree.ea.bytes, 16, u32::MAX, 8, 4096).unwrap();
+        let noop = match store
+            .checkout()
+            .prepare_rename_exchange(2, b"first", 2, b"first", SECONDS, NANOS)
+        {
+            Ok(p) => Prepared::file_rename(p),
+            Err(_) => panic!("same-inode no-op"),
+        };
+        assert_eq!(noop.bytes(), &tree.ea.bytes);
+        let source = Snapshot::from_bytes(&tree.ea.bytes);
+        assert!(matches!(
+            ea_writer_admission::prepare(&source, noop, u32::MAX, 8, 4096),
+            Err(ea_writer_admission::Error::NoChanges)
+        ));
+    }
+
+    #[test]
+    fn a_committed_primary_target_is_rejected_before_any_ea_recovery_request() {
+        let tree = tree("ea-durable-primary-target", false, false);
+        let source = Snapshot::from_bytes(&tree.ea.bytes);
+        let boot = ea_bootstrap::locate(&source).unwrap();
+        let layout = boot.layout().duplicate();
+        let start = layout.physical_start() as usize * 4096;
+        let uuid = boot.journal_uuid().to_vec();
+        let seed = core::crc::crc32c(0xffffffff, &uuid);
+        let sequence = 7;
+        let dirty = core::ea_super_state::recovery_image(
+            &tree.ea.bytes[..4096],
+            tree.ea.bytes.len() as u64,
+            true,
+        )
+        .unwrap();
+        let checksum = core::jbd2::payload_checksum(seed, sequence, dirty.as_slice()).unwrap();
+        let descriptor = core::descriptor::encode(
+            &[core::jbd2::Tag {
+                block: 0,
+                flags: 8,
+                checksum,
+            }],
+            &uuid,
+            sequence,
+            layout.filesystem_blocks(),
+            seed,
+        )
+        .unwrap();
+        let commit = core::jbd2::encode_commit(sequence, seed).unwrap();
+        let activation = core::journal_state::encode(
+            &tree.ea.bytes[start..start + 4096],
+            &uuid,
+            layout.blocks(),
+            sequence,
+            1,
+        )
+        .unwrap();
+        let mut crash = tree.ea.bytes.clone();
+        crash[..4096].copy_from_slice(dirty.as_slice());
+        for (index, image) in [
+            activation.as_slice(),
+            descriptor.as_slice(),
+            dirty.as_slice(),
+            commit.as_slice(),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            crash[start + index * 4096..start + (index + 1) * 4096].copy_from_slice(image);
+        }
+        let parsed = core::scan::recover(
+            &crash[start..start + layout.blocks() as usize * 4096],
+            &uuid,
+            layout,
+        )
+        .expect("valid actual JBD2 record, independently of EA replay policy");
+        assert_eq!(parsed.committed_transactions(), 1);
+        assert_eq!(parsed.replay_plan().get(0).unwrap().block(), 0);
+        let source = Snapshot::from_bytes(&crash);
+        let boot = ea_bootstrap::locate(&source).expect("EA locator accepts actual source bytes");
+        assert!(boot.prepare_recovery().is_none());
+        assert!(ea_recovery_admission::prepare(&source, u32::MAX, 8, 4096).is_none());
+    }
+
+    #[test]
+    fn journal_inspection_accepts_coherent_dirty_ea_bytes_while_legacy_mutation_stays_closed() {
+        let tree = tree("ea-durable-clean-boundary", false, false);
+        let marker = core::ea_super_state::recovery_image(
+            &tree.ea.bytes[..4096],
+            tree.ea.bytes.len() as u64,
+            true,
+        )
+        .unwrap();
+        let mut dirty = tree.ea.bytes.clone();
+        dirty[..4096].copy_from_slice(marker.as_slice());
+        let source = Snapshot::from_bytes(&dirty);
+        assert!(core::ea_source::validate_header(
+            &dirty[1024..2048],
+            dirty.len() as u64
+        ));
+        assert!(ea_namespace::inspect_journal(&source, u32::MAX, 8, 4096).is_some());
+        assert!(ea_namespace::inspect(&source, u32::MAX, 8, 4096).is_none());
+        assert!(Store::open(&dirty, 16, u32::MAX, 8, 4096).is_none());
+        assert!(
+            core::ns_rename::prepare(
+                &source,
+                2,
+                b"first",
+                b"renamed",
+                SECONDS,
+                NANOS,
+                u32::MAX,
+                8,
+                4096
+            )
+            .is_err()
+        );
+        assert!(
+            core::ns_namespace_edit::prepare_rename(
+                &source,
+                2,
+                b"child",
+                tree.destination,
+                b"moved",
+                SECONDS,
+                NANOS,
+                u32::MAX,
+                8,
+                4096
+            )
+            .is_err()
+        );
+        assert!(
+            core::ns_file_rename::prepare_exchange(
+                &source,
+                2,
+                b"first",
+                tree.destination,
+                b"file",
+                SECONDS,
+                NANOS,
+                u32::MAX,
+                8,
+                4096
+            )
+            .is_err()
+        );
+        assert!(
+            core::ns_exchange::prepare_exchange(
+                &source,
+                2,
+                b"child",
+                tree.destination,
+                b"victim",
+                SECONDS,
+                NANOS,
+                u32::MAX,
+                8,
+                4096
+            )
+            .is_err()
+        );
+    }
+}

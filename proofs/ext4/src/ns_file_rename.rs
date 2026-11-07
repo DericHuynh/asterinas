@@ -958,7 +958,20 @@ proof fn result_attachment_fields(start:UpdateView,result:Seq<u8>,after:Namespac
         attach_result(start,result,after,patches).nanos==start.nanos,
 {
     reveal(attach_result);
-    reveal(planned);reveal(discovered);reveal(requested_inode);reveal(requested_directory);
+    let attached = attach_result(start,result,after,patches);
+    reveal(planned);
+    assert(discovered(attached)) by { reveal(discovered); }
+    assert(covered(attached));
+    assert forall|i:int| 0<=i<attached.inode_edits.len()
+        implies requested_inode(attached,#[trigger] attached.inode_edits[i]) by {
+        assert(requested_inode(start,start.inode_edits[i]));
+        reveal(requested_inode);
+    }
+    assert forall|i:int| 0<=i<attached.directory_edits.len()
+        implies requested_directory(attached,#[trigger] attached.directory_edits[i]) by {
+        assert(requested_directory(start,start.directory_edits[i]));
+        reveal(requested_directory);
+    }
 }
 
 #[verifier::rlimit(15)]

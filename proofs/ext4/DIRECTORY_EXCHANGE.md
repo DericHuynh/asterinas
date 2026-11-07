@@ -123,3 +123,10 @@ and [directory locking](https://github.com/torvalds/linux/blob/028ef9c96e9619702
 The independent host protocol uses exact-source/revision rejection and complete
 result admission. Runtime kernel locking and device persistence require their
 own refinement proofs.
+
+The separate [EA namespace durable transaction](EA_DURABLE_NAMESPACE.md)
+consumes checked proposals from these components. It adds one bounded serial
+JBD2 writer, actual EA crash-cut discovery and raw recovery construction under
+an explicit device contract. Mounted durable publication, full validator
+acceptance completeness, universal repeated EA restart/admission closure and
+CortenMM/OSTD device refinement remain open.

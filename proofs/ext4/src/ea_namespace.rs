@@ -58,7 +58,7 @@ impl<'s, 'a> Namespace<'s, 'a> {
     { proof { use_type_invariant(self); } self.tree.depth(number) }
 }
 
-pub fn inspect<'s, 'a>(source: &'s Snapshot<'a>, inode_budget: u32, node_budget: u64, byte_budget: u64)
+pub fn inspect_journal<'s, 'a>(source: &'s Snapshot<'a>, inode_budget: u32, node_budget: u64, byte_budget: u64)
     -> (r: Option<Namespace<'s, 'a>>)
     ensures match r { Some(namespace) => namespace.wf() && valid(namespace.view())
         && namespace.view().allocation.integrity.references.index.header.source == source.view()
@@ -74,6 +74,44 @@ pub fn inspect<'s, 'a>(source: &'s Snapshot<'a>, inode_budget: u32, node_budget:
     let ghost assembled = NamespaceView { allocation: allocation.view(), index: index.view(), tree: tree.view() };
     assert(valid(assembled)) by { reveal(valid); }
     Some(Namespace { allocation, index, tree })
+}
+
+/// Clean-image namespace inspection for volatile mutation preparation.
+pub fn inspect<'s, 'a>(source: &'s Snapshot<'a>, inode_budget: u32, node_budget: u64, byte_budget: u64)
+    -> (r: Option<Namespace<'s, 'a>>)
+    ensures match r { Some(namespace) => namespace.wf() && valid(namespace.view())
+        && namespace.view().allocation.integrity.references.index.header.source == source.view()
+        && namespace.view().allocation.integrity.inode_budget == inode_budget
+        && namespace.view().allocation.integrity.node_budget == node_budget
+        && namespace.view().allocation.integrity.byte_budget == byte_budget
+        && !crate::super_state::is_dirty(source.view()), None => true },
+{
+    let primary = match source.block(0) { Some(block) => block, None => { return None; } };
+    let flags = match crate::bytes::read_le32(primary.as_slice(), 1120) {
+        Some(flags) => flags, None => { return None; }
+    };
+    if flags & 4u32 != 0 { return None; }
+    proof {
+        assert(crate::bytes::le32(source.view(), 1120)
+            == crate::bytes::le32(primary.bytes(), 1120));
+    }
+    inspect_journal(source, inode_budget, node_budget, byte_budget)
+}
+
+pub(crate) proof fn allocation_facts(v: NamespaceView)
+    requires valid(v),
+    ensures ea_allocation::valid(v.allocation),
+        crate::ea_journal::valid(v.allocation.journal),
+        v.allocation.journal.index == v.allocation.integrity.references.index,
+        crate::ea_index::valid(v.allocation.integrity.references.index),
+        crate::ea_source::header_valid(v.allocation.integrity.references.index.header),
+        0 < v.allocation.integrity.references.index.groups.len(),
+{
+    hide(crate::crc::fold);
+    reveal(valid);
+    reveal(ea_allocation::valid);
+    reveal(crate::ea_journal::valid);
+    reveal(crate::ea_index::valid);
 }
 
 pub proof fn every_source_directory_is_rooted(v: NamespaceView, number: u32)

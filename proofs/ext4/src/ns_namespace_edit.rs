@@ -17,6 +17,7 @@ pub enum Error { Invalid, ReadOnly, NotFound, Exists, NoSpace, Rejected }
 
 pub open spec fn certified(c: NamespaceView, source: Seq<u8>) -> bool {
     ea_namespace::valid(c) && c.allocation.integrity.references.index.header.source == source
+        && !crate::super_state::is_dirty(source)
 }
 
 pub struct InodeEditView { pub number:u32, pub ordinal:usize, pub position:u64, pub change:ns_inode_links::Change }

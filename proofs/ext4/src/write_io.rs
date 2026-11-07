@@ -23,6 +23,39 @@ pub open spec fn log_images(v: Images) -> Seq<transaction::ImageView> {
     })
 }
 
+/// Exact serial JBD2 transport, independent of filesystem source admission.
+/// Callers separately validate the actual primary and after-image sources.
+/// This predicate supplies no operation, mount, EA or device authority.
+#[verifier::opaque]
+pub open spec fn transport_images(v: Images) -> bool {
+    &&& transaction::wf(v.tx) && v.journal_block == v.tx.layout.start
+    &&& v.tx.layout.fs_blocks as nat * 4096 <= v.partition_bytes
+    &&& v.initial_journal.len() == v.tx.layout.journal_blocks as nat * 4096
+    &&& bytes::le32(v.initial_primary, 1028) == v.tx.layout.fs_blocks
+    &&& journal_superblock::accepted(v.initial_journal.subrange(0, 1024), v.tx.uuid, v.tx.layout.journal_blocks)
+    &&& bytes::be32(v.initial_journal, 28) == 0
+    &&& epoch::newer(v.initial_journal, bytes::be32(v.initial_journal, 24) as u32, v.tx.sequence)
+    &&& super_state::preserves(v.initial_primary, v.dirty)
+    &&& v.dirty == super_state::recovery_bytes(v.initial_primary, true)
+    &&& super_state::is_dirty(v.dirty)
+    &&& v.tx.primary == v.dirty && v.tx.partition_bytes == v.partition_bytes
+    &&& journal_state::preserves(v.initial_journal.subrange(0, 4096), v.activation)
+    &&& journal_superblock::accepted(v.activation.subrange(0, 1024), v.tx.uuid, v.tx.layout.journal_blocks)
+    &&& bytes::be32(v.activation, 24) == v.tx.sequence && bytes::be32(v.activation, 28) == 1
+    &&& bytes::be32(v.activation, 40) == 17
+    &&& journal_state::preserves(v.activation, v.tail)
+    &&& journal_superblock::accepted(v.tail.subrange(0, 1024), v.tx.uuid, v.tx.layout.journal_blocks)
+    &&& bytes::be32(v.tail, 24) == v.tx.sequence as nat + 1 && bytes::be32(v.tail, 28) == 0
+}
+
+pub proof fn valid_images_implies_transport_images(v: Images)
+    requires valid_images(v),
+    ensures transport_images(v),
+{
+    reveal(valid_images);
+    reveal(transport_images);
+}
+
 #[verifier::opaque]
 pub open spec fn valid_images(v: Images) -> bool {
     &&& transaction::wf(v.tx) && v.journal_block == v.tx.layout.start
@@ -237,23 +270,52 @@ pub proof fn expected_command_is_confined(v: Images, state: State)
         CommandView::Flush => true,
     },
 {
-    command_context(v);
-    image_shapes(v);
-    state_image_shapes(v);
-    if state.phase is Homes { home_bounds(v, state.cursor as int); }
+    valid_images_implies_transport_images(v);
+    expected_transport_command_is_confined(v, state)
+}
+
+#[verifier::rlimit(30)]
+pub proof fn expected_transport_command_is_confined(v: Images, state: State)
+    requires transport_images(v), write_protocol::wf(state, v.tx.payloads.len()),
+    ensures match expected(v, state) {
+        CommandView::Write { block, image } => image.len() == 4096 && block < v.tx.layout.fs_blocks
+            && block as nat * 4096 + 4096 <= v.partition_bytes,
+        CommandView::Flush => true,
+    },
+{
+    transport_command_context(v);
+    transport_image_shapes(v);
+    transport_state_image_shapes(v);
+    if state.phase is Homes { transport_home_bounds(v, state.cursor as int); }
 }
 
 proof fn state_image_shapes(v: Images)
     requires valid_images(v),
     ensures v.dirty.len() == 4096, v.activation.len() == 4096, v.tail.len() == 4096,
-{ reveal(valid_images); }
+{
+    valid_images_implies_transport_images(v);
+    transport_state_image_shapes(v)
+}
+
+pub proof fn transport_state_image_shapes(v: Images)
+    requires transport_images(v),
+    ensures v.dirty.len() == 4096, v.activation.len() == 4096, v.tail.len() == 4096,
+{ reveal(transport_images); }
 
 proof fn home_bounds(v: Images, i: int)
     requires valid_images(v), 0 <= i < v.tx.original.len(),
     ensures v.tx.original[i].block < v.tx.layout.fs_blocks,
 {
+    valid_images_implies_transport_images(v);
+    transport_home_bounds(v, i)
+}
+
+pub proof fn transport_home_bounds(v: Images, i: int)
+    requires transport_images(v), 0 <= i < v.tx.original.len(),
+    ensures v.tx.original[i].block < v.tx.layout.fs_blocks,
+{
     hide(crate::crc::fold);
-    reveal(valid_images);
+    reveal(transport_images);
     assert(crate::replay::payload_for_layout(v.tx.tags[i], v.tx.payloads[i], v.tx.sequence, v.tx.seed, v.tx.layout));
 }
 
@@ -268,7 +330,17 @@ proof fn command_context(v: Images)
         v.journal_block as nat + v.tx.payloads.len() + 3 <= v.tx.layout.fs_blocks,
         v.tx.layout.fs_blocks as nat * 4096 <= v.partition_bytes,
 {
-    reveal(valid_images);
+    valid_images_implies_transport_images(v);
+    transport_command_context(v)
+}
+
+pub proof fn transport_command_context(v: Images)
+    requires transport_images(v),
+    ensures 0 < v.tx.payloads.len() <= 250, v.tx.original.len() == v.tx.payloads.len(),
+        v.journal_block as nat + v.tx.payloads.len() + 3 <= v.tx.layout.fs_blocks,
+        v.tx.layout.fs_blocks as nat * 4096 <= v.partition_bytes,
+{
+    reveal(transport_images);
 }
 
 proof fn image_shapes(v: Images)
@@ -277,8 +349,18 @@ proof fn image_shapes(v: Images)
         forall|i: int| 0 <= i < v.tx.original.len() ==> (#[trigger] v.tx.original[i]).image.len() == 4096,
         forall|i: int| 0 <= i < v.tx.payloads.len() ==> (#[trigger] v.tx.payloads[i]).len() == 4096,
 {
+    valid_images_implies_transport_images(v);
+    transport_image_shapes(v)
+}
+
+pub proof fn transport_image_shapes(v: Images)
+    requires transport_images(v),
+    ensures v.tx.descriptor.len() == 4096, v.tx.commit.len() == 4096,
+        forall|i: int| 0 <= i < v.tx.original.len() ==> (#[trigger] v.tx.original[i]).image.len() == 4096,
+        forall|i: int| 0 <= i < v.tx.payloads.len() ==> (#[trigger] v.tx.payloads[i]).len() == 4096,
+{
     hide(crate::crc::fold);
-    reveal(valid_images);
+    reveal(transport_images);
     assert forall|i: int| 0 <= i < v.tx.payloads.len() implies (#[trigger] v.tx.payloads[i]).len() == 4096 by {
         assert(crate::replay::payload_for_layout(v.tx.tags[i], v.tx.payloads[i], v.tx.sequence, v.tx.seed, v.tx.layout));
     }

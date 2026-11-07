@@ -28,7 +28,7 @@ page, folio or buffer-head ownership into Asterinas's framekernel architecture.
 | Design component | Present implementation and contracts | Remaining boundary |
 | --- | --- | --- |
 | `ea_inode.rs` | Modern 256-byte regular EA inode with EA/EXTENTS flags, nonempty value up to 16 MiB, checksum, value CRC in raw atime word, 64-bit reference count in raw ctime/high and low i_version words, live/unlinked local states and framed reference-word edits | Allocation, complete sector accounting, authenticated refcount changes, orphan membership, quota changes and durable filesystem transactions |
-| `ea_source.rs` | Isolated original-snapshot header with actual EA_INODE feature retained, clean-state marker and RECOVER clear; bounded 4 KiB/256-byte geometry, source-selected descriptor width/seed/features; initialized allocated inode-bit, descriptor/bitmap checksums, unused-table bound and exact group/slot/table bytes | Full volume/journal and global ownership admission, lazy-group allocation and runtime capture; complete EA reference metadata enumeration is composed separately in EA_REFERENCE_CENSUS.md |
+| `ea_source.rs` | Isolated original-snapshot header with actual EA_INODE feature retained, clean-state marker with actual RECOVER retained for journal inspection; bounded 4 KiB/256-byte geometry, source-selected descriptor width/seed/features; initialized allocated inode-bit, descriptor/bitmap checksums, unused-table bound and exact group/slot/table bytes | Full volume/journal and global ownership admission, lazy-group allocation and runtime capture; complete EA reference metadata enumeration is composed separately in EA_REFERENCE_CENSUS.md |
 | `ea_reference.rs` | Ordinary parent metadata and allocated table provenance, same-source inline/external parsing, physical external checksum, complete namespace/name selection, cross-location key uniqueness and bounded nonself value-inode descriptor | Caller/namespace authority, physical block ownership and descriptor-to-lifetime coupling; complete parent projections and source count closure are composed separately |
 | `ea_hash.rs` | Value CRC over all bytes, EA entry name plus one CRC word, modern unsigned and historical signed-name variants, exact-byte equality available separately | Cryptographic authentication is not provided; deduplication/allocation remains separate and must compare full bytes |
 | `ea_value.rs` | Same-source allocated live value inode, exact descriptor size, complete extent-tree audit with budget up to 4,096 nodes, dense initialized mappings through the value length, unique physical value blocks, exact pointwise source bytes and both value/entry hash checks; excludes Linux's legacy Lustre classification | The isolated reader alone does not supply global metadata/data disjointness, extra-EOF allocation exclusion or complete sectors. EA_VALUE_INTEGRITY.md composes complete value/data-extent/sector checks and bounded all-value content validation; ordinary/journal ownership, quota persistence, authorization and kernel/device refinement remain open |
@@ -37,9 +37,8 @@ page, folio or buffer-head ownership into Asterinas's framekernel architecture.
 ## Source and value boundaries
 
 `ea_source::parse` reads the actual snapshot and rejects unsupported geometry or
-feature combinations. It requires the superblock clean-state marker and a clear
-RECOVER bit; those markers alone do not establish whole-filesystem or journal
-admission. The source EA_INODE flag is retained. No stripped-feature shadow
+feature combinations. It requires the superblock clean-state marker and retains the actual RECOVER
+bit; those fields alone do not establish whole-filesystem or journal admission. The source EA_INODE flag is retained. No stripped-feature shadow
 superblock or ordinary `GroupIndex` is manufactured to bypass ordinary admission.
 An allocated-node result retains exact descriptor, initialized inode bitmap and
 inode-table ranges from that same snapshot. INODE_UNINIT and an unused inode-table
@@ -119,3 +118,8 @@ ownership, lifetime and transaction protocols; a census is immutable inspection.
 | Lifecycle and quotas | Couple physical references, per-parent charges, allocation, block COW, value deduplication and zero-reference orphan/reclamation transitions with complete failure unwind. |
 | Durability and races | Include every resulting home image in one admitted transaction, prove crash/recovery closure and serialize competing inode/xattr/cache/allocator operations. |
 | Framekernel runtime | Refine authenticated VFS/idmap/LSM inputs, CortenMM/OSTD frame/cache/DMA ownership, sleeping-lock order and actual BIO/flush/quiescence behavior. |
+
+Raw EA structural admission accepts actual RECOVER bytes; it does not certify
+journal replay or clean state. Legacy namespace mutation still uses clean-only
+namespace inspection. The separate [durable path](EA_DURABLE_NAMESPACE.md)
+scans and repairs actual journal bytes before full namespace admission.

@@ -487,6 +487,61 @@ def main():
         'move_exchange_update_from_shared_borrow': ('pub fn misuse(u: &verified_ext4::ns_exchange::Update) { let _owned = *u; }\n', 'E0507'),
         'extract_exchange_update_owned_result': ('pub fn misuse(u: verified_ext4::ns_exchange::Update) { let _ = u.into_result(); }\n', 'E0624'),
     })
+    # EA durable namespace boundaries are additive to the previous 282 cases.
+    misuse.update({
+        'forge_ea_serial_writer': ('pub fn misuse(w: verified_ext4::ea_write_io::Writer) { let _ = verified_ext4::ea_write_io::Writer { ..w }; }\n', 'E0451'),
+        'replace_ea_serial_state': ('pub fn misuse(mut w: verified_ext4::ea_write_io::Writer, s: verified_ext4::write_protocol::State) { w.state = s; }\n', 'E0616'),
+        'extract_ea_serial_transaction': ('pub fn misuse(w: verified_ext4::ea_write_io::Writer) { let _ = w.tx; }\n', 'E0616'),
+        'forge_ea_serial_pending': ('pub fn misuse(p: verified_ext4::ea_write_io::Pending) { let _ = verified_ext4::ea_write_io::Pending { ..p }; }\n', 'E0451'),
+        'reuse_ea_serial_completion': ('pub fn misuse(p: verified_ext4::ea_write_io::Pending) { let _ = p.finish_pending(verified_ext4::recovery_request::Completion::Succeeded); let _ = p.finish_pending(verified_ext4::recovery_request::Completion::Succeeded); }\n', 'E0382'),
+        'mutate_ea_serial_command': ('pub fn misuse(p: verified_ext4::ea_write_io::Pending) { if let verified_ext4::recovery_io::Command::Write { image, .. } = p.pending_command() { image[0] = 0; } }\n', 'E0594'),
+        'finish_ea_serial_with_command_loan': ('pub fn misuse(p: verified_ext4::ea_write_io::Pending) { let command = p.pending_command(); let _ = p.finish_pending(verified_ext4::recovery_request::Completion::Succeeded); if let verified_ext4::recovery_io::Command::Write { image, .. } = command { let _ = image.len(); } }\n', 'E0505'),
+        'redirect_ea_serial_completion_id': ('pub fn misuse(p: verified_ext4::ea_write_io::Pending) { let _ = p.finish_pending(1, verified_ext4::recovery_request::Completion::Succeeded); }\n', 'E0061'),
+        'forge_ea_admitted_writer': ("pub fn misuse(w: verified_ext4::ea_writer_admission::CheckedWriter<'_, '_>) { let _ = verified_ext4::ea_writer_admission::CheckedWriter { ..w }; }\n", 'E0451'),
+        'replace_ea_admitted_writer': ("pub fn misuse(mut w: verified_ext4::ea_writer_admission::CheckedWriter<'_, '_>, raw: verified_ext4::ea_write_io::Writer) { w.writer = raw; }\n", 'E0616'),
+        'extract_ea_admitted_writer': ("pub fn misuse(w: verified_ext4::ea_writer_admission::CheckedWriter<'_, '_>) { let _ = w.writer; }\n", 'E0616'),
+        'extract_ea_admitted_certificate': ("pub fn misuse(w: verified_ext4::ea_writer_admission::CheckedWriter<'_, '_>) { let _ = w.certificate; }\n", 'E0616'),
+        'replace_ea_admitted_source': ("pub fn misuse<'s, 'a>(mut w: verified_ext4::ea_writer_admission::CheckedWriter<'s, 'a>, source: &'s verified_ext4::snapshot::Snapshot<'a>) { w.source = source; }\n", 'E0616'),
+        'reuse_ea_admitted_dispatch': ("pub fn misuse(w: verified_ext4::ea_writer_admission::CheckedWriter<'_, '_>) { let _ = w.dispatch(); let _ = w.dispatch(); }\n", 'E0382'),
+        'replace_ea_admitted_pending': ("pub fn misuse(mut p: verified_ext4::ea_writer_admission::Pending<'_, '_>, raw: verified_ext4::ea_write_io::Pending) { p.pending = raw; }\n", 'E0616'),
+        'reuse_ea_admitted_completion': ("pub fn misuse(p: verified_ext4::ea_writer_admission::Pending<'_, '_>) { let _ = p.finish_pending(verified_ext4::recovery_request::Completion::Succeeded); let _ = p.finish_pending(verified_ext4::recovery_request::Completion::Succeeded); }\n", 'E0382'),
+        'finish_ea_admitted_with_command_loan': ("pub fn misuse(p: verified_ext4::ea_writer_admission::Pending<'_, '_>) { let command = p.pending_command(); let _ = p.finish_pending(verified_ext4::recovery_request::Completion::Succeeded); if let verified_ext4::recovery_io::Command::Write { image, .. } = command { let _ = image.len(); } }\n", 'E0505'),
+        'substitute_ea_patches_for_prepared_operation': ("pub fn misuse(source: &verified_ext4::snapshot::Snapshot<'_>) { let _ = verified_ext4::ea_writer_admission::prepare(source, verified_ext4::patch_set::PatchSet::new(), 64, 64, 4096); }\n", 'E0308'),
+        'substitute_static_ea_namespace_for_prepared_operation': ("pub fn misuse(source: &verified_ext4::snapshot::Snapshot<'_>, ns: verified_ext4::ea_namespace::Namespace<'_, '_>) { let _ = verified_ext4::ea_writer_admission::prepare(source, ns, 64, 64, 4096); }\n", 'E0308'),
+        'extract_ea_prepared_patches': ('pub fn misuse(p: verified_ext4::ns_journal_prepared::Prepared) { let _ = p.patches(); }\n', 'E0624'),
+        'extract_same_parent_journal_patches': ('pub fn misuse(p: verified_ext4::ns_mutation::Prepared) { let _ = p.patches(); }\n', 'E0624'),
+        'extract_edit_journal_patches': ('pub fn misuse(p: verified_ext4::ns_mutation::EditPrepared) { let _ = p.patches(); }\n', 'E0624'),
+        'extract_file_rename_journal_patches': ('pub fn misuse(p: verified_ext4::ns_mutation::FileRenamePrepared) { let _ = p.patches(); }\n', 'E0624'),
+        'extract_exchange_journal_patches': ('pub fn misuse(p: verified_ext4::ns_mutation::ExchangePrepared) { let _ = p.patches(); }\n', 'E0624'),
+        'reuse_consumed_ea_preparation': ("pub fn misuse(source: &verified_ext4::snapshot::Snapshot<'_>, p: verified_ext4::ns_journal_prepared::Prepared) { let _ = verified_ext4::ea_writer_admission::prepare(source, p, 64, 64, 4096); let _ = p.bytes(); }\n", 'E0382'),
+        'consume_ea_preparation_with_source_loan': ("pub fn misuse(source: &verified_ext4::snapshot::Snapshot<'_>, p: verified_ext4::ns_journal_prepared::Prepared) { let bytes = p.before_bytes(); let _ = verified_ext4::ea_writer_admission::prepare(source, p, 64, 64, 4096); let _ = bytes.len(); }\n", 'E0505'),
+        'forge_ea_admitted_recovery': ("pub fn misuse(r: verified_ext4::ea_recovery_admission::CheckedRecovery<'_, '_>) { let _ = verified_ext4::ea_recovery_admission::CheckedRecovery { ..r }; }\n", 'E0451'),
+        'replace_ea_recovery_engine': ("pub fn misuse(mut r: verified_ext4::ea_recovery_admission::CheckedRecovery<'_, '_>, engine: verified_ext4::recovery_io::Recovery) { r.engine = engine; }\n", 'E0616'),
+        'extract_ea_recovery_certificate': ("pub fn misuse(r: verified_ext4::ea_recovery_admission::CheckedRecovery<'_, '_>) { let _ = r.certificate; }\n", 'E0616'),
+        'replace_ea_recovery_homes': ("pub fn misuse(mut r: verified_ext4::ea_recovery_admission::CheckedRecovery<'_, '_>) { r.homes = verified_ext4::patch_set::PatchSet::new(); }\n", 'E0616'),
+        'replace_ea_recovery_source': ("pub fn misuse<'s, 'a>(mut r: verified_ext4::ea_recovery_admission::CheckedRecovery<'s, 'a>, source: &'s verified_ext4::snapshot::Snapshot<'a>) { r.source = source; }\n", 'E0616'),
+        'reuse_ea_recovery_dispatch': ("pub fn misuse(r: verified_ext4::ea_recovery_admission::CheckedRecovery<'_, '_>) { let _ = r.dispatch(); let _ = r.dispatch(); }\n", 'E0382'),
+        'replace_ea_recovery_pending': ("pub fn misuse(mut p: verified_ext4::ea_recovery_admission::Pending<'_, '_>, raw: verified_ext4::recovery_request::Pending) { p.pending = raw; }\n", 'E0616'),
+        'reuse_ea_recovery_completion': ("pub fn misuse(p: verified_ext4::ea_recovery_admission::Pending<'_, '_>) { let _ = p.finish_pending(verified_ext4::recovery_request::Completion::Succeeded); let _ = p.finish_pending(verified_ext4::recovery_request::Completion::Succeeded); }\n", 'E0382'),
+        'finish_ea_recovery_with_command_loan': ("pub fn misuse(p: verified_ext4::ea_recovery_admission::Pending<'_, '_>) { let command = p.pending_command(); let _ = p.finish_pending(verified_ext4::recovery_request::Completion::Succeeded); if let verified_ext4::recovery_io::Command::Write { image, .. } = command { let _ = image.len(); } }\n", 'E0505'),
+        'redirect_ea_recovery_completion': ("pub fn misuse(p: verified_ext4::ea_recovery_admission::Pending<'_, '_>) { let _ = p.finish_pending(1, verified_ext4::recovery_request::Completion::Succeeded); }\n", 'E0061'),
+    })
+    misuse.update({
+        'forge_ea_prepared_adapter': ('pub fn misuse(p: verified_ext4::ns_journal_prepared::Prepared) { let _ = verified_ext4::ns_journal_prepared::Prepared { ..p }; }\n', 'E0451'),
+        'replace_ea_prepared_operation': ('pub fn misuse(mut p: verified_ext4::ns_journal_prepared::Prepared, q: verified_ext4::ns_journal_prepared::Prepared) { p.inner = q.inner; }\n', 'E0616'),
+        'clone_ea_prepared_adapter': ('pub fn misuse(p: verified_ext4::ns_journal_prepared::Prepared) { let _ = p.clone(); }\n', 'E0599'),
+        'move_ea_prepared_from_shared_borrow': ('pub fn misuse(p: &verified_ext4::ns_journal_prepared::Prepared) { let _owned = *p; }\n', 'E0507'),
+        'substitute_raw_exchange_for_ea_prepared_constructor': ('pub fn misuse(p: verified_ext4::ns_exchange::Update) { let _ = verified_ext4::ns_journal_prepared::Prepared::exchange(p); }\n', 'E0308'),
+        'substitute_raw_edit_for_ea_prepared_constructor': ('pub fn misuse(p: verified_ext4::ns_namespace_edit::Update) { let _ = verified_ext4::ns_journal_prepared::Prepared::edit(p); }\n', 'E0308'),
+    })
+    misuse.update({
+        'forge_ea_recovery_pending': ("pub fn misuse(p: verified_ext4::ea_recovery_admission::Pending<'_, '_>) { let _ = verified_ext4::ea_recovery_admission::Pending { ..p }; }\n", 'E0451'),
+        'extract_ea_recovery_pending_certificate': ("pub fn misuse(p: verified_ext4::ea_recovery_admission::Pending<'_, '_>) { let _ = p.certificate; }\n", 'E0616'),
+        'forge_ea_bootstrap': ("pub fn misuse(b: verified_ext4::ea_bootstrap::Bootstrap<'_, '_>) { let _ = verified_ext4::ea_bootstrap::Bootstrap { ..b }; }\n", 'E0451'),
+        'replace_ea_bootstrap_source': ("pub fn misuse<'s, 'a>(mut b: verified_ext4::ea_bootstrap::Bootstrap<'s, 'a>, source: &'s verified_ext4::snapshot::Snapshot<'a>) { b.source = source; }\n", 'E0616'),
+        'mutate_ea_bootstrap_primary': ("pub fn misuse(b: verified_ext4::ea_bootstrap::Bootstrap<'_, '_>) { b.primary()[0] = 0; }\n", 'E0594'),
+        'mutate_source_with_live_ea_bootstrap': ('pub fn misuse(mut bytes: Vec<u8>) { let source = verified_ext4::snapshot::Snapshot::from_bytes(&bytes); let boot = verified_ext4::ea_bootstrap::locate(&source).unwrap(); bytes[0] = 0; let _ = boot.primary(); }\n', 'E0502'),
+    })
     for name, (source, code) in misuse.items():
         path = BUILD / (name + ".rs")
         path.write_text(source)

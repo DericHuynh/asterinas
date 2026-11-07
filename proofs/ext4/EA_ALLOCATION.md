@@ -149,3 +149,10 @@ quota persistence, orphan/reclamation, concurrent cache/lock protocols, durable
 home images and restartable operations remain unfinished. Kernel, full-feature
 and writable-mount gates remain false. Runtime execution must refine Asterinas's
 CortenMM/OSTD frame, ownership, synchronization and device interfaces.
+
+The separate [EA namespace durable transaction](EA_DURABLE_NAMESPACE.md)
+consumes checked proposals from these components. It adds one bounded serial
+JBD2 writer, actual EA crash-cut discovery and raw recovery construction under
+an explicit device contract. Mounted durable publication, full validator
+acceptance completeness, universal repeated EA restart/admission closure and
+CortenMM/OSTD device refinement remain open.

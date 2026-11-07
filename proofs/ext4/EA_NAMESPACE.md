@@ -219,3 +219,10 @@ Directory record, HTree and hash semantics continue to use the pinned
 `fs/ext4/dir.c`, `namei.c`, `hash.c` and supporting format definitions.
 The admission restrictions above deliberately state where the supported source
 profile is narrower than Linux.
+
+The separate [EA namespace durable transaction](EA_DURABLE_NAMESPACE.md)
+consumes checked proposals from these components. It adds one bounded serial
+JBD2 writer, actual EA crash-cut discovery and raw recovery construction under
+an explicit device contract. Mounted durable publication, full validator
+acceptance completeness, universal repeated EA restart/admission closure and
+CortenMM/OSTD device refinement remain open.

@@ -83,3 +83,10 @@ BIO completion generations and DMA quiescence. Host snapshots do not certify
 these resources. Linux page, folio and buffer_head ownership is not imported.
 Full-feature, kernel-concurrency, mount and writable-filesystem gates remain
 closed. This component does not authorize a mounted writable ext4 filesystem.
+
+The bounded [EA namespace durable transaction](EA_DURABLE_NAMESPACE.md) adds a
+separate EA-aware single-transaction writer, raw crash-cut journal discovery and
+checked repaired-shadow recovery. Its explicit atomic-block, flush,
+exclusive-source and restart-quiescence premises require CortenMM/OSTD and
+actual-device refinement. Full EA filesystem, concurrent EA windows, mounted
+operation and hardware durability gates remain open.

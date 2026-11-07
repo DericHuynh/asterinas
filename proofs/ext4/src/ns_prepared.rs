@@ -42,6 +42,16 @@ impl Prepared {
         self.update.into_result()
     }
 
+    // The durable adapter reads the exact coalesced operation patches without
+    // exposing them through the existing host-image publication API.
+    pub(crate) fn patches(&self) -> (r: &crate::patch_set::PatchSet)
+        ensures self.wf(), model::prepared_valid(self.view()), ns_rename::valid(self.operation()),
+            r.wf(), r.view() == self.operation().patches,
+            self.operation().source == self.view().before,
+            self.operation().result == self.view().after,
+            self.operation().after == self.view().after_certificate,
+    { proof { use_type_invariant(self); } self.update.patches() }
+
     pub closed spec fn view(&self) -> model::PreparedView {
         model::PreparedView { epoch: self.epoch, before: self.before@, after: self.update.view().result,
             before_certificate: self.certificate@, after_certificate: self.update.view().after }

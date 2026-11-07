@@ -21,7 +21,6 @@ pub open spec fn header_accepted(s: Seq<u8>, partition_bytes: u64) -> bool {
     &&& bytes::le16(s, 88) == 256
     &&& feature_policy::compat_allowed(bytes::le32(s, 92) as u32)
     &&& bytes::le32(s, 96) as u32 & EA_INODE != 0
-    &&& bytes::le32(s, 96) as u32 & 4u32 == 0
     &&& feature_policy::incompat_allowed(bytes::le32(s, 96) as u32 & !EA_INODE)
     &&& feature_policy::ro_allowed(bytes::le32(s, 100) as u32)
     &&& (if superblock::descriptor_bytes(s) == 64 { bytes::le16(s, 254) == 64 }
@@ -227,23 +226,23 @@ impl<'a> Node<'a> {
     }
 }
 
-pub fn parse<'s, 'a>(source: &'s Snapshot<'a>) -> (r: Option<Header<'s, 'a>>)
-    ensures match r { Some(header) => header.wf() && header_valid(header.view()) && header.view().source == source.view(), None => true },
+/// Checks the original EA header bytes, including their actual checksum.
+/// RECOVER is state, while every static feature and geometry rule is exact.
+pub fn validate_header(s: &[u8], partition_bytes: u64) -> (r: bool)
+    ensures r == header_accepted(s@, partition_bytes),
 {
-    if source.partition_bytes() < 8192 { return None; }
-    let primary = match source.block(0) { Some(block) => block, None => { return None; } };
-    let s = primary.range(1024, 1024).unwrap();
+    if s.len() != 1024 { return false; }
     if bytes::read_le16(s, 56).unwrap() != 0xef53 || bytes::read_le16(s, 58).unwrap() != 1
         || bytes::read_le32(s, 20).unwrap() != 0 || bytes::read_le32(s, 24).unwrap() != 2
         || bytes::read_le32(s, 28).unwrap() != 2 || bytes::read_le32(s, 32).unwrap() != 32768
         || bytes::read_le32(s, 36).unwrap() != 32768 || bytes::read_le32(s, 72).unwrap() != 0
         || bytes::read_le32(s, 76).unwrap() != 1 || bytes::read_le32(s, 84).unwrap() != 11
         || bytes::read_le16(s, 88).unwrap() != 256 || !feature_policy::compatible_flags(bytes::read_le32(s, 92).unwrap())
-    { return None; }
+    { return false; }
     let incompat = bytes::read_le32(s, 96).unwrap();
     let width = superblock::descriptor_length(s).unwrap();
     let descriptor_size = bytes::read_le16(s, 254).unwrap();
-    if incompat & EA_INODE == 0 || incompat & 4u32 != 0 || !feature_policy::incompatible_flags(incompat & !EA_INODE)
+    if incompat & EA_INODE == 0 || !feature_policy::incompatible_flags(incompat & !EA_INODE)
         || !feature_policy::readonly_compatible_flags(bytes::read_le32(s, 100).unwrap())
         || (if width == 64 { descriptor_size != 64 } else { descriptor_size != 0 && descriptor_size != 32 })
         || bytes::read_le16(s, 206).unwrap() != 0 || bytes::read_le32(s, 228).unwrap() != 0
@@ -251,21 +250,40 @@ pub fn parse<'s, 'a>(source: &'s Snapshot<'a>) -> (r: Option<Header<'s, 'a>>)
         || bytes::read_le16(s, 350).unwrap() != 32 || s[373] != 1
         || bytes::read_le32(s, 336).unwrap() != 0 || bytes::read_le32(s, 340).unwrap() != 0
         || bytes::read_le32(s, 344).unwrap() != 0
-    { return None; }
+    { return false; }
     let blocks = bytes::read_le32(s, 4).unwrap(); let inodes = bytes::read_le32(s, 0).unwrap();
     let ipg = bytes::read_le32(s, 40).unwrap();
     let groups = ((blocks as u64 + 32767) / 32768) as u32;
-    if blocks <= 2 || blocks > block_claims::MAX_BLOCKS || blocks as u64 * 4096 > source.partition_bytes()
+    if blocks <= 2 || blocks > block_claims::MAX_BLOCKS || blocks as u64 * 4096 > partition_bytes
         || bytes::read_le32(s, 8).unwrap() > blocks || bytes::read_le32(s, 12).unwrap() > blocks
         || bytes::read_le32(s, 16).unwrap() > inodes || ipg == 0 || ipg > 32768 || ipg % 16 != 0
         || groups == 0 || groups > 32
         || bytes::read_le32(s, 224).unwrap() != 8 || inodes < 11
-    { return None; }
+    { return false; }
     assert(groups as int * ipg as int <= 1048576) by (nonlinear_arith)
         requires groups <= 32, ipg <= 32768;
-    if inodes as u64 != groups as u64 * ipg as u64 { return None; }
+    if inodes as u64 != groups as u64 * ipg as u64 { return false; }
     let checksum = crc::crc32c(0xffffffff, &s[..1020]);
-    if bytes::read_le32(s, 1020).unwrap() != checksum { return None; }
+    if bytes::read_le32(s, 1020).unwrap() != checksum { return false; }
+    true
+}
+
+pub open spec fn clean_header_accepted(s: Seq<u8>, partition_bytes: u64) -> bool {
+    header_accepted(s, partition_bytes) && bytes::le32(s, 96) as u32 & 4u32 == 0
+}
+
+pub fn parse<'s, 'a>(source: &'s Snapshot<'a>) -> (r: Option<Header<'s, 'a>>)
+    ensures match r { Some(header) => header.wf() && header_valid(header.view()) && header.view().source == source.view(), None => true },
+{
+    if source.partition_bytes() < 8192 { return None; }
+    let primary = match source.block(0) { Some(block) => block, None => { return None; } };
+    let s = primary.range(1024, 1024).unwrap();
+    if !validate_header(s, source.partition_bytes()) { return None; }
+    let blocks = bytes::read_le32(s, 4).unwrap();
+    let inodes = bytes::read_le32(s, 0).unwrap();
+    let ipg = bytes::read_le32(s, 40).unwrap();
+    let groups = ((blocks as u64 + 32767) / 32768) as u32;
+    let width = superblock::descriptor_length(s).unwrap();
     let seed = superblock::metadata_checksum_seed(s).unwrap();
     let flex = superblock::flex_enabled(s).unwrap();
     let ghost view = HeaderView { source: source.view(), blocks, inodes, ipg, groups, seed, width, flex };

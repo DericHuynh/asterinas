@@ -95,3 +95,10 @@ ctime and parent metadata, and adds a displaced victim to orphan handling only
 when its last link disappears. Exchange checks both identities and updates both
 entries. The bounded replacement path requires the victim to remain linked.
 These comparisons identify behavior to model; they establish no Linux defect.
+
+The separate [EA namespace durable transaction](EA_DURABLE_NAMESPACE.md)
+consumes checked proposals from these components. It adds one bounded serial
+JBD2 writer, actual EA crash-cut discovery and raw recovery construction under
+an explicit device contract. Mounted durable publication, full validator
+acceptance completeness, universal repeated EA restart/admission closure and
+CortenMM/OSTD device refinement remain open.

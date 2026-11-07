@@ -5,7 +5,7 @@
 //! A kernel adapter must bind successful Flush reports to its device contract.
 
 use vstd::prelude::*;
-use crate::{bytes, frozen::FrozenBlock, journal_state, journal_superblock, layout::JournalLayout, recovery_profile, replay, scan, scan_budget, super_state, superblock};
+use crate::{bytes, ea_source, frozen::FrozenBlock, journal_state, journal_superblock, layout::JournalLayout, recovery_profile, replay, scan, scan_budget, scan_trace, super_state, superblock};
 
 verus! {
 
@@ -274,6 +274,138 @@ pub fn prepare(journal: &[u8], uuid: &[u8], layout: JournalLayout, primary: &[u8
             assert(!can_recover);
         }
         return None;
+    }
+    let sequence = scan.next_sequence();
+    let blocks = (journal.len() / 4096) as u32;
+    assert(journal_state::input_ok(journal@.subrange(0, 4096), uuid@, blocks, sequence, 0)) by {
+        assert(journal@.subrange(0, 4096).subrange(0, 1024) =~= journal@.subrange(0, 1024));
+        assert(0 < sequence);
+    }
+    let tail = match journal_state::encode(&journal[..4096], uuid, blocks, sequence, 0) {
+        Some(s) => s, None => { return None; }
+    };
+    let phase = if scan.replay_plan().len() == 0 { 1 } else { 0 };
+    Some(Recovery { scan, tail, journal_block: block, primary: Ghost(primary@), partition_bytes,
+        state: State { phase, cursor: 0, request: 0, pending: false, faulted: false } })
+}
+
+/// A sufficient structural condition for the conservative EA recovery path.
+/// It constrains all parsed committed writes, including revoked candidates.
+#[verifier::opaque]
+pub open spec fn ea_non_primary_streams(source: scan_trace::Source) -> bool {
+    forall|records: Seq<scan_trace::Record>| #[trigger] scan_trace::well_formed(records, source)
+        && (records.len() == 0 || records.last().kind == 2) ==>
+        (forall|i: int| 0 <= i < scan_trace::writes(records).len() ==>
+            (#[trigger] scan_trace::writes(records)[i]).block != 0)
+}
+
+/// This sufficient raw input profile grants transport preparation only. Full
+/// repaired EA namespace validation remains a separate admission boundary.
+#[verifier::opaque]
+pub open spec fn can_prepare_ea(journal: Seq<u8>, uuid: Seq<u8>, layout: &JournalLayout,
+    primary: Seq<u8>, partition_bytes: u64) -> bool {
+    &&& scan_budget::admitted(journal, uuid, layout)
+    &&& primary.len() == 4096 && ea_source::header_accepted(primary.subrange(1024, 2048), partition_bytes)
+    &&& bytes::le32(primary, 1028) == layout.view().fs_blocks
+    &&& (bytes::be32(journal, 28) != 0 ==> super_state::is_dirty(primary)
+        && ea_non_primary_streams(scan_budget::source(journal, uuid, layout)))
+}
+
+pub(crate) proof fn ea_recovery_profiles_depend_only_on_layout_views(journal: Seq<u8>, uuid: Seq<u8>,
+    first: &JournalLayout, second: &JournalLayout, primary: Seq<u8>, partition_bytes: u64)
+    requires first.view() == second.view(),
+    ensures can_prepare_ea(journal, uuid, first, primary, partition_bytes)
+        == can_prepare_ea(journal, uuid, second, primary, partition_bytes),
+{
+    hide(crate::crc::fold);
+    hide(ea_source::header_accepted);
+    reveal(can_prepare_ea);
+    reveal(scan_budget::admitted);
+}
+
+proof fn an_admitted_ea_stream_excludes_every_parsed_primary_target(journal: Seq<u8>, uuid: Seq<u8>,
+    layout: &JournalLayout, primary: Seq<u8>, partition_bytes: u64, result: &scan::Scan)
+    requires can_prepare_ea(journal, uuid, layout, primary, partition_bytes),
+        result.plan().refines(), result.certificate(scan_budget::source(journal, uuid, layout)),
+        bytes::be32(journal, 28) == 0 ==> result.plan().log().len() == 0,
+    ensures forall|i: int| 0 <= i < result.plan().log().len() ==>
+        (#[trigger] result.plan().log()[i]).block != 0,
+{
+    hide(crate::crc::fold);
+    hide(ea_source::header_accepted);
+    reveal(can_prepare_ea);
+    if bytes::be32(journal, 28) != 0 {
+        reveal(ea_non_primary_streams);
+        let records = result.records();
+        assert(scan_trace::well_formed(records, scan_budget::source(journal, uuid, layout)));
+        assert(scan_trace::writes(records) == result.plan().log());
+    }
+}
+
+/// Additive EA recovery transport. Every parsed committed primary target is
+/// rejected before any request can be dispatched; ordinary prepare is exact.
+#[verifier::rlimit(40)]
+pub fn prepare_ea_no_primary(journal: &[u8], uuid: &[u8], layout: JournalLayout, primary: &[u8], partition_bytes: u64) -> (r: Option<Recovery>)
+    ensures match r {
+        Some(s) => s.plan().refines() && s.plan().layout().view() == layout.view()
+            && s.plan().layout().view().fs_blocks as nat * 4096 <= partition_bytes
+            && s.state().cursor == 0 && s.state().request == 0 && !s.state().pending && !s.state().faulted
+            && bytes::be32(s.tail(), 24) == s.scan_result().next() as nat
+            && s.scan_result().first() as nat == bytes::be32(journal@, 24)
+            && s.scan_result().next() as nat == s.scan_result().first() as nat + s.scan_result().committed() as nat
+            && s.scan_result().certificate(scan_budget::source(journal@, uuid@, &layout))
+            && s.scan_result().maximal(scan_budget::source(journal@, uuid@, &layout))
+            && s.scan_result().recognized(journal@, layout.view().journal_blocks, bytes::be32(journal@, 28) as u32,
+                crate::crc::fold(0xffffffff, uuid@))
+            && (bytes::be32(journal@, 28) == 0 ==> s.plan().log().len() == 0
+                && s.plan().revocations().len() == 0 && s.plan().selection().len() == 0)
+            && journal_state::preserves(journal@.subrange(0, 4096), s.tail())
+            && journal_superblock::accepted(s.tail().subrange(0, 1024), uuid@, layout.view().journal_blocks)
+            && s.primary() == primary@ && s.partition_bytes() == partition_bytes
+            && ea_source::header_accepted(primary@.subrange(1024, 2048), partition_bytes)
+            && (bytes::be32(journal@, 28) != 0 ==> super_state::is_dirty(primary@))
+            && (forall|i: int| 0 <= i < s.plan().log().len() ==>
+                (#[trigger] s.plan().log()[i]).block != 0),
+        None => !can_prepare_ea(journal@, uuid@, &layout, primary@, partition_bytes),
+    },
+{
+    hide(crate::crc::fold);
+    hide(ea_source::header_accepted);
+    let ghost original_layout = layout;
+    let ghost can_recover = can_prepare_ea(journal@, uuid@, &layout, primary@, partition_bytes);
+    if primary.len() != 4096 { proof { reveal(can_prepare_ea); } return None; }
+    if !ea_source::validate_header(&primary[1024..2048], partition_bytes) {
+        proof { reveal(can_prepare_ea); } return None;
+    }
+    if bytes::read_le32(primary, 1028).unwrap() != layout.filesystem_blocks() {
+        proof { reveal(can_prepare_ea); } return None;
+    }
+    assert(layout.view().fs_blocks as nat * 4096 <= partition_bytes) by { reveal(ea_source::header_accepted); }
+    let block = match layout.offset(0, 18446744073709551615) {
+        Some(offset) => (offset / 4096) as u32, None => {
+            proof { reveal(can_prepare_ea); reveal(scan_budget::admitted); }
+            return None;
+        }
+    };
+    let scan = match scan::recover(journal, uuid, layout) { Some(s) => s, None => {
+        proof { reveal(can_prepare_ea); } return None;
+    } };
+    if bytes::read_be32(journal, 28).unwrap() != 0 && bytes::read_le32(primary, 1120).unwrap() & 4u32 == 0 {
+        proof { reveal(can_prepare_ea); } return None;
+    }
+    if !scan.replay_plan().has_no_primary_writes() {
+        proof {
+            if can_recover {
+                an_admitted_ea_stream_excludes_every_parsed_primary_target(journal@, uuid@, &original_layout,
+                    primary@, partition_bytes, &scan);
+            }
+            assert(!can_recover);
+        }
+        return None;
+    }
+    assert forall|p: int| 0 <= p < scan.plan().selection().len() implies
+        (#[trigger] scan.plan().log()[scan.plan().selection()[p] as int]).block != 0 by {
+        assert(replay::latest(scan.plan().log(), scan.plan().revocations(), scan.plan().selection()[p] as int));
     }
     let sequence = scan.next_sequence();
     let blocks = (journal.len() / 4096) as u32;
