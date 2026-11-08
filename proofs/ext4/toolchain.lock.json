@@ -274,7 +274,8 @@
     "src/quota_v2.rs",
     "src/resize_plan.rs",
     "src/sm4.rs",
-    "src/unicode12_data.rs"
+    "src/unicode12_data.rs",
+    "src/block_coalesce.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -1261,7 +1262,9 @@
     "hctr2::hctr2_raw_key_bridge",
     "legacy_map::larger_filesystem_bounds_preserve_legacy_root",
     "legacy_map::legacy_pointer_byte_spans_do_not_depend_on_filesystem_width",
-    "legacy_map::filesystem_count_changes_preserve_legacy_pointer_interpretation"
+    "legacy_map::filesystem_count_changes_preserve_legacy_pointer_interpretation",
+    "block_coalesce::disjoint_splices_commute",
+    "block_coalesce::two_disjoint_edits_survive"
   ],
   "required_flags": [
     "--no-cheating",
@@ -2518,6 +2521,12 @@
     "sm4::new_sm4_key",
     "sm4::encrypt_sm4_block",
     "sm4::decrypt_sm4_block",
-    "sm4::retire_sm4"
+    "sm4::retire_sm4",
+    "block_coalesce::from_source",
+    "block_coalesce::raw",
+    "block_coalesce::original",
+    "block_coalesce::identity",
+    "block_coalesce::apply",
+    "block_coalesce::into_after_image"
   ]
 }

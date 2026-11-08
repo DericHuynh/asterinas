@@ -1,15 +1,34 @@
 # Ext4 feature expansion: implementation and proof ledger
 
-This branch adds executable feature components and their Verus contracts. The exact current source at commit `5b48f3ec9beb62c5a4220f45e30a779e1b18ce80` passed the unchanged official unfiltered strict check and compilation: **5,481 obligations, zero errors**, including **985 named proofs and 1,249 public executable APIs across 258 source files**. This checks the declared host models and executable core; it does not establish complete ext4 features or a mounted filesystem.
+This branch adds [source-block byte coalescing](BLOCK_COALESCE.md).
+Its exact source has a pinned 15-obligation focused check and native/API
+results in the original snapshot. The current inventory is 259 source files,
+987 named proofs and 1,255 public executable APIs. Whole-crate checking of
+this restacked composition is **pending**; see
+[component status](BLOCK_COALESCE_STATUS.json).
 
-The official compatibility suite passes 372 host tests and 376 API rejection cases against this exact checked artifact. These are runtime/API checks, not formal proof. Fresh negative gate checks: passed; timeout regression: passed.
+The proof and runtime results retained below keep their original sources
+and artifacts. Canonical commit 5b48f3ec9beb62c5a4220f45e30a779e1b18ce80
+passed the unchanged official unfiltered strict check and compilation:
+**5,481 obligations, zero errors**, with 985 named proofs and 1,249 public
+executable APIs across 258 sources. Its official compatibility suite passed
+372 host tests and 376 API rejection cases; its fresh negative gate and
+timeout regression passed. Those results do not certify the new module or
+this composition.
 
-The prior whole-crate baseline at commit `9083e1d36cb433927df6c0b636c8377a4c350c22` checked 3,142 obligations, 915 named proofs and 775 executable APIs. Its 372 native tests and 340 API rejection cases remain historical evidence for those bytes. Focused checks, compile-only diagnostics, native oracles and superseded snapshots retain their exact original source/artifact scope in the ledger.
+The prior whole-crate baseline at
+9083e1d36cb433927df6c0b636c8377a4c350c22 checked 3,142 obligations,
+915 named proofs and 775 executable APIs. Its 372 native tests and 340 API
+rejection cases remain historical evidence for those bytes. Focused checks,
+compile-only diagnostics, native oracles and superseded snapshots retain
+their exact original source/artifact scope.
 
-The existing full-feature and mount gates remain closed. A completed codec, numeric protocol or test image does not authorize a mounted operation.
+Full-feature and mount gates remain closed. A codec, byte editor, numeric
+protocol or test image does not authorize a mounted operation.
 
 | Design domain | Executable work added | Current proof boundary | Remaining filesystem work |
 | --- | --- | --- | --- |
+| Byte edit coalescing | Original-preimage-checked disjoint edits retain every accepted interval in one immutable-source full-block candidate | Exact component source passed 15 focused obligations and actual native/API checks; current whole-crate composition pending | Quota physical-home mapping, allocator/journal/checksum composition, coherent source exclusion, CortenMM/device transport and durable filesystem admission |
 | Legacy block maps | Direct/single/double/triple decomposition, source-block lookup, sparse reads, bounded whole-tree collection and wide filesystem counts with LE32 pointers | Exact path, lookup/read bytes, emitted ranges/nonalias/claim membership and wide geometry/source-fit contracts passed a focused check (48); full reachable-tree/path coverage remains open | Allocation, truncate/revoke transactions and whole-source ownership admission |
 | Inode formats | Variable-inode CRC, type/device codecs, fast-symlink storage and separate live plain-target validation | Focused check passed for exact checksum/masked bytes, sealing frames and plain-target bounds | Unified live-inode admission, long/encrypted symlinks and special-file VFS operations |
 | Inline data | system.data decoding, reads, fixed-capacity regular writes/truncation and directory decoding | Focused check passed for exact source/read/write bytes, cached non-overlap and preservation of every other attribute header/local value | Directory edits, re-layout, growth, block conversion and journal composition |
@@ -31,7 +50,7 @@ The existing full-feature and mount gates remain closed. A completed codec, nume
 
 The DIR_PREALLOC and IMAGIC_INODES compatibility markers still need an explicit pinned-Linux policy review. JOURNAL_DEV requires an external-device ownership and recovery implementation. COMPRESSION and DIRDATA remain intentional Linux-compatible rejections. Existing READONLY and STABLE_INODES restrictions remain applicable.
 
-Focused diagnostics currently cover **32 unique new modules and 2,339 obligations**, with zero reported errors and compilation, across the 27 current entries below. Superseded snapshots are excluded from this total.
+The retained canonical expansion ledger covers **32 unique new modules and 2,339 obligations**, with zero reported errors and compilation, across the 27 current entries below. Superseded snapshots are excluded from this total.
 
 | Module or bundle | Obligations | Snapshot |
 | --- | ---: | --- |
