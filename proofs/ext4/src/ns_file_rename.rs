@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
 //! Allocation-free regular replacing rename and exchange over certified images.
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{bytes, ea_directory::{self, DirectoryView}, ea_namespace::{self, NamespaceView},
     ea_source, feature_policy, inode, ns_dir_edit, ns_inode_links, ns_record_target,

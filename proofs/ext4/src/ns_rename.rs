@@ -5,6 +5,8 @@
 //! after-images are coalesced and re-admitted, with an exact entry and byte
 //! frame check. Publication, credentials and durable I/O are separate.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{bytes, ea_directory, ea_directory_index::{DirectoryIndex},
     ea_namespace::{self, NamespaceView}, feature_policy, inode, namespace_model::EntryView,

@@ -10,6 +10,8 @@
 //! its exact software predecessor. An aborted pending command remains pending
 //! until its completion report; forgetting it cannot recover an owner.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{block_size, bytes, crc};
 

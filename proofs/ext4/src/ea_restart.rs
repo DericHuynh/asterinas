@@ -7,6 +7,8 @@
 //! This is target-invariance safety, not proof of universal admission or an
 //! actual source/device quiescence lease.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{bytes, ea_bootstrap, ea_namespace,
     ea_recovery_admission::{self, AdmissionView, CheckedRecovery},

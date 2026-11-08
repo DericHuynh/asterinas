@@ -6,6 +6,8 @@
 //! Name targets, links, topology, journal state and mounted authority are
 //! established separately by the namespace layer.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{block_claims::{self, Claim}, bytes, crc, dir_hash::State,
     directory_piece::{self, Piece, PieceView}, ea_allocation::{self, Allocation, AllocationView},

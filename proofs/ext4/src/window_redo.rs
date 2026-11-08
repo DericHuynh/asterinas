@@ -6,7 +6,7 @@
 use vstd::prelude::*;
 use crate::{crc, journal_window::{self as window, Operation, WindowView}, journal_window_device as device,
     journal_window_media::{self as media, Media}, replay, replay_refinement::{self as redo, Disk},
-    transaction_refinement, window_provenance::{self as provenance, context}, window_records as records};
+    transaction_refinement, window_provenance::{self as provenance, *}, window_records as records};
 
 verus! {
 

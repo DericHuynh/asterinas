@@ -4,6 +4,8 @@
 //! This immutable reader establishes neither caller authority nor a complete
 //! allocation/reference census, value-inode lifetime or filesystem admission.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{bytes, ea_source::{self, Header, Node, NodeView}, inode, xattr::{self, Body, BodyView, Block},
     xattr_entry::{self as entry, Entry}, xattr_inode, xattr_table::{self as table, TableView, ValueRef}};

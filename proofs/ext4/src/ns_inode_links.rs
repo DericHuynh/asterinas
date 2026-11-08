@@ -6,6 +6,8 @@
 //! marker nor promotes an exact count to it. It preserves identity, extents and
 //! EA/sector billing and grants no source, credential, publication or I/O authority.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{bytes, inode, inode_time, inode_time_fields::{self as time, Field}, xattr_replace};
 

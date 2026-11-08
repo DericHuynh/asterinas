@@ -4,6 +4,8 @@
 //! index. This is a checked intermediate certificate for topology validation;
 //! link-count agreement and rootedness are checked by the next layer.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{block_claims, directory_index::{self, DirectoryIndex, IndexView},
     name_set, namespace_model::{self as model, EntryView}};

@@ -2,6 +2,8 @@
 
 //! Freeze the complete sorted xattr patch set through disjoint journal edits.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{bytes, edit_handles::{self as edit, EditView, FrozenBatch, Status}, layout::JournalLayout,
     patch_set::PatchSet, transaction::ImageView};

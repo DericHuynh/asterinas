@@ -5,6 +5,8 @@
 //! Set real bits name reserved metadata; padding is allocated. This describes
 //! allocation state, not a CortenMM frame or filesystem mutation capability.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{bitmap::{self, Bitmap}, block_claims, bytes, crc, group, group_claims};
 

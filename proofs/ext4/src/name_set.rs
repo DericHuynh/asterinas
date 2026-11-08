@@ -5,6 +5,8 @@
 //! collision work; owned names cannot change after insertion. This is an
 //! admission helper, not a namespace or access capability.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{bytes, crc, directory};
 

@@ -8,6 +8,8 @@
 //! that pointer-width limit on the complete filesystem block count. Actual
 //! reads still require the declared filesystem to fit the supplied snapshot.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{block_size, bytes, inode_blocks, snapshot::Snapshot, source_block, xattr};
 

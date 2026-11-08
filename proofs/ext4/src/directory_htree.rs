@@ -4,6 +4,8 @@
 //! mappings and superblock-selected seeds/signedness. This is host admission;
 //! OSTD, CortenMM and device authority are separate obligations.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{allocated_inode::{self, AllocatedInode}, allocation::AllocationView, bytes, dir_hash::State,
     directory_source as source, file_read::{self, Chunk}, htree_names::{self, DirectoryView}, htree_topology};

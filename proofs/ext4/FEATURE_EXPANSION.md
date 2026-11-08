@@ -1,12 +1,31 @@
 # Ext4 feature expansion: implementation and proof ledger
 
-This branch adds executable feature components and their Verus contracts. The exact current source at commit `5b48f3ec9beb62c5a4220f45e30a779e1b18ce80` passed the unchanged official unfiltered strict check and compilation: **5,481 obligations, zero errors**, including **985 named proofs and 1,249 public executable APIs across 258 source files**. This checks the declared host models and executable core; it does not establish complete ext4 features or a mounted filesystem.
+This ledger retains the canonical feature implementation and proof history.
+The current branch adds the `no_std` + `alloc` source package and
+has passed host and `x86_64-unknown-none` Cargo checks, plus the target
+`vstd/alloc` feature audit. Its portable source variant has **not been
+formally reverified**; see [current package status](NOSTD_PORTABILITY_STATUS.json)
+and [the source-preservation audit](NOSTD_PACKAGE.md).
 
-The official compatibility suite passes 372 host tests and 376 API rejection cases against this exact checked artifact. These are runtime/API checks, not formal proof. Fresh negative gate checks: passed; timeout regression: passed.
+All proof, native and API results in the tables below retain their canonical
+source/artifact scope. Canonical source commit
+`5b48f3ec9beb62c5a4220f45e30a779e1b18ce80` passed the unchanged
+official unfiltered strict check and compilation: **5,481 obligations,
+zero errors**, with **985 named proofs and 1,249 public executable APIs
+across 258 source files**. The official compatibility suite passed 372 host
+tests and 376 API rejection cases against that canonical artifact; its fresh
+negative gate and timeout regression passed. These results have not been
+transferred to the portable source bytes.
 
-The prior whole-crate baseline at commit `9083e1d36cb433927df6c0b636c8377a4c350c22` checked 3,142 obligations, 915 named proofs and 775 executable APIs. Its 372 native tests and 340 API rejection cases remain historical evidence for those bytes. Focused checks, compile-only diagnostics, native oracles and superseded snapshots retain their exact original source/artifact scope in the ledger.
+The prior whole-crate baseline at
+`9083e1d36cb433927df6c0b636c8377a4c350c22` checked 3,142 obligations,
+915 named proofs and 775 executable APIs. Its 372 native tests and 340 API
+rejection cases remain historical evidence for those bytes. Focused checks,
+compile-only diagnostics, native oracles and superseded snapshots retain
+their exact original source/artifact scope.
 
-The existing full-feature and mount gates remain closed. A completed codec, numeric protocol or test image does not authorize a mounted operation.
+The full-feature and mount gates remain closed. A codec, numeric protocol,
+Cargo check or test image does not authorize a mounted operation.
 
 | Design domain | Executable work added | Current proof boundary | Remaining filesystem work |
 | --- | --- | --- | --- |

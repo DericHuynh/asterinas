@@ -4,6 +4,8 @@
 //! Exact bytes and block identity are retained; these candidate images do not
 //! confer filesystem mutation or device authority. Lookup is binary search.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::transaction::{self, AfterImage, ImageView};
 

@@ -4,6 +4,8 @@
 //! representations; inode allocation, identity and credential authority remain
 //! obligations of filesystem admission and the operation layer.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{block_size, bytes, crc, inode, inode_blocks, xattr};
 

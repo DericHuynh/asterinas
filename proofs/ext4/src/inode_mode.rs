@@ -3,6 +3,8 @@
 //! Permission/SGID inode resealing for an already checked metadata image.
 //! This codec grants no permission to change a filesystem inode.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{bytes, inode};
 

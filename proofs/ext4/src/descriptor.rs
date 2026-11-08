@@ -4,6 +4,8 @@
 //! UUID and subsequent tags use SAME_UUID, as in Linux's single-user writer.
 //! Reference: pinned fs/jbd2/commit.c and fs/jbd2/recovery.c in sources.json.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{bytes, crc, frozen::FrozenBlock, jbd2};
 

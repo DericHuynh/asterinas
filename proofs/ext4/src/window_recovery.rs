@@ -7,7 +7,7 @@
 use vstd::prelude::*;
 use crate::{bytes, crc, journal_view, journal_window::WindowView, journal_window_media::{self as media, Media},
     layout::JournalLayout, recovery_device, replay_refinement::{self as redo, Disk}, scan,
-    window_provenance::{self as provenance, context}, window_recognition as recognition, window_records as records,
+    window_provenance::{self as provenance, *}, window_recognition as recognition, window_records as records,
     window_redo as checkpoint, window_snapshot as snapshot, write_recovery};
 
 verus! {

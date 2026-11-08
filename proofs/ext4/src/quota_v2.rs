@@ -5,6 +5,8 @@
 //! This format has no checksum. These codecs do not grant inode, journal,
 //! CortenMM frame or quota-administration authority.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::bytes;
 

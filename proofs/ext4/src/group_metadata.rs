@@ -6,6 +6,8 @@
 //! Address provenance is a checked byte-range relation, not CRC injectivity.
 //! This is metadata admission, not a complete filesystem or mount authority.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{bitmap::{self, Bitmap, BitmapView}, block_claims, block_bitmap, bytes, crc, group::{self, Group}, group_fields, snapshot::Snapshot, superblock};
 

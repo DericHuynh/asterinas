@@ -5,6 +5,8 @@
 //! Ordinary inode/journal extent separation, full filesystem admission,
 //! mutation, caller authority and CortenMM/device refinement remain separate.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{block_claims::{self, Census as Blocks, CensusView as BlocksView}, ea_block_policy,
     ea_census::{self, Census as References, CensusView as ReferencesView}, ea_inode::{Info, Status}, ea_refs::{self, Reference},

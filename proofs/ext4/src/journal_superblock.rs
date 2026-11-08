@@ -5,7 +5,7 @@
 //! separate crash-safe format transition, not a side effect of this parser.
 
 use vstd::prelude::*;
-use crate::bytes::{be32, read_be32};
+use crate::bytes::*;
 use crate::crc;
 
 verus! {

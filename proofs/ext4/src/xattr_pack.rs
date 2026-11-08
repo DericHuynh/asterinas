@@ -4,6 +4,8 @@
 //! A complete decode and full-byte comparison validate every returned image.
 //! Packing conveys neither allocation ownership nor credential authority.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{bytes, xattr::{self, BodyView}, xattr_entry, xattr_hash,
     xattr_store::{self as store, Store, Item, ItemView}, xattr_table::TableView};

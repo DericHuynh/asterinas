@@ -5,6 +5,8 @@
 //! before changing the census; physical aliases are rejected within and across
 //! inodes, journal space and reserved metadata.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::bitmap;
 

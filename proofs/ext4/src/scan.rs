@@ -4,6 +4,8 @@
 //! transaction prefixes enter the replay plan; an incomplete tail is dropped.
 //! Byte recognition is not authentication or a device-persistence guarantee.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{bytes, crc, descriptor, jbd2, journal_superblock, layout::{JournalLayout, LayoutView}, replay, revoke, ring, scan_budget, scan_stop, scan_trace};
 

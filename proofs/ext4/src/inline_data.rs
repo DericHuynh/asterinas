@@ -4,6 +4,8 @@
 //! value. Edits retain existing capacity; allocation-backed conversion and
 //! operation/journal authority are supplied by higher layers.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{bytes, inode_payload, xattr, xattr_hash, xattr_entry, xattr_table::{self, TableView, ValueRef}};
 

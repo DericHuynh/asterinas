@@ -5,6 +5,8 @@
 //! This index does not yet certify dot/parent topology, link counts, recovery,
 //! a mount, credentials or OSTD/device authority.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{allocated_inode::{self, AllocatedInode}, allocation::{self, Allocation, AllocationView}, directory_file,
     directory_source, name_set::{self, NameSet}, namespace_model::{self as model, EntryView}};

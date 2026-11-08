@@ -5,6 +5,8 @@
 //! its pre-existing entries and allocation bitmap provenance remain the
 //! caller's separate responsibility. This grants no mounted or I/O authority.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{block_claims::{self, Census, Claim, Slot}, bytes, crc,
     ea_index::{self, Index, IndexView}, ea_inode::{self, Info, Status},

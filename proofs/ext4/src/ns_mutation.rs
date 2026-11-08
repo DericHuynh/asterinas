@@ -6,6 +6,8 @@
 //! carries a checked EA namespace and exact supported edit semantics. This host core
 //! grants no credentials, journal acknowledgement or CortenMM/OSTD authority.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 pub use crate::{ns_checkout::Checkout, ns_prepared::Prepared, ns_edit_prepared::EditPrepared,
     ns_file_rename_prepared::FileRenamePrepared, ns_exchange_prepared::ExchangePrepared};

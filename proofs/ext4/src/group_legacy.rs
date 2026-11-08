@@ -3,6 +3,8 @@
 //! Legacy ext4 GDT_CSUM descriptor CRC16. It is distinct from METADATA_CSUM:
 //! the legacy feature does not authenticate bitmap contents with bitmap CRCs.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::bytes;
 

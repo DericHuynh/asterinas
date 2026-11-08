@@ -4,6 +4,8 @@
 //! Namespace topology, actual JBD2 state, filesystem operations, durability,
 //! mounted permissions and CortenMM/OSTD/device refinement remain separate.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{block_claims::{self, Census, CensusView, Claim}, bytes,
     ea_allocation_counts as counts, ea_census, ea_index::{self, IndexView},

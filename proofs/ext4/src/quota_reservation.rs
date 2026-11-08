@@ -6,6 +6,8 @@
 //! locking and atomic journal publication of inode and quota images remain
 //! separate. Logical commit here is not a device durability acknowledgement.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::quota_v2::{self, QuotaType, Record};
 

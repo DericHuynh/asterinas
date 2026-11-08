@@ -4,6 +4,8 @@
 //! These codecs preserve every unrelated live binding and byte. Source-bound
 //! lookup, absence, complete HTree routing and namespace authority are separate.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{bytes, crc, directory, directory_piece::{self, Piece, PieceView},
     directory_block, ns_rename_block};

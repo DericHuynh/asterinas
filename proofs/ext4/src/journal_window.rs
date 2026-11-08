@@ -4,6 +4,8 @@
 //! Successful callback reports need the device model's atomic-write/flush
 //! contract. This core does not grant mount, operation or driver authority.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{bytes, crc, epoch, frozen::FrozenBlock, journal_program::{self, Lane, State},
     journal_queue::{self, FrozenVersion, FrozenView}, journal_state, journal_superblock,

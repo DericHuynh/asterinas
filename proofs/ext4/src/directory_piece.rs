@@ -4,6 +4,8 @@
 //! HTree roots contribute dot entries; internal routing nodes contribute none.
 //! Complete reachability and hash ranges are checked by the directory layer.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{bytes, directory::Entry, directory_block::{self, BlockView}, htree};
 
