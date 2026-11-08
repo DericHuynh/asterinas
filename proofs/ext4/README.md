@@ -2,25 +2,52 @@
 
 # Ext4 core and Verus proofs for Asterinas
 
-This package implements and verifies part of an independent, safe Rust
-implementation of Linux-compatible ext4. The implemented profile is still a
-subset; the expanded target includes [full feature coverage](FEATURE_COVERAGE.md)
-and a [concurrent block/extent/transaction protocol](CONCURRENCY.md).
+This branch adds [immutable-source byte coalescing](BLOCK_COALESCE.md) to the
+independent safe Rust ext4 core. The coalescer's exact source passed a focused
+15-obligation check and native/API regressions in the recorded original
+snapshot. The current 259-source composition has **not passed a whole-crate
+check**. Its inventory is 987 named proofs and 1,255 public executable APIs.
+[Component status](BLOCK_COALESCE_STATUS.json) records the exact boundaries
+and the five changed canonical context files after restacking.
+
+The implemented filesystem profile remains a subset; the expanded target
+includes [full feature coverage](FEATURE_COVERAGE.md) and a
+[concurrent block/extent/transaction protocol](CONCURRENCY.md).
 It is not a complete filesystem and is not registered with the kernel VFS.
 No mount or filesystem write path is enabled.
 
-The unchanged official unfiltered strict run checks **5,481 obligations with zero errors** and compiles the core at source commit `5b48f3ec9beb62c5a4220f45e30a779e1b18ce80`. Its pinned inventory covers **258 source files, 985 named proof functions and 1,249 public executable functions**. The report binds the exact source, lock, runner and emitted-library hashes; writable mount activation remains closed.
+The retained canonical source at
+5b48f3ec9beb62c5a4220f45e30a779e1b18ce80 passed the unchanged official
+unfiltered strict run: **5,481 obligations, zero errors**, with compilation.
+Its pinned inventory contains 258 source files, 985 named proof functions
+and 1,249 public executable functions. That certificate does not cover the
+new module or this restacked composition.
 
-The official compatibility suite passes 372 host tests and 376 API rejection cases against this exact checked artifact. These are runtime/API checks, not formal proof. Fresh negative gate checks: passed; timeout regression: passed. A further 24 selected feature-regression families pass on the same compiled library, with remaining native coverage gaps recorded in the component ledger.
+The official compatibility suite passed 372 host tests and 376 API rejection
+cases against the canonical artifact. Its fresh negative gate and timeout
+regression passed, as did 24 selected feature-regression families. These are
+runtime/API checks retaining their original artifact scope; they were not
+rerun for the current composition.
 
-[Proof status](proof-status.json) and [recorded evidence](verification-evidence.json) state the exact scope and retain the complete prior baseline evidence. The historical baseline at commit `9083e1d36cb433927df6c0b636c8377a4c350c22` checked 3,142 obligations; its tests and artifact do not stand in for current-artifact checks.
+[Proof status](proof-status.json) leaves the current whole-crate result
+pending. [Recorded evidence](verification-evidence.json) nests the complete
+canonical document under canonical_verification_reference and leaves current
+top-level proof and artifact fields unset. The historical baseline at
+9083e1d36cb433927df6c0b636c8377a4c350c22 checked 3,142 obligations;
+its tests and artifact retain their original scope.
 
-The [implementation-first feature expansion](FEATURE_EXPANSION.md) and [component composition](COMPONENT_COMPOSITION.md) are included in this current declared-source proof. The 32 expansion modules retain their separate 2,339-obligation focused ledger; those counts are not additional to the 5,481 whole-crate obligations. Earlier native oracles and API runs retain their original artifact scope.
+The [feature expansion ledger](FEATURE_EXPANSION.md) and
+[component composition](COMPONENT_COMPOSITION.md) describe the canonical
+core. The retained 32-module, 2,339-obligation expansion ledger and the new
+coalescer's 15 obligations are separate focused results, not additions to a
+current whole-crate count. References to checked or pinned results in the
+remaining tables describe their canonical source/artifact scope.
 
 ## Implementation and proof scope
 
 | Component | Behavior and verification scope |
 | --- | --- |
+| block_coalesce.rs | Standalone original-preimage-checked disjoint byte edits, retained coverage and prior-byte frames, unchanged failure owner, commuting splices and lossless 4 KiB/u32 AfterImage projection. The original focused check passed 15 obligations; native checks passed 21 complete-block cases, 437 accepted edits, 168 rejections and 5 API rejections plus 1 allowed control. Current whole-crate checking, quota physical mapping, allocation/journal/checksum composition, CortenMM/device authority and mounted operations remain open. See [source-block coalescing](BLOCK_COALESCE.md). |
 | `ea_source.rs`, `ea_index.rs`, `ea_census.rs`, `ea_namespace_counts.rs`, `ea_namespace_parent.rs`, `ea_namespace_topology.rs` | Acceptance-completeness contracts for the existing EA header/group/index and allocated-slot profiles, and complete-index counts, unique parents and bounded rooted topology. Exact canonical source projections and Some/None contracts retain the existing validity relations. The reserved-slot leaf fixes a Linux-clean false rejection by checking empty reserved bytes and exact body absence without imposing live-inode extra-size geometry; journal inode 8 retains its stricter parser. See [EA admission completeness](EA_ADMISSION_COMPLETENESS.md). Full census/allocation/directory/namespace acceptance, repeated EA recovery-admission closure and CortenMM/OSTD/device integration remain open. |
 | `ns_exchange.rs`, `ns_exchange_relation.rs`, `ns_exchange_prepared.rs` | Checked bounded host exchange of existing ordinary regular-file, directory and mixed bindings. Exact full-key/inode/generation/type swaps, directory dotdot and parent-count deltas, byte-exact same-inode no-ops, staged shared blocks, operand/parent time and host-version policy, complete EA result topology admission and consuming exact-source/revision publication compose. See [directory and mixed exchange](DIRECTORY_EXCHANGE.md). Changed directory pieces use existing linear blocks only; directory replacement, allocation/reclamation, orphan lifetime, credentials, CortenMM/OSTD, mount and durable EA journaling remain open. |
 | `ns_record_target.rs`, `ns_file_rename_relation.rs`, `ns_file_rename.rs`, `ns_file_rename_prepared.rs` | Checked bounded host replacement of an existing regular-file destination whose distinct victim remains linked, regular-file exchange, and byte-exact same-inode no-ops. Exact full-key/generation/type transformation, link/time/version and unrelated-byte frames, latest same-block staging, complete EA result readmission and consuming exact-source/revision publication compose. See [regular-file replacement and exchange](FILE_RENAME.md). This regular-file path excludes directory/mixed exchange, checked separately in [DIRECTORY_EXCHANGE.md](DIRECTORY_EXCHANGE.md); last-link/orphan lifetime, allocation, VFS authorization, CortenMM/OSTD, mount and durable EA journaling remain open. |
