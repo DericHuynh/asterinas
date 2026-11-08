@@ -230,6 +230,8 @@ impl Layout {
             && self.block_bytes%self.digest_bytes==0
             && ((self.data_blocks<=1)==(self.levels==0))
             && (self.levels>0 ==> self.level_blocks@[self.levels as int-1]==1)
+            && (forall|i:int| #![trigger self.level_blocks@[i]] 0<=i<self.levels as int-1
+                ==> self.level_blocks@[i]>1)
             && (forall|i:int| #![trigger self.level_blocks@[i]] 0<=i<self.levels ==> self.level_blocks@[i] as nat
                 ==level_count(self.data_blocks as nat,(self.block_bytes/self.digest_bytes) as nat,(i+1) as nat))
             && (forall|i:int| #![trigger self.level_blocks@[i]] 0<=i<self.levels ==> 0<self.level_blocks@[i]<=self.data_blocks
@@ -306,12 +308,28 @@ pub fn layout(data_size:u64,algorithm:u8,log_blocksize:u8) -> (r:Result<Layout,E
                 && 0<counts@[i]<=data_blocks,
             data_blocks<=1 ==> levels==0,
             levels>0 ==> counts@[levels as int-1]==blocks,
+            forall|i:int| #![trigger counts@[i]] 0<=i<levels as int-1 ==> counts@[i]>1,
         decreases 9-levels,
     {
+        let ghost previous_blocks=blocks;
+        let ghost previous_levels=levels;
+        let ghost previous_counts=counts@;
         if levels==8 {return Err(Error::TooDeep);}
         proof {rounded_count_bounds(blocks as nat,arity as nat);}
         blocks=blocks/arity + if blocks%arity==0 {0}else{1};
         counts[levels]=blocks;levels+=1;
+        proof {
+            assert(counts@==previous_counts.update(previous_levels as int,blocks));
+            assert forall|i:int| 0<=i<levels as int-1 implies #[trigger] counts@[i]>1 by {
+                assert(i<previous_levels);
+                vstd::seq::lemma_seq_update_different(previous_counts,i,previous_levels as int,blocks);
+                if i<previous_levels as int-1 {assert(previous_counts[i]>1);}
+                else {
+                    assert(i==previous_levels as int-1 && previous_levels>0);
+                    assert(previous_counts[i]==previous_blocks && previous_blocks>1);
+                }
+            }
+        }
     }
     proof {
         assert((data_blocks<=1)==(levels==0));
@@ -325,6 +343,7 @@ pub fn layout(data_size:u64,algorithm:u8,log_blocksize:u8) -> (r:Result<Layout,E
             data_blocks==ceil_arity(data_size as nat,block as nat),
             data_blocks<=18014398509481984,(data_blocks<=1)==(levels==0),
             levels>0 ==> counts@[levels as int-1]==1,
+            forall|i:int| #![trigger counts@[i]] 0<=i<levels as int-1 ==> counts@[i]>1,
             forall|i:int| #![trigger counts@[i]] 0<=i<levels ==> counts@[i] as nat
                 ==level_count(data_blocks as nat,arity as nat,(i+1) as nat)
                 && 0<counts@[i]<=data_blocks,

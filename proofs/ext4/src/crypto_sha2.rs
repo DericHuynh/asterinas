@@ -1381,4 +1381,19 @@ pub fn hkdf_sha512_expand(prk:&[u8],info:&[u8],output_len:usize) -> (r:Result<Ve
     Ok(output)
 }
 
+/// Expose the fixed digest width without revealing the compression rounds.
+pub proof fn digest256_reference_length(input: Seq<u8>)
+    ensures digest256_reference(input).len() == 32,
+{
+    digest256_definition(input);
+    finished256_definition(message256(input), input.len());
+}
+
+/// Expose the fixed digest width without revealing the compression rounds.
+pub proof fn digest512_reference_length(input: Seq<u8>)
+    ensures digest512_reference(input).len() == 64,
+{
+    digest512_length(input);
+}
+
 }

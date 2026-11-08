@@ -280,25 +280,6 @@
       "whole_expansion_verified": false
     },
     {
-      "attempt": "proof-sha2-08",
-      "modules": [
-        "crypto_sha2"
-      ],
-      "verification_results": {
-        "encountered-error": false,
-        "encountered-vir-error": false,
-        "verified": 115,
-        "errors": 0,
-        "is-verifying-entire-crate": false
-      },
-      "source_sha256": {
-        "crypto_sha2": "0255e293c56f635b3d27787a53c33b9b031e2c1e3f3210b237baecbee40003e0"
-      },
-      "command_sha256": "d560242c32eaab70886e237e07c3a01acc3cc6870e18cbbd8b6c22b0982690aa",
-      "filtered": true,
-      "whole_expansion_verified": false
-    },
-    {
       "attempt": "proof-fscrypt-context-05",
       "modules": [
         "fscrypt_context"
@@ -413,7 +394,7 @@
       "whole_expansion_verified": false
     },
     {
-      "attempt": "proof-fsverity-07",
+      "attempt": "proof-fsverity-08",
       "modules": [
         "fsverity"
       ],
@@ -425,9 +406,66 @@
         "is-verifying-entire-crate": false
       },
       "source_sha256": {
-        "fsverity": "f9405ceac34deaea271e6df14364c4f2bd6f664473e4fd119d52fc5d7784d995"
+        "fsverity": "ec6f75c908b690bf0d5abc61fa32be9fdd300d026aafdbd4e7bb4c685769d799"
       },
-      "command_sha256": "ce51bf41e778ca8532ab4a792d28ab3e0f4e69a63ca7dbcb1740367c070ac865",
+      "command_sha256": "6a2bd913a8fb1757853728bba92c443ea9fca7884065f53818c12d9fc4dfb631",
+      "filtered": true,
+      "whole_expansion_verified": false
+    },
+    {
+      "attempt": "proof-sha2-09",
+      "modules": [
+        "crypto_sha2"
+      ],
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 117,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "source_sha256": {
+        "crypto_sha2": "df643cb36d0da2c763af66c9c6560190b080b7a18ad086432cbc20762c43f8bb"
+      },
+      "command_sha256": "00004753dd669d4b9e9562d935a52130ae1040f09880b067fc3b249ff0618a61",
+      "filtered": true,
+      "whole_expansion_verified": false
+    },
+    {
+      "attempt": "proof-htree-edit-08",
+      "modules": [
+        "htree_edit"
+      ],
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 96,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "source_sha256": {
+        "htree_edit": "8de62f53dab12e14b05703bffabae43d0e881b36fb41763b6d83dba6a12b0ae4"
+      },
+      "command_sha256": "4e4c0b1bb00aa0eadd6b05bf04a1c762a789500273a631ad93bf722ad3fe6677",
+      "filtered": true,
+      "whole_expansion_verified": false
+    },
+    {
+      "attempt": "proof-hctr2-05",
+      "modules": [
+        "hctr2"
+      ],
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 46,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "source_sha256": {
+        "hctr2": "1fc578298b68ddf642b041a55a6cd0db08873139adbda18c3ab2c9d30df04c1b"
+      },
+      "command_sha256": "872076ec66738a4f5c1178deb3b053f2a438459ecdd4b227ea5fb0c3d69e13fd",
       "filtered": true,
       "whole_expansion_verified": false
     }
@@ -443,6 +481,8 @@
     "fscrypt_context",
     "fsverity",
     "group_legacy",
+    "hctr2",
+    "htree_edit",
     "inline_data",
     "inode_payload",
     "jbd2_features",
@@ -460,7 +500,7 @@
     "sm4",
     "unicode12_data"
   ],
-  "focused_verified_obligations": 1517,
+  "focused_verified_obligations": 1661,
   "current_source_matches_checked_modules": true,
   "independent_test_harness_fix": {
     "branch": "fix/osdk-test-qemu-exit",
@@ -527,21 +567,56 @@
       "command_sha256": "2254befa27de20b5d2f2a7861b72e1fe9ff06eacb38f7ceb4adc7272ad949121",
       "filtered": true,
       "whole_expansion_verified": false
+    },
+    {
+      "attempt": "proof-fsverity-07",
+      "modules": [
+        "fsverity"
+      ],
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 83,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "source_sha256": {
+        "fsverity": "f9405ceac34deaea271e6df14364c4f2bd6f664473e4fd119d52fc5d7784d995"
+      },
+      "command_sha256": "ce51bf41e778ca8532ab4a792d28ab3e0f4e69a63ca7dbcb1740367c070ac865",
+      "filtered": true,
+      "whole_expansion_verified": false
+    },
+    {
+      "attempt": "proof-sha2-08",
+      "modules": [
+        "crypto_sha2"
+      ],
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 115,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "source_sha256": {
+        "crypto_sha2": "0255e293c56f635b3d27787a53c33b9b031e2c1e3f3210b237baecbee40003e0"
+      },
+      "command_sha256": "d560242c32eaab70886e237e07c3a01acc3cc6870e18cbbd8b6c22b0982690aa",
+      "filtered": true,
+      "whole_expansion_verified": false
     }
   ],
   "integrated_compile": {
-    "attempt": "typecheck-18",
+    "attempt": "typecheck-19",
     "new_modules": 32,
     "returncode": 0,
     "verification_skipped": true,
     "proof_evidence": false,
-    "artifact_sha256": "e44f9fec5018492b8b9c6dfe5138322093b43d29f29d35087daed0bc6ddd8943",
-    "scope": "Coherent immutable all32-module checkpoint based on db4c9f8 plus the exact newly checked orphan-file/fsverity sources. Ongoing unproved drafts remain separate.",
-    "source_base_commit": "db4c9f8ac784c314218f083cb2ec1b4681408406",
-    "new_verified_module_snapshots": [
-      "proof-orphan-file-14",
-      "proof-fsverity-07"
-    ]
+    "artifact_sha256": "a83568a7c1db833ffc909991d450fa6545f064906ee02b6ef7aa4108a903a3e4",
+    "scope": "Coherent all32-module snapshot based on 4c9a571 plus the exact current28 focused-checked module sources. Ongoing unproved drafts remain separate.",
+    "source_base_commit": "4c9a5717af0dbeb50c85f34c3399ddc3395f06f5",
+    "checked_module_manifest": "checkpoint-input-04/manifest.json"
   },
   "integrated_crypto_native": {
     "attempt": "extra-crypto-native-07",
@@ -550,7 +625,7 @@
   },
   "registry": {
     "sources": 258,
-    "named_proofs": 979,
+    "named_proofs": 982,
     "public_executable_functions": 1249,
     "baseline_inventory_prefixes_preserved": true,
     "expanded_entrypoint_declared": true
@@ -624,6 +699,20 @@
           "sha256": "b3f71b0355b50867189bd850b6420ace566fc32889a4ed9ede37f6c569434e95"
         }
       }
+    },
+    {
+      "attempt": "typecheck-18",
+      "new_modules": 32,
+      "returncode": 0,
+      "verification_skipped": true,
+      "proof_evidence": false,
+      "artifact_sha256": "e44f9fec5018492b8b9c6dfe5138322093b43d29f29d35087daed0bc6ddd8943",
+      "scope": "Coherent immutable all32-module checkpoint based on db4c9f8 plus the exact newly checked orphan-file/fsverity sources. Ongoing unproved drafts remain separate.",
+      "source_base_commit": "db4c9f8ac784c314218f083cb2ec1b4681408406",
+      "new_verified_module_snapshots": [
+        "proof-orphan-file-14",
+        "proof-fsverity-07"
+      ]
     }
   ],
   "cluster_initialization_runtime": {
@@ -812,5 +901,43 @@
     "implementation": "Actual focused-checked fsverity/SHA artifact; no local hash or filesystem implementation",
     "scope": "Read/layout/Merkle interoperability; full builder-content recurrence, signature policy and mounted immutable publication remain open",
     "attempt": "verity-checked-native-01"
-  }
+  },
+  "checked_orphan_conformance": {
+    "status": "passed",
+    "formal_verification": false,
+    "library_attempt": "proof-orphan-file-14",
+    "library_sha256": "972a3bceed6248f70569182eed66838a989b7d8369b795cb011b32654ec9846a",
+    "source_sha256": "d9a7f77ddc300a70454f1055beb680329f296945f8dbed7fd8e1398d5a5064a2",
+    "tests_passed": 2,
+    "block_sizes": [
+      1024,
+      2048,
+      4096,
+      8192,
+      16384,
+      32768,
+      65536
+    ],
+    "whole_file_unique_blocks": 512,
+    "whole_file_unique_inodes": 130048,
+    "scope": "Exact CRC domain, stale/idempotent insertion/removal, same/across-block checksum-valid duplicate rejection and large unique catalogue; no source ownership or mounted transaction authority",
+    "implementation": "Actual focused-checked orphan-file artifact; no copied implementation or mechanical erasure",
+    "attempt": "orphan-checked-native-01"
+  },
+  "checked_hctr2_conformance": {
+    "status": "passed",
+    "formal_verification": false,
+    "library_attempt": "proof-hctr2-05",
+    "source_sha256": "1fc578298b68ddf642b041a55a6cd0db08873139adbda18c3ab2c9d30df04c1b",
+    "library_sha256": "fae4883f7f8e9db31ea5886ce9025ec67f70ccfdca7c72bdde214d9db805c3f5",
+    "cases": 59,
+    "valid_inverse_checks": 42,
+    "rejected_cases": 17,
+    "oracle": "Pinned independent Linux HCTR2 vectors replayed from extra-crypto-native-07/commands.json; per-case inverse and retired-key controls",
+    "oracle_commands_sha256": "2bce409dfce109d006e0d29385a24a4bbb851fe1187c35fa1adeb45795b3eb35",
+    "implementation": "Actual focused-checked HCTR2/AES library; no local cipher implementation or mechanical erasure",
+    "scope": "Exact byte interoperability; not a full mode-inverse/security theorem or mounted key/nonce authority",
+    "attempt": "hctr2-checked-native-01"
+  },
+  "htree_focused_scope": "96 obligations: typed Context geometry, buffer/index/arithmetic bounds and observational getters. Full sorting, wire-format, entry preservation and namespace-operation refinement remain open."
 }

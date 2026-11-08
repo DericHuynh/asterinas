@@ -63,10 +63,16 @@ pub fn entry(name: &[u8], number: u32, generation: u32, file_type: u8) -> (r: Re
 }
 fn valid_name(name: &[u8]) -> (r: bool) ensures r == name_valid(name@) {
     if name.len() == 0 || name.len() > 255 { return false; }
-    if bytes::equal(name, b".") || bytes::equal(name, b"..") { return false; }
+    let dot = [46u8]; let dotdot = [46u8, 46u8];
+    proof {
+        assert(dot@ =~= seq![46u8]);
+        assert(dotdot@ =~= seq![46u8, 46u8]);
+    }
+    if bytes::equal(name, dot.as_slice()) || bytes::equal(name, dotdot.as_slice()) { return false; }
     let mut i = 0usize;
     while i < name.len()
         invariant i <= name.len(), 0 < name.len() <= 255,
+            name@ != seq![46u8], name@ != seq![46u8, 46u8],
             forall|j: int| 0 <= j < i ==> name@[j] != 0 && #[trigger] name@[j] != 47,
         decreases name.len() - i,
     {
@@ -106,8 +112,12 @@ fn put16(raw: &mut Vec<u8>, offset: usize, value: u16) -> (r: bool)
 {
     let word = bytes::encode_le16(value);
     proof {
-        assert(word@ == encoded16(value)) by (nonlinear_arith)
-            requires bytes::le16(word@, 0) == value, 0 <= word@[0] <= 255, 0 <= word@[1] <= 255;
+        assert(value as int == word@[0] as int + 256 * word@[1] as int);
+        vstd::arithmetic::div_mod::lemma_fundamental_div_mod_converse(
+            value as int, 256, word@[1] as int, word@[0] as int);
+        assert(word@[0] == (value % 256) as u8);
+        assert(word@[1] == (value / 256) as u8);
+        assert(word@ =~= encoded16(value));
     }
     bytes::write_bytes(raw.as_mut_slice(), offset, &word)
 }
@@ -118,7 +128,9 @@ fn put32(raw: &mut Vec<u8>, offset: usize, value: u32) -> (r: bool)
 {
     bytes::write_le32(raw.as_mut_slice(), offset, value)
 }
-fn word64(raw: &[u8], low: usize, high: usize) -> Option<u64> {
+fn word64(raw: &[u8], low: usize, high: usize) -> (r: Option<u64>)
+    ensures r.is_some() == (low as int + 4 <= raw.len() && high as int + 4 <= raw.len()),
+{
     match (bytes::read_le32(raw, low), bytes::read_le32(raw, high)) {
         (Some(a), Some(b)) => Some((a as u64) | ((b as u64) << 32)), _ => None,
     }
@@ -139,6 +151,15 @@ pub struct Context {
     retained_sectors: u64, old_tree_blocks: u64,
 }
 impl Context {
+    pub open spec fn wf(&self) -> bool {
+        let v = self.view();
+        v.source_inode.len() == 256 && block_size::accepted(v.block_bytes as nat)
+            && 0 < v.number <= v.inodes && 0 < v.parent <= v.inodes
+            && (v.number == 2 ==> v.parent == 2) && v.fs_blocks > 0
+            && v.hash_version <= 5
+    }
+    #[verifier::type_invariant]
+    spec fn invariant(self) -> bool { self.wf() }
     pub closed spec fn view(&self) -> ContextView {
         ContextView { source_inode: self.source_inode@, number: self.number, parent: self.parent,
             generation: self.generation, inodes: self.inodes, fs_blocks: self.fs_blocks,
@@ -159,7 +180,8 @@ impl Context {
 /// directory-data plus external-extent-node count must come from the source
 /// ownership census; its residual preserves external xattr and EA charges.
 pub fn context(primary: &[u8], raw_inode: &[u8], number: u32, parent: u32,
-    indexed: bool, disk_hash_version: u8, old_tree_blocks: u64) -> Result<Context, Error>
+    indexed: bool, disk_hash_version: u8, old_tree_blocks: u64) -> (r: Result<Context, Error>)
+    ensures match r { Ok(ctx) => ctx.wf(), Err(_) => true },
 {
     if primary.len() != 1024 || bytes::read_le16(primary, 56) != Some(0xef53) { return Err(Error::Geometry); }
     let shift = bytes::read_le32(primary, 24).unwrap();
@@ -212,6 +234,7 @@ pub fn context(primary: &[u8], raw_inode: &[u8], number: u32, parent: u32,
         Some(value) => value, None => { return Err(Error::Accounting); }
     };
     let sectors_per_block = block_bytes as u64 / 512;
+    proof { assert(1024 <= block_bytes <= 65536); assert(2 <= sectors_per_block <= 128); }
     if old_tree_blocks > u64::MAX / sectors_per_block { return Err(Error::Accounting); }
     let tree_sectors = old_tree_blocks * sectors_per_block;
     if tree_sectors > old_sectors { return Err(Error::Accounting); }
@@ -241,7 +264,10 @@ fn lex_less(a: &[u8], b: &[u8]) -> bool {
     }
     a.len() < b.len()
 }
-fn less(a: usize, b: usize, order: u8, entries: &[Entry], hashes: &[dir_hash::Hash]) -> bool {
+fn less(a: usize, b: usize, order: u8, entries: &[Entry], hashes: &[dir_hash::Hash]) -> bool
+    requires a < entries.len(), b < entries.len(),
+        order == 1 ==> a < hashes.len() && b < hashes.len(),
+{
     if order == 2 {
         if entries[a].inode != entries[b].inode { return entries[a].inode < entries[b].inode; }
     } else if order == 1 {
@@ -250,28 +276,44 @@ fn less(a: usize, b: usize, order: u8, entries: &[Entry], hashes: &[dir_hash::Ha
     }
     lex_less(&entries[a].name, &entries[b].name)
 }
-fn sorted(entries: &[Entry], hashes: &[dir_hash::Hash], order: u8) -> Vec<usize> {
-    let length = entries.len(); let mut src = Vec::new(); let mut dst = Vec::new(); let mut i = 0usize;
+fn sorted(entries: &[Entry], hashes: &[dir_hash::Hash], order: u8) -> (r: Vec<usize>)
+    requires entries.len() <= MAX_ENTRIES, order == 1 ==> hashes.len() == entries.len(),
+    ensures r.len() == entries.len(),
+        forall|i: int| 0 <= i < r.len() ==> #[trigger] r@[i] < entries.len(),
+{
+    let length = entries.len(); let mut src: Vec<usize> = Vec::new(); let mut dst: Vec<usize> = Vec::new(); let mut i = 0usize;
     while i < length
-        invariant i <= length, src.len() == i, dst.len() == i,
+        invariant length == entries.len(), i <= length <= MAX_ENTRIES, src.len() == i, dst.len() == i,
+            forall|j: int| 0 <= j < i ==> #[trigger] src@[j] < length,
+            forall|j: int| 0 <= j < i ==> #[trigger] dst@[j] < length,
         decreases length - i,
     { src.push(i); dst.push(0usize); i += 1; }
     let mut width = 1usize;
     while width < length
-        invariant 0 < width, src.len() == length, dst.len() == length, length <= MAX_ENTRIES,
+        invariant length == entries.len(), 0 < width, src.len() == length, dst.len() == length, length <= MAX_ENTRIES,
+            order == 1 ==> hashes.len() == entries.len(),
+            forall|j: int| 0 <= j < length ==> #[trigger] src@[j] < length,
+            forall|j: int| 0 <= j < length ==> #[trigger] dst@[j] < length,
         decreases length - width,
     {
         let mut left = 0usize;
         while left < length
-            invariant left <= length, src.len() == length, dst.len() == length, 0 < width, length <= MAX_ENTRIES,
+            invariant length == entries.len(), left <= length, src.len() == length, dst.len() == length, 0 < width, length <= MAX_ENTRIES,
+                order == 1 ==> hashes.len() == entries.len(),
+                forall|j: int| 0 <= j < length ==> #[trigger] src@[j] < length,
+                forall|j: int| 0 <= j < length ==> #[trigger] dst@[j] < length,
             decreases length - left,
         {
             let middle = left + if width < length - left { width } else { length - left };
             let right = middle + if width < length - middle { width } else { length - middle };
             let mut a = left; let mut b = middle; let mut out = left;
             while out < right
-                invariant left <= a <= middle <= b <= right <= length, out <= right,
+                invariant length == entries.len(), left <= a <= middle <= b <= right <= length <= MAX_ENTRIES, left <= out <= right,
+                    out as int == a as int + b as int - middle as int,
                     src.len() == length, dst.len() == length,
+                    order == 1 ==> hashes.len() == entries.len(),
+                    forall|j: int| 0 <= j < length ==> #[trigger] src@[j] < length,
+                    forall|j: int| 0 <= j < length ==> #[trigger] dst@[j] < length,
                 decreases right - out,
             {
                 if a < middle && (b == right || !less(src[b], src[a], order, entries, hashes)) {
@@ -376,8 +418,10 @@ fn put_reclen(raw: &mut Vec<u8>, at: usize, length: usize, block_bytes: usize) -
     put16(raw, at, word)
 }
 fn write_record(raw: &mut Vec<u8>, at: usize, number: u32, kind: u8,
-    name: &[u8], record_length: usize, filetype: bool, block_bytes: usize) -> bool
+    name: &[u8], record_length: usize, filetype: bool, block_bytes: usize) -> (r: bool)
+    ensures final(raw).len() == old(raw).len(),
 {
+    let ghost original_length = raw.len();
     if name.len() > 255 || kind > 7 { return false; }
     let needed = minimal(name.len());
     if record_length < needed || at > raw.len() || record_length > raw.len() - at { return false; }
@@ -385,12 +429,17 @@ fn write_record(raw: &mut Vec<u8>, at: usize, number: u32, kind: u8,
     raw.set(at + 6, name.len() as u8); raw.set(at + 7, if filetype { kind } else { 0 });
     let mut i = 0usize;
     while i < name.len()
-        invariant i <= name.len(), name.len() <= 255, at + record_length <= raw.len(), needed <= record_length,
+        invariant raw.len() == original_length, i <= name.len(), name.len() <= 255, at <= raw.len(),
+            at as int + record_length <= raw.len(), 8 + name.len() <= needed <= record_length,
         decreases name.len() - i,
     { raw.set(at + 8 + i, name[i]); i += 1; }
     true
 }
-fn seal_leaf(raw: &mut Vec<u8>, ctx: &Context, last: usize) -> bool {
+fn seal_leaf(raw: &mut Vec<u8>, ctx: &Context, last: usize) -> (r: bool)
+    ensures final(raw).len() == old(raw).len(),
+{
+    proof { use_type_invariant(ctx); }
+
     let usable = ctx.block_bytes - if ctx.metadata { 12usize } else { 0usize };
     if raw.len() != ctx.block_bytes || last >= usable || usable - last < 8 { return false; }
     if !put_reclen(raw, last + 4, usable - last, ctx.block_bytes) { return false; }
@@ -408,6 +457,8 @@ struct Bound { logical: u32, first: u32, last: u32, boundary: u32 }
 fn push_leaf(images: &mut Vec<Image>, bounds: &mut Vec<Bound>, mut raw: Vec<u8>,
     last: usize, first_hash: u32, last_hash: u32, ctx: &Context, budget: Budget) -> Result<(), Error>
 {
+    proof { use_type_invariant(ctx); }
+
     if images.len() >= budget.blocks || images.len() >= MAX_BLOCKS { return Err(Error::Budget); }
     if !seal_leaf(&mut raw, ctx, last) { return Err(Error::Geometry); }
     let logical = images.len() as u32;
@@ -421,7 +472,11 @@ fn push_leaf(images: &mut Vec<Image>, bounds: &mut Vec<Bound>, mut raw: Vec<u8>,
 }
 fn leaves(ctx: &Context, entries: &[Entry], hashes: &[dir_hash::Hash], order: &[usize], budget: Budget)
     -> Result<(Vec<Image>, Vec<Bound>), Error>
+    requires order.len() <= MAX_ENTRIES, hashes.len() == entries.len(),
+        forall|i: int| 0 <= i < order.len() ==> #[trigger] order@[i] < entries.len(),
 {
+    proof { use_type_invariant(ctx); }
+
     let mut images = Vec::new(); let mut bounds = Vec::new();
     if ctx.indexed {
         images.push(Image { logical: 0, physical: 0, kind: BlockKind::Root, raw: zeroes(ctx.block_bytes) });
@@ -439,6 +494,9 @@ fn leaves(ctx: &Context, entries: &[Entry], hashes: &[dir_hash::Hash], order: &[
     let mut i = 0usize;
     while i < order.len()
         invariant i <= order.len(), at <= usable, raw.len() == ctx.block_bytes,
+            ctx.wf(), usable == ctx.block_bytes - if ctx.metadata { 12usize } else { 0usize },
+            hashes.len() == entries.len(),
+            forall|j: int| 0 <= j < order.len() ==> #[trigger] order@[j] < entries.len(),
         decreases order.len() - i,
     {
         let ordinal = order[i]; let value = &entries[ordinal];
@@ -465,12 +523,20 @@ fn leaves(ctx: &Context, entries: &[Entry], hashes: &[dir_hash::Hash], order: &[
         Ok(()) => Ok((images, bounds)), Err(error) => Err(error),
     }
 }
-fn index_capacity(ctx: &Context, root: bool) -> usize {
+fn index_capacity(ctx: &Context, root: bool) -> (r: usize)
+    ensures 2 <= r <= 8192,
+        r == (ctx.block_bytes - if root { 32usize } else { 8usize } - if ctx.metadata { 8usize } else { 0usize }) / 8,
+        (r as int) * 8 <= ctx.block_bytes as int - (if root { 32int } else { 8int }) - (if ctx.metadata { 8int } else { 0int }),
+{
+    proof { use_type_invariant(ctx); }
+
     (ctx.block_bytes - if root { 32usize } else { 8usize } - if ctx.metadata { 8usize } else { 0usize }) / 8
 }
 fn index_block(ctx: &Context, children: &[Bound], start: usize, end: usize, root: bool, levels: u8)
     -> Result<Vec<u8>, Error>
 {
+    proof { use_type_invariant(ctx); }
+
     if start >= end || end > children.len() { return Err(Error::Geometry); }
     let first = if root { 32usize } else { 8usize };
     let limit = index_capacity(ctx, root);
@@ -490,7 +556,7 @@ fn index_block(ctx: &Context, children: &[Bound], start: usize, end: usize, root
     }
     let mut i = 0usize;
     while i < count
-        invariant i <= count, start + count == end, end <= children.len(), raw.len() == ctx.block_bytes,
+        invariant i <= count <= limit <= 8192, first <= 32, start + count == end, end <= children.len(), raw.len() == ctx.block_bytes,
         decreases count - i,
     {
         let value = children[start + i];
@@ -513,19 +579,21 @@ fn index_block(ctx: &Context, children: &[Bound], start: usize, end: usize, root
     Ok(raw)
 }
 fn index_tree(ctx: &Context, images: &mut Vec<Image>, mut edges: Vec<Bound>, budget: Budget) -> Result<u8, Error> {
+    proof { use_type_invariant(ctx); }
+
     if edges.len() == 0 || images.len() < 2 { return Err(Error::Geometry); }
     let root_limit = index_capacity(ctx, true);
     let node_limit = index_capacity(ctx, false);
     let mut levels = 0u8;
     while edges.len() > root_limit
-        invariant root_limit > 0, node_limit > 1, levels <= 2,
+        invariant root_limit > 0, node_limit > 1, levels <= 2, images.len() >= 2, ctx.wf(),
         decreases 3 - levels,
     {
         if levels >= if ctx.large { 2u8 } else { 1u8 } { return Err(Error::Depth); }
         let mut parents: Vec<Bound> = Vec::new();
         let mut start = 0usize;
         while start < edges.len()
-            invariant start <= edges.len(),
+            invariant start <= edges.len(), node_limit > 1, levels < 2, images.len() >= 2,
             decreases edges.len() - start,
         {
             if images.len() >= budget.blocks || images.len() >= MAX_BLOCKS { return Err(Error::Budget); }
@@ -554,7 +622,7 @@ fn extent_root(pool: &[u64], count: usize) -> Result<Vec<u8>, Error> {
     }
     let mut logical = 0usize; let mut entries = 0usize;
     while logical < count
-        invariant logical <= count, count <= pool.len(), entries <= 4,
+        invariant logical <= count <= MAX_BLOCKS, count <= pool.len(), entries <= 4,
         decreases count - logical,
     {
         if entries == 4 { return Err(Error::Mapping); }
@@ -562,7 +630,7 @@ fn extent_root(pool: &[u64], count: usize) -> Result<Vec<u8>, Error> {
         if physical > MAX_PHYSICAL { return Err(Error::Mapping); }
         logical += 1;
         while logical < count && logical - start < 32768 && pool[logical] == physical + (logical - start) as u64
-            invariant start < logical <= count, count <= pool.len(), logical - start <= 32768,
+            invariant start < logical <= count <= MAX_BLOCKS, count <= pool.len(), logical - start <= 32768, physical <= MAX_PHYSICAL,
             decreases count - logical,
         { logical += 1; }
         let offset = 12 + entries * 12;
@@ -576,13 +644,41 @@ fn extent_root(pool: &[u64], count: usize) -> Result<Vec<u8>, Error> {
     if !put16(&mut raw, 2, entries as u16) { return Err(Error::Geometry); }
     Ok(raw)
 }
+fn directory_size(block_bytes: usize, count: usize) -> (r: u64)
+    requires block_size::accepted(block_bytes as nat), count <= MAX_BLOCKS,
+    ensures r as nat == (count as nat) * (block_bytes as nat), r <= 4294967296,
+{
+    proof {
+        assert(1024 <= block_bytes <= 65536);
+        assert((count as int) * (block_bytes as int) <= 4294967296) by (nonlinear_arith)
+            requires count <= 65536, block_bytes <= 65536;
+    }
+    count as u64 * block_bytes as u64
+}
+fn billed_sectors(block_bytes: usize, count: usize) -> (r: u64)
+    requires block_size::accepted(block_bytes as nat), count <= MAX_BLOCKS,
+    ensures r as nat == (count as nat) * ((block_bytes as nat) / 512), r <= 8388608,
+{
+    let per_block = block_bytes as u64 / 512;
+    proof {
+        assert(1024 <= block_bytes <= 65536);
+        assert(2 <= per_block <= 128);
+        assert((count as int) * (per_block as int) <= 8388608) by (nonlinear_arith)
+            requires count <= 65536, per_block <= 128;
+    }
+    count as u64 * per_block
+}
 fn seal_inode(ctx: &Context, root: &[u8], count: usize, subdirectories: usize,
     seconds: i64, nanoseconds: u32) -> Result<Vec<u8>, Error>
+    requires count <= MAX_BLOCKS, subdirectories <= MAX_ENTRIES,
 {
+    hide(bytes::splice);
+    proof { use_type_invariant(ctx); }
+
     if root.len() != 60 || ctx.source_inode.len() != 256 { return Err(Error::Inode); }
-    let size = count as u64 * ctx.block_bytes as u64;
+    let size = directory_size(ctx.block_bytes, count);
     if !ctx.large && size > 0xffffffffu64 { return Err(Error::Geometry); }
-    let base_sectors = count as u64 * (ctx.block_bytes as u64 / 512);
+    let base_sectors = billed_sectors(ctx.block_bytes, count);
     if ctx.retained_sectors > u64::MAX - base_sectors { return Err(Error::Accounting); }
     let sectors = base_sectors + ctx.retained_sectors;
     let accounting = match inode_blocks::encode(sectors, ctx.block_bytes as u32, ctx.huge_file) {
@@ -627,7 +723,11 @@ fn seal_inode(ctx: &Context, root: &[u8], count: usize, subdirectories: usize,
     Ok(raw)
 }
 
-fn validate_pool(ctx: &Context, pool: &[u64], forbidden: &[ReservedRange], budget: Budget) -> Result<(), Error> {
+fn validate_pool(ctx: &Context, pool: &[u64], forbidden: &[ReservedRange], budget: Budget) -> (r: Result<(), Error>)
+    ensures r.is_ok() ==> pool.len() <= MAX_BLOCKS,
+{
+    proof { use_type_invariant(ctx); }
+
     if budget.entries > MAX_ENTRIES || budget.blocks == 0 || budget.blocks > MAX_BLOCKS
         || pool.len() > budget.blocks || forbidden.len() > MAX_BLOCKS {
         return Err(Error::Budget);
@@ -668,6 +768,8 @@ fn validate_pool(ctx: &Context, pool: &[u64], forbidden: &[ReservedRange], budge
 pub fn rebuild(ctx: &Context, entries: &[Entry], pool: &[u64], forbidden: &[ReservedRange],
     budget: Budget, seconds: i64, nanoseconds: u32) -> Result<Plan, Error>
 {
+    proof { use_type_invariant(ctx); }
+
     if entries.len() > budget.entries || entries.len() > MAX_ENTRIES { return Err(Error::Budget); }
     match validate_pool(ctx, pool, forbidden, budget) {
         Ok(()) => {}, Err(error) => { return Err(error); }
@@ -695,7 +797,8 @@ pub fn rebuild(ctx: &Context, entries: &[Entry], pool: &[u64], forbidden: &[Rese
     let names = sorted(entries, &hashes, 0);
     i = 0;
     while i < names.len()
-        invariant i <= names.len(),
+        invariant i <= names.len(), names.len() == entries.len(),
+            forall|j: int| 0 <= j < names.len() ==> #[trigger] names@[j] < entries.len(),
         decreases names.len() - i,
     {
         if i > 0 && bytes::equal(&entries[names[i - 1]].name, &entries[names[i]].name) {
@@ -706,7 +809,8 @@ pub fn rebuild(ctx: &Context, entries: &[Entry], pool: &[u64], forbidden: &[Rese
     let targets = sorted(entries, &hashes, 2);
     i = 0;
     while i < targets.len()
-        invariant i <= targets.len(),
+        invariant i <= targets.len(), targets.len() == entries.len(),
+            forall|j: int| 0 <= j < targets.len() ==> #[trigger] targets@[j] < entries.len(),
         decreases targets.len() - i,
     {
         if i > 0 {
@@ -747,7 +851,9 @@ pub fn rebuild(ctx: &Context, entries: &[Entry], pool: &[u64], forbidden: &[Rese
         deltas: Vec::new(), indexed: ctx.indexed, levels, old_tree_blocks: ctx.old_tree_blocks,
         empty_victim_required: None })
 }
-fn locate(entries: &[Entry], name: &[u8]) -> Option<usize> {
+fn locate(entries: &[Entry], name: &[u8]) -> (r: Option<usize>)
+    ensures match r { Some(index) => index < entries.len(), None => true },
+{
     let mut i = 0usize;
     while i < entries.len()
         invariant i <= entries.len(),
@@ -776,6 +882,8 @@ fn copy_entries(entries: &[Entry], skip_a: Option<usize>, skip_b: Option<usize>)
 pub fn insert(ctx: &Context, entries: &[Entry], value: Entry, pool: &[u64],
     forbidden: &[ReservedRange], budget: Budget, seconds: i64, nanoseconds: u32) -> Result<Plan, Error>
 {
+    proof { use_type_invariant(ctx); }
+
     if locate(entries, &value.name).is_some() { return Err(Error::Exists); }
     if entries.len() >= budget.entries || entries.len() >= MAX_ENTRIES { return Err(Error::Budget); }
     let change = LinkDelta { inode: value.inode, generation: value.generation, file_type: value.file_type, delta: 1 };
@@ -790,6 +898,8 @@ pub fn delete(ctx: &Context, entries: &[Entry], name: &[u8], expected_inode: u32
     expected_generation: u32, pool: &[u64], forbidden: &[ReservedRange],
     budget: Budget, seconds: i64, nanoseconds: u32) -> Result<Plan, Error>
 {
+    proof { use_type_invariant(ctx); }
+
     if !valid_name(name) { return Err(Error::Name); }
     if entries.len() > budget.entries || entries.len() > MAX_ENTRIES { return Err(Error::Budget); }
     let ordinal = match locate(entries, name) { Some(value) => value, None => { return Err(Error::Missing); } };
@@ -808,10 +918,13 @@ pub fn rename(ctx: &Context, entries: &[Entry], old_name: &[u8], new_name: &[u8]
     expected_inode: u32, expected_generation: u32, replace: bool, pool: &[u64],
     forbidden: &[ReservedRange], budget: Budget, seconds: i64, nanoseconds: u32) -> Result<Mutation, Error>
 {
+    proof { use_type_invariant(ctx); }
+
     if !valid_name(old_name) || !valid_name(new_name) { return Err(Error::Name); }
     if entries.len() > budget.entries || entries.len() > MAX_ENTRIES { return Err(Error::Budget); }
     let source_at = match locate(entries, old_name) { Some(value) => value, None => { return Err(Error::Missing); } };
     let source = &entries[source_at];
+    proof { use_type_invariant(source); }
     if source.inode != expected_inode || source.generation != expected_generation { return Err(Error::Identity); }
     if bytes::equal(old_name, new_name) {
         return if replace { Ok(Mutation::NoChange) } else { Err(Error::Exists) };
