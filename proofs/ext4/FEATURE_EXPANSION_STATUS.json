@@ -166,21 +166,21 @@
       "whole_expansion_verified": false
     },
     {
-      "attempt": "proof-legacy-06",
+      "attempt": "proof-legacy-wide-02",
       "modules": [
         "legacy_map"
       ],
       "verification_results": {
         "encountered-error": false,
         "encountered-vir-error": false,
-        "verified": 44,
+        "verified": 48,
         "errors": 0,
         "is-verifying-entire-crate": false
       },
       "source_sha256": {
-        "legacy_map": "5b4a3a38f80325fdb2c3bb11964a35358975f501cfea238163724cda8d24baea"
+        "legacy_map": "d5fc15d4af1f9ddb86f09c12664e6b9cc19377e59b03220c3807a14210ae1d80"
       },
-      "command_sha256": "1a040f6ff6eee2e35f16eb79b0516b73b10c68afbcb7f2dd044b030077fabe80",
+      "command_sha256": "9471710e07b727951274ce955e131e1fc57e5360ddfde7b7027e4ef5844fb2a1",
       "filtered": true,
       "whole_expansion_verified": false
     },
@@ -460,7 +460,7 @@
     "sm4",
     "unicode12_data"
   ],
-  "focused_verified_obligations": 1517,
+  "focused_verified_obligations": 1521,
   "current_source_matches_checked_modules": true,
   "independent_test_harness_fix": {
     "branch": "fix/osdk-test-qemu-exit",
@@ -527,6 +527,25 @@
       "command_sha256": "2254befa27de20b5d2f2a7861b72e1fe9ff06eacb38f7ceb4adc7272ad949121",
       "filtered": true,
       "whole_expansion_verified": false
+    },
+    {
+      "attempt": "proof-legacy-06",
+      "modules": [
+        "legacy_map"
+      ],
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 44,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "source_sha256": {
+        "legacy_map": "5b4a3a38f80325fdb2c3bb11964a35358975f501cfea238163724cda8d24baea"
+      },
+      "command_sha256": "1a040f6ff6eee2e35f16eb79b0516b73b10c68afbcb7f2dd044b030077fabe80",
+      "filtered": true,
+      "whole_expansion_verified": false
     }
   ],
   "integrated_compile": {
@@ -550,7 +569,7 @@
   },
   "registry": {
     "sources": 258,
-    "named_proofs": 979,
+    "named_proofs": 982,
     "public_executable_functions": 1249,
     "baseline_inventory_prefixes_preserved": true,
     "expanded_entrypoint_declared": true
@@ -812,5 +831,55 @@
     "implementation": "Actual focused-checked fsverity/SHA artifact; no local hash or filesystem implementation",
     "scope": "Read/layout/Merkle interoperability; full builder-content recurrence, signature policy and mounted immutable publication remain open",
     "attempt": "verity-checked-native-01"
+  },
+  "checked_legacy_wide_fs": {
+    "status": "passed",
+    "formal_verification": false,
+    "attempt": "legacy-wide-native-02",
+    "library_attempt": "proof-legacy-wide-02",
+    "library_sha256": "851eeb39c72a6217d43dc1175e4839ad6a8483b75f94b22a1e6f373c76bb7e94",
+    "source_sha256": "d5fc15d4af1f9ddb86f09c12664e6b9cc19377e59b03220c3807a14210ae1d80",
+    "test_source_sha256": "b1d4cce0fa73754c745e58bce4499ae718d560d72e30d4019300898f17200082",
+    "runner_sha256": "dbc896dfa93c8e579ab086ea770dcd3351b38886249dec1e86f0ca98a4d01f10",
+    "report_sha256": "84d16827b9499e336447ebbb07c86911511fe3fcd15f71a894000c24860c57b2",
+    "tests_passed": 13,
+    "tests_failed": 0,
+    "tests_ignored": 0,
+    "tests_filtered": 0,
+    "implementation": "Actual focused-checked compiled rlib; no local reimplementation or erasure",
+    "scope": "Synthetic legacy inodes and real Snapshot APIs: wide structural geometry, LE32 pointers, logical bounds, full-source preflight, budgets, sparse reads/collection and aliases",
+    "baseline_negative_control": {
+      "attempt": "proof-legacy-06",
+      "source_sha256": "5b4a3a38f80325fdb2c3bb11964a35358975f501cfea238163724cda8d24baea",
+      "library_sha256": "58845500f8c4b55b092d5701a8529fa87947c834a679622ce9e716b6453dbfad",
+      "command_sha256": "1a040f6ff6eee2e35f16eb79b0516b73b10c68afbcb7f2dd044b030077fabe80",
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 44,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "filtered": true,
+      "whole_expansion_verified": false,
+      "negative_control": "expected failure: geometry rejected at 2^32+1 blocks"
+    },
+    "limitations": [
+      "No positive multi-terabyte snapshot read was attempted",
+      "Structural parser acceptance does not establish full Linux filesystem admission",
+      "Filtered proof diagnostic, not a strict whole-crate verification result",
+      "No mount, allocation, device writes or writable VFS path is enabled"
+    ],
+    "official_combined_compatibility_run": "pending",
+    "prior_successful_native_attempt": "legacy-wide-native-01; same tests before runner path normalization",
+    "artifact_binding": "Known local focused-build provenance and unchanged observed rlib hash during native testing; proof metadata does not contain a proof-completion artifact digest"
+  },
+  "wide_fs_integration_boundary": {
+    "base_commit": "4c9a571",
+    "prior_integrated_compile": "typecheck-18 predates the wide-filesystem source change",
+    "current_all_module_compile": null,
+    "strict_whole_crate_verification": null,
+    "full_reachable_tree_logical_coverage_certificate": "pending",
+    "mount_and_writable_vfs_enabled": false
   }
 }

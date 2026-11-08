@@ -48,7 +48,7 @@ def main():
     environment = os.environ.copy()
     environment["EXT4_TEST_IMAGE"] = str(image)
     output = []
-    for suite in ["compat", "journal"]:
+    for suite in ["compat", "journal", "legacy_wide_fs"]:
         run([rustc, "--edition=2024", "--test", "tests/" + suite + ".rs", "--extern",
              "verified_ext4=build/libverified_ext4.rlib", "-L", "dependency=" + libraries,
              "-o", "build/" + suite + "-tests"])
@@ -613,7 +613,7 @@ def main():
               "request_boundary_rejections": rejected,
               "compatibility_runner_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
               "test_source_sha256": {s: hashlib.sha256((ROOT / ("tests/" + s + ".rs")).read_bytes()).hexdigest()
-                                     for s in ["compat", "journal"]}}
+                                     for s in ["compat", "journal", "legacy_wide_fs"]}}
     (BUILD / "compat-report.json").write_text(json.dumps(result, indent=2) + "\n")
 
 

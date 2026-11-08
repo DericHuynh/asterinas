@@ -1255,7 +1255,10 @@
     "mmp::a_faulted_controller_cannot_regain_readiness_from_a_late_report",
     "mmp::a_pending_command_cannot_be_replaced_by_another_dispatch",
     "mmp::aborting_a_pending_command_retains_its_exact_descriptor",
-    "mmp::an_offered_write_is_bound_to_the_source_image"
+    "mmp::an_offered_write_is_bound_to_the_source_image",
+    "legacy_map::larger_filesystem_bounds_preserve_legacy_root",
+    "legacy_map::legacy_pointer_byte_spans_do_not_depend_on_filesystem_width",
+    "legacy_map::filesystem_count_changes_preserve_legacy_pointer_interpretation"
   ],
   "required_flags": [
     "--no-cheating",

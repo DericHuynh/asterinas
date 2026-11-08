@@ -2,13 +2,13 @@
 
 This branch adds executable feature components before completing their proofs and filesystem integration, as requested. The last whole-crate verified baseline is commit `9083e1d36cb433927df6c0b636c8377a4c350c22`: 3,142 obligations, 915 named proofs, 775 public executable APIs, 372 native tests and 340 API rejection cases. That evidence applies to the baseline bytes. It does not certify new files.
 
-All 32 new host modules are now declared in the actual model entrypoint and pinned source/API/proof inventory: 258 source files, 979 named proofs and 1,249 public executable APIs. This records what must be checked; a new strict whole-crate result is still pending. Diagnostic snapshots explicitly declare their selected modules, preserve their exact bytes, and retain every failure. Compile-only diagnostics use `--no-verify` and are never proof evidence. Focused proof checks use module filters and still require a later unfiltered strict check before publication as verified code.
+All 32 new host modules are now declared in the actual model entrypoint and pinned source/API/proof inventory: 258 source files, 982 named proofs and 1,249 public executable APIs. This records what must be checked; a new strict whole-crate result is still pending. Diagnostic snapshots explicitly declare their selected modules, preserve their exact bytes, and retain every failure. Compile-only diagnostics use `--no-verify` and are never proof evidence. Focused proof checks use module filters and still require a later unfiltered strict check before publication as verified code.
 
 The existing full-feature and mount gates remain closed. A completed codec, numeric protocol or test image does not authorize a mounted operation.
 
 | Design domain | Executable work added | Current proof boundary | Remaining filesystem work |
 | --- | --- | --- | --- |
-| Legacy block maps | Direct/single/double/triple decomposition, source-block lookup, sparse reads and bounded whole-tree collection | Exact path, lookup/read bytes, emitted address ranges and data/metadata nonalias/claim-membership passed a focused check; full reachable-tree/path coverage remains open | Allocation, truncate/revoke transactions and whole-source ownership admission |
+| Legacy block maps | Direct/single/double/triple decomposition, source-block lookup, sparse reads, bounded whole-tree collection and wide filesystem counts with LE32 pointers | Exact path, lookup/read bytes, emitted address ranges, data/metadata nonalias/claim-membership and wide-count/source-fit contracts passed a focused check (48); full reachable-tree/path coverage remains open | Allocation, truncate/revoke transactions and whole-source ownership admission |
 | Inode formats | Variable-inode CRC, type/device codecs, fast-symlink storage and separate live plain-target validation | Focused check passed for exact checksum/masked bytes, sealing frames and plain-target bounds | Unified live-inode admission, long/encrypted symlinks and special-file VFS operations |
 | Inline data | system.data decoding, reads, fixed-capacity regular writes/truncation and directory decoding | Focused check passed for exact source/read/write bytes, cached non-overlap and preservation of every other attribute header/local value | Directory edits, re-layout, growth, block conversion and journal composition |
 | GDT_CSUM | Linux CRC16 descriptor calculation, sealing and lazy flags | Focused check passed for exact CRC and checksum-field-only mutation | Whole-filesystem legacy admission and group initialization transactions |
@@ -29,7 +29,7 @@ The existing full-feature and mount gates remain closed. A completed codec, nume
 
 The DIR_PREALLOC and IMAGIC_INODES compatibility markers still need an explicit pinned-Linux policy review. JOURNAL_DEV requires an external-device ownership and recovery implementation. COMPRESSION and DIRDATA remain intentional Linux-compatible rejections. Existing READONLY and STABLE_INODES restrictions remain applicable.
 
-Focused diagnostics currently cover **26 unique new modules and 1,517 obligations**, with zero reported errors and compilation, across the 22 current entries below. Superseded snapshots are excluded from this total.
+Focused diagnostics currently cover **26 unique new modules and 1,521 obligations**, with zero reported errors and compilation, across the 22 current entries below. Superseded snapshots are excluded from this total.
 
 | Module or bundle | Obligations | Snapshot |
 | --- | ---: | --- |
@@ -41,7 +41,7 @@ Focused diagnostics currently cover **26 unique new modules and 1,517 obligation
 | JBD2 feature/checksum formats | 40 | proof-jbd2-features-04 |
 | Project-ID fields/inheritance | 11 | proof-project-01 |
 | SM4 schedule/block refinement | 28 | proof-sm4-02 |
-| Legacy map/read and collection claims | 44 | proof-legacy-06 |
+| Legacy map/read, collection claims and wide filesystem geometry | 48 | proof-legacy-wide-02 |
 | Legacy orphan chain | 45 | proof-orphan-chain-01 |
 | Cluster owner/initialization lifecycle | 95 | proof-cluster-07 |
 | Casefold reference pipeline | 65 | proof-casefold-02 |
@@ -64,13 +64,14 @@ Pinned references for the expansion are listed in [FEATURE_EXPANSION_SOURCES.jso
 
 The implementation diagnostics are independent of formal discharge:
 
-- The first 28 modules compiled together in typecheck-05 before proof annotations. Typecheck-18 compiles the coherent all-32-module checkpoint, including all current focused-checked components. It uses db4c9f8 plus exact newly checked orphan-file/fsverity snapshots; ongoing unproved drafts remain separate. This compile-only result does not certify later live changes or replace the pending strict proof.
+- The first 28 modules compiled together in typecheck-05 before proof annotations. Typecheck-18 compiles the coherent all-32-module checkpoint, including the then-current focused-checked components; it predates the wide-filesystem correction. It uses db4c9f8 plus exact newly checked orphan-file/fsverity snapshots; ongoing unproved drafts remain separate. This compile-only result does not certify later live changes or replace the pending strict proof.
 - HTree outputs were installed into real ext4 images across several block/checksum/filetype profiles, including an indexed depth-one directory; e2fsck and debugfs accepted the completed fixtures.
 - Casefold-checked-native-02 imports the proof-casefold-02 artifact directly and matches the pinned Linux normalization corpus in 1,226,715 comparisons with zero mismatches. This is checked-artifact interoperability evidence, not a formal C-equivalence theorem.
 - SHA/HMAC/Merkle results passed 78 independent Python-oracle cases; AES/XTS/CTS passed 59 OpenSSL/NIST cases. These tests establish no cryptographic proof or constant-time guarantee.
 - Checked-sha2-native-01 imports the focused-checked 115-obligation SHA/HMAC/HKDF artifact and matches 616 Python hashlib/hmac vectors with zero mismatches, covering streaming/padding boundaries, long keys, HKDF maximum/partial outputs and rejected inputs. No replacement hash implementation is supplied by the harness.
 - Journal/extent diagnostics passed 2,859 assertions; e2fsprogs replayed generated escaped journal payloads in 28 independent recovery cases across checksum/version-width profiles, revokes and corrupted controls.
 - Legacy maps, inline data, inode checksums, symlink classification and descriptor CRCs were compared with Linux/libext2fs/debugfs and real images. An inconsistent inline-directory i_size was caught and corrected.
+- [Legacy wide-filesystem regressions](LEGACY_WIDE_FILESYSTEM.md) import the actual 48-obligation checked rlib: 13 tests pass across filesystem/pointer/logical/source/budget/alias boundaries. The old checked artifact fails the wide-count negative control at 2^32+1 blocks. Positive multi-terabyte snapshot I/O and the combined compatibility rerun remain untested.
 - Sparse backup enumeration matched an independent oracle up to 4,294,967,000 groups in under 4 ms per native test process. The previous draft scanned every group.
 - Six plain fast-symlink regressions cover empty/interior-NUL/unterminated targets, incompatible flags and invalid geometry.
 - The integrated 32-module artifact passed 474 crypto/context/verity commands with every primitive imported from that artifact; none of the native programs supplied replacement algorithms. These are runtime checks, not proofs.

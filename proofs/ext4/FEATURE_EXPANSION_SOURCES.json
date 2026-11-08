@@ -883,6 +883,24 @@
       "repository": "torvalds/linux",
       "commit": "028ef9c96e96197026887c0f092424679298aae8",
       "source_manifest": "hctr2-references/manifest.json"
+    },
+    {
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "path": "fs/ext4/super.c",
+      "blob_sha": "a34efb44e73d70d034aa2ed1b4011a6851235f22",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/super.c",
+      "review_scope": "4805-4880 filesystem/device geometry; 4871-4872 s_blockfile_groups limits nonextent allocation region independently of complete filesystem count",
+      "purpose": "legacy wide-filesystem structural geometry correction; format reference only"
+    },
+    {
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "path": "fs/ext4/ext4.h",
+      "blob_sha": "7617e2d454ea516fee9047366458c0bda568fddf",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/ext4.h",
+      "review_scope": "117-120 filesystem/logical block types; 786-787 nonextent physical maximum; 3373-3381 64BIT block-count decoding; 3455-3459 separate bitmap file size limit",
+      "purpose": "legacy wide-filesystem structural geometry correction; format reference only"
     }
   ]
 }

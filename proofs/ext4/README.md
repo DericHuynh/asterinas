@@ -26,6 +26,7 @@ feature engines and proof obligations after that baseline. Its focused results
 are recorded in [FEATURE_EXPANSION_STATUS.json](FEATURE_EXPANSION_STATUS.json).
 The baseline totals above do not certify those additions; a new strict
 whole-crate result remains pending.
+The [legacy wide-filesystem correction](LEGACY_WIDE_FILESYSTEM.md) retains LE32 inode pointers while accepting a wider filesystem count, with focused proofs and checked-artifact native regressions.
 
 ## Implementation and proof scope
 

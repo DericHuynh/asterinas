@@ -3,6 +3,10 @@
 //! Linux direct/single/double/triple-indirect block maps.
 //! These standalone structural readers do not confer allocation, credential,
 //! mounted-inode, or device-write authority. Source admission is separate.
+//! A filesystem may exceed 2^32 blocks while legacy inode pointers remain LE32.
+//! Linux limits nonextent allocation with s_blockfile_groups; it does not impose
+//! that pointer-width limit on the complete filesystem block count. Actual
+//! reads still require the declared filesystem to fit the supplied snapshot.
 
 use vstd::prelude::*;
 use crate::{block_size, bytes, inode_blocks, snapshot::Snapshot, source_block, xattr};
@@ -110,7 +114,7 @@ pub fn path(block_bytes: u32, logical: u64) -> (r: Result<Path, Error>)
 pub struct RootView { pub raw: Seq<u8>, pub block_bytes: u32, pub blocks: u64, pub size: u64, pub mode: u16, pub large_directory: bool }
 pub open spec fn valid_root(v: RootView) -> bool {
     &&& 128 <= v.raw.len() <= 65536 && block_size::accepted(v.block_bytes as nat)
-    &&& 0 < v.blocks <= 4294967296
+    &&& 0 < v.blocks
     &&& v.mode == 0x8000 || v.mode == 0x4000 || v.mode == 0xa000
     &&& v.mode == bytes::le16(v.raw, 0) as u16 & 0xf000
     &&& bytes::le32(v.raw, 32) as u32 & 0x10080000 == 0
@@ -118,6 +122,32 @@ pub open spec fn valid_root(v: RootView) -> bool {
         4294967296*bytes::le32(v.raw, 108) } else { 0nat }
     &&& forall|i: int| 0 <= i < 15 ==> #[trigger] bytes::le32(v.raw, 40+4*i) == 0 || bytes::le32(v.raw, 40+4*i) < v.blocks
 }
+/// A division-based full-filesystem bound: no potentially overflowing
+/// filesystem-block-count * block-size product is computed at runtime.
+pub open spec fn source_geometry_fits(v: RootView, source: Seq<u8>) -> bool {
+    v.block_bytes > 0 && v.blocks as nat <= source.len()/v.block_bytes as nat
+}
+
+pub proof fn larger_filesystem_bounds_preserve_legacy_root(v: RootView, blocks: u64)
+    requires valid_root(v), v.blocks <= blocks,
+    ensures valid_root(RootView { blocks, ..v }),
+{
+    let wider = RootView { blocks, ..v };
+    assert forall|i: int| 0 <= i < 15 implies
+        #[trigger] bytes::le32(wider.raw, 40+4*i) == 0 || bytes::le32(wider.raw, 40+4*i) < wider.blocks by {
+        assert(bytes::le32(v.raw, 40+4*i) == 0 || bytes::le32(v.raw, 40+4*i) < v.blocks);
+    }
+}
+
+pub proof fn legacy_pointer_byte_spans_do_not_depend_on_filesystem_width(physical: u32, block_bytes: u32)
+    requires block_size::accepted(block_bytes as nat),
+    ensures (physical as nat+1)*block_bytes <= 281474976710656nat,
+{
+    assert(block_bytes <= 65536);
+    assert((physical as nat+1)*block_bytes <= 281474976710656nat) by (nonlinear_arith)
+        requires physical <= 4294967295, block_bytes <= 65536;
+}
+
 proof fn root_pointer_range(v: RootView, index: int)
     requires valid_root(v), 0 <= index < 15,
     ensures bytes::le32(v.raw, 40+index*4) == 0 || bytes::le32(v.raw, 40+index*4) < v.blocks,
@@ -160,6 +190,13 @@ pub open spec fn physical_at(root: RootView, source: Seq<u8>, logical: u64) -> u
         let p = path_value(root.block_bytes, logical);
         address_at(source, bytes::le32(root.raw, 40+p.root as int*4) as u32, p.offsets@, root.block_bytes, p.depth as nat)
     }
+}
+
+pub proof fn filesystem_count_changes_preserve_legacy_pointer_interpretation(before: RootView, after: RootView,
+    source: Seq<u8>, logical: u64)
+    requires before.raw == after.raw, before.block_bytes == after.block_bytes,
+    ensures physical_at(before,source,logical) == physical_at(after,source,logical),
+{
 }
 
 /// Stored bytes only. Permission, decryption and verity are separate layers.
@@ -270,7 +307,7 @@ pub fn parse<'a>(raw: &'a [u8], block_bytes: u32, blocks: u64,
                 4294967296 * bytes::le32(raw@, 108) } else { 0nat },
         Err(_) => true },
 {
-    if !block_size::valid(block_bytes as usize) || blocks == 0 || blocks > 4294967296 {
+    if !block_size::valid(block_bytes as usize) || blocks == 0 {
         return Err(Error::Geometry);
     }
     if raw.len() < 128 || raw.len() > 65536 { return Err(Error::Inode); }
@@ -327,10 +364,16 @@ impl<'a> Root<'a> {
 
     pub fn lookup(&self, source: &Snapshot<'_>, logical: u64) -> (r: Result<Mapping, Error>)
         ensures match r { Ok(mapping) => mapping_valid(self.view(), source.view(), logical, mapping), Err(_) => true },
+            !source_geometry_fits(self.view(),source.view()) ==> match r { Err(Error::Source) => true, _ => false },
     {
         proof { use_type_invariant(self); }
         if self.blocks > source.partition_bytes() / self.block_bytes as u64 {
             return Err(Error::Source);
+        }
+        proof {
+            assert(self.block_bytes > 0);
+            assert(self.blocks as nat <= source.view().len()/self.block_bytes as nat);
+            assert(source_geometry_fits(self.view(),source.view()));
         }
         let selected = match path(self.block_bytes, logical) {
             Ok(p) => p, Err(e) => { return Err(e); }
@@ -340,7 +383,7 @@ impl<'a> Root<'a> {
         let mut metadata = Vec::<u32>::new();
         let mut level = 0usize;
         while level < selected.depth as usize
-            invariant self.wf(), valid_path(selected, self.block_bytes, logical),
+            invariant self.wf(), source_geometry_fits(self.view(),source.view()), valid_path(selected, self.block_bytes, logical),
                 level == metadata.len() <= selected.depth, unique(metadata@),
                 trace(source.view(), first, selected, metadata@, self.block_bytes),
                 address == next_address(source.view(), first, selected, metadata@, self.block_bytes),
@@ -358,7 +401,7 @@ impl<'a> Root<'a> {
             if address as u64 >= self.blocks { return Err(Error::OutOfRange); }
             let mut i = 0usize;
             while i < metadata.len()
-                invariant i <= metadata.len(),
+                invariant i <= metadata.len(), source_geometry_fits(self.view(),source.view()),
                     forall|j: int| 0 <= j < i ==> #[trigger] metadata@[j] != address,
                 decreases metadata.len()-i,
             {
@@ -383,7 +426,7 @@ impl<'a> Root<'a> {
         if address as u64 >= self.blocks && address != 0 { return Err(Error::OutOfRange); }
         let mut i = 0usize;
         while i < metadata.len()
-            invariant i <= metadata.len(),
+            invariant i <= metadata.len(), source_geometry_fits(self.view(),source.view()),
                 forall|j: int| 0 <= j < i ==> #[trigger] metadata@[j] != address || address == 0,
             decreases metadata.len()-i,
         {
@@ -484,11 +527,19 @@ impl<'a> Root<'a> {
             && unique(collection.view().claims) && collection.view().claims.len() == collection.view().data.len()+collection.view().metadata.len()
             && collection_valid(collection.view(), self.view().blocks),
             Err(_) => true },
+            node_budget <= 65536 && data_budget <= 65536
+                && !source_geometry_fits(self.view(),source.view())
+                ==> match r { Err(Error::Source) => true, _ => false },
     {
         proof { use_type_invariant(self); geometry_bounds(self.block_bytes); }
         if node_budget > 65536 || data_budget > 65536 { return Err(Error::Budget); }
         if self.blocks > source.partition_bytes() / self.block_bytes as u64 {
             return Err(Error::Source);
+        }
+        proof {
+            assert(self.block_bytes > 0);
+            assert(self.blocks as nat <= source.view().len()/self.block_bytes as nat);
+            assert(source_geometry_fits(self.view(),source.view()));
         }
         let n = self.block_bytes as u64 / 4;
         let square = n * n;
@@ -498,7 +549,7 @@ impl<'a> Root<'a> {
         }
         let mut i = 0usize;
         while i < 12
-            invariant self.wf(), i <= 12, data_budget <= 65536, node_budget <= 65536,
+            invariant self.wf(), source_geometry_fits(self.view(),source.view()), i <= 12, data_budget <= 65536, node_budget <= 65536,
                 n == self.block_bytes as u64/4, 256 <= n <= 16384, square == n*n <= 268435456,
                 result.data.len() <= data_budget, result.metadata.len() == 0,
                 result.claims.len() == result.data.len(), unique(result.claims@),
@@ -522,7 +573,7 @@ impl<'a> Root<'a> {
         let mut stack = Vec::<Frame>::new();
         let mut root = 12usize;
         while root < 15
-            invariant self.wf(), 12 <= root <= 15, data_budget <= 65536, node_budget <= 65536,
+            invariant self.wf(), source_geometry_fits(self.view(),source.view()), 12 <= root <= 15, data_budget <= 65536, node_budget <= 65536,
                 256 <= n <= 16384, n == self.block_bytes as u64/4, square == n*n <= 268435456,
                 result.data.len() <= data_budget, result.metadata.len() <= node_budget,
                 result.claims.len() == result.data.len()+result.metadata.len(), unique(result.claims@),
@@ -564,7 +615,7 @@ impl<'a> Root<'a> {
             root += 1;
         }
         while stack.len() > 0
-            invariant self.wf(), data_budget <= 65536, node_budget <= 65536,
+            invariant self.wf(), source_geometry_fits(self.view(),source.view()), data_budget <= 65536, node_budget <= 65536,
                 256 <= n <= 16384, n == self.block_bytes as u64/4, square == n*n <= 268435456,
                 result.data.len() <= data_budget, result.metadata.len() <= node_budget,
                 result.claims.len() == result.data.len()+result.metadata.len(), unique(result.claims@),
@@ -580,7 +631,7 @@ impl<'a> Root<'a> {
             let ghost work = node_budget as int-result.metadata.len() as int+stack.len() as int;
             let mut at = 0usize;
             while at < self.block_bytes as usize / 4
-                invariant self.wf(), at <= self.block_bytes as usize/4, data_budget <= 65536, node_budget <= 65536,
+                invariant self.wf(), source_geometry_fits(self.view(),source.view()), at <= self.block_bytes as usize/4, data_budget <= 65536, node_budget <= 65536,
                     256 <= n <= 16384, n == self.block_bytes as u64/4, square == n*n <= 268435456,
                     result.data.len() <= data_budget, result.metadata.len() <= node_budget,
                     result.claims.len() == result.data.len()+result.metadata.len(), unique(result.claims@),
