@@ -1144,7 +1144,22 @@
     "write_recovery::every_returned_writer_scan_is_empty_or_the_complete_transaction_transport",
     "write_recovery::original_targets_exist_transport",
     "write_recovery::replaying_every_writer_cut_gives_a_complete_before_or_after_home_image_transport",
-    "write_recovery::successful_recovery_of_every_writer_cut_has_before_or_after_home_bytes_transport"
+    "write_recovery::successful_recovery_of_every_writer_cut_has_before_or_after_home_bytes_transport",
+    "ea_index::a_valid_group_is_the_unique_exact_source_projection",
+    "ea_index::a_valid_index_is_the_unique_exact_source_projection",
+    "ea_index::every_declaratively_valid_group_is_admissible",
+    "ea_index::every_declaratively_valid_index_is_admissible",
+    "ea_namespace::every_valid_namespace_satisfies_the_complete_stage_profiles",
+    "ea_namespace_counts::a_malformed_dot_record_excludes_count_admission",
+    "ea_namespace_counts::valid_counts_have_the_unique_complete_source_projection",
+    "ea_namespace_parent::every_admissible_index_has_a_valid_canonical_parent_table",
+    "ea_namespace_parent::parent_admission_is_exactly_valid_table_existence",
+    "ea_namespace_parent::parent_table_validity_characterizes_admission",
+    "ea_namespace_topology::every_valid_tree_has_a_bounded_rank_witness",
+    "ea_source::every_admissible_header_has_a_valid_source_projection",
+    "ea_source::every_valid_header_is_the_unique_source_projection",
+    "ea_source::every_valid_node_is_the_unique_source_projection",
+    "ea_census::empty_nonjournal_reserved_inodes_have_no_inode_storage"
   ],
   "required_flags": [
     "--no-cheating",
@@ -1926,6 +1941,7 @@
     "ns_journal_prepared::file_rename",
     "ns_journal_prepared::rename",
     "recovery_io::prepare_ea_no_primary",
-    "replay::has_no_primary_writes"
+    "replay::has_no_primary_writes",
+    "ea_namespace_topology::build_parent_table"
   ]
 }

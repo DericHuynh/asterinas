@@ -71,6 +71,15 @@ persistence. The raw constructor's failure contract then rules out rejection
 for those inputs. This does not prove that the full namespace validator accepts
 every repaired shadow.
 
+[EA admission completeness](EA_ADMISSION_COMPLETENESS.md) supplies exact
+header/group/index and allocated-slot read contracts and complete-index
+count/parent/topology acceptance.
+It also corrects empty non-journal reserved-slot admission without weakening
+the journal-inode parser or granting live-inode authority.
+Complete census/allocation/directory and top-level namespace-validator
+acceptance are still needed before this becomes universal repaired-shadow
+admission.
+
 Universal fresh EA bootstrap, raw-constructor and admission closure across
 arbitrary repeated recovery crashes remains open. The recovery image theorems
 cover an already admitted recovery engine, its successful exact final image and

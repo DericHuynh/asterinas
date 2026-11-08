@@ -39,6 +39,16 @@ mounted operation authority.
 | `ea_namespace_topology.rs` | Bounded nonrecursive graph validation assigns checked depths, rejects cycles and proves every source directory reaches inode 2 | Mounted runtime lock ordering and ancestry changes, and recovery of partial namespace mutations; bounded host publication is checked separately in [CROSS_DIRECTORY_NAMESPACE.md](CROSS_DIRECTORY_NAMESPACE.md) |
 | `ea_namespace.rs` | Owns and binds the allocation, complete directory index and rooted topology to the same source image | Actual JBD2 state/recovery admission and full EA filesystem admission |
 
+The separate [EA admission completeness](EA_ADMISSION_COMPLETENESS.md) contracts
+prove no false rejection at the actual EA header/group/index and allocated-slot
+layers and at complete-index count, parent and bounded-topology validation.
+Header/group/index and graph runtime decisions remain unchanged.
+The reserved-slot leaf also fixes a Linux-clean false rejection: non-journal
+empty slots retain exact empty-field/body-absence checks without live-inode
+extra-size geometry; journal inode 8 retains its stricter parser.
+Complete census, raw node/directory capture, directory-index construction and
+full namespace-validator acceptance remain open.
+
 ## Exact ordinary inode membership
 
 The node table is indexed by source inode number and covers every declared slot.

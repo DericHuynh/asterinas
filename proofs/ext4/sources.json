@@ -316,6 +316,12 @@
       "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/Documentation/filesystems/directory-locking.rst",
       "blob_sha": "6fdf0b02df430f8dcadc96a69a7926992534f47c",
       "review_scope": "Directory shared/exclusive locking and cross-directory rename filesystem mutex, common-ancestor/ancestor-first parent acquisition and deadlock argument. Independent host core uses owned parallel preparation and one exclusive exact-source/revision publication transition; it does not inherit the Linux lock proof. Runtime OSTD/CortenMM guard ordering and scheduler progress remain open.; bounded ordinary directory/mixed exchange review keeps exact final namespace topology admission and ancestor-cycle rejection distinct from Linux lock ordering. The independent owned-host operation retains exclusive exact-source/revision publication; no Linux lock proof, OSTD/CortenMM cache/frame ownership or runtime/device refinement is inherited"
+    },
+    {
+      "path": "e2fsck/pass1.c",
+      "url": "https://github.com/tytso/e2fsprogs/blob/25ad8a431331b4d1d444a70b6079456cc612ac40/e2fsck/pass1.c",
+      "blob_sha": "a341c72ac56e51bd061a6871d354781efcfc08c6",
+      "review_scope": "e2fsprogs v1.47.0: pass1 unused reserved-inode branch checks block fields and continues before check_inode_extra_space (lines 1817-1842 versus 1905); control and unused inode6 extra_isize=1 EA images both independently pass e2fsck -fn. Independent Rust checker retains its existing empty-reserved and exact body-absence model, skips irrelevant inactive-tail geometry, and preserves separate live EA and journal inode validation. No Linux mount or defect claim."
     }
   ]
 }

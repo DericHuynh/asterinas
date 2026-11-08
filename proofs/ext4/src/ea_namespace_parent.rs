@@ -60,6 +60,94 @@ pub open spec fn valid(v: TableView) -> bool {
         0 < v.parents[n] < v.parents.len() && v.parents[v.parents[n] as int] != 0)
 }
 
+/// Declarative admission for this layer: complete counts, Linux link counts,
+/// one source parent per directory, and a directory root. Rootedness is checked
+/// separately; a locally consistent disconnected cycle is not admitted there.
+#[verifier::opaque]
+pub open spec fn admissible(index: IndexView) -> bool {
+    &&& directory_index::valid(index)
+    &&& counts::admissible(index)
+    &&& nodes::is_directory(index.nodes, 2)
+    &&& nodes_ok(index, index.nodes.slots.len())
+}
+
+/// The unique parent table prescribed by the complete source entry catalogue.
+pub open spec fn parent_projection(index: IndexView) -> Seq<u32> {
+    Seq::new(index.nodes.slots.len(), |n: int| if nodes::is_directory(index.nodes, n as u32) {
+        pure::fold(index.entries, index.entries.len(), n as u32).parent
+    } else { 0u32 })
+}
+
+pub proof fn parent_table_validity_characterizes_admission(v: TableView)
+    requires valid(v),
+    ensures admissible(v.index), v.parents == parent_projection(v.index),
+{
+    reveal(valid);
+    reveal(admissible);
+    reveal(counts::admissible);
+    reveal(parents_match);
+    assert(v.parents =~= parent_projection(v.index)) by {
+        assert forall|n: int| 0 <= n < v.parents.len() implies
+            v.parents[n] == parent_projection(v.index)[n] by {
+            assert(v.parents[n] == if nodes::is_directory(v.index.nodes, n as u32) {
+                pure::fold(v.index.entries, v.index.entries.len(), n as u32).parent
+            } else { 0u32 });
+        }
+    }
+}
+
+pub proof fn every_admissible_index_has_a_valid_canonical_parent_table(index: IndexView)
+    requires admissible(index),
+    ensures valid(TableView { index, parents: parent_projection(index) }),
+{
+    reveal(admissible);
+    reveal(counts::admissible);
+    reveal(nodes_ok);
+    let parents = parent_projection(index);
+    assert(parents_match(index, parents)) by {
+        reveal(parents_match);
+    }
+    assert forall|n: int| 0 <= n < parents.len() implies
+        ((#[trigger] parents[n]) != 0 <==> nodes::is_directory(index.nodes, n as u32)) by {
+        assert(n as u32 as int == n);
+        if nodes::is_directory(index.nodes, n as u32) {
+            assert(node_ok(index, n as u32));
+            checked_directory_has_a_live_parent(index, n as u32);
+        }
+    }
+    assert forall|n: int| 0 <= n < parents.len() && (#[trigger] parents[n]) != 0 implies
+        0 < parents[n] < parents.len() && parents[parents[n] as int] != 0 by {
+        assert(n as u32 as int == n);
+        assert(nodes::is_directory(index.nodes, n as u32));
+        assert(node_ok(index, n as u32));
+        checked_directory_has_a_live_parent(index, n as u32);
+        let parent = parents[n];
+        assert(nodes::is_directory(index.nodes, parent));
+        assert(node_ok(index, parent));
+        checked_directory_has_a_live_parent(index, parent);
+    }
+    assert(node_ok(index, 2));
+    assert(parents[2] == 2) by { reveal(node_ok); }
+    reveal(valid);
+}
+
+/// The input predicate describes exactly the parent tables admitted by the
+/// model, independently of the executable constructor or its return value.
+pub proof fn parent_admission_is_exactly_valid_table_existence(index: IndexView)
+    ensures admissible(index) <==> exists|parents: Seq<u32>| valid(TableView { index, parents }),
+{
+    if admissible(index) {
+        every_admissible_index_has_a_valid_canonical_parent_table(index);
+        assert(exists|parents: Seq<u32>| valid(TableView { index, parents })) by {
+            assert(valid(TableView { index, parents: parent_projection(index) }));
+        }
+    }
+    if exists|parents: Seq<u32>| valid(TableView { index, parents }) {
+        let parents = choose|parents: Seq<u32>| valid(TableView { index, parents });
+        parent_table_validity_characterizes_admission(TableView { index, parents });
+    }
+}
+
 pub struct ParentTable { index: Ghost<IndexView>, parents: Vec<u32> }
 
 impl ParentTable {
@@ -88,8 +176,13 @@ impl ParentTable {
 }
 
 pub fn build(index: &DirectoryIndex<'_>) -> (r: Option<ParentTable>)
-    ensures index.wf(), match r { Some(table) => table.wf() && table.view().index == index.view(), None => true },
+    ensures index.wf(), match r {
+        Some(table) => table.wf() && table.view().index == index.view()
+            && admissible(index.view()) && table.view().parents == parent_projection(index.view()),
+        None => !admissible(index.view()),
+    },
 {
+    proof { reveal(admissible); }
     let source_nodes = index.nodes();
     let length = source_nodes.len();
     if length < 3 || length > block_claims::MAX_BLOCKS as usize + 1 { return None; }
@@ -120,6 +213,14 @@ pub fn build(index: &DirectoryIndex<'_>) -> (r: Option<ParentTable>)
             nodes_ok(index.view(), number as nat), parents_match(index.view(), parents@),
         decreases capacity - number,
     {
+        proof {
+            if admissible(index.view()) {
+                reveal(admissible);
+                reveal(nodes_ok);
+                assert(node_ok(index.view(), number));
+                reveal(node_ok);
+            }
+        }
         let slot = counts.get(number).unwrap();
         assert(slot.view() == pure::fold(index.view().entries, index.view().entries.len(), number)) by {
             reveal(counts::valid); reveal(pure::matching);
@@ -188,6 +289,7 @@ pub fn build(index: &DirectoryIndex<'_>) -> (r: Option<ParentTable>)
         assert(node_ok(index.view(), 2));
         reveal(node_ok);
     }
+    proof { parent_table_validity_characterizes_admission(assembled); }
     Some(ParentTable { index: Ghost(index.view()), parents })
 }
 
