@@ -957,7 +957,8 @@ pub open spec fn subtree_exclusive_end(raw: Seq<u8>, nodes: Seq<NodeImageView>, 
 /// depth. Address uniqueness and one incoming reference rule out aliases and
 /// disconnected cycles. Full source/bitmap admission remains separate.
 pub open spec fn child_links_bound(raw: Seq<u8>, children: Seq<NodeImageView>) -> bool {
-    bytes::le16(raw, 6) > 0 ==> forall|i: int| 0 <= i < bytes::le16(raw, 2) ==>
+    bytes::le16(raw, 6) > 0 ==> forall|i: int| #![trigger extent_node::child(raw, i)]
+        0 <= i < bytes::le16(raw, 2) ==>
         exists|j: int| 0 <= j < children.len()
             && #[trigger] children[j].block == extent_node::child(raw, i)
             && bytes::le16(children[j].raw, 6) + 1 == bytes::le16(raw, 6)
@@ -985,7 +986,8 @@ pub open spec fn valid_plan(v: PlanView) -> bool {
     &&& v.root.len() == 60 && v.depth <= 5 && bytes::le16(v.root, 6) == v.depth
     &&& bytes::le16(v.root, 4) == 4 && bytes::le32(v.root, 8) == 0
     &&& extent_node::valid(extent_node::NodeView { raw: v.root, blocks: v.blocks, kind: extent_node::NodeKind::Inline })
-    &&& (forall|i: int| 0 <= i < v.nodes.len() ==> {
+    &&& (forall|i: int| #![trigger child_links_bound(v.nodes[i].raw, v.nodes.take(i))]
+        0 <= i < v.nodes.len() ==> {
         let node = v.nodes[i];
         &&& node.block == v.pool[i] && node.raw.len() == v.options.block_bytes
         &&& extent_node::valid(extent_node::NodeView {
@@ -993,7 +995,7 @@ pub open spec fn valid_plan(v: PlanView) -> bool {
         &&& bytes::le16(node.raw, 4) == (v.options.block_bytes as nat - 12) / 12
         &&& bytes::le16(node.raw, 2) > 0 && bytes::le16(node.raw, 6) < v.depth
         &&& bytes::le32(node.raw, 8) == 0
-        &&& #[trigger] child_links_bound(node.raw, v.nodes.take(i))
+        &&& child_links_bound(node.raw, v.nodes.take(i))
     })
     &&& child_links_bound(v.root, v.nodes)
     &&& (forall|i: int| 0 <= i < v.nodes.len() ==>

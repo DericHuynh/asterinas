@@ -90,7 +90,7 @@ fn write_le64(raw:&mut [u8],offset:usize,value:u64)
     let mut i=0usize;
     while i<8
         invariant i<=8,offset<=raw.len(),8<=raw.len()-offset,raw.len()==before.len(),
-            forall|j:int| 0<=j<raw.len() ==> raw@[j]==
+            forall|j:int| #![trigger raw@[j]] 0<=j<raw.len() ==> raw@[j]==
                 if offset<=j<offset+i {encoded64(value)[j-offset as int]}else{before[j]},
         decreases 8-i,
     {raw[offset+i]=(value>>(8*i)) as u8;i+=1;}
@@ -180,11 +180,11 @@ impl Layout {
             && self.block_bytes%self.digest_bytes==0
             && ((self.data_blocks<=1)==(self.levels==0))
             && (self.levels>0 ==> self.level_blocks@[self.levels as int-1]==1)
-            && (forall|i:int| 0<=i<self.levels ==> self.level_blocks@[i] as nat
+            && (forall|i:int| #![trigger self.level_blocks@[i]] 0<=i<self.levels ==> self.level_blocks@[i] as nat
                 ==level_count(self.data_blocks as nat,(self.block_bytes/self.digest_bytes) as nat,(i+1) as nat))
-            && (forall|i:int| 0<=i<self.levels ==> 0<self.level_blocks@[i]<=self.data_blocks
+            && (forall|i:int| #![trigger self.level_blocks@[i]] 0<=i<self.levels ==> 0<self.level_blocks@[i]<=self.data_blocks
                 && self.level_start@[i] as nat+self.level_blocks@[i] as nat<=self.tree_blocks as nat)
-            && (forall|i:int| 0<=i<self.levels ==> self.level_start@[i] as nat
+            && (forall|i:int| #![trigger self.level_start@[i]] 0<=i<self.levels ==> self.level_start@[i] as nat
                 ==count_sum(self.level_blocks@,self.levels as nat)-count_sum(self.level_blocks@,(i+1) as nat))
             && self.tree_blocks==count_sum(self.level_blocks@,self.levels as nat)
             && self.tree_blocks as nat*self.block_bytes as nat<=u64::MAX
@@ -232,7 +232,7 @@ pub fn layout(data_size:u64,algorithm:u8,log_blocksize:u8) -> (r:Result<Layout,E
             data_blocks<=18014398509481984,blocks<=data_blocks,
             (data_blocks>0 ==> blocks>0),
             blocks==level_count(data_blocks as nat,arity as nat,levels as nat),
-            forall|i:int| 0<=i<levels ==> counts@[i] as nat
+            forall|i:int| #![trigger counts@[i]] 0<=i<levels ==> counts@[i] as nat
                 ==level_count(data_blocks as nat,arity as nat,(i+1) as nat)
                 && 0<counts@[i]<=data_blocks,
             data_blocks<=1 ==> levels==0,
@@ -247,7 +247,7 @@ pub fn layout(data_size:u64,algorithm:u8,log_blocksize:u8) -> (r:Result<Layout,E
     let mut starts=[0u64;8];let mut total=0u64;let mut level=levels;
     while level>0
         invariant level<=levels<=8,total as nat==count_sum(counts@,levels as nat)-count_sum(counts@,level as nat),
-            forall|j:int| level<=j<levels ==> starts@[j] as nat
+            forall|j:int| #![trigger starts@[j]] level<=j<levels ==> starts@[j] as nat
                 ==count_sum(counts@,levels as nat)-count_sum(counts@,(j+1) as nat),
         decreases level,
     {
@@ -256,7 +256,7 @@ pub fn layout(data_size:u64,algorithm:u8,log_blocksize:u8) -> (r:Result<Layout,E
     }
     if total>u64::MAX/block as u64 {return Err(Error::Overflow);}
     proof {
-        assert forall|j:int| 0<=j<levels implies starts@[j] as nat+counts@[j] as nat<=total as nat by {
+        assert forall|j:int| #![trigger starts@[j]] 0<=j<levels implies starts@[j] as nat+counts@[j] as nat<=total as nat by {
             count_sum_monotone(counts@,(j+1) as nat,levels as nat);
             assert(count_sum(counts@,(j+1) as nat)==count_sum(counts@,j as nat)+counts@[j] as nat);
         }
@@ -279,7 +279,7 @@ pub fn parse<'a>(raw:&'a[u8],inode_size:u64,filesystem_block_bits:u8,memory_bloc
     let mut i=112usize;
     while i<256
         invariant 112<=i<=256,256<=raw.len()<=MAX_DESCRIPTOR_BYTES,
-            forall|j:int| 112<=j<i ==> raw@[j]==0,
+            forall|j:int| #![trigger raw@[j]] 112<=j<i ==> raw@[j]==0,
         decreases 256-i,
     {if raw[i]!=0{return Err(Error::Reserved);}i+=1;}
     let size=read_le64(raw,8);if size!=inode_size{return Err(Error::Size);}
@@ -297,7 +297,7 @@ impl<'a> Descriptor<'a> {
             && self.raw@[2]==self.log_blocksize && self.raw@[3]==self.salt_size
             && self.data_size==le64_prefix(self.raw@,8,8)
             && self.signature_size==bytes::le32(self.raw@,4)
-            && forall|i:int| 112<=i<256 ==> self.raw@[i]==0
+            && forall|i:int| #![trigger self.raw@[i]] 112<=i<256 ==> self.raw@[i]==0
     }
     pub closed spec fn descriptor_raw(&self) -> Seq<u8> {self.raw@}
     pub closed spec fn descriptor_fields(&self) -> (u8,u8,u64) {(self.algorithm,self.log_blocksize,self.data_size)}
@@ -325,7 +325,7 @@ impl<'a> Descriptor<'a> {
         let mut header=copy(&self.raw[..256]);let mut i=4usize;
         while i<8
             invariant 4<=i<=8,header.len()==256,
-                forall|j:int| 0<=j<256 ==> header@[j]==if 4<=j<i {0u8}else{self.raw@[j]},
+                forall|j:int| #![trigger header@[j]] 0<=j<256 ==> header@[j]==if 4<=j<i {0u8}else{self.raw@[j]},
             decreases 8-i,
         {header[i]=0;i+=1;}
         proof {assert(header@ =~= measured_header(self.raw@));}
@@ -356,7 +356,7 @@ pub fn hash_block(algorithm:u8,salt:&[u8],block:&[u8]) -> (r:Result<Vec<u8>,Erro
             let mut prefix=[0u8;64];let mut i=0usize;
             while i<salt.len()
                 invariant i<=salt.len()<=32,
-                    forall|j:int| 0<=j<64 ==> prefix@[j]==if j<i {salt@[j]}else{0u8},
+                    forall|j:int| #![trigger prefix@[j]] 0<=j<64 ==> prefix@[j]==if j<i {salt@[j]}else{0u8},
                 decreases salt.len()-i,
             {prefix[i]=salt[i];i+=1;}
             proof {assert(prefix@ =~= salt_prefix(algorithm,salt@));}
@@ -369,7 +369,7 @@ pub fn hash_block(algorithm:u8,salt:&[u8],block:&[u8]) -> (r:Result<Vec<u8>,Erro
             let mut prefix=[0u8;128];let mut i=0usize;
             while i<salt.len()
                 invariant i<=salt.len()<=32,
-                    forall|j:int| 0<=j<128 ==> prefix@[j]==if j<i {salt@[j]}else{0u8},
+                    forall|j:int| #![trigger prefix@[j]] 0<=j<128 ==> prefix@[j]==if j<i {salt@[j]}else{0u8},
                 decreases salt.len()-i,
             {prefix[i]=salt[i];i+=1;}
             proof {assert(prefix@ =~= salt_prefix(algorithm,salt@));}
@@ -425,21 +425,21 @@ pub fn encode_descriptor(algorithm:u8,log_blocksize:u8,data_size:u64,root_hash:&
     let sig=bytes::encode_le32(signature.len() as u32);let ghost fixed=out@;i=0;
     while i<4
         invariant i<=4,out.len()==256,
-            forall|j:int| 0<=j<256 ==> out@[j]==if 4<=j<4+i {sig@[j-4]}else{fixed[j]},
+            forall|j:int| #![trigger out@[j]] 0<=j<256 ==> out@[j]==if 4<=j<4+i {sig@[j-4]}else{fixed[j]},
         decreases 4-i,
     {out[4+i]=sig[i];i+=1;}
     write_le64(out.as_mut_slice(),8,data_size);
     let ghost before_root=out@;i=0;
     while i<root_hash.len()
         invariant i<=root_hash.len()<=64,out.len()==256,
-            forall|j:int| 0<=j<256 ==> out@[j]==
+            forall|j:int| #![trigger out@[j]] 0<=j<256 ==> out@[j]==
                 if 16<=j<16+i {root_hash@[j-16]}else{before_root[j]},
         decreases root_hash.len()-i,
     {out[16+i]=root_hash[i];i+=1;}
     let ghost before_salt=out@;i=0;
     while i<salt.len()
         invariant i<=salt.len()<=32,out.len()==256,
-            forall|j:int| 0<=j<256 ==> out@[j]==
+            forall|j:int| #![trigger out@[j]] 0<=j<256 ==> out@[j]==
                 if 80<=j<80+i {salt@[j-80]}else{before_salt[j]},
         decreases salt.len()-i,
     {out[80+i]=salt[i];i+=1;}
@@ -475,7 +475,7 @@ fn padded_data(data:&[u8],number:u64,size:u32) -> (r:Result<Vec<u8>,Error>)
     let mut out=Vec::new();let mut i=0usize;
     while i<size as usize
         invariant i<=size as usize,at<data.len(),take<=data.len()-at,take<=size as usize,out.len()==i,
-            forall|j:int| 0<=j<i ==> out@[j]==if j<take {data@[at as int+j]}else{0u8},
+            forall|j:int| #![trigger out@[j]] 0<=j<i ==> out@[j]==if j<take {data@[at as int+j]}else{0u8},
         decreases size as usize-i,
     {out.push(if i<take {data[at+i]}else{0});i+=1;}Ok(out)
 }
@@ -519,7 +519,8 @@ impl<'a> Verifier<'a> {
     /// results. It does not assert collision resistance or signature authority.
     pub closed spec fn block_path_accepted(&self,index:nat) -> bool {
         index<self.layout.data_blocks
-            && (forall|level:int| 0<=level<self.layout.levels ==>
+            && (forall|level:int| #![trigger self.path_block(index,level as nat)]
+                0<=level<self.layout.levels ==>
                 self.path_block(index,level as nat).len()==self.layout.block_bytes
                 && salted_hash_reference(self.descriptor.algorithm,
                     self.descriptor.raw@.subrange(80,80+self.descriptor.salt_size as int),
@@ -531,7 +532,7 @@ impl<'a> Verifier<'a> {
     pub closed spec fn read_paths_accepted(&self,offset:nat,length:nat) -> bool {
         let take=if offset>=self.data.len() {0nat}
             else if self.data.len()-offset<length {(self.data.len()-offset) as nat}else{length};
-        take==0 || forall|index:int|
+        take==0 || forall|index:int| #![trigger self.block_path_accepted(index as nat)]
             offset/(self.layout.block_bytes as nat)<=index<=((offset+take-1) as nat)/(self.layout.block_bytes as nat)
             ==> self.block_path_accepted(index as nat)
     }
@@ -559,11 +560,11 @@ impl<'a> Verifier<'a> {
         while level<self.layout.levels as usize
             invariant level<=self.layout.levels as usize<=8,arity>=16,
                 self.verifier_valid(),child==ancestor(index as nat,arity as nat,level as nat),
-                forall|i:int| 0<=i<level ==> numbers@[i] as nat
+                forall|i:int| #![trigger numbers@[i]] 0<=i<level ==> numbers@[i] as nat
                     ==self.layout.level_start@[i] as nat+ancestor(index as nat,arity as nat,(i+1) as nat),
-                forall|i:int| 0<=i<level ==> offsets@[i] as nat
+                forall|i:int| #![trigger offsets@[i]] 0<=i<level ==> offsets@[i] as nat
                     ==(ancestor(index as nat,arity as nat,i as nat)%arity as nat)*self.layout.digest_bytes as nat,
-                forall|i:int| 0<=i<level ==> offsets@[i]<self.layout.block_bytes,
+                forall|i:int| #![trigger offsets@[i]] 0<=i<level ==> offsets@[i]<self.layout.block_bytes,
             decreases self.layout.levels as usize-level,
         {
             let parent=child/arity;
@@ -575,11 +576,12 @@ impl<'a> Verifier<'a> {
         while level>0
             invariant level<=self.layout.levels as usize<=8,self.verifier_valid(),
                 wanted@==self.path_wanted(index as nat,level as nat),
-                forall|i:int| 0<=i<self.layout.levels ==> numbers@[i] as nat
+                forall|i:int| #![trigger numbers@[i]] 0<=i<self.layout.levels ==> numbers@[i] as nat
                     ==self.layout.level_start@[i] as nat+ancestor(index as nat,arity as nat,(i+1) as nat),
-                forall|i:int| 0<=i<self.layout.levels ==> offsets@[i] as nat
+                forall|i:int| #![trigger offsets@[i]] 0<=i<self.layout.levels ==> offsets@[i] as nat
                     ==(ancestor(index as nat,arity as nat,i as nat)%arity as nat)*self.layout.digest_bytes as nat,
-                forall|i:int| level<=i<self.layout.levels ==>
+                forall|i:int| #![trigger self.path_block(index as nat,i as nat)]
+                    level<=i<self.layout.levels ==>
                     self.path_block(index as nat,i as nat).len()==self.layout.block_bytes
                     && salted_hash_reference(self.descriptor.algorithm,
                         self.descriptor.raw@.subrange(80,80+self.descriptor.salt_size as int),
@@ -599,7 +601,7 @@ impl<'a> Verifier<'a> {
         Ok(())
     }
     pub fn verify_all(&self,block_budget:u64) -> (r:Result<(),Error>)
-        ensures r.is_ok() ==> forall|index:int| 0<=index<self.source_blocks()
+        ensures r.is_ok() ==> forall|index:int| #![trigger self.block_path_accepted(index as nat)] 0<=index<self.source_blocks()
             ==> self.block_path_accepted(index as nat),
     {
         if self.layout.data_blocks>block_budget{return Err(Error::ResourceLimit);}
@@ -607,7 +609,7 @@ impl<'a> Verifier<'a> {
         let mut i=0u64;
         while i<self.layout.data_blocks
             invariant i<=self.layout.data_blocks,self.verifier_valid(),
-                forall|index:int| 0<=index<i ==> self.block_path_accepted(index as nat),
+                forall|index:int| #![trigger self.block_path_accepted(index as nat)] 0<=index<i ==> self.block_path_accepted(index as nat),
             decreases self.layout.data_blocks-i,
         {self.verify_block(i)?;i+=1;}Ok(())
     }
@@ -628,7 +630,7 @@ impl<'a> Verifier<'a> {
         let ghost first=i;
         loop
             invariant first<=i<=last,last<self.layout.data_blocks,self.verifier_valid(),
-                forall|index:int| first<=index<i ==> self.block_path_accepted(index as nat),
+                forall|index:int| #![trigger self.block_path_accepted(index as nat)] first<=index<i ==> self.block_path_accepted(index as nat),
             decreases last-i,
         {self.verify_block(i)?;if i==last {break;}i+=1;}
         let start=offset as usize;Ok(copy(&self.data[start..start+take]))
@@ -650,7 +652,7 @@ pub fn build(data:&[u8],algorithm:u8,log_blocksize:u8,salt:&[u8],budget:BuildBud
     let mut tree=Vec::new();let mut i=0usize;
     while i<tree_size as usize
         invariant i<=tree_size as usize,tree.len()==i,tree_size<=usize::MAX,
-            forall|j:int| 0<=j<i ==> tree@[j]==0,
+            forall|j:int| #![trigger tree@[j]] 0<=j<i ==> tree@[j]==0,
         decreases tree_size as usize-i,
     {tree.push(0);i+=1;}
     let arity=(l.block_bytes/l.digest_bytes) as u64;let mut level=0usize;
@@ -711,7 +713,7 @@ pub fn build(data:&[u8],algorithm:u8,log_blocksize:u8,salt:&[u8],budget:BuildBud
                 while i<digest.len()
                     invariant i<=digest.len(),digest.len()==l.digest_bytes,
                         at as nat+digest.len()<=tree.len(),tree.len()==before_digest.len(),
-                        forall|j:int| 0<=j<tree.len() ==> tree@[j]==
+                        forall|j:int| #![trigger tree@[j]] 0<=j<tree.len() ==> tree@[j]==
                             if at<=j<at+i {digest@[j-at as int]}else{before_digest[j]},
                     decreases digest.len()-i,
                 {tree[at+i]=digest[i];i+=1;}slot+=1;

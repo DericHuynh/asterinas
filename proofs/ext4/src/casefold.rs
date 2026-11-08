@@ -268,12 +268,19 @@ proof fn append_all_push(s: Seq<u32>, values: Seq<u32>, c: u32)
 {
     appended_values_compose(s, values, seq![c]);
     assert(values.push(c) =~= values + seq![c]);
+    assert(seq![c].drop_first() =~= Seq::<u32>::empty());
     append_all_step(append_all(s, values), seq![c]);
     append_all_step(ordered_append(append_all(s, values), c), Seq::empty());
+}
+proof fn append_all_empty(s: Seq<u32>)
+    ensures append_all(s, Seq::<u32>::empty()) == s,
+{
+    append_all_step(s, Seq::<u32>::empty());
 }
 proof fn append_all_single(s: Seq<u32>, c: u32)
     ensures append_all(s, seq![c]) == ordered_append(s, c),
 {
+    assert(seq![c].drop_first() =~= Seq::<u32>::empty());
     append_all_step(s, seq![c]);
     append_all_step(ordered_append(s, c), Seq::empty());
 }
@@ -366,6 +373,17 @@ fn copy(raw: &[u8]) -> (r: Vec<u8>) ensures r@ == raw@ {
     result
 }
 
+proof fn invalid_continuation(raw: Seq<u8>, at: int, width: nat, bad: int)
+    requires 0 <= at < raw.len(), width == utf8_width(raw[at]), width > 1,
+        at+width <= raw.len(), 1 <= bad < width,
+        raw[at+bad] < 0x80 || raw[at+bad] > 0xbf,
+    ensures scalar_step(raw, at).is_none(),
+{
+    reveal(scalar_step);
+    assert(!(raw[at+bad] >= 0x80 && raw[at+bad] <= 0xbf));
+    assert(!(forall|i: int| 1 <= i < width ==> #[trigger] raw[at+i] >= 0x80 && raw[at+i] <= 0xbf));
+}
+
 fn next_scalar(raw: &[u8], at: usize) -> (r: Option<(u32, usize)>)
     ensures match r {
         Some((c, next)) => scalar_valid(c) && at < next <= raw.len() && next as int <= at as int + 4
@@ -384,6 +402,12 @@ fn next_scalar(raw: &[u8], at: usize) -> (r: Option<(u32, usize)>)
     if raw.len() - at < width { return None; }
     if width == 1 { return Some((first as u32, at + 1)); }
     let mut value = (first & if width == 2 { 0x1f } else if width == 3 { 0x0f } else { 0x07 }) as u32;
+    proof {
+        assert(first & 0x1fu8 <= 31u8) by (bit_vector);
+        assert(first & 0x0fu8 <= 31u8) by (bit_vector);
+        assert(first & 0x07u8 <= 31u8) by (bit_vector);
+        assert(value <= 31);
+    }
     let mut i = 1usize;
     while i < width
         invariant 1 <= i <= width <= 4, at < raw.len(), width <= raw.len() - at,
@@ -394,8 +418,17 @@ fn next_scalar(raw: &[u8], at: usize) -> (r: Option<(u32, usize)>)
         decreases width - i,
     {
         let byte = raw[at + i];
-        if byte < 0x80 || byte > 0xbf { return None; }
+        if byte < 0x80 || byte > 0xbf {
+            proof { invalid_continuation(raw@, at as int, width as nat, i as int); }
+            return None;
+        }
+        proof { assert(byte & 63u8 <= 63u8) by (bit_vector); }
         value = value * 64 + (byte & 63) as u32;
+        proof {
+            if i == 1 { assert(value <= 2047); }
+            else if i == 2 { assert(value <= 131071); }
+            else { assert(i == 3 && value <= 8388607); }
+        }
         i += 1;
     }
     if (width == 2 && value < 0x80) || (width == 3 && value < 0x800)
@@ -484,15 +517,23 @@ fn append_token(tokens: &mut Vec<u32>, scalar: u32) -> (r: bool)
     while at > 0 invariant at < tokens.len(), tokens.len() == before.len() + 1,
         tokens.len() <= MAX_TOKENS,
         bubble(tokens@, at as int, class) == ordered_append(before, scalar),
+        ensures tokens.len() == before.len()+1, tokens.len() <= MAX_TOKENS, at < tokens.len(),
+            at == 0 || tokens@ == ordered_append(before, scalar),
         decreases at,
     {
         proof { bubble_step(tokens@, at as int, class); }
         let previous = combining_class(tokens[at - 1]);
-        if previous == 0 || previous <= class { break; }
+        if previous == 0 || previous <= class {
+            proof { assert(bubble(tokens@, at as int, class) == tokens@); }
+            break;
+        }
         let old = tokens[at - 1]; tokens[at - 1] = tokens[at]; tokens[at] = old;
         at -= 1;
     }
-    proof { bubble_step(tokens@, at as int, class); }
+    proof {
+        bubble_step(tokens@, at as int, class);
+        assert(tokens@ == ordered_append(before, scalar));
+    }
     true
 }
 
@@ -501,12 +542,17 @@ fn append_mapping(tokens: &mut Vec<u32>, scalar: u32) -> (r: Result<(), Error>)
     ensures final(tokens).len() <= MAX_TOKENS,
         r.is_ok() ==> scalar_mapping(scalar).is_some()
             && final(tokens)@ == append_all(old(tokens)@, scalar_mapping(scalar).unwrap()),
+        match r { Err(Error::InvalidName) | Err(Error::InvalidUtf8) => false, _ => true },
 {
     let ghost before = tokens@;
     proof { reveal(scalar_mapping); pinned_mapping_views(); }
     if ignorable(scalar) {
         if !append_token(tokens, BARRIER) { return Err(Error::Budget); }
-        proof { append_all_single(before, BARRIER); }
+        proof {
+            append_all_single(before, BARRIER);
+            assert(scalar_mapping(scalar) == Some(seq![BARRIER]));
+        }
+        return Ok(());
     } else if scalar >= 0xac00 && scalar <= 0xd7a3 {
         let x = scalar - 0xac00;
         if !append_token(tokens, 0x1100 + x / 588)
@@ -516,9 +562,15 @@ fn append_mapping(tokens: &mut Vec<u32>, scalar: u32) -> (r: Result<(), Error>)
             let l = (0x1100 + x as nat / 588) as u32;
             let v = (0x1161 + (x as nat % 588) / 28) as u32;
             let t = (0x11a7 + x as nat % 28) as u32;
-            if x % 28 == 0 { append_all_pair(before, l, v); }
-            else { append_all_three(before, l, v, t); }
+            if x % 28 == 0 {
+                append_all_pair(before, l, v);
+                assert(scalar_mapping(scalar) == Some(seq![l,v]));
+            } else {
+                append_all_three(before, l, v, t);
+                assert(scalar_mapping(scalar) == Some(seq![l,v,t]));
+            }
         }
+        return Ok(());
     } else if let Some(index) = mapping(scalar) {
         if index >= data::FOLD_OFFSETS.len() || data::FOLD_OFFSETS.len() - index < 2 { return Err(Error::InvalidTables); }
         let first = data::FOLD_OFFSETS[index] as usize;
@@ -526,15 +578,26 @@ fn append_mapping(tokens: &mut Vec<u32>, scalar: u32) -> (r: Result<(), Error>)
         if first > last || last > data::FOLD_VALUES.len() { return Err(Error::InvalidTables); }
         if first == last {
             if !append_token(tokens, BARRIER) { return Err(Error::Budget); }
-            proof { append_all_single(before, BARRIER); }
+            proof {
+                append_all_single(before, BARRIER);
+                assert(scalar_mapping(scalar) == Some(seq![BARRIER]));
+            }
+            return Ok(());
         }
-        proof { append_all_step(before, Seq::empty()); }
+        proof {
+            assert(data::FOLD_VALUES@.subrange(first as int, first as int) =~= Seq::<u32>::empty());
+            append_all_empty(before);
+        }
         let mut i = first;
         while i < last
-            invariant first <= i <= last <= data::FOLD_VALUES.len(),
+            invariant first <= i <= last <= data::FOLD_VALUES.len(), first < last,
+                scalar_valid(scalar), !ignored_model(scalar), scalar < 0xac00 || scalar > 0xd7a3,
+                map_index(scalar) == Some(index as int), index as nat+1 < data::FOLD_OFFSETS@.len(),
+                first == data::FOLD_OFFSETS@[index as int], last == data::FOLD_OFFSETS@[index as int+1],
+                data::proof_fold_offsets_view() == data::FOLD_OFFSETS@,
+                data::proof_fold_values_view() == data::FOLD_VALUES@,
                 tokens.len() <= MAX_TOKENS,
-                tokens@ == append_all(before, if first == last { seq![BARRIER] }
-                    else { data::FOLD_VALUES@.subrange(first as int, i as int) }),
+                tokens@ == append_all(before, data::FOLD_VALUES@.subrange(first as int, i as int)),
                 forall|j: int| first <= j < i ==> scalar_valid(data::FOLD_VALUES@[j]),
             decreases last - i,
         {
@@ -548,8 +611,20 @@ fn append_mapping(tokens: &mut Vec<u32>, scalar: u32) -> (r: Result<(), Error>)
             }
             i += 1;
         }
-    } else if !append_token(tokens, scalar) { return Err(Error::Budget); }
-    proof { append_all_single(before, scalar); }
+        proof {
+            let values = data::FOLD_VALUES@.subrange(first as int, last as int);
+            assert forall|j: int| 0 <= j < values.len() implies scalar_valid(#[trigger] values[j]) by {
+                assert(values[j] == data::FOLD_VALUES@[first as int+j]);
+            }
+            assert(scalar_mapping(scalar) == Some(values));
+        }
+        return Ok(());
+    }
+    if !append_token(tokens, scalar) { return Err(Error::Budget); }
+    proof {
+        append_all_single(before, scalar);
+        assert(scalar_mapping(scalar) == Some(seq![scalar]));
+    }
     Ok(())
 }
 
@@ -637,7 +712,10 @@ pub fn filename_key(raw: &[u8], strict: bool, byte_budget: usize) -> (r: Result<
         assert(decoded_suffix(raw@, 0) == Some(decoded));
     }
     let mut result = Vec::<u8>::new(); i = 0;
-    proof { encoded_tokens_empty(); }
+    proof {
+        encoded_tokens_empty();
+        assert(tokens@.subrange(0,0) =~= Seq::<u32>::empty());
+    }
     while i < tokens.len()
         invariant i <= tokens.len(), result.len() <= byte_budget <= MAX_KEY_BYTES,
             name_valid(raw@), decoded_suffix(raw@, 0) == Some(decoded), fold_scalars(decoded) == Some(tokens@),
@@ -651,7 +729,12 @@ pub fn filename_key(raw: &[u8], strict: bool, byte_budget: usize) -> (r: Result<
         }
         i += 1;
     }
-    proof { reveal(normalized_bytes); }
+    proof {
+        assert(tokens@.subrange(0,tokens.len() as int) =~= tokens@);
+        assert(result@ == encoded_tokens(tokens@));
+        reveal(normalized_bytes);
+        assert(normalized_bytes(raw@) == Some(result@));
+    }
     Ok(Key { bytes: result, opaque: false })
 }
 

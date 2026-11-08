@@ -368,12 +368,21 @@ impl Descriptor {
         if index >= self.tags.len() { None } else { Some(self.tags[index]) }
     }
 }
+#[verifier::opaque]
 pub open spec fn descriptor_header(raw: Seq<u8>, f: features::FeatureView, sequence: u32, seed: u32) -> bool {
     &&& crate::block_size::accepted(raw.len() as nat)
     &&& bytes::be32(raw, 0) == features::MAGIC
     &&& bytes::be32(raw, 4) == 1 && bytes::be32(raw, 8) == sequence
     &&& features::metadata_valid(f, seed, raw)
 }
+proof fn descriptor_header_checked(raw: Seq<u8>, f: features::FeatureView, sequence: u32, seed: u32)
+    requires crate::block_size::accepted(raw.len() as nat),
+        bytes::be32(raw, 0) == features::MAGIC, bytes::be32(raw, 4) == 1,
+        bytes::be32(raw, 8) == sequence, features::metadata_valid(f, seed, raw),
+    ensures descriptor_header(raw, f, sequence, seed),
+{ reveal(descriptor_header); }
+
+#[verifier::opaque]
 pub open spec fn descriptor_entry(raw: Seq<u8>, f: features::FeatureView, uuid: Seq<u8>,
     blocks: u64, offset: nat, tag: Tag) -> bool
 {
@@ -386,6 +395,7 @@ pub open spec fn descriptor_entry(raw: Seq<u8>, f: features::FeatureView, uuid: 
 pub open spec fn entry_end(offset: nat, f: features::FeatureView, tag: Tag) -> nat {
     offset + features::tag_width(f) + if tag.flags & SAME_UUID == 0 { 16nat } else { 0nat }
 }
+#[verifier::opaque]
 pub open spec fn descriptor_witness(raw: Seq<u8>, f: features::FeatureView, uuid: Seq<u8>,
     blocks: u64, tags: Seq<Tag>, positions: Seq<nat>) -> bool
 {
@@ -394,6 +404,48 @@ pub open spec fn descriptor_witness(raw: Seq<u8>, f: features::FeatureView, uuid
     &&& forall|i: int| 0 <= i < tags.len() ==>
         #[trigger] descriptor_entry(raw, f, uuid, blocks, positions[i], tags[i])
             && (i > 0 ==> positions[i] == entry_end(positions[i - 1], f, tags[i - 1]))
+}
+
+proof fn descriptor_entry_checked(raw: Seq<u8>, f: features::FeatureView, uuid: Seq<u8>,
+    blocks: u64, offset: nat, tag: Tag)
+    requires tag_admitted(raw.take((raw.len() - features::tail_width(f)) as int), offset as int, f, blocks),
+        tag_matches(tag, raw.take((raw.len() - features::tail_width(f)) as int), offset as int, f),
+        tag.flags & SAME_UUID == 0 ==> offset + features::tag_width(f) + 16 <= raw.len() - features::tail_width(f)
+            && raw.subrange(offset as int + features::tag_width(f), offset as int + features::tag_width(f) + 16) == uuid,
+    ensures descriptor_entry(raw, f, uuid, blocks, offset, tag),
+{ reveal(descriptor_entry); }
+
+proof fn descriptor_witness_empty(raw: Seq<u8>, f: features::FeatureView, uuid: Seq<u8>, blocks: u64)
+    ensures descriptor_witness(raw, f, uuid, blocks, Seq::<Tag>::empty(), Seq::<nat>::empty()),
+{ reveal(descriptor_witness); }
+
+proof fn descriptor_witness_push(raw: Seq<u8>, f: features::FeatureView, uuid: Seq<u8>,
+    blocks: u64, tags: Seq<Tag>, positions: Seq<nat>, tag: Tag, offset: nat)
+    requires descriptor_witness(raw, f, uuid, blocks, tags, positions),
+        descriptor_entry(raw, f, uuid, blocks, offset, tag),
+        tags.len() == 0 ==> offset == 12,
+        tags.len() > 0 ==> offset == entry_end(positions[tags.len() as int - 1], f, tags[tags.len() as int - 1]),
+    ensures descriptor_witness(raw, f, uuid, blocks, tags.push(tag), positions.push(offset)),
+{
+    reveal(descriptor_witness);
+    assert forall|i: int| 0 <= i < tags.len() + 1 implies
+        #[trigger] descriptor_entry(raw, f, uuid, blocks, positions.push(offset)[i], tags.push(tag)[i])
+        && (i > 0 ==> positions.push(offset)[i] == entry_end(positions.push(offset)[i - 1], f, tags.push(tag)[i - 1])) by {
+        if i < tags.len() {
+            assert(descriptor_entry(raw, f, uuid, blocks, positions[i], tags[i]));
+        } else { assert(i == tags.len()); }
+    }
+}
+
+proof fn descriptor_witness_index(raw: Seq<u8>, f: features::FeatureView, uuid: Seq<u8>,
+    blocks: u64, tags: Seq<Tag>, positions: Seq<nat>, index: int)
+    requires descriptor_witness(raw, f, uuid, blocks, tags, positions), 0 <= index < tags.len(),
+    ensures tags.len() == positions.len(),
+        descriptor_entry(raw, f, uuid, blocks, positions[index], tags[index]),
+        index > 0 ==> positions[index] == entry_end(positions[index - 1], f, tags[index - 1]),
+{
+    reveal(descriptor_witness);
+    assert(descriptor_entry(raw, f, uuid, blocks, positions[index], tags[index]));
 }
 
 proof fn tag_readers_translate(source: Seq<u8>, target: Seq<u8>, offset: int, limit: int,
@@ -423,9 +475,12 @@ proof fn descriptor_entry_prefix_frame(before: Seq<u8>, after: Seq<u8>, prefix: 
         descriptor_entry(before, f, uuid, blocks, offset, tag), entry_end(offset, f, tag) <= prefix,
     ensures descriptor_entry(after, f, uuid, blocks, offset, tag),
 {
+    reveal(descriptor_entry);
     let width = features::tag_width(f);
     let limit = before.len() - features::tail_width(f);
     let wire = before.subrange(offset as int, offset as int + width);
+    assert(offset + width <= entry_end(offset, f, tag) <= prefix);
+    equal_prefix_preserves_subrange(before, after, prefix as int, offset as int, offset as int + width);
     assert(wire =~= after.subrange(offset as int, offset as int + width));
     tag_readers_translate(wire, before, offset as int, limit as int, f);
     tag_readers_translate(wire, after, offset as int, limit as int, f);
@@ -435,6 +490,37 @@ proof fn descriptor_entry_prefix_frame(before: Seq<u8>, after: Seq<u8>, prefix: 
             offset as int + width, offset as int + width + 16);
         assert(before.subrange(offset as int + width, offset as int + width + 16)
             =~= after.subrange(offset as int + width, offset as int + width + 16));
+    }
+}
+
+proof fn descriptor_entry_from_wire(encoded: Seq<u8>, raw: Seq<u8>, f: features::FeatureView,
+    uuid: Seq<u8>, blocks: u64, offset: nat, tag: Tag)
+    requires features::feature_valid(f), encoded.len() == features::tag_width(f),
+        offset + encoded.len() <= raw.len() - features::tail_width(f),
+        encoded == raw.subrange(offset as int, offset as int + encoded.len()),
+        tag_admitted(encoded, 0, f, blocks), tag_matches(tag, encoded, 0, f),
+        tag.flags & SAME_UUID == 0 ==> offset + encoded.len() + 16 <= raw.len() - features::tail_width(f)
+            && raw.subrange(offset as int + encoded.len(), offset as int + encoded.len() + 16) == uuid,
+    ensures descriptor_entry(raw, f, uuid, blocks, offset, tag),
+{
+    tag_readers_translate(encoded, raw, offset as int, (raw.len() - features::tail_width(f)) as int, f);
+    descriptor_entry_checked(raw, f, uuid, blocks, offset, tag);
+}
+
+proof fn descriptor_witness_prefix_frame(before: Seq<u8>, after: Seq<u8>, prefix: nat,
+    f: features::FeatureView, uuid: Seq<u8>, blocks: u64, tags: Seq<Tag>, positions: Seq<nat>)
+    requires features::feature_valid(f), before.len() == after.len(), prefix <= before.len(),
+        before.take(prefix as int) == after.take(prefix as int),
+        descriptor_witness(before, f, uuid, blocks, tags, positions),
+        forall|i: int| 0 <= i < tags.len() ==> #[trigger] entry_end(positions[i], f, tags[i]) <= prefix,
+    ensures descriptor_witness(after, f, uuid, blocks, tags, positions),
+{
+    reveal(descriptor_witness);
+    assert forall|i: int| 0 <= i < tags.len() implies
+        #[trigger] descriptor_entry(after, f, uuid, blocks, positions[i], tags[i])
+        && (i > 0 ==> positions[i] == entry_end(positions[i - 1], f, tags[i - 1])) by {
+        descriptor_witness_index(before, f, uuid, blocks, tags, positions, i);
+        descriptor_entry_prefix_frame(before, after, prefix, f, uuid, blocks, positions[i], tags[i]);
     }
 }
 
@@ -456,12 +542,14 @@ pub fn parse_descriptor(raw: &[u8], f: Features, expected_sequence: u32,
         || bytes::read_be32(raw, 4).unwrap() != 1
         || bytes::read_be32(raw, 8).unwrap() != expected_sequence
         || !features::metadata_checksum_valid(f, uuid_seed, raw) { return None; }
+    proof { descriptor_header_checked(raw@, f.view(), expected_sequence, uuid_seed); }
     let limit = raw.len() - f.descriptor_tail_bytes();
     let mut offset = 12usize;
     let mut tags = Vec::<Tag>::new();
     let ghost mut positions = Seq::<nat>::empty();
+    proof { descriptor_witness_empty(raw@, f.view(), target_uuid@, filesystem_blocks); }
     while offset < limit
-        invariant 12 <= offset <= limit <= raw.len(), tags.len() <= MAX_TAGS,
+        invariant 12 <= offset <= limit <= raw.len(), tags.len() <= MAX_TAGS, positions.len() == tags.len(),
             limit == raw.len() - features::tail_width(f.view()), f.wf(), target_uuid.len() == 16,
             descriptor_header(raw@, f.view(), expected_sequence, uuid_seed),
             descriptor_witness(raw@, f.view(), target_uuid@, filesystem_blocks, tags@, positions),
@@ -482,6 +570,7 @@ pub fn parse_descriptor(raw: &[u8], f: Features, expected_sequence: u32,
             if !bytes::equal(&raw[offset..offset + 16], target_uuid) { return None; }
             offset += 16;
         }
+        assert(offset == entry_end(start, f.view(), parsed.tag));
         // SAME_UUID can inherit the already selected journal/filesystem UUID.
         // No missing or foreign UUID is guessed from a payload block.
         let last = parsed.tag.flags & LAST_TAG != 0;
@@ -489,15 +578,15 @@ pub fn parse_descriptor(raw: &[u8], f: Features, expected_sequence: u32,
         let ghost old_positions = positions;
         tags.push(parsed.tag);
         proof {
-            positions = positions.push(start);
-            assert(descriptor_entry(raw@, f.view(), target_uuid@, filesystem_blocks, start, parsed.tag));
-            assert forall|i: int| 0 <= i < tags.len() implies
-                #[trigger] descriptor_entry(raw@, f.view(), target_uuid@, filesystem_blocks, positions[i], tags@[i])
-                    && (i > 0 ==> positions[i] == entry_end(positions[i - 1], f.view(), tags@[i - 1])) by {
-                if i < old_tags.len() {
-                    assert(descriptor_entry(raw@, f.view(), target_uuid@, filesystem_blocks, old_positions[i], old_tags[i]));
-                }
-            }
+            descriptor_entry_checked(raw@, f.view(), target_uuid@, filesystem_blocks, start, parsed.tag);
+            descriptor_witness_push(raw@, f.view(), target_uuid@, filesystem_blocks,
+                old_tags, old_positions, parsed.tag, start);
+            positions = old_positions.push(start);
+            assert(tags@ == old_tags.push(parsed.tag));
+            assert(positions.len() == tags.len());
+            assert(positions[tags.len() as int - 1] == start);
+            assert(tags@[tags.len() as int - 1] == parsed.tag);
+            assert(offset == entry_end(positions[tags.len() as int - 1], f.view(), tags@[tags.len() as int - 1]));
             assert(descriptor_witness(raw@, f.view(), target_uuid@, filesystem_blocks, tags@, positions));
         }
         if last {
@@ -542,6 +631,31 @@ pub open spec fn canonical_tags(tags: Seq<Tag>, f: features::FeatureView) -> Seq
     Seq::new(tags.len(), |i: int| canonical_tag(tags[i], i, tags.len(), f))
 }
 
+fn finish_descriptor(raw: Vec<u8>, f: Features, sequence: u32, uuid_seed: u32,
+    target_uuid: &[u8], filesystem_blocks: u64, tags: &[Tag], block_bytes: usize,
+    witness: Ghost<Seq<nat>>) -> (r: Option<Vec<u8>>)
+    requires f.wf(), raw.len() == block_bytes, target_uuid.len() == 16, 0 < tags.len() <= MAX_TAGS,
+        descriptor_header(raw@, f.view(), sequence, uuid_seed),
+        descriptor_witness(raw@, f.view(), target_uuid@, filesystem_blocks,
+            canonical_tags(tags@, f.view()), witness@),
+    ensures f.wf(), match r {
+        Some(image) => image@ == raw@ && image.len() == block_bytes && target_uuid.len() == 16
+            && 0 < tags.len() <= MAX_TAGS && descriptor_header(image@, f.view(), sequence, uuid_seed)
+            && exists|positions: Seq<nat>| descriptor_witness(image@, f.view(), target_uuid@,
+                filesystem_blocks, canonical_tags(tags@, f.view()), positions),
+        None => false,
+    },
+{
+    proof {
+        assert(exists|positions: Seq<nat>| descriptor_witness(raw@, f.view(), target_uuid@,
+            filesystem_blocks, canonical_tags(tags@, f.view()), positions)) by {
+            assert(descriptor_witness(raw@, f.view(), target_uuid@,
+                filesystem_blocks, canonical_tags(tags@, f.view()), witness@));
+        }
+    }
+    Some(raw)
+}
+
 /// Emit canonical UUID/LAST_TAG flags: one explicit UUID per descriptor, then
 /// SAME_UUID; block/checksum/ESCAPE/DELETED semantics are retained.
 pub fn encode_descriptor(tags: &[Tag], f: Features, sequence: u32, uuid_seed: u32,
@@ -564,11 +678,16 @@ pub fn encode_descriptor(tags: &[Tag], f: Features, sequence: u32, uuid_seed: u3
     let limit = block_bytes - f.descriptor_tail_bytes();
     let mut offset = 12usize; let mut i = 0usize;
     let ghost mut positions = Seq::<nat>::empty();
+    proof {
+        descriptor_witness_empty(raw@, f.view(), target_uuid@, filesystem_blocks);
+        assert(canonical_tags(tags@, f.view()).take(0) =~= Seq::<Tag>::empty());
+    }
     while i < tags.len()
-        invariant f.wf(), i <= tags.len() <= MAX_TAGS, 12 <= offset <= limit <= raw.len(), raw.len() == block_bytes,
+        invariant f.wf(), i <= tags.len() <= MAX_TAGS, tags.len() > 0, 12 <= offset <= limit <= raw.len(), raw.len() == block_bytes,
             crate::block_size::accepted(block_bytes as nat), target_uuid.len() == 16,
             bytes::be32(raw@, 0) == features::MAGIC, bytes::be32(raw@, 4) == 1, bytes::be32(raw@, 8) == sequence,
             positions.len() == i, limit == raw.len() - features::tail_width(f.view()),
+            i == 0 ==> offset == 12,
             forall|j: int| 0 <= j < i ==> #[trigger] entry_end(positions[j], f.view(),
                 canonical_tags(tags@, f.view())[j]) <= offset,
             descriptor_witness(raw@, f.view(), target_uuid@, filesystem_blocks,
@@ -581,19 +700,38 @@ pub fn encode_descriptor(tags: &[Tag], f: Features, sequence: u32, uuid_seed: u3
         let ghost previous_wire = raw@;
         let ghost previous_positions = positions;
         let ghost previous_index = i;
+        let ghost previous_tags = canonical_tags(tags@, f.view()).take(i as int);
+        proof {
+            assert(previous_tags.len() == i);
+            assert(descriptor_witness(previous_wire, f.view(), target_uuid@, filesystem_blocks,
+                previous_tags, previous_positions));
+        }
         let mut tag = tags[i];
+        let ghost input_flags = tag.flags;
+        let ghost include_uuid = i != 0;
+        let ghost include_last = i + 1 == tags.len();
         if tag.flags & !15u32 != 0 { return None; }
         tag.flags = tag.flags & (ESCAPE | DELETED);
         if i != 0 { tag.flags |= SAME_UUID; }
         if i + 1 == tags.len() { tag.flags |= LAST_TAG; }
         proof {
-            canonical_flag_cases(tags@[i as int].flags, i != 0, i + 1 == tags.len());
-            assert(canonical_tags(tags@, f.view())[i as int] == canonical_tag(tags@[i as int],
-                i as int, tags.len() as nat, f.view()));
-            assert(tag.block == canonical_tags(tags@, f.view())[i as int].block);
-            assert(tag.flags == canonical_tags(tags@, f.view())[i as int].flags);
-            assert((canonical_tags(tags@, f.view())[i as int].flags & SAME_UUID)
-                == if i == 0 { 0u32 } else { SAME_UUID });
+            assert((ESCAPE | DELETED) == 5u32) by (bit_vector);
+            assert(SAME_UUID == 2u32 && LAST_TAG == 8u32);
+            assert(input_flags == tags@[i as int].flags);
+            canonical_flag_cases(input_flags, include_uuid, include_last);
+            let actual = tag.flags;
+            let normalized = (input_flags & 5u32)
+                | (if include_uuid { 2u32 } else { 0u32 })
+                | (if include_last { 8u32 } else { 0u32 });
+            assert(actual == if include_last {
+                (if include_uuid { (input_flags & 5u32) | 2u32 } else { input_flags & 5u32 }) | 8u32
+            } else { if include_uuid { (input_flags & 5u32) | 2u32 } else { input_flags & 5u32 } });
+            assert(actual == normalized);
+            let canonical = canonical_tag(tags@[i as int], i as int, tags.len() as nat, f.view());
+            assert(canonical.flags == normalized);
+            assert(canonical_tags(tags@, f.view())[i as int] == canonical);
+            assert(tag.block == canonical.block && tag.flags == canonical.flags);
+            assert((canonical.flags & SAME_UUID) == if i == 0 { 0u32 } else { SAME_UUID });
         }
         let encoded = match encode_tag(tag, f, filesystem_blocks) { Some(raw) => raw, None => { return None; } };
         let uuid_bytes = if i == 0 { 16usize } else { 0usize };
@@ -613,51 +751,50 @@ pub fn encode_descriptor(tags: &[Tag], f: Features, sequence: u32, uuid_seed: u3
             assert(encoded.len() == features::tag_width(f.view()));
             assert(raw@.take(beginning as int) =~= previous_wire.take(beginning as int));
             assert(encoded@ =~= raw@.subrange(beginning as int, beginning as int + encoded.len()));
-            tag_readers_translate(encoded@, raw@, beginning as int, limit as int, f.view());
-            assert(tag_admitted(raw@.take(limit as int), beginning as int, f.view(), filesystem_blocks));
-            assert(tag_matches(wire_tag, raw@.take(limit as int), beginning as int, f.view()));
+            assert(tag_matches(wire_tag, encoded@, 0, f.view()));
             if i == 0 {
                 assert(wire_tag.flags & SAME_UUID == 0);
                 assert(raw@.subrange(beginning as int + encoded.len(), beginning as int + encoded.len() + 16) == target_uuid@);
             } else { assert(wire_tag.flags & SAME_UUID != 0); }
-            assert(descriptor_entry(raw@, f.view(), target_uuid@, filesystem_blocks, beginning, wire_tag));
+            descriptor_entry_from_wire(encoded@, raw@, f.view(), target_uuid@, filesystem_blocks, beginning, wire_tag);
             assert(entry_end(beginning, f.view(), wire_tag) == offset);
-            positions = positions.push(beginning);
-            assert forall|j: int| 0 <= j < i + 1 implies
-                #[trigger] descriptor_entry(raw@, f.view(), target_uuid@, filesystem_blocks, positions[j],
-                    canonical_tags(tags@, f.view())[j])
-                && (j > 0 ==> positions[j] == entry_end(positions[j - 1], f.view(), canonical_tags(tags@, f.view())[j - 1])) by {
-                if j < previous_index {
-                    descriptor_entry_prefix_frame(previous_wire, raw@, beginning, f.view(), target_uuid@,
-                        filesystem_blocks, previous_positions[j], canonical_tags(tags@, f.view())[j]);
-                }
+            assert forall|j: int| 0 <= j < previous_tags.len() implies
+                #[trigger] entry_end(previous_positions[j], f.view(), previous_tags[j]) <= beginning by {
+                assert(previous_tags[j] == canonical_tags(tags@, f.view())[j]);
             }
-            assert(descriptor_witness(raw@, f.view(), target_uuid@, filesystem_blocks,
-                canonical_tags(tags@, f.view()).take(i as int + 1), positions));
+            descriptor_witness_prefix_frame(previous_wire, raw@, beginning, f.view(), target_uuid@,
+                filesystem_blocks, previous_tags, previous_positions);
+            descriptor_witness_push(raw@, f.view(), target_uuid@, filesystem_blocks,
+                previous_tags, previous_positions, wire_tag, beginning);
+            positions = positions.push(beginning);
+            let processed = canonical_tags(tags@, f.view()).take(i as int + 1);
+            assert(processed =~= previous_tags.push(wire_tag));
+            assert(descriptor_witness(raw@, f.view(), target_uuid@, filesystem_blocks, processed, positions));
         }
         i += 1;
     }
     let ghost before_checksum = raw@;
+    assert(bytes::be32(before_checksum, 0) == features::MAGIC
+        && bytes::be32(before_checksum, 4) == 1 && bytes::be32(before_checksum, 8) == sequence);
     assert(canonical_tags(tags@, f.view()).take(i as int) =~= canonical_tags(tags@, f.view()));
     if !features::stamp_metadata_checksum(f, uuid_seed, &mut raw) { return None; }
     proof {
         assert(raw@.take(limit as int) =~= before_checksum.take(limit as int));
-        assert forall|j: int| 0 <= j < positions.len() implies
-            #[trigger] descriptor_entry(raw@, f.view(), target_uuid@, filesystem_blocks, positions[j],
-                canonical_tags(tags@, f.view())[j])
-            && (j > 0 ==> positions[j] == entry_end(positions[j - 1], f.view(), canonical_tags(tags@, f.view())[j - 1])) by {
-            descriptor_entry_prefix_frame(before_checksum, raw@, limit as nat, f.view(), target_uuid@,
-                filesystem_blocks, positions[j], canonical_tags(tags@, f.view())[j]);
-        }
+        equal_prefix_preserves_be32(before_checksum, raw@, limit as int, 0);
+        equal_prefix_preserves_be32(before_checksum, raw@, limit as int, 4);
+        equal_prefix_preserves_be32(before_checksum, raw@, limit as int, 8);
+        assert(bytes::be32(raw@, 0) == features::MAGIC
+            && bytes::be32(raw@, 4) == 1 && bytes::be32(raw@, 8) == sequence);
+        assert(features::metadata_valid(f.view(), uuid_seed, raw@));
+        descriptor_header_checked(raw@, f.view(), sequence, uuid_seed);
+        assert(raw.len() == block_bytes && target_uuid.len() == 16 && 0 < tags.len() <= MAX_TAGS);
+        descriptor_witness_prefix_frame(before_checksum, raw@, limit as nat, f.view(), target_uuid@,
+            filesystem_blocks, canonical_tags(tags@, f.view()), positions);
         assert(descriptor_witness(raw@, f.view(), target_uuid@, filesystem_blocks,
             canonical_tags(tags@, f.view()), positions));
     }
-    assert(exists|witness: Seq<nat>| descriptor_witness(raw@, f.view(), target_uuid@,
-        filesystem_blocks, canonical_tags(tags@, f.view()), witness)) by {
-        assert(descriptor_witness(raw@, f.view(), target_uuid@, filesystem_blocks,
-            canonical_tags(tags@, f.view()), positions));
-    }
-    Some(raw)
+    finish_descriptor(raw, f, sequence, uuid_seed, target_uuid, filesystem_blocks,
+        tags, block_bytes, Ghost(positions))
 }
 
 pub open spec fn payload_sum(f: features::FeatureView, seed: u32, sequence: u32, stored: Seq<u8>) -> u32 {
@@ -867,6 +1004,7 @@ pub fn parse_revoke(raw: &[u8], f: Features, sequence: u32, uuid_seed: u32,
     let entries = (count - 16) / stride;
     proof {
         vstd::arithmetic::div_mod::lemma_fundamental_div_mod(count as int - 16, stride as int);
+        vstd::arithmetic::mul::lemma_mul_is_commutative((count as int - 16) / (stride as int), stride as int);
         assert(entries as int == (count as int - 16) / (stride as int));
         assert((count as int - 16) % (stride as int) == 0);
         assert(count == 16 + entries * stride) by (nonlinear_arith)

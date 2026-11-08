@@ -184,11 +184,178 @@ pub open spec fn publication_valid(rows: Seq<Snapshot>, indices: Seq<usize>, aft
             && row_valid(after[i]) && after[i].reserved_space == 0 && after[i].reserved_inodes == 0
             && rank(row_key(after[i])) == rank(row_key(rows[indices[i] as int]))
 }
+
+proof fn rank_identifies_key(a: Key, b: Key)
+    ensures rank(a) == rank(b) ==> a == b,
+{
+    if rank(a) == rank(b) {
+        match (a.kind, b.kind) {
+            (QuotaType::User, QuotaType::User) => { assert(a.id == b.id); },
+            (QuotaType::Group, QuotaType::Group) => { assert(a.id == b.id); },
+            (QuotaType::Project, QuotaType::Project) => { assert(a.id == b.id); },
+            _ => { assert(false); },
+        }
+    }
+}
+proof fn key_prefix_grows(keys: Seq<Key>, count: int)
+    requires 0 <= count < keys.len(),
+    ensures forall|key: Key| #[trigger] keys_contain(keys.subrange(0, count + 1), key)
+        == (keys_contain(keys.subrange(0, count), key) || rank(keys[count]) == rank(key)),
+{
+    assert forall|key: Key| keys_contain(keys.subrange(0, count + 1), key)
+        == (keys_contain(keys.subrange(0, count), key) || rank(keys[count]) == rank(key)) by {
+        if keys_contain(keys.subrange(0, count + 1), key) {
+            let at = choose|at: int| 0 <= at < count + 1 && #[trigger] rank(keys.subrange(0, count + 1)[at]) == rank(key);
+            if at < count { assert(rank(keys.subrange(0, count)[at]) == rank(key)); }
+            else { assert(at == count); }
+        }
+        if keys_contain(keys.subrange(0, count), key) {
+            let at = choose|at: int| 0 <= at < count && rank(keys.subrange(0, count)[at]) == rank(key);
+            assert(rank(keys.subrange(0, count + 1)[at]) == rank(key));
+        }
+        if rank(keys[count]) == rank(key) { assert(rank(keys.subrange(0, count + 1)[count]) == rank(key)); }
+    }
+}
+proof fn subjects_prefix_is_fresh(keys: Seq<Key>, count: int)
+    requires subjects_model(keys), 0 <= count < keys.len(),
+    ensures !keys_contain(keys.subrange(0, count), keys[count]),
+{
+    if keys_contain(keys.subrange(0, count), keys[count]) {
+        let at = choose|at: int| 0 <= at < count && rank(keys.subrange(0, count)[at]) == rank(keys[count]);
+        rank_identifies_key(keys[at], keys[count]);
+        assert(keys[at].kind != keys[count].kind);
+        assert(false);
+    }
+}
+proof fn sorted_row_key_is_unique(rows: Seq<Snapshot>, a: int, b: int)
+    requires sorted(rows), 0 <= a < rows.len(), 0 <= b < rows.len(),
+    ensures rank(row_key(rows[a])) == rank(row_key(rows[b])) ==> a == b,
+{
+    if a < b { assert(rank(row_key(rows[a])) < rank(row_key(rows[b]))); }
+    if b < a { assert(rank(row_key(rows[b])) < rank(row_key(rows[a]))); }
+}
+proof fn publication_push(rows: Seq<Snapshot>, indices: Seq<usize>, after: Seq<Snapshot>, at: usize, row: Snapshot)
+    requires publication_valid(rows, indices, after), indices.len() < 6, at < rows.len(),
+        row_valid(row), row.reserved_space == 0, row.reserved_inodes == 0,
+        rank(row_key(row)) == rank(row_key(rows[at as int])),
+        forall|i: int| 0 <= i < indices.len() ==> indices[i] != at,
+    ensures publication_valid(rows, indices.push(at), after.push(row)),
+{
+    assert forall|i: int, j: int| 0 <= i < j < indices.len() + 1
+        implies indices.push(at)[i] != indices.push(at)[j] by {
+        if j == indices.len() { assert(indices[i] != at); }
+        else { assert(indices[i] != indices[j]); }
+    }
+}
 spec fn account_view(a: Account) -> Snapshot {
     Snapshot { seed: a.seed, reserved_space: a.reserved_space, reserved_inodes: a.reserved_inodes }
 }
 spec fn account_views(accounts: Seq<Account>) -> Seq<Snapshot> {
     accounts.map(|i: int, a: Account| account_view(a))
+}
+
+proof fn account_views_facts(accounts: Seq<Account>)
+    ensures account_views(accounts).len() == accounts.len(),
+        forall|i: int| 0 <= i < accounts.len()
+            ==> #[trigger] account_views(accounts)[i] == account_view(accounts[i]),
+{
+    reveal(account_views);
+}
+proof fn account_views_push(accounts: Seq<Account>, account: Account)
+    ensures account_views(accounts.push(account)) == account_views(accounts).push(account_view(account)),
+{
+    account_views_facts(accounts); account_views_facts(accounts.push(account));
+    assert(account_views(accounts.push(account)) =~= account_views(accounts).push(account_view(account)));
+}
+proof fn account_views_update(accounts: Seq<Account>, i: int, account: Account)
+    requires 0 <= i < accounts.len(),
+    ensures account_views(accounts.update(i, account)) == account_views(accounts).update(i, account_view(account)),
+{
+    account_views_facts(accounts); account_views_facts(accounts.update(i, account));
+    assert(account_views(accounts.update(i, account)) =~= account_views(accounts).update(i, account_view(account)));
+}
+spec fn account_rank_at(accounts: Seq<Account>, i: int) -> nat {
+    rank(row_key(account_view(accounts[i])))
+}
+proof fn sorted_account_projection(accounts: Seq<Account>)
+    requires sorted(account_views(accounts)),
+    ensures forall|i: int, j: int| 0 <= i < j < accounts.len()
+        ==> #[trigger] account_rank_at(accounts, i) < #[trigger] account_rank_at(accounts, j),
+{
+    account_views_facts(accounts);
+    assert forall|i: int, j: int| 0 <= i < j < accounts.len()
+        implies account_rank_at(accounts, i) < account_rank_at(accounts, j) by {
+        assert(rank(row_key(account_views(accounts)[i])) < rank(row_key(account_views(accounts)[j])));
+    }
+}
+proof fn ledger_accounts_facts(accounts: Seq<Account>)
+    requires ledger_valid(account_views(accounts)),
+    ensures accounts.len() <= MAX_ACCOUNTS,
+        forall|i: int| 0 <= i < accounts.len() ==> #[trigger] row_valid(account_view(accounts[i]))
+            && accounts[i].reserved_space == 0 && accounts[i].reserved_inodes == 0,
+        forall|i: int, j: int| 0 <= i < j < accounts.len()
+            ==> #[trigger] account_rank_at(accounts, i) < #[trigger] account_rank_at(accounts, j),
+{
+    account_views_facts(accounts); sorted_account_projection(accounts);
+    assert forall|i: int| 0 <= i < accounts.len()
+        implies row_valid(account_view(accounts[i])) && accounts[i].reserved_space == 0
+            && accounts[i].reserved_inodes == 0 by {
+        assert(row_valid(account_views(accounts)[i]));
+    }
+}
+proof fn seed_coverage_push(rows: Seq<Snapshot>, row: Snapshot, seeds: Seq<Seed>, count: int)
+    requires 0 <= count < seeds.len(), row.seed == seeds[count],
+        forall|k: int| 0 <= k < count ==> rows_contain_seed(rows, seeds[k]),
+        forall|j: int| 0 <= j < rows.len() ==> input_contains_seed(seeds.subrange(0, count), rows[j].seed),
+    ensures (forall|k: int| 0 <= k <= count ==> #[trigger] rows_contain_seed(rows.push(row), seeds[k])),
+        (forall|j: int| 0 <= j < rows.len() + 1
+            ==> #[trigger] input_contains_seed(seeds.subrange(0, count + 1), rows.push(row)[j].seed)),
+{
+    assert forall|k: int| 0 <= k <= count implies rows_contain_seed(rows.push(row), seeds[k]) by {
+        if k == count {
+            assert(rows.push(row)[rows.len() as int].seed == seeds[k]);
+        } else {
+            let j = choose|j: int| 0 <= j < rows.len() && rows[j].seed == seeds[k];
+            assert(rows.push(row)[j].seed == seeds[k]);
+        }
+    }
+    assert forall|j: int| 0 <= j < rows.len() + 1
+        implies input_contains_seed(seeds.subrange(0, count + 1), rows.push(row)[j].seed) by {
+        if j == rows.len() {
+            assert(seeds.subrange(0, count + 1)[count] == rows.push(row)[j].seed);
+        } else {
+            let k = choose|k: int| 0 <= k < count && seeds.subrange(0, count)[k] == rows[j].seed;
+            assert(seeds.subrange(0, count + 1)[k] == rows.push(row)[j].seed);
+        }
+    }
+}
+proof fn seed_coverage_swap(rows: Seq<Snapshot>, seeds: Seq<Seed>, a: int, b: int)
+    requires 0 <= a < rows.len(), 0 <= b < rows.len(), a != b,
+        forall|j: int| 0 <= j < rows.len() ==> input_contains_seed(seeds, rows[j].seed),
+    ensures (forall|seed: Seed| #[trigger] rows_contain_seed(rows.update(a, rows[b]).update(b, rows[a]), seed)
+            == rows_contain_seed(rows, seed)),
+        (forall|j: int| 0 <= j < rows.len()
+            ==> #[trigger] input_contains_seed(seeds, rows.update(a, rows[b]).update(b, rows[a])[j].seed)),
+{
+    let swapped = rows.update(a, rows[b]).update(b, rows[a]);
+    assert forall|seed: Seed| rows_contain_seed(swapped, seed) == rows_contain_seed(rows, seed) by {
+        if rows_contain_seed(rows, seed) {
+            let old = choose|j: int| 0 <= j < rows.len() && rows[j].seed == seed;
+            let at = if old == a { b } else if old == b { a } else { old };
+            assert(0 <= at < swapped.len() && swapped[at].seed == seed);
+        }
+        if rows_contain_seed(swapped, seed) {
+            let at = choose|j: int| 0 <= j < swapped.len() && swapped[j].seed == seed;
+            let old = if at == a { b } else if at == b { a } else { at };
+            assert(0 <= old < rows.len() && rows[old].seed == seed);
+        }
+    }
+    assert forall|j: int| 0 <= j < rows.len()
+        implies input_contains_seed(seeds, swapped[j].seed) by {
+        let old = if j == a { b } else if j == b { a } else { j };
+        assert(swapped[j] == rows[old]);
+        assert(input_contains_seed(seeds, rows[old].seed));
+    }
 }
 spec fn insertion_sorted(rows: Seq<Snapshot>, hole: int) -> bool {
     0 <= hole < rows.len()
@@ -196,6 +363,22 @@ spec fn insertion_sorted(rows: Seq<Snapshot>, hole: int) -> bool {
             ==> rank(row_key(rows[i])) < rank(row_key(rows[j])))
         && (forall|j: int| hole < j < rows.len() ==> rank(row_key(rows[hole])) < rank(row_key(rows[j])))
         && (forall|i: int, j: int| 0 <= i < j < rows.len() ==> rank(row_key(rows[i])) != rank(row_key(rows[j])))
+}
+proof fn insertion_from_fresh_push(rows: Seq<Snapshot>, row: Snapshot)
+    requires sorted(rows),
+        forall|i: int| 0 <= i < rows.len() ==> rank(row_key(rows[i])) != rank(row_key(row)),
+    ensures insertion_sorted(rows.push(row), rows.len() as int),
+{
+    assert forall|i: int, j: int| 0 <= i < j < rows.len() + 1
+        && i != rows.len() && j != rows.len()
+        implies rank(row_key(rows.push(row)[i])) < rank(row_key(rows.push(row)[j])) by {
+        assert(j < rows.len());
+    }
+    assert forall|i: int, j: int| 0 <= i < j < rows.len() + 1
+        implies rank(row_key(rows.push(row)[i])) != rank(row_key(rows.push(row)[j])) by {
+        if j == rows.len() { assert(rank(row_key(rows[i])) != rank(row_key(row))); }
+        else { assert(rank(row_key(rows[i])) < rank(row_key(rows[j]))); }
+    }
 }
 proof fn insertion_done(rows: Seq<Snapshot>, hole: int)
     requires insertion_sorted(rows, hole),
@@ -233,24 +416,22 @@ proof fn insertion_step(rows: Seq<Snapshot>, hole: int)
         else { assert(rank(row_key(rows[b])) != rank(row_key(rows[a]))); }
     }
 }
-proof fn publication_preserves_ledger(rows: Seq<Snapshot>, indices: Seq<usize>, after: Seq<Snapshot>)
-    requires ledger_valid(rows), publication_valid(rows, indices, after),
-    ensures ledger_valid(apply_updates(rows, indices, after)),
+
+proof fn publication_prefix(rows: Seq<Snapshot>, indices: Seq<usize>, after: Seq<Snapshot>, count: int)
+    requires publication_valid(rows, indices, after), 0 <= count <= indices.len(),
+    ensures publication_valid(rows, indices.subrange(0, count), after.subrange(0, count)),
+{
+}
+proof fn updates_have_length(rows: Seq<Snapshot>, indices: Seq<usize>, after: Seq<Snapshot>)
+    requires publication_valid(rows, indices, after),
+    ensures apply_updates(rows, indices, after).len() == rows.len(),
     decreases indices.len(),
 {
     if indices.len() > 0 {
-        publication_preserves_ledger(rows, indices.drop_last(), after.drop_last());
-        let prior = apply_updates(rows, indices.drop_last(), after.drop_last());
-        let at = indices.last() as int;
-        assert forall|i: int| 0 <= i < rows.len()
-            implies rank(row_key(prior[i])) == rank(row_key(rows[i])) by {
-            updates_preserve_rank(rows, indices.drop_last(), after.drop_last(), i);
-        }
-        assert forall|i: int, j: int| 0 <= i < j < rows.len()
-            implies rank(row_key(prior.update(at, after.last())[i])) < rank(row_key(prior.update(at, after.last())[j])) by {
-            assert(rank(row_key(prior[i])) == rank(row_key(rows[i])));
-            assert(rank(row_key(prior[j])) == rank(row_key(rows[j])));
-        }
+        publication_prefix(rows, indices, after, indices.len() as int - 1);
+        assert(indices.drop_last() =~= indices.subrange(0, indices.len() as int - 1));
+        assert(after.drop_last() =~= after.subrange(0, after.len() as int - 1));
+        updates_have_length(rows, indices.drop_last(), after.drop_last());
     }
 }
 proof fn updates_preserve_rank(rows: Seq<Snapshot>, indices: Seq<usize>, after: Seq<Snapshot>, i: int)
@@ -259,9 +440,59 @@ proof fn updates_preserve_rank(rows: Seq<Snapshot>, indices: Seq<usize>, after: 
         rank(row_key(apply_updates(rows, indices, after)[i])) == rank(row_key(rows[i])),
     decreases indices.len(),
 {
+    updates_have_length(rows, indices, after);
     if indices.len() > 0 {
+        publication_prefix(rows, indices, after, indices.len() as int - 1);
+        assert(indices.drop_last() =~= indices.subrange(0, indices.len() as int - 1));
+        assert(after.drop_last() =~= after.subrange(0, after.len() as int - 1));
         updates_preserve_rank(rows, indices.drop_last(), after.drop_last(), i);
+        if i == indices.last() as int {
+            assert(rank(row_key(after.last())) == rank(row_key(rows[i])));
+        }
     }
+}
+proof fn publication_preserves_ledger(rows: Seq<Snapshot>, indices: Seq<usize>, after: Seq<Snapshot>)
+    requires ledger_valid(rows), publication_valid(rows, indices, after),
+    ensures ledger_valid(apply_updates(rows, indices, after)),
+    decreases indices.len(),
+{
+    updates_have_length(rows, indices, after);
+    if indices.len() > 0 {
+        publication_prefix(rows, indices, after, indices.len() as int - 1);
+        assert(indices.drop_last() =~= indices.subrange(0, indices.len() as int - 1));
+        assert(after.drop_last() =~= after.subrange(0, after.len() as int - 1));
+        publication_preserves_ledger(rows, indices.drop_last(), after.drop_last());
+        let prior = apply_updates(rows, indices.drop_last(), after.drop_last());
+        updates_have_length(rows, indices.drop_last(), after.drop_last());
+        let at = indices.last() as int;
+        let next = prior.update(at, after.last());
+        assert(0 <= at < rows.len());
+        assert(row_valid(after.last()) && after.last().reserved_space == 0 && after.last().reserved_inodes == 0);
+        assert(rank(row_key(after.last())) == rank(row_key(rows[at])));
+        assert forall|i: int| 0 <= i < rows.len()
+            implies rank(row_key(next[i])) == rank(row_key(rows[i])) by {
+            updates_preserve_rank(rows, indices.drop_last(), after.drop_last(), i);
+            if i == at { assert(next[i] == after.last()); }
+            else { assert(next[i] == prior[i]); }
+        }
+        assert forall|i: int, j: int| 0 <= i < j < rows.len()
+            implies rank(row_key(next[i])) < rank(row_key(next[j])) by {
+            assert(rank(row_key(next[i])) == rank(row_key(rows[i])));
+            assert(rank(row_key(next[j])) == rank(row_key(rows[j])));
+        }
+        assert forall|i: int| 0 <= i < rows.len()
+            implies row_valid(next[i]) && next[i].reserved_space == 0 && next[i].reserved_inodes == 0 by {
+            if i == at { assert(next[i] == after.last()); }
+            else { assert(next[i] == prior[i]); assert(row_valid(prior[i])); }
+        }
+    }
+}
+proof fn apply_updates_push(rows: Seq<Snapshot>, indices: Seq<usize>, after: Seq<Snapshot>, at: usize, row: Snapshot)
+    requires indices.len() == after.len(), at < rows.len(),
+    ensures apply_updates(rows, indices.push(at), after.push(row)) == apply_updates(rows, indices, after).update(at as int, row),
+{
+    assert(indices.push(at).drop_last() =~= indices);
+    assert(after.push(row).drop_last() =~= after);
 }
 
 impl Book {
@@ -337,6 +568,7 @@ fn valid_seed(seed: Seed) -> (r: bool) ensures r == seed_valid(seed) {
         && r.current_space <= MAX_ACCOUNT && r.block_time <= MAX_ACCOUNT && r.inode_time <= MAX_ACCOUNT
 }
 
+
 fn find(accounts: &[Account], key: Key) -> (r: Option<usize>)
     requires sorted(account_views(accounts@)),
     ensures match r {
@@ -344,20 +576,63 @@ fn find(accounts: &[Account], key: Key) -> (r: Option<usize>)
         None => forall|i: int| 0 <= i < accounts.len() ==> rank(row_key(account_view(accounts@[i]))) != rank(key),
     },
 {
+    proof { sorted_account_projection(accounts@); }
     let rank = key_rank(key);
     let mut low = 0usize; let mut high = accounts.len();
     while low < high
         invariant low <= high <= accounts.len(), sorted(account_views(accounts@)),
             rank as nat == crate::quota_reservation::rank(key),
-            forall|i: int| 0 <= i < low ==> crate::quota_reservation::rank(row_key(account_view(accounts@[i]))) < rank,
-            forall|i: int| high <= i < accounts.len() ==> crate::quota_reservation::rank(row_key(account_view(accounts@[i]))) >= rank,
+            forall|i: int, j: int| 0 <= i < j < accounts.len() ==> account_rank_at(accounts@, i) < account_rank_at(accounts@, j),
+            forall|i: int| 0 <= i < low ==> account_rank_at(accounts@, i) < rank,
+            forall|i: int| high <= i < accounts.len() ==> account_rank_at(accounts@, i) >= rank,
         decreases high - low,
     {
         let mid = low + (high - low) / 2;
         let current = key_rank(account_key(accounts[mid]));
-        if current < rank { low = mid + 1; } else { high = mid; }
+        if current < rank {
+            proof {
+                assert forall|i: int| 0 <= i < mid + 1 implies account_rank_at(accounts@, i) < rank by {
+                    if i < low { assert(account_rank_at(accounts@, i) < rank); }
+                    else if i < mid { assert(account_rank_at(accounts@, i) < account_rank_at(accounts@, mid as int)); }
+                    else { assert(i == mid); }
+                }
+            }
+            low = mid + 1;
+        } else {
+            proof {
+                assert forall|i: int| mid <= i < accounts.len() implies account_rank_at(accounts@, i) >= rank by {
+                    if i >= high { assert(account_rank_at(accounts@, i) >= rank); }
+                    else if mid < i { assert(account_rank_at(accounts@, mid as int) < account_rank_at(accounts@, i)); }
+                    else { assert(i == mid); }
+                }
+            }
+            high = mid;
+        }
     }
-    if low < accounts.len() && key_rank(account_key(accounts[low])) == rank { Some(low) } else { None }
+    if low < accounts.len() && key_rank(account_key(accounts[low])) == rank {
+        proof {
+            assert(crate::quota_reservation::rank(row_key(account_view(accounts@[low as int]))) == rank as nat);
+            assert(rank as nat == crate::quota_reservation::rank(key));
+        }
+        Some(low)
+    } else {
+        proof {
+            assert forall|i: int| 0 <= i < accounts.len() implies account_rank_at(accounts@, i) != rank by {
+                if i < low { assert(account_rank_at(accounts@, i) < rank); }
+                else {
+                    assert(low < accounts.len());
+                    if i == low { assert(account_rank_at(accounts@, low as int) != rank); }
+                    else { assert(account_rank_at(accounts@, low as int) < account_rank_at(accounts@, i)); }
+                }
+            }
+            assert forall|i: int| 0 <= i < accounts.len()
+                implies crate::quota_reservation::rank(row_key(account_view(accounts@[i]))) != crate::quota_reservation::rank(key) by {
+                assert(account_rank_at(accounts@, i) != rank);
+                reveal(account_rank_at);
+            }
+        }
+        None
+    }
 }
 
 fn contains(keys: &[Key], key: Key) -> (r: bool) ensures r == keys_contain(keys@, key) {
@@ -498,8 +773,31 @@ impl Book {
             let seed = seeds[i];
             if !valid_seed(seed) { return None; }
             let a = Account { seed, reserved_space: 0, reserved_inodes: 0 };
-            if find(accounts.as_slice(), account_key(a)).is_some() { return None; }
-            accounts.push(a); let mut j = accounts.len() - 1;
+            let key = account_key(a);
+            let found = find(accounts.as_slice(), key);
+            if found.is_some() { return None; }
+            let ghost old_accounts = accounts@;
+            proof {
+                account_views_facts(old_accounts);
+                ledger_accounts_facts(old_accounts);
+                assert forall|k: int| 0 <= k < old_accounts.len()
+                    implies rank(row_key(account_views(old_accounts)[k])) != rank(row_key(account_view(a))) by {
+                    assert(account_views(old_accounts)[k] == account_view(old_accounts[k]));
+                    assert(rank(row_key(account_view(old_accounts[k]))) != rank(key));
+                }
+                insertion_from_fresh_push(account_views(old_accounts), account_view(a));
+                seed_coverage_push(account_views(old_accounts), account_view(a), seeds@, i as int);
+            }
+            accounts.push(a);
+            proof {
+                account_views_push(old_accounts, a); account_views_facts(accounts@);
+                assert forall|n: int| 0 <= n < accounts.len()
+                    implies input_contains_seed(seeds@.subrange(0, i as int + 1), accounts@[n].seed) by {
+                    assert(account_views(accounts@)[n] == account_view(accounts@[n]));
+                    assert(input_contains_seed(seeds@.subrange(0, i as int + 1), account_views(accounts@)[n].seed));
+                }
+            }
+            let mut j = accounts.len() - 1;
             while j > 0
                 invariant j < accounts.len(), accounts.len() == i + 1 <= MAX_ACCOUNTS, i < seeds.len() <= MAX_ACCOUNTS,
                     insertion_sorted(account_views(accounts@), j as int),
@@ -507,6 +805,7 @@ impl Book {
                         && accounts@[k].reserved_space == 0 && accounts@[k].reserved_inodes == 0,
                     (forall|k: int| 0 <= k <= i ==> #[trigger] rows_contain_seed(account_views(accounts@), seeds@[k])),
                     (forall|n: int| 0 <= n < accounts.len() ==> #[trigger] input_contains_seed(seeds@.subrange(0, i as int + 1), accounts@[n].seed)),
+                ensures j == 0 || sorted(account_views(accounts@)),
                 decreases j,
             {
                 if key_rank(account_key(accounts[j - 1])) < key_rank(account_key(accounts[j])) {
@@ -517,14 +816,32 @@ impl Book {
                 proof { insertion_step(account_views(accounts@), j as int); }
                 let old = accounts[j - 1]; accounts[j - 1] = accounts[j]; accounts[j] = old;
                 proof {
+                    account_views_facts(before_swap);
+                    account_views_update(before_swap, j as int - 1, before_swap[j as int]);
+                    account_views_update(before_swap.update(j as int - 1, before_swap[j as int]),
+                        j as int, before_swap[j as int - 1]);
+                    seed_coverage_swap(account_views(before_swap), seeds@.subrange(0, i as int + 1),
+                        j as int - 1, j as int);
                     assert(account_views(accounts@) =~= account_views(before_swap).update(j as int - 1,
                         account_view(before_swap[j as int])).update(j as int, account_view(before_swap[j as int - 1])));
+                    account_views_facts(accounts@);
                 }
                 j -= 1;
             }
-            proof { if j == 0 { insertion_done(account_views(accounts@), 0); } }
+            proof {
+                if j == 0 { insertion_done(account_views(accounts@), 0); }
+                account_views_facts(accounts@);
+                assert forall|k: int| 0 <= k < account_views(accounts@).len()
+                    implies row_valid(account_views(accounts@)[k])
+                        && account_views(accounts@)[k].reserved_space == 0
+                        && account_views(accounts@)[k].reserved_inodes == 0 by {
+                    assert(account_views(accounts@)[k] == account_view(accounts@[k]));
+                }
+                assert(ledger_valid(account_views(accounts@)));
+            }
             i += 1;
         }
+        proof { assert(seeds@.subrange(0, seeds.len() as int) =~= seeds@); account_views_facts(accounts@); }
         Some(Book { accounts, epoch: 0 })
     }
 
@@ -541,10 +858,16 @@ impl Book {
             None => forall|i: int| 0 <= i < self.view().len() ==> rank(row_key(self.view()[i])) != rank(key),
         },
     {
-        proof { use_type_invariant(self); }
+        proof { use_type_invariant(self); account_views_facts(self.accounts@); ledger_accounts_facts(self.accounts@); }
         match find(self.accounts.as_slice(), key) {
             Some(index) => {
                 let a = self.accounts[index];
+                proof {
+                    assert(self.view()[index as int] == account_view(a));
+                    assert(row_valid(account_view(a)));
+                    assert(exists|i: int| 0 <= i < self.view().len()
+                        && self.view()[i] == account_view(a) && rank(row_key(account_view(a))) == rank(key));
+                }
                 Some(Snapshot { seed: a.seed, reserved_space: a.reserved_space, reserved_inodes: a.reserved_inodes })
             },
             None => None,
@@ -610,7 +933,7 @@ impl Book {
             Err((book, _)) => book.wf() && book.view() == self.view() && book.epoch_view() == self.epoch_view(),
         },
     {
-        proof { use_type_invariant(&self); }
+        proof { use_type_invariant(&self); ledger_accounts_facts(self.accounts@); account_views_facts(self.accounts@); }
         if !subjects_valid(from) || !subjects_valid(to) { return Err((self, Error::DuplicateSubject)); }
         if now == 0 || now > MAX_ACCOUNT { return Err((self, Error::InvalidClock)); }
         if self.epoch == 0xffff_ffff_ffff_ffff { return Err((self, Error::EpochExhausted)); }
@@ -618,7 +941,15 @@ impl Book {
         while i < from.len()
             invariant i <= from.len() <= 3, indices.len() == after.len() <= 3, indices.len() <= i,
                 self.wf(), self.epoch < 0xffff_ffff_ffff_ffff, subjects_model(from@), subjects_model(to@),
+                forall|j: int| 0 <= j < self.accounts.len() ==> #[trigger] row_valid(account_view(self.accounts@[j]))
+                    && self.accounts@[j].reserved_space == 0 && self.accounts@[j].reserved_inodes == 0,
+                self.view().len() == self.accounts.len(),
+                forall|j: int| 0 <= j < self.accounts.len() ==> self.view()[j] == account_view(self.accounts@[j]),
                 publication_valid(self.view(), indices@, account_views(after@)),
+                apply_updates(self.view(), indices@, account_views(after@)).len() == self.view().len(),
+                forall|k: int| 0 <= k < indices.len()
+                    ==> keys_contain(from@.subrange(0, i as int), row_key(self.view()[indices@[k] as int]))
+                        && !keys_contain(to@, row_key(self.view()[indices@[k] as int])),
                 apply_updates(self.view(), indices@, account_views(after@))
                     == Seq::new(self.view().len(), |j: int|
                         if keys_contain(from@.subrange(0, i as int), row_key(self.view()[j]))
@@ -631,19 +962,82 @@ impl Book {
             decreases from.len() - i,
         {
             let index = match find(self.accounts.as_slice(), from[i]) { Some(v) => v, None => { return Err((self, Error::MissingAccount)); } };
+            proof {
+                rank_identifies_key(row_key(self.view()[index as int]), from@[i as int]);
+                assert(row_key(self.view()[index as int]) == from@[i as int]);
+                subjects_prefix_is_fresh(from@, i as int);
+                key_prefix_grows(from@, i as int);
+            }
+            let ghost old_indices = indices@;
+            let ghost old_after = after@;
             if !contains(to, from[i]) {
                 let mut a = self.accounts[index];
                 if a.seed.record.current_space < space || a.seed.record.current_inodes < inodes { return Err((self, Error::Underflow)); }
                 a.seed.record.current_space -= space; a.seed.record.current_inodes -= inodes;
-                indices.push(index); after.push(clear_below_soft(a));
+                proof { assert(row_valid(account_view(a))); }
+                let changed = clear_below_soft(a);
+                proof {
+                    assert(freed(self.view()[index as int], space, inodes) == Some(account_view(changed)));
+                    assert forall|k: int| 0 <= k < old_indices.len() implies old_indices[k] != index by {
+                        assert(keys_contain(from@.subrange(0, i as int), row_key(self.view()[old_indices[k] as int])));
+                        if old_indices[k] == index { assert(false); }
+                    }
+                    publication_push(self.view(), old_indices, account_views(old_after), index, account_view(changed));
+                    apply_updates_push(self.view(), old_indices, account_views(old_after), index, account_view(changed));
+                    account_views_push(old_after, changed);
+                }
+                indices.push(index); after.push(changed);
+            }
+            proof {
+                updates_have_length(self.view(), indices@, account_views(after@));
+                assert forall|j: int| 0 <= j < self.view().len()
+                    implies apply_updates(self.view(), indices@, account_views(after@))[j]
+                        == if keys_contain(from@.subrange(0, i as int + 1), row_key(self.view()[j]))
+                            && !keys_contain(to@, row_key(self.view()[j])) {
+                            freed(self.view()[j], space, inodes).unwrap()
+                        } else { self.view()[j] } by {
+                    sorted_row_key_is_unique(self.view(), j, index as int);
+                    if j == index {
+                        assert(row_key(self.view()[j]) == from@[i as int]);
+                    } else { assert(rank(row_key(self.view()[j])) != rank(from@[i as int])); }
+                }
+                assert(apply_updates(self.view(), indices@, account_views(after@)) =~=
+                    Seq::new(self.view().len(), |j: int|
+                        if keys_contain(from@.subrange(0, i as int + 1), row_key(self.view()[j]))
+                            && !keys_contain(to@, row_key(self.view()[j])) {
+                            freed(self.view()[j], space, inodes).unwrap()
+                        } else { self.view()[j] }));
             }
             i += 1;
+        }
+        proof {
+            assert(from@.subrange(0, i as int) =~= from@);
+            assert forall|j: int| 0 <= j < self.view().len()
+                && keys_contain(from@, row_key(self.view()[j])) && !keys_contain(to@, row_key(self.view()[j]))
+                implies freed(self.view()[j], space, inodes).is_some() by {
+                assert(keys_contain(from@.subrange(0, i as int), row_key(self.view()[j])));
+            }
+        }
+        proof {
+            use_type_invariant(&self);
+            ledger_accounts_facts(self.accounts@);
+            account_views_facts(self.accounts@);
         }
         i = 0;
         while i < to.len()
             invariant i <= to.len() <= 3, indices.len() == after.len() <= 6, indices.len() <= from.len() + i,
                 self.wf(), self.epoch < 0xffff_ffff_ffff_ffff, subjects_model(from@), subjects_model(to@),
+                forall|j: int| 0 <= j < self.accounts.len() ==> #[trigger] row_valid(account_view(self.accounts@[j]))
+                    && self.accounts@[j].reserved_space == 0 && self.accounts@[j].reserved_inodes == 0,
+                self.view().len() == self.accounts.len(),
+                forall|j: int| 0 <= j < self.accounts.len() ==> self.view()[j] == account_view(self.accounts@[j]),
                 publication_valid(self.view(), indices@, account_views(after@)),
+                apply_updates(self.view(), indices@, account_views(after@)).len() == self.view().len(),
+                forall|k: int| 0 <= k < indices.len() ==>
+                    (keys_contain(from@, row_key(self.view()[indices@[k] as int]))
+                        && !keys_contain(to@, row_key(self.view()[indices@[k] as int])))
+                    || (!keys_contain(from@, row_key(self.view()[indices@[k] as int]))
+                        && keys_contain(to@.subrange(0, i as int), row_key(self.view()[indices@[k] as int]))),
                 (forall|j: int| #![trigger freed(self.view()[j], space, inodes)]
                     0 <= j < self.view().len() && keys_contain(from@, row_key(self.view()[j]))
                     && !keys_contain(to@, row_key(self.view()[j])) ==> freed(self.view()[j], space, inodes).is_some()),
@@ -662,12 +1056,50 @@ impl Book {
             decreases to.len() - i,
         {
             let index = match find(self.accounts.as_slice(), to[i]) { Some(v) => v, None => { return Err((self, Error::MissingAccount)); } };
+            proof {
+                rank_identifies_key(row_key(self.view()[index as int]), to@[i as int]);
+                assert(row_key(self.view()[index as int]) == to@[i as int]);
+                subjects_prefix_is_fresh(to@, i as int);
+                key_prefix_grows(to@, i as int);
+            }
+            let ghost old_indices = indices@;
+            let ghost old_after = after@;
             if !contains(from, to[i]) {
                 let a = match charge(self.accounts[index], space, inodes, now, false) { Ok(v) => v, Err(e) => { return Err((self, e)); } };
                 let a = match finish(a, space, inodes, space, inodes) { Some(v) => v, None => { return Err((self, Error::Arithmetic)); } };
+                proof {
+                    assert(transferred_row(self.view()[index as int], from@, to@, space, inodes, now) == Some(account_view(a)));
+                    assert forall|k: int| 0 <= k < old_indices.len() implies old_indices[k] != index by {
+                        if old_indices[k] == index { assert(false); }
+                    }
+                    publication_push(self.view(), old_indices, account_views(old_after), index, account_view(a));
+                    apply_updates_push(self.view(), old_indices, account_views(old_after), index, account_view(a));
+                    account_views_push(old_after, a);
+                }
                 indices.push(index); after.push(a);
             }
+            proof {
+                updates_have_length(self.view(), indices@, account_views(after@));
+                assert forall|j: int| 0 <= j < self.view().len()
+                    implies apply_updates(self.view(), indices@, account_views(after@))[j]
+                        == if keys_contain(from@, row_key(self.view()[j])) && !keys_contain(to@, row_key(self.view()[j])) {
+                            freed(self.view()[j], space, inodes).unwrap()
+                        } else if !keys_contain(from@, row_key(self.view()[j]))
+                            && keys_contain(to@.subrange(0, i as int + 1), row_key(self.view()[j])) {
+                            transferred_row(self.view()[j], from@, to@, space, inodes, now).unwrap()
+                        } else { self.view()[j] } by {
+                    sorted_row_key_is_unique(self.view(), j, index as int);
+                    if j == index { assert(row_key(self.view()[j]) == to@[i as int]); }
+                    else { assert(rank(row_key(self.view()[j])) != rank(to@[i as int])); }
+                }
+            }
             i += 1;
+        }
+        proof {
+            assert(to@.subrange(0, i as int) =~= to@);
+            updates_have_length(self.view(), indices@, account_views(after@));
+            assert(apply_updates(self.view(), indices@, account_views(after@)) =~=
+                transferred_rows(self.view(), from@, to@, space, inodes, now));
         }
         let epoch = self.epoch + 1;
         Ok(Prepared { book: self, indices, after, epoch })
@@ -724,13 +1156,22 @@ impl Reservation {
             Err((book, _)) => book.wf() && book.view() == self.before() && book.epoch_view() == self.epoch_view(),
         },
     {
-        proof { use_type_invariant(&self); }
+        proof {
+            use_type_invariant(&self);
+            account_views_facts(self.staged@);
+            assert forall|j: int| 0 <= j < self.staged.len()
+                implies row_valid(account_view(self.staged@[j])) by {
+                assert(self.staged_view()[j] == account_view(self.staged@[j]));
+                assert(row_valid(self.staged_view()[j]));
+            }
+        }
         if actual_space > self.space || actual_inodes > self.inodes {
             return Err((self.cancel_reservation(), Error::ExceedsReservation));
         }
         let mut after = Vec::<Account>::new(); let mut i = 0usize;
         while i < self.staged.len()
             invariant i <= self.staged.len(), after.len() == i, self.wf(),
+                forall|j: int| 0 <= j < self.staged.len() ==> #[trigger] row_valid(account_view(self.staged@[j])),
                 actual_space <= self.space, actual_inodes <= self.inodes,
                 publication_valid(self.before(), self.indices@.subrange(0, i as int), account_views(after@)),
                 forall|j: int| 0 <= j < i
@@ -779,42 +1220,64 @@ impl Prepared {
         proof {
             use_type_invariant(&self);
             publication_preserves_ledger(self.before(), self.indices_view(), self.after_view());
+            account_views_facts(self.after@);
         }
         let ghost before = self.before();
         let ghost planned = self.publication();
-        let mut book = self.book;
-        if self.indices.len() != self.after.len() { return book; }
+        let Book { accounts: mut accounts, epoch: original_epoch } = self.book;
+        if self.indices.len() != self.after.len() { return Book { accounts, epoch: original_epoch }; }
         let mut i = 0usize;
-        // Validate the whole publication plan before touching a single row.
+        // Every defensive check precedes any modification of the plain rows.
         while i < self.indices.len()
             invariant i <= self.indices.len(), self.indices.len() == self.after.len(),
                 publication_valid(before, self.indices@, account_views(self.after@)),
-                book.view() == before, ledger_valid(book.view()),
+                account_views(accounts@) == before, ledger_valid(before),
                 planned == apply_updates(before, self.indices@, account_views(self.after@)), ledger_valid(planned),
             decreases self.indices.len() - i,
         {
-            if self.indices[i] >= book.accounts.len() { return book; }
+            if self.indices[i] >= accounts.len() { return Book { accounts, epoch: original_epoch }; }
             let mut j = 0usize;
             while j < i
                 invariant j <= i < self.indices.len(), distinct_indices(self.indices@),
-                    publication_valid(before, self.indices@, account_views(self.after@)), book.view() == before, ledger_valid(planned),
+                    publication_valid(before, self.indices@, account_views(self.after@)),
+                    account_views(accounts@) == before, ledger_valid(before), ledger_valid(planned),
                 decreases i - j,
-            { if self.indices[j] == self.indices[i] { return book; } j += 1; }
+            { if self.indices[j] == self.indices[i] { return Book { accounts, epoch: original_epoch }; } j += 1; }
             i += 1;
         }
+        proof { account_views_facts(accounts@); }
         i = 0;
         while i < self.indices.len()
             invariant i <= self.indices.len(), self.indices.len() == self.after.len(),
                 publication_valid(before, self.indices@, account_views(self.after@)),
-                account_views(book.accounts@) == apply_updates(before,
+                account_views(accounts@) == apply_updates(before,
                     self.indices@.subrange(0, i as int), account_views(self.after@).subrange(0, i as int)),
                 planned == apply_updates(before, self.indices@, account_views(self.after@)), ledger_valid(planned),
-                book.accounts.len() == before.len(),
+                accounts.len() == before.len(),
             decreases self.indices.len() - i,
         {
-            book.accounts[self.indices[i]] = self.after[i]; i += 1;
+            let ghost old_accounts = accounts@;
+            proof {
+                account_views_facts(self.after@);
+                account_views_update(old_accounts, self.indices@[i as int] as int, self.after@[i as int]);
+                apply_updates_push(before, self.indices@.subrange(0, i as int),
+                    account_views(self.after@).subrange(0, i as int), self.indices@[i as int], account_view(self.after@[i as int]));
+            }
+            accounts[self.indices[i]] = self.after[i];
+            proof {
+                assert(self.indices@.subrange(0, i as int + 1) =~=
+                    self.indices@.subrange(0, i as int).push(self.indices@[i as int]));
+                assert(account_views(self.after@).subrange(0, i as int + 1) =~=
+                    account_views(self.after@).subrange(0, i as int).push(account_view(self.after@[i as int])));
+            }
+            i += 1;
         }
-        book.epoch = self.epoch; book
+        proof {
+            assert(self.indices@.subrange(0, self.indices.len() as int) =~= self.indices@);
+            assert(account_views(self.after@).subrange(0, self.after.len() as int) =~= account_views(self.after@));
+            assert(account_views(accounts@) == planned);
+        }
+        Book { accounts, epoch: self.epoch }
     }
 }
 

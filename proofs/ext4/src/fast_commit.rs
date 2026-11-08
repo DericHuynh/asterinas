@@ -260,6 +260,31 @@ impl Scan {
     }
 }
 
+// Unsealed local state may be mutated or dropped while parsing. It becomes a
+// public Scan only through finish_scan after the complete invariant is proved.
+struct ScanDraft {
+    records: Vec<Record>, committed: usize, committed_end: usize,
+    tid: u32, inode_bytes: usize, stop: Stop,
+    source: Ghost<Seq<u8>>, positions: Ghost<Seq<usize>>, block_bytes: Ghost<usize>,
+}
+impl ScanDraft {
+    spec fn view(&self) -> ScanView {
+        ScanView { source: self.source@, positions: self.positions@,
+            records: record_views(self.records@), committed: self.committed as nat,
+            committed_end: self.committed_end as nat, tid: self.tid,
+            inode_bytes: self.inode_bytes as nat, block_bytes: self.block_bytes@ as nat }
+    }
+    spec fn wf(&self) -> bool { valid_scan(self.view()) }
+}
+fn finish_scan(draft: ScanDraft) -> (r: Scan)
+    requires draft.wf(),
+    ensures r.wf(), r.view() == draft.view(),
+{
+    let ScanDraft { records, committed, committed_end, tid, inode_bytes, stop,
+        source, positions, block_bytes } = draft;
+    Scan { records, committed, committed_end, tid, inode_bytes, stop, source, positions, block_bytes }
+}
+
 /// Scan a complete captured fast-commit area. CRC starts at zero and resets
 /// after each tail. Only records through a matching checksum-valid TAIL are
 /// exposed. Exhausted resources reject the area rather than silently losing a
@@ -272,7 +297,6 @@ pub fn scan(raw: &[u8], block_bytes: usize, inode_bytes: usize,
             && scanned.view().inode_bytes == inode_bytes && scanned.view().records.len() <= record_budget,
         Err(_) => true,
     },
-    no_unwind
 {
     proof { reveal(valid_scan); reveal(checked_prefix); }
     if !crate::block_size::valid(block_bytes) || inode_bytes < 128 || inode_bytes > 65536
@@ -280,12 +304,12 @@ pub fn scan(raw: &[u8], block_bytes: usize, inode_bytes: usize,
         return Err(Error::Geometry);
     }
     if record_budget == 0 || record_budget > MAX_RECORDS { return Err(Error::ResourceLimit); }
-    let mut result = Scan { records: Vec::new(), committed: 0, committed_end: 0,
+    let mut result = ScanDraft { records: Vec::new(), committed: 0, committed_end: 0,
         tid: expected_tid, inode_bytes, stop: Stop::EndOfArea,
         source: Ghost(raw@), positions: Ghost(Seq::empty()), block_bytes: Ghost(block_bytes) };
-    if raw.len() == 0 { result.stop = Stop::EmptyArea; return Ok(result); }
+    if raw.len() == 0 { result.stop = Stop::EmptyArea; return Ok(finish_scan(result)); }
     if bytes::read_le16(raw, 0).unwrap() != HEAD {
-        result.stop = Stop::EmptyArea; return Ok(result);
+        result.stop = Stop::EmptyArea; return Ok(finish_scan(result));
     }
     let mut offset = 0usize; let mut checksum = 0u32;
     proof { reveal(prefix_crc); }
@@ -312,7 +336,7 @@ pub fn scan(raw: &[u8], block_bytes: usize, inode_bytes: usize,
         let length = bytes::read_le16(raw, offset + 2).unwrap() as usize;
         if length > remaining - 4 || !value_length_valid(tag, length, inode_bytes) {
             if result.committed == 0 { return Err(Error::Malformed); }
-            result.stop = Stop::TornSuffix; return Ok(result);
+            result.stop = Stop::TornSuffix; return Ok(finish_scan(result));
         }
         if result.records.len() >= record_budget { return Err(Error::ResourceLimit); }
         let end = offset + 4 + length;
@@ -320,7 +344,7 @@ pub fn scan(raw: &[u8], block_bytes: usize, inode_bytes: usize,
         if tag == HEAD {
             if bytes::read_le32(value, 0).unwrap() != 0 { return Err(Error::UnsupportedFeatures); }
             if bytes::read_le32(value, 4).unwrap() != expected_tid {
-                result.stop = Stop::DifferentTransaction; return Ok(result);
+                result.stop = Stop::DifferentTransaction; return Ok(finish_scan(result));
             }
         }
         let ghost previous_positions = result.positions@;
@@ -339,7 +363,7 @@ pub fn scan(raw: &[u8], block_bytes: usize, inode_bytes: usize,
             if bytes::read_le32(value, 0).unwrap() != expected_tid
                 || bytes::read_le32(value, 4).unwrap() != checksum {
                 if result.committed == 0 { return Err(Error::BadChecksum); }
-                result.stop = Stop::TornSuffix; return Ok(result);
+                result.stop = Stop::TornSuffix; return Ok(finish_scan(result));
             }
             result.committed = result.records.len(); result.committed_end = end;
             checksum = 0;
@@ -354,7 +378,7 @@ pub fn scan(raw: &[u8], block_bytes: usize, inode_bytes: usize,
         }
         offset = end;
     }
-    Ok(result)
+    Ok(finish_scan(result))
 }
 
 pub struct SegmentView { pub begin: nat, pub tail: nat, pub end: nat }
@@ -447,62 +471,25 @@ pub struct Builder {
     segments: Ghost<Seq<SegmentView>>,
 }
 
-fn grow(raw: &mut Vec<u8>, block_bytes: usize, byte_budget: usize) -> (r: bool)
-    ensures r == (old(raw).len() <= byte_budget && block_bytes <= byte_budget - old(raw).len()),
-        final(raw)@ == if r { old(raw)@ + Seq::new(block_bytes as nat, |i: int| 0u8) } else { old(raw)@ },
-        final(raw).len() as nat <= if r { byte_budget as nat } else { old(raw).len() as nat },
-{
-    let ghost before = raw@;
-    if raw.len() > byte_budget || block_bytes > byte_budget - raw.len() { return false; }
-    let mut i = 0usize;
-    while i < block_bytes
-        invariant i <= block_bytes, raw.len() == before.len() + i, raw.len() <= byte_budget,
-            before.len() + block_bytes <= byte_budget,
-            raw@ == before + Seq::new(i as nat, |j: int| 0u8),
-        decreases block_bytes - i,
-    { raw.push(0); i += 1; }
-    true
+// Consuming a sealed builder transfers its bytes into this private draft.
+// Every ordinary outcome is checked again before a Builder is returned.
+struct BuilderDraft {
+    raw: Vec<u8>, cursor: usize, checksum: u32, records: usize,
+    committed_end: usize, pending_records: usize,
+    tid: u32, block_bytes: usize, inode_bytes: usize, byte_budget: usize,
+    segments: Ghost<Seq<SegmentView>>,
 }
-
-impl Builder {
-    pub closed spec fn view(&self) -> BuilderView {
+impl BuilderDraft {
+    spec fn view(&self) -> BuilderView {
         BuilderView { raw: self.raw@, cursor: self.cursor as nat, checksum: self.checksum,
             records: self.records as nat, committed_end: self.committed_end as nat,
             pending: self.pending_records as nat, tid: self.tid, block_bytes: self.block_bytes as nat,
             inode_bytes: self.inode_bytes as nat, byte_budget: self.byte_budget as nat, segments: self.segments@ }
     }
-    pub open spec fn wf(&self) -> bool { valid_builder(self.view()) }
-    #[verifier::type_invariant]
-    spec fn invariant(self) -> bool { self.wf() }
+    spec fn wf(&self) -> bool { valid_builder(self.view()) }
 
-    pub fn new(block_bytes: usize, inode_bytes: usize, tid: u32, byte_budget: usize)
-        -> (r: Result<Self, Error>)
-        ensures match r {
-            Ok(builder) => builder.wf() && builder.view().tid == tid
-                && builder.view().block_bytes == block_bytes && builder.view().inode_bytes == inode_bytes
-                && builder.view().byte_budget == byte_budget && builder.view().committed_end == 0
-                && builder.view().pending == 0 && builder.view().records == 1 && builder.view().segments.len() == 0,
-            Err(_) => true,
-        },
-    {
-        proof { reveal(valid_builder); }
-        if !crate::block_size::valid(block_bytes) || inode_bytes < 128 || inode_bytes > 65536
-            || byte_budget < block_bytes || byte_budget > MAX_LOG_BYTES { return Err(Error::Geometry); }
-        let mut raw = Vec::<u8>::new();
-        if !grow(&mut raw, block_bytes, byte_budget) { return Err(Error::ResourceLimit); }
-        put16(&mut raw, 0, HEAD); put16(&mut raw, 2, 8);
-        put32(&mut raw, 4, 0); put32(&mut raw, 8, tid);
-        assert(bytes::le16(raw@, 0) == HEAD && bytes::le16(raw@, 2) == 8);
-        assert(bytes::le32(raw@, 4) == 0 && bytes::le32(raw@, 8) == tid);
-        let checksum = crc::crc32c(0, &raw[..12]);
-        Ok(Builder { raw, cursor: 12, checksum, records: 1, committed_end: 0,
-            pending_records: 0, tid, block_bytes, inode_bytes, byte_budget,
-            segments: Ghost(Seq::empty()) })
-    }
-
-    /// Caller-supplied records may not inject HEAD, TAIL or PAD markers.
-    /// Space for a possible PAD and final TAIL is reserved in the tag budget.
-    pub fn append(&mut self, tag: u16, value: &[u8]) -> (r: Result<(), Error>)
+    fn append_raw(&mut self, tag: u16, value: &[u8]) -> (r: Result<(), Error>)
+        requires old(self).wf(),
         ensures final(self).wf(),
             final(self).view().tid == old(self).view().tid
                 && final(self).view().block_bytes == old(self).view().block_bytes
@@ -516,8 +503,8 @@ impl Builder {
                 Ok(()) => final(self).view().pending == old(self).view().pending + 1,
                 Err(_) => final(self).view() == old(self).view(),
             },
-        no_unwind
-    {        proof { use_type_invariant(&*self); reveal(valid_builder); }
+    {
+        proof { reveal(valid_builder); }
         let ghost before = self.view();
         if tag < ADD_RANGE || tag > INODE || !value_length_valid(tag, value.len(), self.inode_bytes) {
             return Err(Error::Malformed);
@@ -579,7 +566,8 @@ impl Builder {
         Ok(())
     }
 
-    pub fn commit(&mut self) -> (r: Result<(), Error>)
+    fn commit_raw(&mut self) -> (r: Result<(), Error>)
+        requires old(self).wf(),
         ensures final(self).wf(),
             final(self).view().tid == old(self).view().tid
                 && final(self).view().block_bytes == old(self).view().block_bytes
@@ -593,8 +581,8 @@ impl Builder {
                     && final(self).view().segments.len() == old(self).view().segments.len() + 1,
                 Err(_) => final(self).view() == old(self).view(),
             },
-        no_unwind
-    {        proof { use_type_invariant(&*self); reveal(valid_builder); }
+    {
+        proof { reveal(valid_builder); }
         let ghost before = self.view();
         if self.pending_records == 0 && self.committed_end != 0 { return Err(Error::NoChanges); }
         let remaining = self.raw.len() - self.cursor;
@@ -636,6 +624,125 @@ impl Builder {
             begin: before.committed_end, tail: tail_position as nat, end: self.committed_end as nat }));
         proof { assert(self.wf()); }
         Ok(())
+    }
+
+}
+
+fn builder_into_draft(owner: Builder) -> (r: BuilderDraft)
+    ensures owner.wf(), r.wf(), r.view() == owner.view(),
+{
+    proof { use_type_invariant(&owner); }
+    let Builder { raw, cursor, checksum, records, committed_end, pending_records,
+        tid, block_bytes, inode_bytes, byte_budget, segments } = owner;
+    BuilderDraft { raw, cursor, checksum, records, committed_end, pending_records,
+        tid, block_bytes, inode_bytes, byte_budget, segments }
+}
+fn finish_builder(draft: BuilderDraft) -> (r: Builder)
+    requires draft.wf(),
+    ensures r.wf(), r.view() == draft.view(),
+{
+    let BuilderDraft { raw, cursor, checksum, records, committed_end, pending_records,
+        tid, block_bytes, inode_bytes, byte_budget, segments } = draft;
+    Builder { raw, cursor, checksum, records, committed_end, pending_records,
+        tid, block_bytes, inode_bytes, byte_budget, segments }
+}
+
+fn grow(raw: &mut Vec<u8>, block_bytes: usize, byte_budget: usize) -> (r: bool)
+    ensures r == (old(raw).len() <= byte_budget && block_bytes <= byte_budget - old(raw).len()),
+        final(raw)@ == if r { old(raw)@ + Seq::new(block_bytes as nat, |i: int| 0u8) } else { old(raw)@ },
+        final(raw).len() as nat <= if r { byte_budget as nat } else { old(raw).len() as nat },
+{
+    let ghost before = raw@;
+    if raw.len() > byte_budget || block_bytes > byte_budget - raw.len() { return false; }
+    let mut i = 0usize;
+    while i < block_bytes
+        invariant i <= block_bytes, raw.len() == before.len() + i, raw.len() <= byte_budget,
+            before.len() + block_bytes <= byte_budget,
+            raw@ == before + Seq::new(i as nat, |j: int| 0u8),
+        decreases block_bytes - i,
+    { raw.push(0); i += 1; }
+    true
+}
+
+impl Builder {
+    pub closed spec fn view(&self) -> BuilderView {
+        BuilderView { raw: self.raw@, cursor: self.cursor as nat, checksum: self.checksum,
+            records: self.records as nat, committed_end: self.committed_end as nat,
+            pending: self.pending_records as nat, tid: self.tid, block_bytes: self.block_bytes as nat,
+            inode_bytes: self.inode_bytes as nat, byte_budget: self.byte_budget as nat, segments: self.segments@ }
+    }
+    pub open spec fn wf(&self) -> bool { valid_builder(self.view()) }
+    #[verifier::type_invariant]
+    spec fn invariant(self) -> bool { self.wf() }
+
+    pub fn new(block_bytes: usize, inode_bytes: usize, tid: u32, byte_budget: usize)
+        -> (r: Result<Self, Error>)
+        ensures match r {
+            Ok(builder) => builder.wf() && builder.view().tid == tid
+                && builder.view().block_bytes == block_bytes && builder.view().inode_bytes == inode_bytes
+                && builder.view().byte_budget == byte_budget && builder.view().committed_end == 0
+                && builder.view().pending == 0 && builder.view().records == 1 && builder.view().segments.len() == 0,
+            Err(_) => true,
+        },
+    {
+        proof { reveal(valid_builder); }
+        if !crate::block_size::valid(block_bytes) || inode_bytes < 128 || inode_bytes > 65536
+            || byte_budget < block_bytes || byte_budget > MAX_LOG_BYTES { return Err(Error::Geometry); }
+        let mut raw = Vec::<u8>::new();
+        if !grow(&mut raw, block_bytes, byte_budget) { return Err(Error::ResourceLimit); }
+        put16(&mut raw, 0, HEAD); put16(&mut raw, 2, 8);
+        put32(&mut raw, 4, 0); put32(&mut raw, 8, tid);
+        assert(bytes::le16(raw@, 0) == HEAD && bytes::le16(raw@, 2) == 8);
+        assert(bytes::le32(raw@, 4) == 0 && bytes::le32(raw@, 8) == tid);
+        let checksum = crc::crc32c(0, &raw[..12]);
+        Ok(Builder { raw, cursor: 12, checksum, records: 1, committed_end: 0,
+            pending_records: 0, tid, block_bytes, inode_bytes, byte_budget,
+            segments: Ghost(Seq::empty()) })
+    }
+
+    /// Caller-supplied records may not inject HEAD, TAIL or PAD markers.
+    /// Space for a possible PAD and final TAIL is reserved in the tag budget.
+    /// Consumes the current owner. Rejection returns that owner unchanged.
+    pub fn append(self, tag: u16, value: &[u8]) -> (r: Result<Self, (Self, Error)>)
+        ensures self.wf(), match r {
+            Ok(next) => next.wf()
+                && next.view().tid == self.view().tid
+                && next.view().block_bytes == self.view().block_bytes
+                && next.view().inode_bytes == self.view().inode_bytes
+                && next.view().byte_budget == self.view().byte_budget
+                && next.view().segments == self.view().segments
+                && next.view().committed_end == self.view().committed_end
+                && next.view().raw.take(self.view().committed_end as int)
+                    == self.view().raw.take(self.view().committed_end as int)
+                && next.view().pending == self.view().pending + 1,
+            Err((owner, _)) => owner.wf() && owner.view() == self.view(),
+        },
+    {
+        let mut draft = builder_into_draft(self);
+        let result = draft.append_raw(tag, value);
+        let owner = finish_builder(draft);
+        match result { Ok(()) => Ok(owner), Err(error) => Err((owner, error)) }
+    }
+
+    /// Consumes the current owner. Rejection returns that owner unchanged.
+    pub fn commit(self) -> (r: Result<Self, (Self, Error)>)
+        ensures self.wf(), match r {
+            Ok(next) => next.wf()
+                && next.view().tid == self.view().tid
+                && next.view().block_bytes == self.view().block_bytes
+                && next.view().inode_bytes == self.view().inode_bytes
+                && next.view().byte_budget == self.view().byte_budget
+                && next.view().raw.take(self.view().committed_end as int)
+                    == self.view().raw.take(self.view().committed_end as int)
+                && next.view().committed_end == next.view().raw.len()
+                && next.view().pending == 0 && next.view().segments.len() == self.view().segments.len() + 1,
+            Err((owner, _)) => owner.wf() && owner.view() == self.view(),
+        },
+    {
+        let mut draft = builder_into_draft(self);
+        let result = draft.commit_raw();
+        let owner = finish_builder(draft);
+        match result { Ok(()) => Ok(owner), Err(error) => Err((owner, error)) }
     }
 
     pub fn committed_bytes(&self) -> (r: &[u8])
@@ -684,12 +791,12 @@ pub fn encode_transaction(records: &[Record], block_bytes: usize, inode_bytes: u
                 && builder.view().segments.len() == 0,
         decreases records.len() - i,
     {
-        match builder.append(records[i].tag, &records[i].value) {
-            Ok(()) => {}, Err(error) => { return Err(error); }
-        }
+        builder = match builder.append(records[i].tag, &records[i].value) {
+            Ok(next) => next, Err((_, error)) => { return Err(error); }
+        };
         i += 1;
     }
-    match builder.commit() { Ok(()) => {}, Err(error) => { return Err(error); } }
+    builder = match builder.commit() { Ok(next) => next, Err((_, error)) => { return Err(error); } };
     proof { use_type_invariant(&builder); reveal(valid_builder); }
     let ghost sealed = builder.view();
     match builder.finish() {
@@ -811,7 +918,7 @@ pub open spec fn exclusion_projection(intents: Seq<IntentView>) -> Seq<Region>
     }
 }
 pub open spec fn exclusion_contains(regions: Seq<Region>, block: u64) -> bool {
-    exists|i: int| 0 <= i < regions.len() && regions[i].physical <= block
+    exists|i: int| #![trigger regions[i]] 0 <= i < regions.len() && regions[i].physical <= block
         < regions[i].physical as nat + regions[i].length as nat
 }
 pub struct ReplayView {
@@ -827,7 +934,7 @@ pub open spec fn replay_prefix(source: ScanView, origins: Seq<usize>, intents: S
     &&& (forall|j: int| 0 <= j < origins.len() ==> origins[j] < processed
         && #[trigger] decoded_intent(source.records[origins[j] as int], inodes, blocks) == Some(intents[j]))
     &&& (forall|j: int| 0 < j < origins.len() ==> origins[j - 1] < #[trigger] origins[j])
-    &&& (forall|i: int| 0 <= i < processed && ADD_RANGE <= source.records[i].tag <= INODE ==>
+    &&& (forall|i: int| #![trigger source.records[i]] 0 <= i < processed && ADD_RANGE <= source.records[i].tag <= INODE ==>
         origins.contains(i as usize))
     &&& exclusions == exclusion_projection(intents) && modified == modified_projection(intents)
     &&& (forall|j: int| 0 <= j < exclusions.len() ==> #[trigger] region_admitted(exclusions[j], inodes, blocks))
@@ -1133,7 +1240,7 @@ impl ReplayPlan {
         let mut i = 0usize;
         while i < self.exclusions.len()
             invariant i <= self.exclusions.len(),
-                forall|j: int| 0 <= j < i ==> !(self.exclusions@[j].physical <= block
+                forall|j: int| #![trigger self.exclusions@[j]] 0 <= j < i ==> !(self.exclusions@[j].physical <= block
                     < self.exclusions@[j].physical as nat + self.exclusions@[j].length as nat),
             decreases self.exclusions.len() - i,
         {

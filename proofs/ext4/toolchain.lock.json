@@ -1248,7 +1248,14 @@
     "unicode12_data::unicode12_static_tables_are_well_formed",
     "aes::aes_reference_roundtrips",
     "legacy_map::successful_collection_data_and_metadata_are_disjoint",
-    "legacy_map::successful_collection_claims_are_exactly_emitted_addresses"
+    "legacy_map::successful_collection_claims_are_exactly_emitted_addresses",
+    "aes::aes_raw_key_bridge",
+    "aes::aes_raw_reference_roundtrips",
+    "fscrypt_context::common_iv_layout",
+    "mmp::a_faulted_controller_cannot_regain_readiness_from_a_late_report",
+    "mmp::a_pending_command_cannot_be_replaced_by_another_dispatch",
+    "mmp::aborting_a_pending_command_retains_its_exact_descriptor",
+    "mmp::an_offered_write_is_bound_to_the_source_image"
   ],
   "required_flags": [
     "--no-cheating",

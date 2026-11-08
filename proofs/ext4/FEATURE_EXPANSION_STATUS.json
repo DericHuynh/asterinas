@@ -166,25 +166,6 @@
       "whole_expansion_verified": false
     },
     {
-      "attempt": "proof-aes-04",
-      "modules": [
-        "aes"
-      ],
-      "verification_results": {
-        "encountered-error": false,
-        "encountered-vir-error": false,
-        "verified": 62,
-        "errors": 0,
-        "is-verifying-entire-crate": false
-      },
-      "source_sha256": {
-        "aes": "2a1451c1bbab12b1c94a683830d3b4c79de4ab1fb9da124b98e571b45333b04d"
-      },
-      "command_sha256": "aa4c46c81b32ff4ad3c1b8eeb8d78fb0de79b39fb4df097e0cd63311adaffda2",
-      "filtered": true,
-      "whole_expansion_verified": false
-    },
-    {
       "attempt": "proof-legacy-06",
       "modules": [
         "legacy_map"
@@ -202,25 +183,244 @@
       "command_sha256": "1a040f6ff6eee2e35f16eb79b0516b73b10c68afbcb7f2dd044b030077fabe80",
       "filtered": true,
       "whole_expansion_verified": false
+    },
+    {
+      "attempt": "proof-orphan-chain-01",
+      "modules": [
+        "orphan_chain"
+      ],
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 45,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "source_sha256": {
+        "orphan_chain": "f66291b6976970cf732b68934092b958e3d737d84f2c933db13206fcd78b9e48"
+      },
+      "command_sha256": "2b7c4b2f3e3071528d6d53bbf0bbfb6725100d813aed0e2b33365c9585f73a10",
+      "filtered": true,
+      "whole_expansion_verified": false
+    },
+    {
+      "attempt": "proof-cluster-07",
+      "modules": [
+        "cluster_allocation"
+      ],
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 95,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "source_sha256": {
+        "cluster_allocation": "75c115d183d6fdfa6cea7cea00f9284f2006a037db08b9c2f7be9afad6428751"
+      },
+      "command_sha256": "c25e4a297ec48dccc8b79851ce45fb26ae5db22ae3377cc8225f54a04b7e352f",
+      "filtered": true,
+      "whole_expansion_verified": false
+    },
+    {
+      "attempt": "proof-casefold-02",
+      "modules": [
+        "casefold"
+      ],
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 65,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "source_sha256": {
+        "casefold": "7f662f2a8f16b730649b4bf778fcbd3063074149c4d11033e3e34a7f1911f85b"
+      },
+      "command_sha256": "7ba257da68cdb58bc76ea7dc27a04300fa904e212e47aa5540404ec42aac2b9c",
+      "filtered": true,
+      "whole_expansion_verified": false
+    },
+    {
+      "attempt": "proof-aes-08",
+      "modules": [
+        "aes"
+      ],
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 78,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "source_sha256": {
+        "aes": "035f6c518e3567cd5b83626800eefb0da4b058d3cfbeee1f9592d41a2afcdfb7"
+      },
+      "command_sha256": "2dedd9374d43e56222e9f21d2edac4f29b6b9d308290447980c1cdd88eaf881b",
+      "filtered": true,
+      "whole_expansion_verified": false
+    },
+    {
+      "attempt": "proof-quota-ledger-05",
+      "modules": [
+        "quota_reservation"
+      ],
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 68,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "source_sha256": {
+        "quota_reservation": "42258970328866b3046ef28b0ff5e5b2a577b10b39c512b08ede4986ef3d28ad"
+      },
+      "command_sha256": "875e41c8c839f667625ba5d2f9e396010bae25dc45650e809f35b8048242bc01",
+      "filtered": true,
+      "whole_expansion_verified": false
+    },
+    {
+      "attempt": "proof-sha2-08",
+      "modules": [
+        "crypto_sha2"
+      ],
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 115,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "source_sha256": {
+        "crypto_sha2": "0255e293c56f635b3d27787a53c33b9b031e2c1e3f3210b237baecbee40003e0"
+      },
+      "command_sha256": "d560242c32eaab70886e237e07c3a01acc3cc6870e18cbbd8b6c22b0982690aa",
+      "filtered": true,
+      "whole_expansion_verified": false
+    },
+    {
+      "attempt": "proof-fscrypt-context-05",
+      "modules": [
+        "fscrypt_context"
+      ],
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 57,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "source_sha256": {
+        "fscrypt_context": "058f8889723d07591d94c96052d157f53bc3263d96d7b9e260b369ed3ce14ae7"
+      },
+      "command_sha256": "975f110334214fc86a612a94e9f8883400a88ae67accc58df10f60f0ef39141a",
+      "filtered": true,
+      "whole_expansion_verified": false
+    },
+    {
+      "attempt": "proof-jbd2-tags-11",
+      "modules": [
+        "jbd2_tags"
+      ],
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 63,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "source_sha256": {
+        "jbd2_tags": "5f4199de8c36db89d54a8cc4c18b94cd9b26a51c7ae5834bd28ca3e4756545c0"
+      },
+      "command_sha256": "47cacfb35f8c8edc1e187fb5e4270a6dc62b59e6241a7cfa4c8ce358f94999dc",
+      "filtered": true,
+      "whole_expansion_verified": false
+    },
+    {
+      "attempt": "proof-quota-wire-05",
+      "modules": [
+        "quota_v2"
+      ],
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 89,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "source_sha256": {
+        "quota_v2": "16c03355d006a7f2dbaee289fda4b1d431b7cf436772c851564998673dfd4d88"
+      },
+      "command_sha256": "7f60e12c44e8d2f2692d39ccbd98504394b735d7d5aed009271256d0fe19c9ec",
+      "filtered": true,
+      "whole_expansion_verified": false
+    },
+    {
+      "attempt": "proof-mmp-08",
+      "modules": [
+        "mmp"
+      ],
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 105,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "source_sha256": {
+        "mmp": "3bce984dee4ac004215cf602738555c38e1b6838fc5fb83dc2e2741c41096d72"
+      },
+      "command_sha256": "eb693f359ce1d6e3c141a2d3c445db80d8b14614c346ed82f5116a75b57d05a4",
+      "filtered": true,
+      "whole_expansion_verified": false
+    },
+    {
+      "attempt": "proof-fscrypt-cipher-05",
+      "modules": [
+        "fscrypt_cipher"
+      ],
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 73,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "source_sha256": {
+        "fscrypt_cipher": "d80f218cb4a1f81ce534f9e9e7f7e279f3ecbe629754ff8bd9eebc34bbc73f27"
+      },
+      "command_sha256": "a70deeea3da8e3ab77f3009d90990759537cd7c8b50907e463d393f2ecb4ce84",
+      "filtered": true,
+      "whole_expansion_verified": false
     }
   ],
   "unique_checked_modules": [
     "aes",
+    "casefold",
+    "cluster_allocation",
+    "crypto_sha2",
     "ea_repeated_recovery",
     "ea_restart",
+    "fscrypt_cipher",
+    "fscrypt_context",
     "group_legacy",
     "inline_data",
     "inode_payload",
     "jbd2_features",
+    "jbd2_tags",
     "legacy_map",
     "meta_bg",
+    "mmp",
+    "orphan_chain",
     "orphan_lifecycle",
     "project_id",
+    "quota_reservation",
+    "quota_v2",
     "resize_plan",
     "sm4",
     "unicode12_data"
   ],
-  "focused_verified_obligations": 536,
+  "focused_verified_obligations": 1327,
   "current_source_matches_checked_modules": true,
   "independent_test_harness_fix": {
     "branch": "fix/osdk-test-qemu-exit",
@@ -249,16 +449,72 @@
       "command_sha256": "0f6218dd993b3214f97534ddbda7a890fd6b1e689ad1aa0e2024a3026c2b2dce",
       "filtered": true,
       "whole_expansion_verified": false
+    },
+    {
+      "attempt": "proof-aes-04",
+      "modules": [
+        "aes"
+      ],
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 62,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "source_sha256": {
+        "aes": "2a1451c1bbab12b1c94a683830d3b4c79de4ab1fb9da124b98e571b45333b04d"
+      },
+      "command_sha256": "aa4c46c81b32ff4ad3c1b8eeb8d78fb0de79b39fb4df097e0cd63311adaffda2",
+      "filtered": true,
+      "whole_expansion_verified": false
+    },
+    {
+      "attempt": "proof-fscrypt-context-04",
+      "modules": [
+        "fscrypt_context"
+      ],
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 57,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "source_sha256": {
+        "fscrypt_context": "91b2681aa5c2991c0c97439ff100f45a9d0518393aacfdd4b55491525bb636c8"
+      },
+      "command_sha256": "2254befa27de20b5d2f2a7861b72e1fe9ff06eacb38f7ceb4adc7272ad949121",
+      "filtered": true,
+      "whole_expansion_verified": false
     }
   ],
   "integrated_compile": {
-    "attempt": "typecheck-13",
+    "attempt": "typecheck-17",
     "new_modules": 32,
     "returncode": 0,
     "verification_skipped": true,
     "proof_evidence": false,
-    "artifact_sha256": "39bf02b3446e2c5fea46aceae84c8aa955a3d05df1f2130bda1951b047be313e",
-    "scope": "Immutable32-module source snapshot; later live-source changes require rechecking."
+    "artifact_sha256": "d567be6a336d1322b9ab34ff531cbd39357214e905835c19df5de7bb8b00908f",
+    "scope": "Coherent immutable all32-module checkpoint. Four unproved files use exact body-checked draft snapshots; later live repair work remains separate and requires rechecking.",
+    "immutable_unproved_overlays": {
+      "fast_commit": {
+        "path": "/task/ext4-expansion/proof-fast-commit-04/src/fast_commit.rs",
+        "sha256": "23d3256091bafd9e4dcdf8787e4cdd7e34a40633109a0fb4f434ce147691182e"
+      },
+      "extent_edit": {
+        "path": "/task/ext4-expansion/proof-extent-edit-04/src/extent_edit.rs",
+        "sha256": "901d33e43fd9dbeacfc79724821161b613b5ccd4cfe57434d73a668ff165400f"
+      },
+      "fsverity": {
+        "path": "/task/ext4-expansion/proof-fsverity-03/src/fsverity.rs",
+        "sha256": "77d33940524eea0c284aa73f906396cd3798e579049cb2f781f92658e6a8a5ec"
+      },
+      "orphan_file": {
+        "path": "/task/ext4-expansion/proof-orphan-file-12/src/orphan_file.rs",
+        "sha256": "b3f71b0355b50867189bd850b6420ace566fc32889a4ed9ede37f6c569434e95"
+      }
+    }
   },
   "integrated_crypto_native": {
     "attempt": "extra-crypto-native-07",
@@ -267,7 +523,7 @@
   },
   "registry": {
     "sources": 258,
-    "named_proofs": 972,
+    "named_proofs": 979,
     "public_executable_functions": 1249,
     "baseline_inventory_prefixes_preserved": true,
     "expanded_entrypoint_declared": true
@@ -285,14 +541,16 @@
     "earlier_expectation_error_retained": "checked-cipher-vectors-01"
   },
   "expansion_api_boundaries": {
-    "staged_negative_cases": 17,
-    "checked_negative_cases": 17,
-    "checked_positive_controls": 3,
-    "attempt": "feature-boundaries-native-02",
-    "pending_cluster_negative_cases": 0,
+    "staged_negative_cases": 36,
+    "checked_negative_cases": 36,
+    "checked_positive_controls": 9,
+    "attempt": "expansion-boundaries-native-03",
     "formal_verification": false,
     "official_compatibility_suite_rerun": false,
-    "artifact_scope": "typecheck-13 actual Verus compile-only artifact"
+    "full_suite_expected_cases": 376,
+    "artifact_scope": "All36 expansion ownership/privacy negative cases and9 allowed controls on actual coherent typecheck-17 all32-module artifact",
+    "library_sha256": "d567be6a336d1322b9ab34ff531cbd39357214e905835c19df5de7bb8b00908f",
+    "compat_source_sha256": "dec7b32f07ab53e36036a2cf83418d9c48c6baeec688353d55fbdb598bf82d98"
   },
   "superseded_integrated_compiles": [
     {
@@ -303,13 +561,187 @@
       "proof_evidence": false,
       "source_matches_current": false,
       "scope": "Historical32-module source snapshot; later proof/API changes require a new integrated compile."
+    },
+    {
+      "attempt": "typecheck-13",
+      "new_modules": 32,
+      "returncode": 0,
+      "verification_skipped": true,
+      "proof_evidence": false,
+      "artifact_sha256": "39bf02b3446e2c5fea46aceae84c8aa955a3d05df1f2130bda1951b047be313e",
+      "scope": "Immutable32-module source snapshot; later live-source changes require rechecking."
     }
   ],
   "cluster_initialization_runtime": {
-    "attempt": "cluster-init-native-06",
     "status": "passed",
-    "mechanical_erasure": false,
     "formal_verification": false,
-    "artifact_scope": "typecheck-13 actual Verus compile-only artifact"
-  }
+    "mechanical_erasure": false,
+    "library_attempt": "proof-cluster-07",
+    "library_sha256": "e56e3d52abcc050943f388b4886a4994682f48ef9b0e7084d6f6d919c127fda1",
+    "source_snapshot_sha256": "75c115d183d6fdfa6cea7cea00f9284f2006a037db08b9c2f7be9afad6428751",
+    "native_scenarios": 8,
+    "completion_permutations": 6,
+    "negative_api_cases": 13,
+    "scope": "Modeled reported completions for standalone ledger; no real concurrent device I/O or hardware reset attestation",
+    "attempt": "cluster-init-native-07"
+  },
+  "superseded_cluster_initialization_runtime": [
+    {
+      "attempt": "cluster-init-native-06",
+      "status": "passed",
+      "mechanical_erasure": false,
+      "formal_verification": false,
+      "artifact_scope": "typecheck-13 actual Verus compile-only artifact"
+    }
+  ],
+  "checked_casefold_conformance": {
+    "status": "passed",
+    "formal_verification": false,
+    "comparisons": 1226715,
+    "mismatches": 0,
+    "corpus_sha256": "a3edcaf1ea746db676887b566e939acaee0b5953d5f17cee17e30b73fdb08cce",
+    "linux_expected_sha256": "e84e67a0dc5c723f98ff8823657a15000ca280ebcba4553b8bf0006eb29f45ef",
+    "library_attempt": "proof-casefold-02",
+    "library_sha256": "961e392236cb4318d1dd778f40d6968457b305bb1ab0623bb53b354f403ee02c",
+    "implementation": "Imported directly from focused-checked artifact; no local implementation or erasure",
+    "scope": "Pinned Linux Unicode12.1 corpus conformance, not a formal C equivalence theorem",
+    "attempt": "casefold-checked-native-02"
+  },
+  "quota_api_boundaries": {
+    "status": "passed",
+    "formal_verification": false,
+    "scope": "Rust ownership/privacy using focused-checked ledger artifact",
+    "negative_cases": 12,
+    "positive_controls": 3,
+    "library_sha256": "e8596ccf3b450afc9bdf75e241bf2ac9e5a6c11559ec4a2f17ac2e533c493f9a",
+    "source_sha256": "42258970328866b3046ef28b0ff5e5b2a577b10b39c512b08ede4986ef3d28ad",
+    "attempt": "quota-boundaries-native-01"
+  },
+  "separate_no_std_package": {
+    "draft_pr": "https://github.com/DericHuynh/asterinas/pull/65",
+    "commit": "0ff4067f5575954ad7f36beb702c79738abbf6e0",
+    "scope": "Standalone source package; host and x86_64-unknown-none builds and Verus compile-only check passed, no new whole-crate formal certificate or kernel mount registration."
+  },
+  "checked_sha2_conformance": {
+    "status": "passed",
+    "cases": 616,
+    "mismatches": 0,
+    "formal_verification": false,
+    "library_attempt": "proof-sha2-08",
+    "source_sha256": "0255e293c56f635b3d27787a53c33b9b031e2c1e3f3210b237baecbee40003e0",
+    "library_sha256": "681048475313c609939e1a598bbb2fb1f09f189a0f9325f88070df86615bdead",
+    "driver_sha256": "6c44e4c641a7fa0f88b23e8a0d5a7d61f250bb063c765dbc28a26ba2eafd99d4",
+    "commands_sha256": "ceaa9a4249f6555421cb5f7c5eb5beba3577da44ff8234fdcc826eccecc4a934",
+    "expected_sha256": "fe125aa53c32679c3f2c431043538b41414c9c9b08fbf7f156a7da5c941f7ba0",
+    "oracle": "Python hashlib/hmac SHA-256/512; independent RFC5869 HKDF recurrence using hmac",
+    "cases_scope": "Direct/streaming padding and block boundaries, long HMAC keys, HKDF partial and maximum output, bad PRK/output rejection",
+    "seconds": 0.09852527000475675,
+    "implementation": "Actual focused-checked library; no mechanical erasure or local hash implementation",
+    "attempt": "checked-sha2-native-01"
+  },
+  "checked_quota_wire_conformance": {
+    "status": "passed",
+    "formal_verification": false,
+    "library_attempt": "proof-quota-wire-05",
+    "library_sha256": "f225ff2d69ef093257b470482d94c9e9d356a404db5f8b61e68ad04240a05b3b",
+    "source_sha256": "16c03355d006a7f2dbaee289fda4b1d431b7cf436772c851564998673dfd4d88",
+    "native_tests": 2,
+    "combinations": "Quota wire V0/V1; user/group/project; ID0 sentinel, maximum ID, lookup paths, malformed bounds/cycles/counts, duplicate ID and budget rejection",
+    "linux_roundtrip_files": 3,
+    "e2fsck_returncode": 0,
+    "original_fixture_unchanged": true,
+    "original_image_sha256": "81808c8f7478f83c8d44da32e561382816b577d02d03aaed2074157dc78adbfa",
+    "rebuilt_files": {
+      "user": {
+        "bytes": 6144,
+        "sha256": "d55cd62f81020ed8404e7b619183c32bd6d905ba3d4799004b7a3bb748911040",
+        "physical_blocks": [
+          2065,
+          2066
+        ]
+      },
+      "group": {
+        "bytes": 6144,
+        "sha256": "37f9cbcc0f8bfe1cdf1365053b61a9efded026010c0603131efb9d7c390c2f60",
+        "physical_blocks": [
+          2067,
+          2068
+        ]
+      },
+      "project": {
+        "bytes": 6144,
+        "sha256": "631f1c82569395daa14361db73e44847e34caccc56555c841ebcd8b59b487193",
+        "physical_blocks": [
+          2069,
+          2070
+        ]
+      }
+    },
+    "rebuilt_image_sha256": "9815fe137f0197c0dbe341f2ad8b9b58c0d7a68fea9fa80c9ccdb0bfb179b1c1",
+    "implementation": "Actual focused-checked library; no copied implementation or mechanical erasure",
+    "scope": "Canonical quota byte formats and e2fsprogs fixture; not full free-list filesystem admission or durable ledger integration",
+    "attempt": "quota-wire-checked-native-01"
+  },
+  "checked_mmp_runtime": {
+    "status": "passed",
+    "formal_verification": false,
+    "library_attempt": "proof-mmp-08",
+    "library_sha256": "d3519946a5beec316edf6a75e1eb1f09c17a1e37cedb7ab9eba5354f2390d12a",
+    "source_sha256": "3bce984dee4ac004215cf602738555c38e1b6838fc5fb83dc2e2741c41096d72",
+    "tests_passed": 3,
+    "tests_failed": 0,
+    "scope": "Codec and software-reported protocol: claim/flush/observation, stop ordering, competing record, deadline/backward clock, abort-retained descriptor and late completion. No physical-device lease, clock freshness or persistence attestation.",
+    "implementation": "Actual focused-checked library; no local implementation or mechanical erasure",
+    "attempt": "mmp-checked-native-01"
+  },
+  "separate_cortenmm_snapshot_bridge": {
+    "draft_pr": "https://github.com/DericHuynh/asterinas/pull/66",
+    "commit": "eef3f69277f77442f454b97fcd868acbee43de28",
+    "base_commit": "0ff4067f5575954ad7f36beb702c79738abbf6e0",
+    "kernel_source_check": "passed",
+    "features": "vstd alloc present; std absent",
+    "guest_test": "captured_source_lends_bounded_verified_snapshot",
+    "tests_passed": 1,
+    "tests_failed": 0,
+    "filtered_out": 146,
+    "guest_evidence": "snapshot-ktest-02-classification-01",
+    "proof_package_files_unchanged": 333,
+    "scope": "Scoped immutable copied RAM inspection only; no filesystem admission, mount, write lease or physical durability authority."
+  },
+  "checked_cipher_conformance": {
+    "status": "passed",
+    "formal_verification": false,
+    "library_attempt": "proof-fscrypt-cipher-05",
+    "library_sha256": "dd9178b3b9206f5ad697d70c766c3149f5160a0fab3f02c7acadf35f536452f6",
+    "source_sha256": {
+      "aes": "035f6c518e3567cd5b83626800eefb0da4b058d3cfbeee1f9592d41a2afcdfb7",
+      "crypto_sha2": "0255e293c56f635b3d27787a53c33b9b031e2c1e3f3210b237baecbee40003e0",
+      "fscrypt_context": "058f8889723d07591d94c96052d157f53bc3263d96d7b9e260b369ed3ce14ae7",
+      "fscrypt_cipher": "d80f218cb4a1f81ce534f9e9e7f7e279f3ecbe629754ff8bd9eebc34bbc73f27"
+    },
+    "commands": 59,
+    "oracle": "Replay of pinned independent OpenSSL/NIST-validated outputs from cipher-native-03/commands.json",
+    "oracle_commands_sha256": "3c466fef6a174fea8a2a3ef575a940e1cf8888fb3586a0831ace25d0678e9b4f",
+    "coverage": "AES128/256, XTS, CBC-CS3 including full/tail stealing, V1/V2 key derivation and data/name roundtrips, bound UUID/inode/nonce, policy role and retirement rejection",
+    "implementation": "Actual focused-checked AES/SHA/context/cipher library; no local algorithms or mechanical erasure",
+    "scope": "Native interoperability and protocol controls, not a cryptographic security/constant-time theorem or mounted fscrypt integration",
+    "attempt": "cipher-checked-native-01"
+  },
+  "superseded_expansion_api_boundaries": [
+    {
+      "staged_negative_cases": 29,
+      "checked_negative_cases": 29,
+      "checked_positive_controls": 6,
+      "attempt": "feature-boundaries-native-02",
+      "pending_cluster_negative_cases": 0,
+      "formal_verification": false,
+      "official_compatibility_suite_rerun": false,
+      "artifact_scope": "17 cases use typecheck-13 actual compile-only artifact; 12 quota cases use focused-checked quota ledger artifact; 13 cluster cases additionally rechecked on focused-checked artifact.",
+      "attempts": [
+        "feature-boundaries-native-02",
+        "quota-boundaries-native-01"
+      ],
+      "full_suite_expected_cases": 369
+    }
+  ]
 }

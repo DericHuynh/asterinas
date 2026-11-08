@@ -77,8 +77,61 @@ fn check_fields(version:u8,contents:u8,filenames:u8,flags:u8) -> (r:Result<(),Er
     Ok(())
 }
 
+proof fn policy_wire_injective(a:Policy,b:Policy)
+    requires a.policy_valid(),b.policy_valid(),
+    ensures (policy_wire(a)==policy_wire(b))
+        ==(a.version==b.version && a.contents==b.contents && a.filenames==b.filenames
+            && a.flags==b.flags && a.data_unit_bits==b.data_unit_bits && a.key@==b.key@),
+{
+    if policy_wire(a)==policy_wire(b) {
+        assert(policy_wire(a)[0]==a.version && policy_wire(b)[0]==b.version);
+        assert(a.version==b.version);
+        assert(policy_wire(a)[1]==a.contents && policy_wire(b)[1]==b.contents);
+        assert(policy_wire(a)[2]==a.filenames && policy_wire(b)[2]==b.filenames);
+        assert(policy_wire(a)[3]==a.flags && policy_wire(b)[3]==b.flags);
+        if a.version==2 {
+            assert(policy_wire(a)[4]==a.data_unit_bits && policy_wire(b)[4]==b.data_unit_bits);
+            assert forall|i:int| 0<=i<16 implies a.key@[i]==b.key@[i] by {
+                assert(policy_wire(a)[8+i]==a.key@[i]);
+                assert(policy_wire(b)[8+i]==b.key@[i]);
+            }
+        }else{
+            assert(a.version==0 && b.version==0);
+            assert(a.data_unit_bits==0 && b.data_unit_bits==0);
+            assert forall|i:int| 0<=i<16 implies a.key@[i]==b.key@[i] by {
+                if i<8 {
+                    assert(policy_wire(a)[4+i]==a.key@[i]);
+                    assert(policy_wire(b)[4+i]==b.key@[i]);
+                }else{
+                    assert(a.key@[i]==0 && b.key@[i]==0);
+                }
+            }
+        }
+        assert(a.key@ =~= b.key@);
+    }else if a.version==b.version && a.contents==b.contents && a.filenames==b.filenames
+        && a.flags==b.flags && a.data_unit_bits==b.data_unit_bits && a.key@==b.key@ {
+        assert(policy_wire(a) =~= policy_wire(b));
+    }
+}
+proof fn iv_flag_partition(flags:u8)
+    ensures (flags & 24==0)==(flags & 8==0 && flags & 16==0),
+        flags & 24!=0 && flags & 8==0 ==> flags & 16!=0,
+{
+    assert((flags & 24==0)==(flags & 8==0 && flags & 16==0)) by(bit_vector);
+}
+pub closed spec fn policy_admitted(raw:Seq<u8>) -> bool {
+    (raw.len()==12 && raw[0]==0 && allowed_fields(0,raw[1],raw[2],raw[3]))
+        ||(raw.len()==24 && raw[0]==2 && raw[5]==0 && raw[6]==0 && raw[7]==0
+            && allowed_fields(2,raw[1],raw[2],raw[3]))
+}
+pub closed spec fn context_admitted(raw:Seq<u8>) -> bool {
+    (raw.len()==28 && raw[0]==1 && allowed_fields(0,raw[1],raw[2],raw[3]))
+        ||(raw.len()==40 && raw[0]==2 && raw[5]==0 && raw[6]==0 && raw[7]==0
+            && allowed_fields(2,raw[1],raw[2],raw[3]))
+}
 pub fn parse_policy(raw:&[u8]) -> (r:Result<Policy,Error>)
-    ensures match r {Ok(p)=>p.policy_valid() && p.policy_encoding()==raw@,Err(_)=>true},
+    ensures r.is_ok()==policy_admitted(raw@),
+        match r {Ok(p)=>p.policy_valid() && p.policy_encoding()==raw@,Err(_)=>true},
 {
     if raw.len()==0 { return Err(Error::Size); }
     let version=raw[0]; let mut key=[0u8;16]; let du;
@@ -105,7 +158,8 @@ pub fn parse_policy(raw:&[u8]) -> (r:Result<Policy,Error>)
     Ok(policy)
 }
 pub fn parse_context(raw:&[u8]) -> (r:Result<Context,Error>)
-    ensures match r {Ok(c)=>c.context_encoding()==raw@ && c.context_policy().policy_valid(),Err(_)=>true},
+    ensures r.is_ok()==context_admitted(raw@),
+        match r {Ok(c)=>c.context_encoding()==raw@ && c.context_policy().policy_valid(),Err(_)=>true},
 {
     if raw.len()==0 { return Err(Error::Size); }
     let (version,nonce_start,du,key_start,key_len)=if raw[0]==1 {
@@ -147,7 +201,14 @@ impl Policy {
     pub closed spec fn accepts_geometry(&self,g:Geometry) -> bool {geometry_allowed(*self,g)}
     #[verifier::type_invariant]
     spec fn invariant(self) -> bool {self.policy_valid()}
-    pub fn fields(&self) -> (r:(u8,u8,u8,u8,u8)) ensures r==self.policy_fields() { (self.version,self.contents,self.filenames,self.flags,self.data_unit_bits) }
+    pub fn fields(&self) -> (r:(u8,u8,u8,u8,u8))
+        ensures self.policy_valid(),r==self.policy_fields(),r.0==0 || r.0==2,
+            r.3 & 4!=0 ==> r.1==9 && r.2==9,
+            r.3 & 24!=0 ==> r.1==1,
+    {
+        proof {use_type_invariant(self);}
+        (self.version,self.contents,self.filenames,self.flags,self.data_unit_bits)
+    }
     pub fn key_specifier(&self) -> (r:Vec<u8>)
         ensures r@==self.policy_key(),r.len()==if self.policy_fields().0==0 {8usize}else{16usize},
     {
@@ -199,16 +260,48 @@ impl Policy {
     pub fn permits_child(&self,child:&Policy) -> (r:bool)
         ensures r==(self.policy_encoding()==child.policy_encoding()),
     {
+        proof {
+            use_type_invariant(self);use_type_invariant(child);
+            policy_wire_injective(*self,*child);
+        }
         self.version==child.version && self.contents==child.contents && self.filenames==child.filenames
-            && self.flags==child.flags && self.data_unit_bits==child.data_unit_bits && self.key==child.key
+            && self.flags==child.flags && self.data_unit_bits==child.data_unit_bits
+            && bytes::equal(&self.key,&child.key)
+    }
+    pub closed spec fn padded_filename_model(&self,original:u32,maximum:u32) -> Option<u32> {
+        if original>maximum {None}else{
+            let padding=(4u64 << (self.flags & 3u8)) as int;
+            let n=if original<16 {16int}else{original as int};
+            let rounded=((n+padding-1)/padding)*padding;
+            Some(if rounded>maximum {maximum}else{rounded as u32})
+        }
     }
     pub fn padded_filename_len(&self,original:u32,maximum:u32) -> (r:Result<u32,Error>)
-        ensures match r {Ok(n)=>original<=n<=maximum,Err(_)=>original>maximum},
+        ensures r.is_ok()==(original<=maximum),
+            match r {Ok(n)=>original<=n<=maximum && self.padded_filename_model(original,maximum)==Some(n),
+                Err(_)=>original>maximum && self.padded_filename_model(original,maximum).is_none()},
     {
         if original>maximum { return Err(Error::Size); }
-        let padding=4u64 << (self.flags & 3u8);
+        let flags=self.flags;
+        proof {assert((flags & 3u8)<=3) by(bit_vector);}
+        let padding=4u64 << (flags & 3u8);
+        proof {
+            assert(padding==4 || padding==8 || padding==16 || padding==32) by(bit_vector)
+                requires padding==4u64 << (flags & 3u8);
+        }
         let n=if original<16 {16u64}else{original as u64};
         let rounded=((n+padding-1)/padding)*padding;
+        proof {
+            let dividend=n as int+padding as int-1;
+            let divisor=padding as int;
+            vstd::arithmetic::div_mod::lemma_fundamental_div_mod(dividend,divisor);
+            assert(rounded as int==(dividend/divisor)*divisor);
+            assert(n as int<=rounded as int) by(nonlinear_arith)
+                requires divisor>0,dividend==n as int+divisor-1,
+                    dividend==(dividend/divisor)*divisor+dividend%divisor,
+                    0<=dividend%divisor<divisor,
+                    rounded as int==(dividend/divisor)*divisor;
+        }
         Ok(if rounded>maximum as u64 {maximum}else{rounded as u32})
     }
 }
@@ -233,10 +326,16 @@ pub closed spec fn iv_wire(c:Context,inode:u64,index:u64,filename:bool,hashed_in
         else {0u8}
     })
 }
-fn iv_size(mode:u8) -> (r:Result<usize,Error>) ensures match r {Ok(n)=>n==mode_iv_bytes(mode) && (n==16 || n==32),Err(_)=>true} {
+fn iv_size(mode:u8) -> (r:Result<usize,Error>)
+    ensures r.is_ok()==(mode==1 || mode==4 || mode==5 || mode==6 || mode==7 || mode==8 || mode==9 || mode==10),
+        match r {Ok(n)=>n==mode_iv_bytes(mode) && (n==16 || n==32),Err(_)=>true},
+{
     if mode==9 || mode==10 {Ok(32)}else if mode==1 || mode==4 || mode==5 || mode==6 || mode==7 || mode==8 {Ok(16)}else{Err(Error::Modes)}
 }
-fn key_size(mode:u8) -> (r:Result<usize,Error>) ensures match r {Ok(n)=>n==mode_key_bytes(mode) && (n==16 || n==32 || n==64),Err(_)=>true} {
+fn key_size(mode:u8) -> (r:Result<usize,Error>)
+    ensures r.is_ok()==(mode==1 || mode==4 || mode==5 || mode==6 || mode==7 || mode==8 || mode==9 || mode==10),
+        match r {Ok(n)=>n==mode_key_bytes(mode) && (n==16 || n==32 || n==64),Err(_)=>true},
+{
     if mode==1 {Ok(64)}else if mode==4 || mode==7 || mode==9 || mode==10 {Ok(32)}
     else if mode==5 || mode==6 || mode==8 {Ok(16)}else{Err(Error::Modes)}
 }
@@ -269,8 +368,28 @@ impl Context {
             decreases 16-i,
         {out.push(self.nonce[i]);i+=1;} out
     }
+    pub proof fn common_iv_layout(&self,inode:u64,index:u64,filename:bool,hashed_inode:u32)
+        requires self.context_policy().policy_fields().3 & 4==0,
+            (if filename {self.context_policy().policy_fields().2}else{self.context_policy().policy_fields().1})!=9,
+            (if filename {self.context_policy().policy_fields().2}else{self.context_policy().policy_fields().1})!=10,
+        ensures iv_wire(*self,inode,index,filename,hashed_inode)==Seq::new(16,|i:int| {
+            let flags=self.context_policy().policy_fields().3;
+            let value=if flags & 8!=0 {index | (inode<<32)}
+                else if flags & 16!=0 {((hashed_inode as nat+index as nat)%4294967296) as u64}
+                else{index};
+            if i<8 {(value>>((i as u32)*8)) as u8}else{0u8}
+        }),
+    {
+        assert(iv_wire(*self,inode,index,filename,hashed_inode) =~= Seq::new(16,|i:int| {
+            let flags=self.context_policy().policy_fields().3;
+            let value=if flags & 8!=0 {index | (inode<<32)}
+                else if flags & 16!=0 {((hashed_inode as nat+index as nat)%4294967296) as u64}
+                else{index};
+            if i<8 {(value>>((i as u32)*8)) as u8}else{0u8}
+        }));
+    }
     pub fn context_iv(&self,g:Geometry,inode:u64,index:u64,filename:bool) -> (r:Result<Vec<u8>,Error>)
-        ensures match r {Ok(v)=>self.iv_admissible(g,inode,index,filename)
+        ensures match r {Ok(v)=>inode>0 && self.iv_admissible(g,inode,index,filename)
             && v@==iv_wire(*self,inode,index,filename,0),Err(_)=>true},
     {
         if self.policy.flags & 16!=0 {return Err(Error::KeyRequired);}
@@ -284,21 +403,41 @@ fn iv_with_hash(c:&Context,g:Geometry,inode:u64,index:u64,filename:bool,hashed_i
     c.policy.validate(g)?;
     if inode==0 || index>g.max_data_unit_index || (filename && index!=0) {return Err(Error::Index);}
     let mode=if filename {c.policy.filenames}else{c.policy.contents};
-    let len=iv_size(mode)?; let mut dun=index;
-    if c.policy.flags & 24!=0 {
+    let len=iv_size(mode)?;let flags=c.policy.flags;let mut dun=index;
+    proof {iv_flag_partition(flags);}
+    if flags & 24!=0 {
         if index>0xffff_ffff || inode>0xffff_ffff {return Err(Error::Index);}
-        if c.policy.flags & 8!=0 {dun=index | (inode<<32);}
-        else {dun=hashed_inode.wrapping_add(index as u32) as u64;}
+        if flags & 8!=0 {dun=index | (inode<<32);}
+        else {
+            let index32=index as u32;
+            let word=hashed_inode.wrapping_add(index32);
+            proof {
+                assert(flags & 16!=0);
+                assert(index32 as nat==index as nat);
+                assert(word as nat==(hashed_inode as nat+index32 as nat)%4294967296);
+            }
+            dun=word as u64;
+        }
     }
     let mut out=Vec::new();append_le64(&mut out,dun);
+    proof {
+        assert(dun==iv_word(*c,inode,index,hashed_inode));
+        assert(out@ =~= iv_wire(*c,inode,index,filename,hashed_inode).take(8));
+    }
     let mut i=8usize;
     while i<len
         invariant 8<=i<=len<=32,out.len()==i,
-            len==mode_iv_bytes(mode),dun==iv_word(*c,inode,index,hashed_inode),
+            mode==(if filename {c.policy.filenames}else{c.policy.contents}),
+            len==mode_iv_bytes(mode),len==iv_wire(*c,inode,index,filename,hashed_inode).len(),
+            dun==iv_word(*c,inode,index,hashed_inode),
             out@==iv_wire(*c,inode,index,filename,hashed_inode).take(i as int),
         decreases len-i,
     {
-        out.push(if c.policy.flags & 4!=0 && i<24 {c.nonce[i-8]}else{0});i+=1;
+        let value=if c.policy.flags & 4!=0 && i<24 {c.nonce[i-8]}else{0};
+        proof {assert(value==iv_wire(*c,inode,index,filename,hashed_inode)[i as int]);}
+        out.push(value);
+        proof {assert(out@ =~= iv_wire(*c,inode,index,filename,hashed_inode).take(i as int+1));}
+        i+=1;
     }
     Ok(out)
 }
@@ -330,12 +469,36 @@ fn hkdf(prk:&[u8],context:u8,info:&[u8],length:usize) -> (r:Result<Vec<u8>,Error
     let mut domain=Vec::new(); let prefix=[102u8,115,99,114,121,112,116,0];
     let mut i=0usize;while i<8 invariant i<=8,domain@==prefix@.take(i as int), decreases 8-i, {domain.push(prefix[i]);i+=1;}domain.push(context);
     let ghost header=domain@;
+    proof {assert(header==seq![102u8,115u8,99u8,114u8,121u8,112u8,116u8,0u8,context]);}
     i=0;
     while i<info.len()
         invariant i<=info.len(),domain@==header+info@.take(i as int),
+            header==seq![102u8,115u8,99u8,114u8,121u8,112u8,116u8,0u8,context],
         decreases info.len()-i,
     {domain.push(info[i]);i+=1;}
-    match crypto_sha2::hkdf_sha512_expand(prk,domain.as_slice(),length) {Ok(v)=>Ok(v),Err(_)=>Err(Error::HashFailure)}
+    proof {
+        assert(info@.take(info.len() as int) =~= info@);
+        assert(domain@==seq![102u8,115u8,99u8,114u8,121u8,112u8,116u8,0u8,context]+info@);
+    }
+    let actual_info=domain.as_slice();
+    proof {
+        assert(actual_info@==domain@);
+        assert(fscrypt_kdf_reference(prk@,context,info@,length as nat)
+            ==crypto_sha2::hkdf512_expand_reference(prk@,actual_info@,length as nat)) by {
+            reveal(fscrypt_kdf_reference);
+        }
+    }
+    match crypto_sha2::hkdf_sha512_expand(prk,actual_info,length) {
+        Ok(v)=>{
+            proof {
+                assert(v.len()==length && length<=16320);
+                assert(v@==crypto_sha2::hkdf512_expand_reference(prk@,actual_info@,length as nat));
+                assert(v@==fscrypt_kdf_reference(prk@,context,info@,length as nat));
+            }
+            Ok(v)
+        },
+        Err(_)=>Err(Error::HashFailure),
+    }
 }
 spec fn little_prefix(raw:Seq<u8>,offset:nat,n:nat) -> u64
     decreases n
@@ -348,6 +511,7 @@ spec fn word_add(a:u64,b:u64) -> u64 {((a as nat+b as nat)%18446744073709551616)
 spec fn word_rotate(x:u64,count:u32) -> u64 {
     let n=count%64;if n==0 {x}else{(x<<n)|(x>>(64-n))}
 }
+#[verifier::opaque]
 spec fn sip_step(s:Seq<u64>) -> Seq<u64> {
     let a=word_add(s[0],s[1]);let b=word_rotate(s[1],13)^a;let a=word_rotate(a,32);
     let c=word_add(s[2],s[3]);let d=word_rotate(s[3],16)^c;
@@ -356,6 +520,7 @@ spec fn sip_step(s:Seq<u64>) -> Seq<u64> {
     seq![a,b,c,d]
 }
 spec fn sip_xor(s:Seq<u64>,i:int,value:u64) -> Seq<u64> {s.update(i,s[i]^value)}
+#[verifier::opaque]
 pub closed spec fn inode_hash_reference(inode:u64,key:Seq<u8>) -> u32 {
     let a=little_prefix(key,0,8);let b=little_prefix(key,8,8);
     let s=seq![0x736f6d6570736575u64^a,0x646f72616e646f6du64^b,0x6c7967656e657261u64^a,0x7465646279746573u64^b];
@@ -381,12 +546,14 @@ fn rotl64(x:u64,count:u32) -> (r:u64) ensures r==word_rotate(x,count) {
     if n==0 {x}else{(x<<n)|(x>>(64-n))}
 }
 fn sipround(s:&mut [u64;4]) ensures final(s)@==sip_step(old(s)@), {
+    proof {reveal(sip_step);}
     s[0]=s[0].wrapping_add(s[1]);s[1]=rotl64(s[1],13);s[1]^=s[0];s[0]=rotl64(s[0],32);
     s[2]=s[2].wrapping_add(s[3]);s[3]=rotl64(s[3],16);s[3]^=s[2];
     s[0]=s[0].wrapping_add(s[3]);s[3]=rotl64(s[3],21);s[3]^=s[0];
     s[2]=s[2].wrapping_add(s[1]);s[1]=rotl64(s[1],17);s[1]^=s[2];s[2]=rotl64(s[2],32);
 }
 fn siphash_inode(inode:u64,key:&[u8]) -> (r:u32) requires key.len()==16, ensures r==inode_hash_reference(inode,key@), {
+    proof {reveal(inode_hash_reference);}
     let a=read64(key,0);let b=read64(key,8);
     let mut s=[0x736f6d6570736575u64^a,0x646f72616e646f6du64^b,0x6c7967656e657261u64^a,0x7465646279746573u64^b];
     s[3]^=inode;sipround(&mut s);sipround(&mut s);s[0]^=inode;
@@ -416,12 +583,17 @@ impl MasterKeyV2 {
     {
         if raw.len()<16 || raw.len()>64 {return Err(Error::KeySize);}
         let salt=[0u8;64];
+        proof {assert(salt@ =~= Seq::<u8>::new(64,|i:int|0u8));}
         let prk=match crypto_sha2::hkdf_sha512_extract(&salt,raw) {Ok(v)=>v,Err(_)=>return Err(Error::HashFailure)};
         let id=hkdf(prk.as_slice(),1,&[],16)?;let mut identifier=[0u8;16];let mut i=0usize;
         while i<16
-            invariant i<=16,id.len()==16,forall|j:int| 0<=j<i ==> identifier@[j]==id@[j],
+            invariant i<=16,id.len()==16,16<=raw.len()<=64,prk.len()==64,
+                prk@==crypto_sha2::hmac512_reference(Seq::new(64,|j:int|0u8),raw@),
+                id@==fscrypt_kdf_reference(prk@,1,Seq::empty(),16),
+                forall|j:int| 0<=j<i ==> identifier@[j]==id@[j],
             decreases 16-i,
         {identifier[i]=id[i];i+=1;}
+        proof {assert(identifier@ =~= id@);}
         Ok(Self {prk,identifier,key_bytes:raw.len() as u8})
     }
     pub fn identifier(&self) -> (r:[u8;16]) ensures r@==self.master_identifier() {self.identifier}
@@ -430,36 +602,65 @@ impl MasterKeyV2 {
             && (v.len()==16 || v.len()==32 || v.len()==64)
             && v@==self.derived_reference(*c,filesystem_uuid,filename),Err(_)=>true},
     {
+        proof {use_type_invariant(self);}
         if c.policy.version!=2 {return Err(Error::Version);}
-        if c.policy.key!=self.identifier {return Err(Error::KeyMismatch);}
+        if !bytes::equal(&c.policy.key,&self.identifier) {return Err(Error::KeyMismatch);}
         let mode=if filename {c.policy.filenames}else{c.policy.contents};let len=key_size(mode)?;
         let strength=if mode==5 || mode==6 || mode==7 || mode==8 {16u8}else{32u8};
         if self.key_bytes<strength {return Err(Error::KeySize);}
-        let mut info=Vec::new();let domain;
-        if c.policy.flags & 4!=0 {domain=3u8;info.push(mode);}
-        else if c.policy.flags & 24!=0 {
-            domain=if c.policy.flags & 8!=0 {4u8}else{6u8};info.push(mode);let mut i=0usize;
-            while i<16 invariant i<=16,info@==seq![mode]+filesystem_uuid@.take(i as int), decreases 16-i, {info.push(filesystem_uuid[i]);i+=1;}
-        } else {domain=2u8;let mut i=0usize;while i<16 invariant i<=16,info@==c.nonce@.take(i as int), decreases 16-i, {info.push(c.nonce[i]);i+=1;}}
+        let mut info=Vec::new();let domain;let flags=c.policy.flags;
+        proof {iv_flag_partition(flags);}
+        if flags & 4!=0 {domain=3u8;info.push(mode);}
+        else if flags & 24!=0 {
+            domain=if flags & 8!=0 {4u8}else{6u8};info.push(mode);let mut i=0usize;
+            proof {assert(domain==kdf_context(*c));}
+            while i<16
+                invariant i<=16,info@==seq![mode]+filesystem_uuid@.take(i as int),
+                    flags==c.policy.flags,flags & 4==0,flags & 24!=0,
+                    domain==kdf_context(*c),
+                    mode==(if filename {c.policy.filenames}else{c.policy.contents}),
+                    len==mode_key_bytes(mode),len==16 || len==32 || len==64,
+                    c.policy.version==2,c.policy.key@==self.identifier@,
+                decreases 16-i,
+            {info.push(filesystem_uuid[i]);i+=1;}
+        }else{
+            domain=2u8;let mut i=0usize;
+            proof {assert(domain==kdf_context(*c));}
+            while i<16
+                invariant i<=16,info@==c.nonce@.take(i as int),
+                    flags==c.policy.flags,flags & 4==0,flags & 24==0,
+                    domain==kdf_context(*c),
+                    mode==(if filename {c.policy.filenames}else{c.policy.contents}),
+                    len==mode_key_bytes(mode),len==16 || len==32 || len==64,
+                    c.policy.version==2,c.policy.key@==self.identifier@,
+                decreases 16-i,
+            {info.push(c.nonce[i]);i+=1;}
+        }
+        proof {
+            assert(domain==kdf_context(*c));
+            assert(info@==kdf_info(*c,filesystem_uuid@,filename));
+        }
         hkdf(self.prk.as_slice(),domain,info.as_slice(),len)
     }
     pub fn inode_hash(&self,inode:u64) -> (r:Result<u32,Error>)
         ensures match r {Ok(v)=>0<inode<=0xffff_ffff
             && v==inode_hash_reference(inode,fscrypt_kdf_reference(self.master_prk(),7,Seq::empty(),16)),Err(_)=>true},
     {
+        proof {use_type_invariant(self);}
         if inode==0 || inode>0xffff_ffff {return Err(Error::Index);}
         let key=hkdf(self.prk.as_slice(),7,&[],16)?;Ok(siphash_inode(inode,key.as_slice()))
     }
     pub fn keyed_iv(&self,c:&Context,g:Geometry,inode:u64,index:u64,filename:bool) -> (r:Result<Vec<u8>,Error>)
-        ensures match r {Ok(v)=>c.iv_admissible(g,inode,index,filename)
+        ensures match r {Ok(v)=>inode>0 && c.iv_admissible(g,inode,index,filename)
             && c.context_policy().policy_fields().0==2 && c.context_policy().policy_key()==self.master_identifier()
             && v.len()==mode_iv_bytes(if filename {c.context_policy().policy_fields().2}else{c.context_policy().policy_fields().1})
             && v@==iv_wire(*c,inode,index,filename,if c.context_policy().policy_fields().3 & 16!=0 {
                 inode_hash_reference(inode,fscrypt_kdf_reference(self.master_prk(),7,Seq::empty(),16))
             }else{0u32}),Err(_)=>true},
     {
+        proof {use_type_invariant(self);}
         if c.policy.version!=2 {return Err(Error::Version);}
-        if c.policy.key!=self.identifier {return Err(Error::KeyMismatch);}
+        if !bytes::equal(&c.policy.key,&self.identifier) {return Err(Error::KeyMismatch);}
         let mode=if filename {c.policy.filenames}else{c.policy.contents};
         let strength=if mode==5 || mode==6 || mode==7 || mode==8 {16u8}else{32u8};
         if self.key_bytes<strength {return Err(Error::KeySize);}
@@ -471,8 +672,9 @@ impl MasterKeyV2 {
             && c.context_policy().policy_key()==self.master_identifier()
             && v@==fscrypt_kdf_reference(self.master_prk(),5,c.context_nonce(),16),Err(_)=>true},
     {
+        proof {use_type_invariant(self);}
         if c.policy.version!=2 {return Err(Error::Version);}
-        if c.policy.key!=self.identifier {return Err(Error::KeyMismatch);}
+        if !bytes::equal(&c.policy.key,&self.identifier) {return Err(Error::KeyMismatch);}
         hkdf(self.prk.as_slice(),5,&c.nonce,16)
     }
 }

@@ -1503,6 +1503,31 @@ impl LedgerState {
             && self.slots[index].logical_start as u64 + start as u64 + (length as u64) <= 4294967295
     }
 
+    fn find_pending(&self, index: usize, request: u64) -> (r: Option<usize>)
+        requires self.wf(), index < self.slots.len(),
+        ensures match r {
+            Some(at) => at < self.view().slots[index as int].pending.len()
+                && self.view().slots[index as int].pending[at as int].id == request,
+            None => forall|j: int| 0 <= j < self.view().slots[index as int].pending.len() ==>
+                (#[trigger] self.view().slots[index as int].pending[j]).id != request,
+        },
+    {
+        let mut at = 0usize;
+        while at < self.slots[index].pending.len()
+            invariant self.wf(), index < self.slots.len(),
+                at <= self.slots@[index as int].pending.len(),
+                forall|j: int| 0 <= j < at ==> (#[trigger] self.view().slots[index as int].pending[j]).id != request,
+            decreases self.slots@[index as int].pending.len() - at,
+        {
+            if self.slots[index].pending[at].id == request {
+                assert(self.view().slots[index as int].pending[at as int].id == request);
+                return Some(at);
+            }
+            at += 1;
+        }
+        None
+    }
+
     fn pending_overlap(&self, index: usize, start: u32, length: u32) -> (r: bool)
         requires self.wf(),
         ensures r == pending_overlap(self.view(), index as int, start, length),
@@ -1836,22 +1861,27 @@ impl LedgerState {
             vstd::arithmetic::mul::lemma_mul_is_commutative(ratio as int, command.cluster as int);
             assert(command.physical as nat == command.cluster as nat * self.geometry.cluster_ratio + command.start);
         }
-        let mut at = 0usize;
-        while at < self.slots[index].pending.len()
-            invariant index < self.slots.len(), index < before.slots.len(),
-                at <= self.slots[index as int].pending.len(), self.view() == before, self.wf(),
-                command.physical as nat == command.cluster as nat * self.geometry.cluster_ratio + command.start,
-                forall|j: int| 0 <= j < at ==> (#[trigger] before.slots[index as int].pending[j]).id != command.request,
-            decreases self.slots[index as int].pending.len() - at,
-        {
-            if self.slots[index].pending[at].id == command.request { break; }
-            at += 1;
-        }
+        let at = match self.find_pending(index, command.request) {
+            Some(at) => at, None => { return Err((command, Error::Stale)); },
+        };
         if at == self.slots[index].pending.len()
             || self.slots[index].pending[at].start != command.start
             || self.slots[index].pending[at].length != command.length { return Err((command, Error::Stale)); }
-        assert(2 <= self.slots@[index as int].phase <= 3);
-        assert(command_matches(before, command.view(), index as int, at as int));
+        proof {
+            assert(slot_valid(before.slots[index as int], before.geometry.cluster_ratio, before.next_request));
+            assert(0 <= at < before.slots[index as int].pending.len());
+            assert(before.slots[index as int].pending[at as int].id == command.request);
+            if !active(before.slots[index as int]) { assert(before.slots[index as int].pending.len() == 0); assert(false); }
+            if before.slots[index as int].phase == 4 { assert(before.slots[index as int].pending.len() == 0); assert(false); }
+            assert(2 <= before.slots[index as int].phase <= 3);
+            assert(command.domain == before.domain);
+            assert(command.cluster as nat == before.first_cluster as nat + index);
+            assert(command.generation == before.slots[index as int].generation);
+            assert(before.slots[index as int].pending[at as int].start == command.start);
+            assert(before.slots[index as int].pending[at as int].length == command.length);
+            assert(command.physical as nat == command.cluster as nat * before.geometry.cluster_ratio + command.start);
+            assert(command_matches(before, command.view(), index as int, at as int));
+        }
 
         // A failed callback does not establish completion or cancellation.
         // The consumed command must survive until an adapter proves quiescence.
@@ -1974,24 +2004,29 @@ impl LedgerState {
             vstd::arithmetic::mul::lemma_mul_is_commutative(ratio as int, command.cluster as int);
             assert(command.physical as nat == command.cluster as nat * self.geometry.cluster_ratio + command.start);
         }
-        let mut at = 0usize;
-        while at < self.slots[index].pending.len()
-            invariant index < self.slots.len(), index < before.slots.len(),
-                at <= self.slots[index as int].pending.len(), self.view() == before, self.wf(),
-                command.physical as nat == command.cluster as nat * self.geometry.cluster_ratio + command.start,
-                forall|j: int| 0 <= j < at ==> (#[trigger] before.slots[index as int].pending[j]).id != command.request,
-            decreases self.slots[index as int].pending.len() - at,
-        {
-            if self.slots[index].pending[at].id == command.request { break; }
-            at += 1;
-        }
+        let at = match self.find_pending(index, command.request) {
+            Some(at) => at, None => { return Err((command, Error::Stale)); },
+        };
         if at == self.slots[index].pending.len()
             || self.slots[index].pending[at].start != command.start
             || self.slots[index].pending[at].length != command.length {
             return Err((command, Error::Stale));
         }
-        assert(2 <= self.slots@[index as int].phase <= 3);
-        assert(command_matches(before, command.view(), index as int, at as int));
+        proof {
+            assert(slot_valid(before.slots[index as int], before.geometry.cluster_ratio, before.next_request));
+            assert(0 <= at < before.slots[index as int].pending.len());
+            assert(before.slots[index as int].pending[at as int].id == command.request);
+            if !active(before.slots[index as int]) { assert(before.slots[index as int].pending.len() == 0); assert(false); }
+            if before.slots[index as int].phase == 4 { assert(before.slots[index as int].pending.len() == 0); assert(false); }
+            assert(2 <= before.slots[index as int].phase <= 3);
+            assert(command.domain == before.domain);
+            assert(command.cluster as nat == before.first_cluster as nat + index);
+            assert(command.generation == before.slots[index as int].generation);
+            assert(before.slots[index as int].pending[at as int].start == command.start);
+            assert(before.slots[index as int].pending[at as int].length == command.length);
+            assert(command.physical as nat == command.cluster as nat * before.geometry.cluster_ratio + command.start);
+            assert(command_matches(before, command.view(), index as int, at as int));
+        }
 
         let ghost prior_pending = self.slots@[index as int].pending@;
         self.slots[index].pending.remove(at);
@@ -2039,8 +2074,8 @@ impl LedgerState {
                 before.slots[index as int].mapped.len() == self.geometry.cluster_ratio,
                 before.slots[index as int].initialized.len() == self.geometry.cluster_ratio,
                 self.view() == before, self.wf(),
-                forall|j: int| start <= j < i ==> (#[trigger] before.slots[index as int].mapped[j]) == 0
-                    && (!written || before.slots[index as int].initialized[j]),
+                forall|j: int| start <= j < i ==> (#[trigger] before.slots[index as int].mapped[j]) == 0,
+                forall|j: int| start <= j < i ==> (!written || (#[trigger] before.slots[index as int].initialized[j])),
             decreases start + length - i,
         {
             if self.slots[index].mapped[i as usize] != 0 { return Err(Error::Busy); }
@@ -2058,8 +2093,8 @@ impl LedgerState {
                 key_matches(before, key.view(), index as int), range_valid(before, index as int, start, length),
                 !pending_overlap(before, index as int, start, length),
                 before.slots[index as int].phase == 3,
-                forall|j: int| start <= j < start as nat + length ==> (#[trigger] before.slots[index as int].mapped[j]) == 0
-                    && (!written || before.slots[index as int].initialized[j]),
+                forall|j: int| start <= j < start as nat + length ==> (#[trigger] before.slots[index as int].mapped[j]) == 0,
+                forall|j: int| start <= j < start as nat + length ==> (!written || (#[trigger] before.slots[index as int].initialized[j])),
                 self.wf(), unchanged_allocation(before, self.view(), index as int),
                 self.view().slots[index as int].phase == before.slots[index as int].phase,
                 self.view().slots[index as int].generation == before.slots[index as int].generation,
@@ -2079,6 +2114,8 @@ impl LedgerState {
                 assert(self.slots@ =~= native_before.update(index as int, self.slots@[index as int]));
                 slot_views_update(native_before, index as int, self.slots@[index as int]);
                 pending_range_excludes_point(before, index as int, start, length, i as int);
+                assert(step_before.slots[index as int].initialized[i as int] == before.slots[index as int].initialized[i as int]);
+                if written { assert(before.slots[index as int].initialized[i as int]); }
                 slot_mapped_valid(step_before.slots[index as int], self.geometry.cluster_ratio, self.next_request,
                     i as int, if written { 2u8 } else { 1u8 });
                 assert(slot_valid(self.view().slots[index as int], self.geometry.cluster_ratio, self.next_request));
@@ -2090,6 +2127,16 @@ impl LedgerState {
             i += 1;
         }
         proof {
+            assert(key_index(before, key.view()) == index as int);
+            assert(key_matches(before, key.view(), index as int));
+            assert(before.slots[index as int].phase == 3 && before.slots[index as int].pins == 0);
+            assert(range_valid(before, index as int, start, length));
+            assert(!pending_overlap(before, index as int, start, length));
+            assert forall|j: int| start <= j < start as nat + length implies
+                (#[trigger] before.slots[index as int].mapped[j]) == 0 && (!written || before.slots[index as int].initialized[j]) by {
+                assert(before.slots[index as int].mapped[j] == 0);
+                if written { assert(before.slots[index as int].initialized[j]); }
+            }
             assert(self.view().slots =~= before.slots.update(index as int, self.view().slots[index as int]));
             occupied_count_update(before.slots, index as int, self.view().slots[index as int]);
         }
@@ -2126,8 +2173,8 @@ impl LedgerState {
                 before.slots[index as int].mapped.len() == self.geometry.cluster_ratio,
                 before.slots[index as int].initialized.len() == self.geometry.cluster_ratio,
                 self.view() == before, self.wf(),
-                forall|j: int| start <= j < i ==> (#[trigger] before.slots[index as int].mapped[j]) == 1
-                    && before.slots[index as int].initialized[j],
+                forall|j: int| start <= j < i ==> (#[trigger] before.slots[index as int].mapped[j]) == 1,
+                forall|j: int| start <= j < i ==> (#[trigger] before.slots[index as int].initialized[j]),
             decreases start + length - i,
         {
             if self.slots[index].mapped[i as usize] != 1 { return Err(Error::State); }
@@ -2145,8 +2192,8 @@ impl LedgerState {
                 key_matches(before, key.view(), index as int), range_valid(before, index as int, start, length),
                 !pending_overlap(before, index as int, start, length),
                 before.slots[index as int].phase == 3,
-                forall|j: int| start <= j < start as nat + length ==> (#[trigger] before.slots[index as int].mapped[j]) == 1
-                    && before.slots[index as int].initialized[j],
+                forall|j: int| start <= j < start as nat + length ==> (#[trigger] before.slots[index as int].mapped[j]) == 1,
+                forall|j: int| start <= j < start as nat + length ==> (#[trigger] before.slots[index as int].initialized[j]),
                 self.wf(), unchanged_allocation(before, self.view(), index as int),
                 self.view().slots[index as int].phase == before.slots[index as int].phase,
                 self.view().slots[index as int].generation == before.slots[index as int].generation,
@@ -2166,6 +2213,8 @@ impl LedgerState {
                 assert(self.slots@ =~= native_before.update(index as int, self.slots@[index as int]));
                 slot_views_update(native_before, index as int, self.slots@[index as int]);
                 pending_range_excludes_point(before, index as int, start, length, i as int);
+                assert(step_before.slots[index as int].initialized[i as int] == before.slots[index as int].initialized[i as int]);
+                assert(before.slots[index as int].initialized[i as int]);
                 slot_mapped_valid(step_before.slots[index as int], self.geometry.cluster_ratio, self.next_request,
                     i as int, 2u8);
                 assert(slot_valid(self.view().slots[index as int], self.geometry.cluster_ratio, self.next_request));

@@ -374,7 +374,7 @@ impl ExtraCipherKey {
             final(self).extra_binding_view()==old(self).extra_binding_view(),
         opens_invariants none
         no_unwind
-    {self.secret=Secret {bytes:[0u8;32],length:0,retired:true};}
+    {self.secret=Secret {bytes:[0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8],length:0,retired:true};}
 }
 impl Drop for ExtraCipherKey {
     fn drop(&mut self)

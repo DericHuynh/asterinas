@@ -71,6 +71,7 @@ pub open spec fn width(version: u32) -> Option<nat> {
 pub open spec fn le64(raw: Seq<u8>, at: int) -> nat {
     bytes::le32(raw, at) + 4294967296 * bytes::le32(raw, at + 4)
 }
+#[verifier::opaque]
 pub open spec fn encoded64(value: u64) -> Seq<u8> {
     bytes::encoded_le(value as u32) + bytes::encoded_le((value / 4294967296) as u32)
 }
@@ -107,6 +108,32 @@ pub open spec fn record_image(record: Record, version: u32) -> Seq<u8> {
             + encoded64(record.current_space) + encoded64(record.block_time) + encoded64(record.inode_time)
     }
 }
+/// Exact successful write trace, used only to refine the executable stores.
+#[verifier::opaque]
+spec fn record_writes(record: Record, version: u32) -> Seq<u8> {
+    let initial = Seq::<u8>::new(if version == 0 { 48nat } else { 72nat }, |i: int| 0u8);
+    let id = bytes::splice(initial, 0, bytes::encoded_le(record.id));
+    if version == 0 {
+        let ih = bytes::splice(id, 4, bytes::encoded_le(record.inode_hard as u32));
+        let soft_i = bytes::splice(ih, 8, bytes::encoded_le(record.inode_soft as u32));
+        let ci = bytes::splice(soft_i, 12, bytes::encoded_le(record.current_inodes as u32));
+        let bh = bytes::splice(ci, 16, bytes::encoded_le(record.block_hard as u32));
+        let bs = bytes::splice(bh, 20, bytes::encoded_le(record.block_soft as u32));
+        let cs = bytes::splice(bs, 24, encoded64(record.current_space));
+        let bt = bytes::splice(cs, 32, encoded64(record.block_time));
+        bytes::splice(bt, 40, encoded64(record.inode_time))
+    } else {
+        let ih = bytes::splice(id, 8, encoded64(record.inode_hard));
+        let soft_i = bytes::splice(ih, 16, encoded64(record.inode_soft));
+        let ci = bytes::splice(soft_i, 24, encoded64(record.current_inodes));
+        let bh = bytes::splice(ci, 32, encoded64(record.block_hard));
+        let bs = bytes::splice(bh, 40, encoded64(record.block_soft));
+        let cs = bytes::splice(bs, 48, encoded64(record.current_space));
+        let bt = bytes::splice(cs, 56, encoded64(record.block_time));
+        bytes::splice(bt, 64, encoded64(record.inode_time))
+    }
+}
+
 #[verifier::opaque]
 pub open spec fn canonical_image(record: Record, version: u32) -> Seq<u8> {
     record_image(if zero_record(record) { Record { inode_time: 1, ..record } } else { record }, version)
@@ -235,6 +262,8 @@ proof fn radix_append(raw: Seq<u8>, levels: Map<u32, nat>, data: Set<u32>, numbe
     assert(!levels.dom().contains(number));
     assert(!data.contains(number));
     assert(after.len() == (number as nat + 1) * BLOCK_BYTES);
+    vstd::arithmetic::div_mod::lemma_fundamental_div_mod(raw.len() as int, BLOCK_BYTES as int);
+    assert(raw.len() / (BLOCK_BYTES as nat) == number as nat);
     assert forall|node: u32| #[trigger] new_levels.dom().contains(node)
         implies node > 0 && (node as nat + 1) * BLOCK_BYTES <= after.len()
             && new_levels[node] < 4 && !new_data.contains(node) by {
@@ -345,28 +374,165 @@ proof fn radix_pointer_write(raw: Seq<u8>, levels: Map<u32, nat>, data: Set<u32>
 pub proof fn encoded64_recovers(value: u64)
     ensures encoded64(value).len() == 8, le64(encoded64(value), 0) == value as nat,
 {
+    reveal(encoded64);
     bytes::little_endian_encoding_recovers_every_word(value as u32);
     bytes::little_endian_encoding_recovers_every_word((value / 4294967296) as u32);
     vstd::arithmetic::div_mod::lemma_fundamental_div_mod(value as int, 4294967296);
     assert((value as u32) as nat == value as nat % 4294967296) by (bit_vector);
 }
+proof fn encoded64_length(value: u64)
+    ensures encoded64(value).len() == 8,
+{
+    reveal(encoded64);
+}
+
+proof fn encoded64_zero()
+    ensures encoded64(0) == Seq::<u8>::new(8, |i: int| 0u8),
+{
+    reveal(encoded64);
+    assert(encoded64(0) =~= Seq::<u8>::new(8, |i: int| 0u8));
+}
+
+proof fn record64_lengths(record: Record)
+    ensures encoded64(record.inode_hard).len() == 8, encoded64(record.inode_soft).len() == 8,
+        encoded64(record.current_inodes).len() == 8, encoded64(record.block_hard).len() == 8,
+        encoded64(record.block_soft).len() == 8, encoded64(record.current_space).len() == 8,
+        encoded64(record.block_time).len() == 8, encoded64(record.inode_time).len() == 8,
+{
+    encoded64_length(record.inode_hard); encoded64_length(record.inode_soft);
+    encoded64_length(record.current_inodes); encoded64_length(record.block_hard);
+    encoded64_length(record.block_soft); encoded64_length(record.current_space);
+    encoded64_length(record.block_time); encoded64_length(record.inode_time);
+}
+
+#[verifier::opaque]
+spec fn v0_word(record: Record, index: nat) -> u32 {
+    if index == 0 { record.id } else if index == 1 { record.inode_hard as u32 }
+    else if index == 2 { record.inode_soft as u32 } else if index == 3 { record.current_inodes as u32 }
+    else if index == 4 { record.block_hard as u32 } else { record.block_soft as u32 }
+}
+
+#[verifier::opaque]
+spec fn v0_tail(record: Record, index: nat) -> u64 {
+    if index == 0 { record.current_space } else if index == 1 { record.block_time }
+    else { record.inode_time }
+}
+
+/// Fixed-width framing stays separate from interpreting any encoded word.
+proof fn record_image_v0_word_bytes(record: Record, index: nat)
+    requires index < 6,
+    ensures record_image(record, 0).len() == 48,
+        record_image(record, 0).subrange(index as int * 4, 4 + index as int * 4)
+            == bytes::encoded_le(v0_word(record, index)),
+{
+    record64_lengths(record);
+    reveal(record_image);
+    reveal(v0_word);
+    assert(record_image(record, 0).subrange(index as int * 4, 4 + index as int * 4)
+        =~= bytes::encoded_le(v0_word(record, index)));
+}
+
+proof fn record_image_v0_word_recovers(record: Record, index: nat)
+    requires index < 6,
+    ensures record_image(record, 0).len() == 48,
+        bytes::le32(record_image(record, 0), index as int * 4) == v0_word(record, index) as nat,
+{
+    record_image_v0_word_bytes(record, index);
+    bytes::little_endian_encoding_recovers_every_word(v0_word(record, index));
+    let image = record_image(record, 0);
+    assert(bytes::le32(image.subrange(index as int * 4, 4 + index as int * 4), 0)
+        == bytes::le32(image, index as int * 4));
+}
+
+proof fn record_image_v0_tail_bytes(record: Record, index: nat)
+    requires index < 3,
+    ensures record_image(record, 0).len() == 48,
+        record_image(record, 0).subrange(24 + index as int * 8, 32 + index as int * 8)
+            == encoded64(v0_tail(record, index)),
+{
+    record64_lengths(record);
+    reveal(record_image);
+    reveal(v0_tail);
+    assert(record_image(record, 0).subrange(24 + index as int * 8, 32 + index as int * 8)
+        =~= encoded64(v0_tail(record, index)));
+}
+
+proof fn record_image_v0_tail_recovers(record: Record, index: nat)
+    requires index < 3,
+    ensures record_image(record, 0).len() == 48,
+        le64(record_image(record, 0), 24 + index as int * 8) == v0_tail(record, index) as nat,
+{
+    record_image_v0_tail_bytes(record, index);
+    encoded64_recovers(v0_tail(record, index));
+    le64_subrange(record_image(record, 0), 24 + index as int * 8);
+}
+
 /// Each format's recovery proof unfolds only its own fixed wire layout.
 proof fn record_image_v0_recovers(record: Record)
     requires representable(record, 0),
     ensures record_image(record, 0).len() == 48,
         fields(record_image(record, 0), 0) == record,
 {
-    reveal(record_image);
+    record_image_v0_word_recovers(record, 0);
+    record_image_v0_word_recovers(record, 1);
+    record_image_v0_word_recovers(record, 2);
+    record_image_v0_word_recovers(record, 3);
+    record_image_v0_word_recovers(record, 4);
+    record_image_v0_word_recovers(record, 5);
+    record_image_v0_tail_recovers(record, 0);
+    record_image_v0_tail_recovers(record, 1);
+    record_image_v0_tail_recovers(record, 2);
+    reveal(v0_word);
+    reveal(v0_tail);
     reveal(fields);
+}
+
+#[verifier::opaque]
+spec fn v1_field(record: Record, index: nat) -> u64 {
+    if index == 0 { record.inode_hard } else if index == 1 { record.inode_soft }
+    else if index == 2 { record.current_inodes } else if index == 3 { record.block_hard }
+    else if index == 4 { record.block_soft } else if index == 5 { record.current_space }
+    else if index == 6 { record.block_time } else { record.inode_time }
+}
+
+/// Framing is proved on eight-byte slices before interpreting any words.
+proof fn record_image_v1_field_bytes(record: Record, index: nat)
+    requires index < 8,
+    ensures record_image(record, 1).len() == 72,
+        record_image(record, 1).subrange(8 + index as int * 8, 16 + index as int * 8)
+            == encoded64(v1_field(record, index)),
+{
+    record64_lengths(record);
+    reveal(record_image);
+    reveal(v1_field);
+    assert(record_image(record, 1).subrange(8 + index as int * 8, 16 + index as int * 8)
+        =~= encoded64(v1_field(record, index)));
+}
+
+proof fn le64_subrange(raw: Seq<u8>, at: int)
+    requires 0 <= at, at + 8 <= raw.len(),
+    ensures le64(raw.subrange(at, at + 8), 0) == le64(raw, at),
+{
+}
+
+proof fn record_image_v1_field_recovers(record: Record, index: nat)
+    requires index < 8,
+    ensures record_image(record, 1).len() == 72,
+        le64(record_image(record, 1), 8 + index as int * 8) == v1_field(record, index) as nat,
+{
+    record_image_v1_field_bytes(record, index);
+    encoded64_recovers(v1_field(record, index));
+    le64_subrange(record_image(record, 1), 8 + index as int * 8);
+}
+
+proof fn record_image_v1_header_recovers(record: Record)
+    ensures record_image(record, 1).len() == 72,
+        bytes::le32(record_image(record, 1), 0) == record.id as nat,
+        bytes::le32(record_image(record, 1), 4) == 0,
+{
+    record64_lengths(record);
     bytes::little_endian_encoding_recovers_every_word(record.id);
-    bytes::little_endian_encoding_recovers_every_word(record.inode_hard as u32);
-    bytes::little_endian_encoding_recovers_every_word(record.inode_soft as u32);
-    bytes::little_endian_encoding_recovers_every_word(record.current_inodes as u32);
-    bytes::little_endian_encoding_recovers_every_word(record.block_hard as u32);
-    bytes::little_endian_encoding_recovers_every_word(record.block_soft as u32);
-    encoded64_recovers(record.current_space);
-    encoded64_recovers(record.block_time);
-    encoded64_recovers(record.inode_time);
+    reveal(record_image);
 }
 
 proof fn record_image_v1_recovers(record: Record)
@@ -374,17 +540,17 @@ proof fn record_image_v1_recovers(record: Record)
         fields(record_image(record, 1), 1) == record,
         bytes::le32(record_image(record, 1), 4) == 0,
 {
-    reveal(record_image);
+    record_image_v1_header_recovers(record);
+    record_image_v1_field_recovers(record, 0);
+    record_image_v1_field_recovers(record, 1);
+    record_image_v1_field_recovers(record, 2);
+    record_image_v1_field_recovers(record, 3);
+    record_image_v1_field_recovers(record, 4);
+    record_image_v1_field_recovers(record, 5);
+    record_image_v1_field_recovers(record, 6);
+    record_image_v1_field_recovers(record, 7);
+    reveal(v1_field);
     reveal(fields);
-    bytes::little_endian_encoding_recovers_every_word(record.id);
-    encoded64_recovers(record.inode_hard);
-    encoded64_recovers(record.inode_soft);
-    encoded64_recovers(record.current_inodes);
-    encoded64_recovers(record.block_hard);
-    encoded64_recovers(record.block_soft);
-    encoded64_recovers(record.current_space);
-    encoded64_recovers(record.block_time);
-    encoded64_recovers(record.inode_time);
 }
 
 proof fn record_image_recovers(record: Record, version: u32)
@@ -416,10 +582,71 @@ proof fn record_image_zero_iff(record: Record, version: u32)
         zero_bytes_have_zero_fields(image, version);
     }
     if zero_record(record) {
+        encoded64_zero();
         assert(image =~= Seq::<u8>::new(width(version).unwrap(), |i: int| 0u8)) by {
             reveal(record_image);
         }
     }
+}
+
+proof fn splice_zero_suffix(prefix: Seq<u8>, value: Seq<u8>, tail: nat)
+    ensures bytes::splice(prefix + Seq::<u8>::new(value.len() + tail, |i: int| 0u8),
+        prefix.len() as int, value) == prefix + value + Seq::<u8>::new(tail, |i: int| 0u8),
+{
+    assert(bytes::splice(prefix + Seq::<u8>::new(value.len() + tail, |i: int| 0u8),
+        prefix.len() as int, value) =~= prefix + value + Seq::<u8>::new(tail, |i: int| 0u8));
+}
+
+proof fn split_zero_suffix(prefix: Seq<u8>, first: nat, last: nat)
+    ensures prefix + Seq::<u8>::new(first + last, |i: int| 0u8)
+        == prefix + Seq::<u8>::new(first, |i: int| 0u8) + Seq::<u8>::new(last, |i: int| 0u8),
+{
+    assert(prefix + Seq::<u8>::new(first + last, |i: int| 0u8)
+        =~= prefix + Seq::<u8>::new(first, |i: int| 0u8) + Seq::<u8>::new(last, |i: int| 0u8));
+}
+
+proof fn record_writes_v0_are_image(record: Record)
+    ensures record_writes(record, 0) == record_image(record, 0),
+{
+    record64_lengths(record);
+    reveal(record_writes);
+    reveal(record_image);
+    splice_zero_suffix(Seq::<u8>::empty(), bytes::encoded_le(record.id), 44);
+    splice_zero_suffix(bytes::encoded_le(record.id), bytes::encoded_le(record.inode_hard as u32), 40);
+    splice_zero_suffix(bytes::encoded_le(record.id) + bytes::encoded_le(record.inode_hard as u32), bytes::encoded_le(record.inode_soft as u32), 36);
+    splice_zero_suffix(bytes::encoded_le(record.id) + bytes::encoded_le(record.inode_hard as u32) + bytes::encoded_le(record.inode_soft as u32), bytes::encoded_le(record.current_inodes as u32), 32);
+    splice_zero_suffix(bytes::encoded_le(record.id) + bytes::encoded_le(record.inode_hard as u32) + bytes::encoded_le(record.inode_soft as u32) + bytes::encoded_le(record.current_inodes as u32), bytes::encoded_le(record.block_hard as u32), 28);
+    splice_zero_suffix(bytes::encoded_le(record.id) + bytes::encoded_le(record.inode_hard as u32) + bytes::encoded_le(record.inode_soft as u32) + bytes::encoded_le(record.current_inodes as u32) + bytes::encoded_le(record.block_hard as u32), bytes::encoded_le(record.block_soft as u32), 24);
+    splice_zero_suffix(bytes::encoded_le(record.id) + bytes::encoded_le(record.inode_hard as u32) + bytes::encoded_le(record.inode_soft as u32) + bytes::encoded_le(record.current_inodes as u32) + bytes::encoded_le(record.block_hard as u32) + bytes::encoded_le(record.block_soft as u32), encoded64(record.current_space), 16);
+    splice_zero_suffix(bytes::encoded_le(record.id) + bytes::encoded_le(record.inode_hard as u32) + bytes::encoded_le(record.inode_soft as u32) + bytes::encoded_le(record.current_inodes as u32) + bytes::encoded_le(record.block_hard as u32) + bytes::encoded_le(record.block_soft as u32) + encoded64(record.current_space), encoded64(record.block_time), 8);
+    splice_zero_suffix(bytes::encoded_le(record.id) + bytes::encoded_le(record.inode_hard as u32) + bytes::encoded_le(record.inode_soft as u32) + bytes::encoded_le(record.current_inodes as u32) + bytes::encoded_le(record.block_hard as u32) + bytes::encoded_le(record.block_soft as u32) + encoded64(record.current_space) + encoded64(record.block_time), encoded64(record.inode_time), 0);
+}
+
+proof fn record_writes_v1_are_image(record: Record)
+    ensures record_writes(record, 1) == record_image(record, 1),
+{
+    record64_lengths(record);
+    reveal(record_writes);
+    reveal(record_image);
+    splice_zero_suffix(Seq::<u8>::empty(), bytes::encoded_le(record.id), 68);
+    split_zero_suffix(bytes::encoded_le(record.id), 4, 64);
+    assert(Seq::<u8>::new(4, |i: int| 0u8) =~= seq![0u8, 0u8, 0u8, 0u8]);
+    splice_zero_suffix(bytes::encoded_le(record.id) + seq![0u8, 0u8, 0u8, 0u8], encoded64(record.inode_hard), 56);
+    splice_zero_suffix(bytes::encoded_le(record.id) + seq![0u8, 0u8, 0u8, 0u8] + encoded64(record.inode_hard), encoded64(record.inode_soft), 48);
+    splice_zero_suffix(bytes::encoded_le(record.id) + seq![0u8, 0u8, 0u8, 0u8] + encoded64(record.inode_hard) + encoded64(record.inode_soft), encoded64(record.current_inodes), 40);
+    splice_zero_suffix(bytes::encoded_le(record.id) + seq![0u8, 0u8, 0u8, 0u8] + encoded64(record.inode_hard) + encoded64(record.inode_soft) + encoded64(record.current_inodes), encoded64(record.block_hard), 32);
+    splice_zero_suffix(bytes::encoded_le(record.id) + seq![0u8, 0u8, 0u8, 0u8] + encoded64(record.inode_hard) + encoded64(record.inode_soft) + encoded64(record.current_inodes) + encoded64(record.block_hard), encoded64(record.block_soft), 24);
+    splice_zero_suffix(bytes::encoded_le(record.id) + seq![0u8, 0u8, 0u8, 0u8] + encoded64(record.inode_hard) + encoded64(record.inode_soft) + encoded64(record.current_inodes) + encoded64(record.block_hard) + encoded64(record.block_soft), encoded64(record.current_space), 16);
+    splice_zero_suffix(bytes::encoded_le(record.id) + seq![0u8, 0u8, 0u8, 0u8] + encoded64(record.inode_hard) + encoded64(record.inode_soft) + encoded64(record.current_inodes) + encoded64(record.block_hard) + encoded64(record.block_soft) + encoded64(record.current_space), encoded64(record.block_time), 8);
+    splice_zero_suffix(bytes::encoded_le(record.id) + seq![0u8, 0u8, 0u8, 0u8] + encoded64(record.inode_hard) + encoded64(record.inode_soft) + encoded64(record.current_inodes) + encoded64(record.block_hard) + encoded64(record.block_soft) + encoded64(record.current_space) + encoded64(record.block_time), encoded64(record.inode_time), 0);
+}
+
+proof fn record_writes_are_image(record: Record, version: u32)
+    requires version <= 1,
+    ensures record_writes(record, version) == record_image(record, version),
+{
+    if version == 0 { record_writes_v0_are_image(record); }
+    else { record_writes_v1_are_image(record); }
 }
 
 /// The Linux ID-zero escape changes only the final inode-time word pair.
@@ -428,6 +655,8 @@ proof fn zero_image_escape(record: Record, version: u32)
     ensures bytes::splice(record_image(record, version),
         if version == 0 { 40int } else { 64int }, encoded64(1)) == canonical_image(record, version),
 {
+    encoded64_zero();
+    encoded64_length(1);
     reveal(record_image);
     reveal(canonical_image);
     assert(bytes::splice(record_image(record, version),
@@ -524,11 +753,72 @@ fn put_non_node_u32(raw: &mut [u8], offset: usize, value: u32, block: u32,
     result
 }
 
+/// Publish one aligned header word while exposing only decoded word framing.
+/// This proof boundary keeps the eight final stores out of the tree builder's
+/// solver context; the executable operation remains the same checked store.
+fn put_header_word(raw: &mut [u8], offset: usize, value: u32,
+    Ghost(levels): Ghost<Map<u32, nat>>, Ghost(data): Ghost<Set<u32>>) -> (r: bool)
+    requires old(raw).len() >= 2 * BLOCK_BYTES, offset <= 28, offset % 4 == 0,
+        radix_layout(old(raw)@, levels, data),
+    ensures r, final(raw).len() == old(raw).len(),
+        radix_layout(final(raw)@, levels, data),
+        bytes::le32(final(raw)@, offset as int) == value as nat,
+        forall|word: int| 0 <= word <= 28 && word % 4 == 0 && word != offset
+            ==> #[trigger] bytes::le32(final(raw)@, word) == bytes::le32(old(raw)@, word),
+{
+    let ghost before = raw@;
+    let result = put_non_node_u32(raw, offset, value, 0, Ghost(levels), Ghost(data));
+    proof {
+        bytes::little_endian_encoding_recovers_every_word(value);
+        assert(bytes::le32(raw@, offset as int) == value as nat);
+        assert forall|word: int| 0 <= word <= 28 && word % 4 == 0 && word != offset
+            implies #[trigger] bytes::le32(raw@, word) == bytes::le32(before, word) by {
+            assert(word + 4 <= offset || offset as int + 4 <= word);
+            bytes::splice_frame(before, offset as int, bytes::encoded_le(value), word);
+            bytes::splice_frame(before, offset as int, bytes::encoded_le(value), word + 1);
+            bytes::splice_frame(before, offset as int, bytes::encoded_le(value), word + 2);
+            bytes::splice_frame(before, offset as int, bytes::encoded_le(value), word + 3);
+        }
+    }
+    result
+}
+
+/// Seal the file header after all private data/tree/free-list edits.
+fn finish_build_header(raw: &mut [u8], kind: QuotaType, version: u32,
+    block_grace: u32, inode_grace: u32, free_entry: u32,
+    Ghost(levels): Ghost<Map<u32, nat>>, Ghost(data): Ghost<Set<u32>>) -> (r: bool)
+    requires old(raw).len() >= 2 * BLOCK_BYTES,
+        old(raw).len() / BLOCK_BYTES <= MAX_BUILD_BLOCKS,
+        radix_layout(old(raw)@, levels, data),
+    ensures r, final(raw).len() == old(raw).len(),
+        radix_layout(final(raw)@, levels, data),
+        bytes::le32(final(raw)@, 0) == type_magic(kind),
+        bytes::le32(final(raw)@, 4) == version,
+        bytes::le32(final(raw)@, 8) == block_grace,
+        bytes::le32(final(raw)@, 12) == inode_grace,
+        bytes::le32(final(raw)@, 16) == 0,
+        bytes::le32(final(raw)@, 20) == final(raw).len() / BLOCK_BYTES,
+        bytes::le32(final(raw)@, 24) == 0,
+        bytes::le32(final(raw)@, 28) == free_entry,
+{
+    let blocks = (raw.len() / BLOCK_BYTES) as u32;
+    if !put_header_word(raw, 0, magic(kind), Ghost(levels), Ghost(data))
+        || !put_header_word(raw, 4, version, Ghost(levels), Ghost(data))
+        || !put_header_word(raw, 8, block_grace, Ghost(levels), Ghost(data))
+        || !put_header_word(raw, 12, inode_grace, Ghost(levels), Ghost(data))
+        || !put_header_word(raw, 16, 0, Ghost(levels), Ghost(data))
+        || !put_header_word(raw, 20, blocks, Ghost(levels), Ghost(data))
+        || !put_header_word(raw, 24, 0, Ghost(levels), Ghost(data))
+        || !put_header_word(raw, 28, free_entry, Ghost(levels), Ghost(data)) { return false; }
+    true
+}
+
 fn put_u64(raw: &mut [u8], offset: usize, value: u64) -> (r: bool)
     ensures final(raw).len() == old(raw).len(),
         r == (offset as int + 8 <= old(raw).len()),
         final(raw)@ == if r { bytes::splice(old(raw)@, offset as int, encoded64(value)) } else { old(raw)@ },
 {
+    proof { reveal(encoded64); }
     if offset > raw.len() || raw.len() - offset < 8 { return false; }
     put_u32(raw, offset, value as u32) && put_u32(raw, offset + 4, (value / 4294967296) as u32)
 }
@@ -672,7 +962,8 @@ pub fn encode_record(record: Record, version: u32) -> (r: Option<Vec<u8>>)
             || !put_u64(raw.as_mut_slice(), 64, record.inode_time) { return None; }
     }
     proof {
-        assert(raw@ == record_image(record, version)) by { reveal(record_image); }
+        assert(raw@ == record_writes(record, version)) by { reveal(record_writes); }
+        record_writes_are_image(record, version);
         record_image_zero_iff(record, version);
     }
     if all_zero(raw.as_slice()) {
@@ -740,6 +1031,20 @@ fn block<'a>(file: &'a [u8], number: u32, blocks: u32) -> (r: Option<&'a [u8]>)
     Some(&file[at as usize..at as usize + 1024])
 }
 
+proof fn record_slice_in_file(file: Seq<u8>, raw: Seq<u8>, block: u32, at: nat, count: nat, version: u32)
+    requires (block as nat + 1) * BLOCK_BYTES <= file.len(),
+        raw == file.subrange(block as int * BLOCK_BYTES, (block as int + 1) * BLOCK_BYTES),
+        at + count <= BLOCK_BYTES,
+    ensures raw.subrange(at as int, (at + count) as int)
+        == file.subrange(block as int * BLOCK_BYTES + at, block as int * BLOCK_BYTES + at + count),
+        parsed_record(raw.subrange(at as int, (at + count) as int), version)
+            == parsed_record(file.subrange(block as int * BLOCK_BYTES + at,
+                block as int * BLOCK_BYTES + at + count), version),
+{
+    assert(raw.subrange(at as int, (at + count) as int)
+        =~= file.subrange(block as int * BLOCK_BYTES + at, block as int * BLOCK_BYTES + at + count));
+}
+
 /// A path lookup validates every pointer in each traversed tree block, rejects
 /// cycles, and checks the complete selected data block's occupancy and IDs.
 pub fn lookup(file: &[u8], kind: QuotaType, id: u32) -> (r: Result<Option<Located>, Error>)
@@ -762,7 +1067,8 @@ pub fn lookup(file: &[u8], kind: QuotaType, id: u32) -> (r: Result<Option<Locate
     let mut current = ROOT_BLOCK; let mut depth = 0usize;
     while depth < 4
         invariant depth <= 4, path.len() == depth + 1,
-            header.version <= 1, info.blocks > ROOT_BLOCK,
+            header.version <= 1, header.version == bytes::le32(file@, 4) as u32,
+            info.blocks > ROOT_BLOCK,
             0 < current < info.blocks, path@[0] == ROOT_BLOCK, path@[depth as int] == current,
             width == if header.version == 0 { 48usize } else { 72usize },
             slots == if header.version == 0 { 21usize } else { 14usize },
@@ -792,6 +1098,7 @@ pub fn lookup(file: &[u8], kind: QuotaType, id: u32) -> (r: Result<Option<Locate
     let mut seen = Vec::<u32>::new(); let mut found: Option<Located> = None; let mut i = 0usize;
     while i < slots
         invariant i <= slots, raw.len() == BLOCK_BYTES, current > ROOT_BLOCK,
+            header.version <= 1, header.version == bytes::le32(file@, 4) as u32,
             width == if header.version == 0 { 48usize } else { 72usize },
             slots == if header.version == 0 { 21usize } else { 14usize },
             current < info.blocks, (current as nat + 1) * BLOCK_BYTES <= file.len(),
@@ -818,7 +1125,20 @@ pub fn lookup(file: &[u8], kind: QuotaType, id: u32) -> (r: Result<Option<Locate
         i += 1;
     }
     if seen.len() != dh.entries as usize { return Err(Error::DataHeader); }
-    match found { Some(v) => Ok(Some(v)), None => Err(Error::MissingRecord) }
+    match found {
+        Some(v) => {
+            proof {
+                assert(v.slot < slots);
+                assert(DATA_HEADER_BYTES + v.slot * width + width <= BLOCK_BYTES);
+                record_slice_in_file(file@, raw@, current,
+                    (DATA_HEADER_BYTES + v.slot * width) as nat, width as nat, header.version);
+                assert(crate::quota_v2::width(bytes::le32(file@, 4) as u32) == Some(width as nat));
+                assert(v.offset as nat + width <= file.len());
+            }
+            Ok(Some(v))
+        },
+        None => Err(Error::MissingRecord),
+    }
 }
 
 fn add_block(file: &mut Vec<u8>, budget: u32) -> (r: Option<u32>)
@@ -841,6 +1161,19 @@ fn add_block(file: &mut Vec<u8>, budget: u32) -> (r: Option<u32>)
         decreases BLOCK_BYTES - i,
     { file.push(0); i += 1; }
     Some(count as u32)
+}
+
+proof fn pushed_blocks_set(blocks: Seq<u32>, block: u32)
+    ensures blocks.push(block).to_set() == blocks.to_set().insert(block),
+{
+    blocks.to_set_ensures();
+    blocks.push(block).to_set_ensures();
+    assert(blocks.push(block).to_set() =~= blocks.to_set().insert(block)) by {
+        assert forall|item: u32| #[trigger] blocks.push(block).to_set().contains(item)
+            == blocks.to_set().insert(block).contains(item) by {
+            vstd::seq_lib::lemma_seq_contains_after_push(blocks, block, item);
+        }
+    }
 }
 
 /// Build a complete canonical quota file. New data and radix blocks are
@@ -892,21 +1225,31 @@ pub fn build(kind: QuotaType, version: u32, block_grace: u32, inode_grace: u32,
         ids.push(record.id);
         let encoded = match encode_record(record, version) { Some(v) => v, None => { return Err(Error::Version); } };
         if data == 0 || used == slots {
+            let ghost previous_blocks = data_blocks@;
             let ghost before = raw@;
             data = match add_block(&mut raw, block_budget) { Some(v) => v, None => { return Err(Error::Budget); } };
             proof {
                 radix_append(before, levels, data_set, data, None);
                 data_set = data_set.insert(data);
             }
-            data_blocks.push(data); used = 0;
+            data_blocks.push(data);
+            proof {
+                pushed_blocks_set(previous_blocks, data);
+                assert(data_set =~= data_blocks@.to_set());
+            }
+            used = 0;
         }
         proof { radix_data_properties(raw@, levels, data_set, data); }
         let at = data as usize * BLOCK_BYTES + DATA_HEADER_BYTES + used * width;
+        proof { assert(at as nat + width <= (data as nat + 1) * BLOCK_BYTES); }
         let mut k = 0usize;
         while k < width
             invariant k <= width, encoded.len() == width, at as nat + width <= raw.len(),
+                at as nat == data as nat * BLOCK_BYTES + DATA_HEADER_BYTES + used * width,
+                at as nat + width <= (data as nat + 1) * BLOCK_BYTES,
                 build_storage(raw@, block_budget), ROOT_BLOCK < data,
                 radix_layout(raw@, levels, data_set), data_set.contains(data),
+                data_set == data_blocks@.to_set(),
                 (data as nat + 1) * BLOCK_BYTES <= raw.len(),
                 used < slots,
                 width == if version == 0 { 48usize } else { 72usize },
@@ -930,14 +1273,16 @@ pub fn build(kind: QuotaType, version: u32, block_grace: u32, inode_grace: u32,
         while depth < 4
             invariant depth <= 4, build_storage(raw@, block_budget), raw.len() >= 2 * BLOCK_BYTES,
                 radix_layout(raw@, levels, data_set), data_set.contains(data),
+                data_set == data_blocks@.to_set(),
                 levels.dom().contains(node), depth < 4 ==> levels[node] == depth,
                 node > 0, (node as nat + 1) * BLOCK_BYTES <= raw.len(),
                 ROOT_BLOCK < data, (data as nat + 1) * BLOCK_BYTES <= raw.len(),
             decreases 4 - depth,
         {
             let identifier = record.id;
-            proof { assert(((identifier >> ((3 - depth) * 8)) & 255) <= 255) by (bit_vector); }
-            let index = ((identifier >> ((3 - depth) * 8)) & 255) as usize;
+            let shift = (3 - depth) * 8;
+            proof { assert(((identifier >> shift) & 255) <= 255) by (bit_vector); }
+            let index = ((identifier >> shift) & 255) as usize;
             proof { radix_node_properties(raw@, levels, data_set, node, index as int); }
             let at = node as usize * BLOCK_BYTES + index * 4;
             let next = bytes::read_le32(raw.as_slice(), at).unwrap();
@@ -993,15 +1338,8 @@ pub fn build(kind: QuotaType, version: u32, block_grace: u32, inode_grace: u32,
         }
         b += 1;
     }
-    let blocks = (raw.len() / BLOCK_BYTES) as u32;
-    if !put_non_node_u32(raw.as_mut_slice(), 0, magic(kind), 0, Ghost(levels), Ghost(data_set))
-        || !put_non_node_u32(raw.as_mut_slice(), 4, version, 0, Ghost(levels), Ghost(data_set))
-        || !put_non_node_u32(raw.as_mut_slice(), 8, block_grace, 0, Ghost(levels), Ghost(data_set))
-        || !put_non_node_u32(raw.as_mut_slice(), 12, inode_grace, 0, Ghost(levels), Ghost(data_set))
-        || !put_non_node_u32(raw.as_mut_slice(), 16, 0, 0, Ghost(levels), Ghost(data_set))
-        || !put_non_node_u32(raw.as_mut_slice(), 20, blocks, 0, Ghost(levels), Ghost(data_set))
-        || !put_non_node_u32(raw.as_mut_slice(), 24, 0, 0, Ghost(levels), Ghost(data_set))
-        || !put_non_node_u32(raw.as_mut_slice(), 28, free_entry, 0, Ghost(levels), Ghost(data_set)) { return Err(Error::Bounds); }
+    if !finish_build_header(raw.as_mut_slice(), kind, version, block_grace, inode_grace, free_entry,
+        Ghost(levels), Ghost(data_set)) { return Err(Error::Bounds); }
     proof { assert(exists|l: Map<u32, nat>, d: Set<u32>| #[trigger] radix_layout(raw@, l, d)); }
     Ok(raw)
 }

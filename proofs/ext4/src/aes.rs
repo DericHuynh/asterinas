@@ -76,28 +76,66 @@ spec fn mixed_byte(s:Seq<u8>,i:int,backward:bool) -> u8 {
 spec fn mixed(s:Seq<u8>,backward:bool) -> Seq<u8> {
     Seq::new(16,|i:int| mixed_byte(s,i,backward))
 }
+#[verifier::opaque]
 spec fn encrypt_round(s:Seq<u8>,key:Seq<u8>,round:nat,rounds:nat) -> Seq<u8> {
     let t=shifted(substituted(s,false),false);
     keyed(if round<rounds {mixed(t,false)}else{t},key,round)
 }
+#[verifier::opaque]
 spec fn encrypted(input:Seq<u8>,key:Seq<u8>,rounds:nat,n:nat) -> Seq<u8>
     decreases n
 {
     if n==0 {keyed(input,key,0)}
     else {encrypt_round(encrypted(input,key,rounds,(n-1) as nat),key,n,rounds)}
 }
+#[verifier::opaque]
 spec fn decrypt_round(s:Seq<u8>,key:Seq<u8>,round:nat) -> Seq<u8> {
     let t=keyed(substituted(shifted(s,true),true),key,round);
     if round>0 {mixed(t,true)}else{t}
 }
+#[verifier::opaque]
 spec fn decrypted(input:Seq<u8>,key:Seq<u8>,rounds:nat,n:nat) -> Seq<u8>
     decreases n
 {
     if n==0 {keyed(input,key,rounds)}
     else {decrypt_round(decrypted(input,key,rounds,(n-1) as nat),key,(rounds-n) as nat)}
 }
+proof fn encrypted_zero(input:Seq<u8>,key:Seq<u8>,rounds:nat)
+    ensures encrypted(input,key,rounds,0)==keyed(input,key,0),
+{reveal(encrypted);}
+proof fn encrypted_step(input:Seq<u8>,key:Seq<u8>,rounds:nat,n:nat)
+    requires n<rounds,
+    ensures encrypted(input,key,rounds,n+1)==encrypt_round(encrypted(input,key,rounds,n),key,n+1,rounds),
+{reveal(encrypted);}
+proof fn decrypted_zero(input:Seq<u8>,key:Seq<u8>,rounds:nat)
+    ensures decrypted(input,key,rounds,0)==keyed(input,key,rounds),
+{reveal(decrypted);}
+proof fn decrypted_step(input:Seq<u8>,key:Seq<u8>,rounds:nat,n:nat)
+    requires n<rounds,
+    ensures decrypted(input,key,rounds,n+1)
+        ==decrypt_round(decrypted(input,key,rounds,n),key,(rounds-n-1) as nat),
+{reveal(decrypted);}
 struct ExpandedSchedule {bytes:Seq<u8>,rcon:u8}
 pub closed spec fn expanded_key_reference(key:Seq<u8>,n:nat) -> Seq<u8> {key_schedule(key,n).bytes}
+// Raw-key references use only the active expanded schedule. Unsupported key
+// lengths have an empty reference result; executable validation stays in the
+// existing total constructor.
+#[verifier::opaque]
+pub closed spec fn aes_raw_encrypt_reference(key:Seq<u8>,input:Seq<u8>) -> Seq<u8> {
+    if key.len()==16 || key.len()==32 {
+        let rounds=if key.len()==16 {10nat}else{14nat};
+        let schedule=expanded_key_reference(key,(((rounds+1)*16-key.len())/4) as nat);
+        encrypted(input,schedule,rounds,rounds)
+    }else{Seq::empty()}
+}
+#[verifier::opaque]
+pub closed spec fn aes_raw_decrypt_reference(key:Seq<u8>,input:Seq<u8>) -> Seq<u8> {
+    if key.len()==16 || key.len()==32 {
+        let rounds=if key.len()==16 {10nat}else{14nat};
+        let schedule=expanded_key_reference(key,(((rounds+1)*16-key.len())/4) as nat);
+        decrypted(input,schedule,rounds,rounds)
+    }else{Seq::empty()}
+}
 spec fn schedule_word(s:ExpandedSchedule,key_len:nat) -> Seq<u8> {
     let n=s.bytes.len();let t=s.bytes.subrange((n-4) as int,n as int);
     if n%key_len==0 {
@@ -124,6 +162,95 @@ proof fn schedule_length(key:Seq<u8>,n:nat)
     decreases n,
 {
     if n>0 {schedule_length(key,(n-1) as nat);}
+}
+
+proof fn active_schedule_length(key:Seq<u8>)
+    requires key.len()==16 || key.len()==32,
+    ensures {
+        let rounds=if key.len()==16 {10nat}else{14nat};
+        expanded_key_reference(key,(((rounds+1)*16-key.len())/4) as nat).len()==(rounds+1)*16
+    },
+{
+    let rounds=if key.len()==16 {10nat}else{14nat};
+    schedule_length(key,(((rounds+1)*16-key.len())/4) as nat);
+}
+proof fn keyed_prefix_congruence(state:Seq<u8>,left:Seq<u8>,right:Seq<u8>,round:nat,prefix:nat)
+    requires state.len()==16,(round+1)*16<=prefix<=left.len(),prefix<=right.len(),
+        left.take(prefix as int)==right.take(prefix as int),
+    ensures keyed(state,left,round)==keyed(state,right,round),
+{
+    assert forall|i:int| 0<=i<16 implies
+        keyed(state,left,round)[i]==keyed(state,right,round)[i] by {
+        let index=(round*16) as int+i;
+        assert(0<=index<prefix as int);
+        assert(index<left.len() && index<right.len());
+        assert(left.take(prefix as int).len()==prefix);
+        assert(right.take(prefix as int).len()==prefix);
+        assert(left.take(prefix as int)[index]==right.take(prefix as int)[index]);
+        assert(left.take(prefix as int)[index]==left[index]);
+        assert(right.take(prefix as int)[index]==right[index]);
+        assert(left[index]==right[index]);
+        assert(keyed(state,left,round)[i]==state[i]^left[index]);
+        assert(keyed(state,right,round)[i]==state[i]^right[index]);
+    }
+    assert(keyed(state,left,round) =~= keyed(state,right,round));
+}
+proof fn encrypt_round_prefix_congruence(state:Seq<u8>,left:Seq<u8>,right:Seq<u8>,round:nat,rounds:nat,prefix:nat)
+    requires state.len()==16,(round+1)*16<=prefix<=left.len(),prefix<=right.len(),
+        left.take(prefix as int)==right.take(prefix as int),
+    ensures encrypt_round(state,left,round,rounds)==encrypt_round(state,right,round,rounds),
+{
+    reveal(encrypt_round);
+    let next=shifted(substituted(state,false),false);
+    keyed_prefix_congruence(if round<rounds {mixed(next,false)}else{next},left,right,round,prefix);
+}
+proof fn decrypt_round_prefix_congruence(state:Seq<u8>,left:Seq<u8>,right:Seq<u8>,round:nat,prefix:nat)
+    requires state.len()==16,(round+1)*16<=prefix<=left.len(),prefix<=right.len(),
+        left.take(prefix as int)==right.take(prefix as int),
+    ensures decrypt_round(state,left,round)==decrypt_round(state,right,round),
+{
+    reveal(decrypt_round);
+    keyed_prefix_congruence(substituted(shifted(state,true),true),left,right,round,prefix);
+}
+proof fn encrypted_prefix_congruence(input:Seq<u8>,left:Seq<u8>,right:Seq<u8>,rounds:nat,n:nat)
+    requires input.len()==16,n<=rounds,
+        (rounds+1)*16<=left.len(),(rounds+1)*16<=right.len(),
+        left.take(((rounds+1)*16) as int)==right.take(((rounds+1)*16) as int),
+    ensures encrypted(input,left,rounds,n)==encrypted(input,right,rounds,n),
+    decreases n,
+{
+    if n==0 {
+        encrypted_zero(input,left,rounds);
+        encrypted_zero(input,right,rounds);
+        keyed_prefix_congruence(input,left,right,0,(rounds+1)*16);
+    }else{
+        encrypted_step(input,left,rounds,(n-1) as nat);
+        encrypted_step(input,right,rounds,(n-1) as nat);
+        encrypted_prefix_congruence(input,left,right,rounds,(n-1) as nat);
+        round_reference_lengths(input,left,rounds,(n-1) as nat);
+        encrypt_round_prefix_congruence(encrypted(input,left,rounds,(n-1) as nat),
+            left,right,n,rounds,(rounds+1)*16);
+    }
+}
+proof fn decrypted_prefix_congruence(input:Seq<u8>,left:Seq<u8>,right:Seq<u8>,rounds:nat,n:nat)
+    requires input.len()==16,n<=rounds,
+        (rounds+1)*16<=left.len(),(rounds+1)*16<=right.len(),
+        left.take(((rounds+1)*16) as int)==right.take(((rounds+1)*16) as int),
+    ensures decrypted(input,left,rounds,n)==decrypted(input,right,rounds,n),
+    decreases n,
+{
+    if n==0 {
+        decrypted_zero(input,left,rounds);
+        decrypted_zero(input,right,rounds);
+        keyed_prefix_congruence(input,left,right,rounds,(rounds+1)*16);
+    }else{
+        decrypted_step(input,left,rounds,(n-1) as nat);
+        decrypted_step(input,right,rounds,(n-1) as nat);
+        decrypted_prefix_congruence(input,left,right,rounds,(n-1) as nat);
+        round_reference_lengths(input,left,rounds,(n-1) as nat);
+        decrypt_round_prefix_congruence(decrypted(input,left,rounds,(n-1) as nat),
+            left,right,(rounds-n) as nat,(rounds+1)*16);
+    }
 }
 
 spec fn inverse_byte_property(i:nat) -> bool {
@@ -332,9 +459,18 @@ proof fn state_mix_inverse(state:Seq<u8>)
     assert(mixed(mixed(state,true),false) =~= state);
 }
 
+proof fn single_round_lengths(state:Seq<u8>,key:Seq<u8>,round:nat,rounds:nat)
+    ensures encrypt_round(state,key,round,rounds).len()==16,decrypt_round(state,key,round).len()==16,
+{reveal(encrypt_round);reveal(decrypt_round);}
 proof fn round_reference_lengths(input:Seq<u8>,key:Seq<u8>,rounds:nat,n:nat)
     ensures encrypted(input,key,rounds,n).len()==16,decrypted(input,key,rounds,n).len()==16,
-{}
+{
+    reveal(encrypted);reveal(decrypted);
+    if n>0 {
+        single_round_lengths(encrypted(input,key,rounds,(n-1) as nat),key,n,rounds);
+        single_round_lengths(decrypted(input,key,rounds,(n-1) as nat),key,(rounds-n) as nat,rounds);
+    }
+}
 
 // State cancellation is proved in the coordinates just before SubBytes.
 // This matches the executable decryption order, including its final no-mix
@@ -343,6 +479,7 @@ proof fn undo_regular_encrypt_round(state:Seq<u8>,key:Seq<u8>,round:nat,rounds:n
     requires state.len()==16,0<round<rounds,(round+1)*16<=key.len(),
     ensures decrypt_round(pre_round(encrypt_round(state,key,round,rounds)),key,round)==pre_round(state),
 {
+    reveal(encrypt_round);reveal(decrypt_round);
     pre_round_inverse(encrypt_round(state,key,round,rounds));
     state_key_inverse(mixed(pre_round(state),false),key,round);
     state_mix_inverse(pre_round(state));
@@ -351,6 +488,7 @@ proof fn undo_initial_key_round(state:Seq<u8>,key:Seq<u8>)
     requires state.len()==16,16<=key.len(),
     ensures decrypt_round(pre_round(keyed(state,key,0)),key,0)==state,
 {
+    reveal(decrypt_round);
     pre_round_inverse(keyed(state,key,0));
     state_key_inverse(state,key,0);
 }
@@ -359,9 +497,32 @@ proof fn redo_regular_decrypt_round(state:Seq<u8>,key:Seq<u8>,round:nat,rounds:n
     ensures encrypt_round(inverse_pre_round(decrypt_round(state,key,round)),key,round,rounds)
         ==inverse_pre_round(state),
 {
+    reveal(encrypt_round);reveal(decrypt_round);
     pre_round_inverse(decrypt_round(state,key,round));
     state_mix_inverse(keyed(inverse_pre_round(state),key,round));
     state_key_inverse(inverse_pre_round(state),key,round);
+}
+proof fn undo_final_encrypt_round(state:Seq<u8>,key:Seq<u8>,rounds:nat)
+    requires state.len()==16,(rounds+1)*16<=key.len(),
+    ensures keyed(encrypt_round(state,key,rounds,rounds),key,rounds)==pre_round(state),
+{
+    reveal(encrypt_round);
+    state_key_inverse(pre_round(state),key,rounds);
+}
+proof fn redo_initial_decrypt_round(state:Seq<u8>,key:Seq<u8>)
+    requires state.len()==16,16<=key.len(),
+    ensures keyed(decrypt_round(state,key,0),key,0)==inverse_pre_round(state),
+{
+    reveal(decrypt_round);
+    state_key_inverse(inverse_pre_round(state),key,0);
+}
+proof fn redo_final_encrypt_round(state:Seq<u8>,key:Seq<u8>,rounds:nat)
+    requires state.len()==16,(rounds+1)*16<=key.len(),
+    ensures encrypt_round(inverse_pre_round(keyed(state,key,rounds)),key,rounds,rounds)==state,
+{
+    reveal(encrypt_round);
+    pre_round_inverse(keyed(state,key,rounds));
+    state_key_inverse(state,key,rounds);
 }
 proof fn decrypt_encrypted_prefix(input:Seq<u8>,key:Seq<u8>,rounds:nat,n:nat)
     requires input.len()==16,0<rounds,n<rounds,(rounds+1)*16<=key.len(),
@@ -370,12 +531,16 @@ proof fn decrypt_encrypted_prefix(input:Seq<u8>,key:Seq<u8>,rounds:nat,n:nat)
     decreases n,
 {
     if n==0 {
+        decrypted_zero(encrypted(input,key,rounds,rounds),key,rounds);
+        encrypted_step(input,key,rounds,(rounds-1) as nat);
         round_reference_lengths(input,key,rounds,(rounds-1) as nat);
-        state_key_inverse(pre_round(encrypted(input,key,rounds,(rounds-1) as nat)),key,rounds);
+        undo_final_encrypt_round(encrypted(input,key,rounds,(rounds-1) as nat),key,rounds);
     }else{
+        decrypted_step(encrypted(input,key,rounds,rounds),key,rounds,(n-1) as nat);
         decrypt_encrypted_prefix(input,key,rounds,(n-1) as nat);
         let round=(rounds-n) as nat;
         assert(0<round<rounds && (round-1) as nat==(rounds-1-n) as nat);
+        encrypted_step(input,key,rounds,(round-1) as nat);
         round_reference_lengths(input,key,rounds,(round-1) as nat);
         undo_regular_encrypt_round(encrypted(input,key,rounds,(round-1) as nat),key,round,rounds);
     }
@@ -387,11 +552,15 @@ proof fn encrypt_decrypted_prefix(input:Seq<u8>,key:Seq<u8>,rounds:nat,n:nat)
     decreases n,
 {
     if n==0 {
+        encrypted_zero(decrypted(input,key,rounds,rounds),key,rounds);
+        decrypted_step(input,key,rounds,(rounds-1) as nat);
         round_reference_lengths(input,key,rounds,(rounds-1) as nat);
-        state_key_inverse(inverse_pre_round(decrypted(input,key,rounds,(rounds-1) as nat)),key,0);
+        redo_initial_decrypt_round(decrypted(input,key,rounds,(rounds-1) as nat),key);
     }else{
+        encrypted_step(decrypted(input,key,rounds,rounds),key,rounds,(n-1) as nat);
         encrypt_decrypted_prefix(input,key,rounds,(n-1) as nat);
         let prior=(rounds-n-1) as nat;
+        decrypted_step(input,key,rounds,prior);
         round_reference_lengths(input,key,rounds,prior);
         redo_regular_decrypt_round(decrypted(input,key,rounds,prior),key,n,rounds);
     }
@@ -400,6 +569,8 @@ proof fn decrypt_encrypt_reference(input:Seq<u8>,key:Seq<u8>,rounds:nat)
     requires input.len()==16,0<rounds,(rounds+1)*16<=key.len(),
     ensures decrypted(encrypted(input,key,rounds,rounds),key,rounds,rounds)==input,
 {
+    decrypted_step(encrypted(input,key,rounds,rounds),key,rounds,(rounds-1) as nat);
+    encrypted_zero(input,key,rounds);
     decrypt_encrypted_prefix(input,key,rounds,(rounds-1) as nat);
     undo_initial_key_round(input,key);
 }
@@ -407,9 +578,27 @@ proof fn encrypt_decrypt_reference(input:Seq<u8>,key:Seq<u8>,rounds:nat)
     requires input.len()==16,0<rounds,(rounds+1)*16<=key.len(),
     ensures encrypted(decrypted(input,key,rounds,rounds),key,rounds,rounds)==input,
 {
+    encrypted_step(decrypted(input,key,rounds,rounds),key,rounds,(rounds-1) as nat);
+    decrypted_zero(input,key,rounds);
     encrypt_decrypted_prefix(input,key,rounds,(rounds-1) as nat);
-    pre_round_inverse(decrypted(input,key,rounds,0));
-    state_key_inverse(input,key,rounds);
+    redo_final_encrypt_round(input,key,rounds);
+}
+
+pub proof fn aes_raw_reference_roundtrips(key:Seq<u8>,input:Seq<u8>)
+    requires key.len()==16 || key.len()==32,input.len()==16,
+    ensures aes_raw_encrypt_reference(key,input).len()==16,
+        aes_raw_decrypt_reference(key,input).len()==16,
+        aes_raw_decrypt_reference(key,aes_raw_encrypt_reference(key,input))==input,
+        aes_raw_encrypt_reference(key,aes_raw_decrypt_reference(key,input))==input,
+{
+    reveal(aes_raw_encrypt_reference);
+    reveal(aes_raw_decrypt_reference);
+    let rounds=if key.len()==16 {10nat}else{14nat};
+    let schedule=expanded_key_reference(key,(((rounds+1)*16-key.len())/4) as nat);
+    active_schedule_length(key);
+    round_reference_lengths(input,schedule,rounds,rounds);
+    decrypt_encrypt_reference(input,schedule,rounds);
+    encrypt_decrypt_reference(input,schedule,rounds);
 }
 
 fn mul(mut a:u8,mut b:u8) -> (r:u8)
@@ -549,6 +738,24 @@ impl AesKey {
         decrypt_encrypt_reference(input,self.state.expanded@,self.state.rounds as nat);
         encrypt_decrypt_reference(input,self.state.expanded@,self.state.rounds as nat);
     }
+    pub proof fn aes_raw_key_bridge(&self,key:Seq<u8>,input:Seq<u8>)
+        requires key.len()==16 || key.len()==32,input.len()==16,
+            self.valid_aes(),!self.aes_retired(),
+            self.aes_round_count()==if key.len()==16 {10nat}else{14nat},
+            self.aes_schedule().take(((self.aes_round_count()+1)*16) as int)
+                ==expanded_key_reference(key,(((self.aes_round_count()+1)*16-key.len())/4) as nat),
+        ensures self.aes_encrypt_reference(input)==aes_raw_encrypt_reference(key,input),
+            self.aes_decrypt_reference(input)==aes_raw_decrypt_reference(key,input),
+    {
+        reveal(aes_raw_encrypt_reference);
+        reveal(aes_raw_decrypt_reference);
+        let rounds=self.aes_round_count();
+        let schedule=expanded_key_reference(key,(((rounds+1)*16-key.len())/4) as nat);
+        active_schedule_length(key);
+        assert(schedule.take(((rounds+1)*16) as int) =~= schedule);
+        encrypted_prefix_congruence(input,self.aes_schedule(),schedule,rounds,rounds);
+        decrypted_prefix_congruence(input,self.aes_schedule(),schedule,rounds,rounds);
+    }
     #[verifier::type_invariant]
     spec fn invariant(self) -> bool {self.valid_aes()}
     pub fn new_aes_key(key:&[u8]) -> (r:Result<Self,Error>)
@@ -619,12 +826,17 @@ impl AesKey {
     {
         proof {use_type_invariant(self);}
         if self.state.retired {return Err(Error::Retired);}
+        proof {encrypted_zero(input@,self.state.expanded@,self.state.rounds as nat);}
         let mut state=input;add_key(&mut state,&self.state.expanded,0);let mut round=1usize;
         while round<=self.state.rounds as usize
             invariant 1<=round<=self.state.rounds as usize+1,self.valid_aes(),!self.state.retired,
                 state@==encrypted(input@,self.state.expanded@,self.state.rounds as nat,(round-1) as nat),
             decreases self.state.rounds as usize+1-round,
         {
+            proof {
+                reveal(encrypt_round);
+                encrypted_step(input@,self.state.expanded@,self.state.rounds as nat,(round-1) as nat);
+            }
             let ghost before=state@;
             let mut i=0usize;
             while i<16
@@ -645,6 +857,7 @@ impl AesKey {
     {
         proof {use_type_invariant(self);}
         if self.state.retired {return Err(Error::Retired);}
+        proof {decrypted_zero(input@,self.state.expanded@,self.state.rounds as nat);}
         let mut state=input;add_key(&mut state,&self.state.expanded,self.state.rounds as usize);
         let mut round=self.state.rounds as usize;
         while round>0
@@ -652,6 +865,11 @@ impl AesKey {
                 state@==decrypted(input@,self.state.expanded@,self.state.rounds as nat,(self.state.rounds as usize-round) as nat),
             decreases round,
         {
+            proof {
+                reveal(decrypt_round);
+                decrypted_step(input@,self.state.expanded@,self.state.rounds as nat,
+                    (self.state.rounds as usize-round) as nat);
+            }
             round-=1;shift(&mut state,true);let ghost before=state@;let mut i=0usize;
             while i<16
                 invariant i<=16,forall|j:int| 0<=j<16 ==> state@[j]==
