@@ -9,17 +9,13 @@ and a [concurrent block/extent/transaction protocol](CONCURRENCY.md).
 It is not a complete filesystem and is not registered with the kernel VFS.
 No mount or filesystem write path is enabled.
 
-The pinned entire-crate Verus run checks **3142 obligations with zero errors**,
-including 915 named proof functions and 775 named executable functions.
-372 host interoperability/regression tests pass.
-The run includes the [EA-enabled namespace](EA_NAMESPACE.md), the bounded
-[concurrent rename core](NS_MUTATION.md), [cross-directory moves, hard links
-and nonlast unlinks](CROSS_DIRECTORY_NAMESPACE.md), bounded
-[regular-file replacement and exchange](FILE_RENAME.md), and bounded
-[directory and mixed exchange](DIRECTORY_EXCHANGE.md).
-There are 340 negative API checks and six verifier gates.
-[Proof status](proof-status.json) and [recorded evidence](verification-evidence.json)
-state the exact scope; tests do not discharge formal obligations.
+The unchanged official unfiltered strict run checks **5,481 obligations with zero errors** and compiles the core at source commit `5b48f3ec9beb62c5a4220f45e30a779e1b18ce80`. Its pinned inventory covers **258 source files, 985 named proof functions and 1,249 public executable functions**. The report binds the exact source, lock, runner and emitted-library hashes; writable mount activation remains closed.
+
+The official compatibility suite passes 372 host tests and 376 API rejection cases against this exact checked artifact. These are runtime/API checks, not formal proof. Fresh negative gate checks: passed; timeout regression: passed. A further 24 selected feature-regression families pass on the same compiled library, with remaining native coverage gaps recorded in the component ledger.
+
+[Proof status](proof-status.json) and [recorded evidence](verification-evidence.json) state the exact scope and retain the complete prior baseline evidence. The historical baseline at commit `9083e1d36cb433927df6c0b636c8377a4c350c22` checked 3,142 obligations; its tests and artifact do not stand in for current-artifact checks.
+
+The [implementation-first feature expansion](FEATURE_EXPANSION.md) and [component composition](COMPONENT_COMPOSITION.md) are included in this current declared-source proof. The 32 expansion modules retain their separate 2,339-obligation focused ledger; those counts are not additional to the 5,481 whole-crate obligations. Earlier native oracles and API runs retain their original artifact scope.
 
 ## Implementation and proof scope
 
@@ -256,6 +252,8 @@ python3 proofs/ext4/tools/check_timeout.py
 python3 proofs/ext4/tools/check_compat.py
 ~~~
 
+The recorded strict run used the transparent launcher in verification-evidence.json, adding only --num-threads 4 and forwarding version queries unchanged. The strict flags, existing timeout, solver budgets, and memory cap were unchanged.
+
 The compatibility check requires `mke2fs`, `debugfs` and `e2fsck` from e2fsprogs,
 and `rustc` from the pinned toolchain.
 `RUSTC_BIN`, `MKE2FS_BIN`, `DEBUGFS_BIN` and `E2FSCK_BIN` may select executable paths.
@@ -269,7 +267,7 @@ The negative checks include an actual failing Verus assertion in a disposable co
 The separate timeout regression fault-injects a disposable runner and checks
 current partial logs, stale-log/artifact invalidation and failure reporting. It
 executes no verifier subprocess and supplies no formal filesystem proof evidence.
-340 negative Rust compilation checks reject certificate/source substitution, edit/queue ownership violations, request reuse/forgery, completion redirection, state replacement, command mutation and finishing through a live command loan.
+The historical baseline has 340 negative Rust compilation checks for certificate/source substitution, edit/queue ownership violations, request reuse/forgery, completion redirection, state replacement, command mutation and finishing through a live command loan. The fresh current-artifact suite passes 376 API rejection cases.
 [CI](../../.github/workflows/verify_ext4.yml) runs the same checks.
 
 The emitted host library exercises proof erasure and Linux byte compatibility.

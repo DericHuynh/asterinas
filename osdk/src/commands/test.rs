@@ -5,7 +5,7 @@ use std::fs;
 use super::{build::do_cached_build, util::DEFAULT_TARGET_RELPATH};
 use crate::{
     base_crate::{BaseCrateType, new_base_crate},
-    bundle::{QemuExit, classify_qemu_exit_status},
+    bundle::{QemuExit, classify_qemu_test_exit_status},
     cli::TestArgs,
     config::{Config, scheme::ActionChoice},
     error::Errno,
@@ -117,5 +117,5 @@ pub static KTEST_CRATE_WHITELIST: Option<&[&str]> = Some(&{:#?});
     drop(dir_guard);
 
     let exit_status = bundle.run_qemu_and_wait(config, ActionChoice::Test);
-    classify_qemu_exit_status(exit_status)
+    classify_qemu_test_exit_status(exit_status, config.target_arch)
 }

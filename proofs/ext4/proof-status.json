@@ -9,15 +9,22 @@
   "writable_mount_enabled": false,
   "verification": {
     "status": "core_and_models_checked",
-    "verus_verified_units": 3142,
+    "verus_verified_units": 5481,
     "verification_errors": 0,
-    "checked_named_proof_functions": 915,
-    "checked_named_executable_functions": 775,
+    "checked_named_proof_functions": 985,
+    "checked_named_executable_functions": 1249,
     "runner_validated": true,
+    "positive_unfiltered_strict_runner_passed": true,
     "negative_gate_checks_passed": 6,
     "host_compatibility_tests_passed": 372,
-    "evidence": "verification-evidence.json",
-    "request_boundary_rejections_passed": 340
+    "request_boundary_rejections_passed": 376,
+    "compatibility_status": "passed",
+    "negative_gate_check_status": "passed",
+    "timeout_regression_status": "passed",
+    "certified_source_commit": "5b48f3ec9beb62c5a4220f45e30a779e1b18ce80",
+    "proof_report_sha256": "19a399e2da952b94fb2d6aaa480ed277691ea13b96800384011ea0496d588077",
+    "host_library_sha256": "b5577b84c2e2d66e8b3f0bbbf2c483620dbcdfc4186481293d82add60be6336a",
+    "evidence": "verification-evidence.json"
   },
   "claims": {
     "abstract_redo": "checked",
@@ -212,5 +219,21 @@
   "source_bound_regular_file_replacing_rename_present": true,
   "source_bound_ordinary_directory_and_mixed_exchange_present": true,
   "source_bound_ea_namespace_durable_transaction_present": true,
-  "bounded_ea_admission_acceptance_completeness_present": true
+  "bounded_ea_admission_acceptance_completeness_present": true,
+  "historical_verification": {
+    "published_commit": "9083e1d36cb433927df6c0b636c8377a4c350c22",
+    "verification": {
+      "status": "core_and_models_checked",
+      "verus_verified_units": 3142,
+      "verification_errors": 0,
+      "checked_named_proof_functions": 915,
+      "checked_named_executable_functions": 775,
+      "runner_validated": true,
+      "negative_gate_checks_passed": 6,
+      "host_compatibility_tests_passed": 372,
+      "evidence": "verification-evidence.json",
+      "request_boundary_rejections_passed": 340
+    },
+    "current_artifact_or_test_evidence": false
+  }
 }

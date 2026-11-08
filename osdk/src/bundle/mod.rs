@@ -97,6 +97,23 @@ pub(crate) fn classify_qemu_exit_status(exit_status: ExitStatus) -> QemuExit {
     }
 }
 
+/// Classify a test run without treating an ordinary x86 QEMU shutdown as proof
+/// that the guest test runner reached its success exit.
+pub(crate) fn classify_qemu_test_exit_status(exit_status: ExitStatus, arch: Arch) -> QemuExit {
+    if arch != Arch::X86_64 {
+        return classify_qemu_exit_status(exit_status);
+    }
+
+    // Unlike an ordinary run, an x86 test must explicitly exit through
+    // isa-debug-exit. Match the entire encoding rather than shifting arbitrary
+    // process statuses, which would also accept adjacent even exit codes.
+    match exit_status.code() {
+        Some(0x21) => QemuExit::Success,
+        Some(0x41) => QemuExit::Failed,
+        _ => QemuExit::Unknown,
+    }
+}
+
 impl Bundle {
     /// This function creates a new `Bundle` without adding any files.
     pub fn new(path: impl AsRef<Path>, config: &Config, action: ActionChoice) -> Self {
@@ -552,4 +569,57 @@ fn connect_to_qemu_monitor(
         socket_path.display()
     );
     Err(Errno::ExecuteCommand)
+}
+
+#[cfg(all(test, unix))]
+mod exit_status_tests {
+    use std::os::unix::process::ExitStatusExt;
+
+    use super::*;
+
+    fn exited(code: i32) -> ExitStatus {
+        ExitStatus::from_raw(code << 8)
+    }
+
+    #[test]
+    fn ordinary_run_preserves_successful_shutdown() {
+        assert_eq!(classify_qemu_exit_status(exited(0)), QemuExit::Success);
+    }
+
+    #[test]
+    fn x86_tests_require_exact_guest_debug_exit() {
+        for (code, expected) in [
+            (0, QemuExit::Unknown),
+            (1, QemuExit::Unknown),
+            (0x20, QemuExit::Unknown),
+            (0x21, QemuExit::Success),
+            (0x40, QemuExit::Unknown),
+            (0x41, QemuExit::Failed),
+            (0x22, QemuExit::Unknown),
+        ] {
+            assert_eq!(
+                classify_qemu_test_exit_status(exited(code), Arch::X86_64),
+                expected,
+                "process exit code {code}",
+            );
+        }
+    }
+
+    #[test]
+    fn signal_termination_is_not_test_success() {
+        assert_eq!(
+            classify_qemu_test_exit_status(ExitStatus::from_raw(9), Arch::X86_64),
+            QemuExit::Unknown,
+        );
+    }
+
+    #[test]
+    fn non_x86_tests_preserve_clean_shutdown() {
+        for arch in [Arch::Aarch64, Arch::RiscV64, Arch::LoongArch64] {
+            assert_eq!(
+                classify_qemu_test_exit_status(exited(0), arch),
+                QemuExit::Success,
+            );
+        }
+    }
 }

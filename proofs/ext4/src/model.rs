@@ -386,3 +386,70 @@ pub mod ea_recovery_admission;
 pub mod ea_recovery_image;
 
 pub mod ea_write_bootstrap;
+
+// Implementation-first feature expansion. Feature and mount admission remain
+// closed; new full-crate verification is required before verified publication.
+
+pub mod adiantum;
+
+pub mod aes;
+
+pub mod casefold;
+
+pub mod cluster_allocation;
+
+pub mod crypto_sha2;
+
+pub mod ea_repeated_recovery;
+
+pub mod ea_restart;
+
+pub mod extent_edit;
+
+pub mod fast_commit;
+
+pub mod fscrypt_cipher;
+
+pub mod fscrypt_context;
+
+pub mod fscrypt_extra_modes;
+
+pub mod fsverity;
+
+pub mod group_legacy;
+
+pub mod hctr2;
+
+pub mod htree_edit;
+
+pub mod inline_data;
+
+pub mod inode_payload;
+
+pub mod jbd2_features;
+
+pub mod jbd2_tags;
+
+pub mod legacy_map;
+
+pub mod meta_bg;
+
+pub mod mmp;
+
+pub mod orphan_chain;
+
+pub mod orphan_file;
+
+pub mod orphan_lifecycle;
+
+pub mod project_id;
+
+pub mod quota_reservation;
+
+pub mod quota_v2;
+
+pub mod resize_plan;
+
+pub mod sm4;
+
+pub mod unicode12_data;

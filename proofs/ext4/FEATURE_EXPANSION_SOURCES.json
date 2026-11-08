@@ -1,0 +1,888 @@
+{
+  "schema": 1,
+  "status": "implementation and proof construction; references are not verification evidence",
+  "baseline_commit": "9083e1d36cb433927df6c0b636c8377a4c350c22",
+  "linux_commit": "028ef9c96e96197026887c0f092424679298aae8",
+  "independent_implementation": "Safe Rust algorithms and wire representations; no Linux page/folio/buffer_head ownership imported",
+  "unicode_license": "UNICODE_LICENSE.txt",
+  "sources": [
+    {
+      "path": "fs/ext4/super.c",
+      "blob_sha": "a34efb44e73d70d034aa2ed1b4011a6851235f22",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/super.c",
+      "sections": [
+        {
+          "start_line": 3541,
+          "end_line": 3569,
+          "content_sha256": "17fcbb2057558e0f9975cc8241b9888a499eab0b26ca1a4a1130055ce78dfc49"
+        },
+        {
+          "start_line": 4441,
+          "end_line": 4487,
+          "content_sha256": "86772474e69952879aaaff6535ddd2c121292d2b081ff404232f7bf081fcfba6"
+        },
+        {
+          "start_line": 5162,
+          "end_line": 5175,
+          "content_sha256": "91977e82a093fbcc59a171b0c1ebc721bb5a1c057a02c14a910044456f962c80"
+        },
+        {
+          "start_line": 5276,
+          "end_line": 5288,
+          "content_sha256": "03fa4cdac4c14e345cf0d4bd0dadb0abb3eba2cc5ee7eba91ce70084739603e4"
+        }
+      ],
+      "source_manifest": "geometry-references.json",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "repository": "torvalds/linux"
+    },
+    {
+      "path": "fs/ext4/balloc.c",
+      "blob_sha": "8040c731b3e45d1c54fda8bb5493604e03c969bd",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/balloc.c",
+      "sections": [
+        {
+          "start_line": 854,
+          "end_line": 945,
+          "content_sha256": "b9aeea0c89fdeaad074070b6528921544265f8b8560f08c4d2bab5c2b3ddb6da"
+        }
+      ],
+      "source_manifest": "geometry-references.json",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "repository": "torvalds/linux"
+    },
+    {
+      "path": "fs/ext4/resize.c",
+      "blob_sha": "2c5b851c552a6c6d1869caff6d12686a22c43184",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/resize.c",
+      "sections": [
+        {
+          "start_line": 45,
+          "end_line": 93,
+          "content_sha256": "c35726415043e9a01df8aad1a2c9228ad3fd59973714e3505b58453e709a623e"
+        },
+        {
+          "start_line": 776,
+          "end_line": 890,
+          "content_sha256": "1f9c1eb5b76e4e0cc359ddcc015609c1caffa8b741859e99509e66c94b2bdf9f"
+        },
+        {
+          "start_line": 961,
+          "end_line": 1009,
+          "content_sha256": "f41894c02a36d6ebbecf6f12f5df98f5a4f071130f213b85a241581b4cdc35d1"
+        },
+        {
+          "start_line": 1132,
+          "end_line": 1219,
+          "content_sha256": "1c751feae80bcf029183239bfb9ae26d6c11d5c34d93d3b983fde03e1074b19f"
+        },
+        {
+          "start_line": 1909,
+          "end_line": 1988,
+          "content_sha256": "5cdfdad64c1b978a2b2f66e386bde4c22267741f5441b6897a84daf3b857f1ad"
+        },
+        {
+          "start_line": 1996,
+          "end_line": 2135,
+          "content_sha256": "3b836c671d6e08082f2f0a5f28b4c0aeb42185e9d67d54ac98e8af07af67dbb6"
+        }
+      ],
+      "source_manifest": "geometry-references.json",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "repository": "torvalds/linux"
+    },
+    {
+      "path": "fs/ext4/extents.c",
+      "blob_sha": "8cce1479be6d1e8d4f57428a0a0ed1088744e72e",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/extents.c",
+      "sections": [
+        {
+          "start_line": 2514,
+          "end_line": 2598,
+          "content_sha256": "cba1ef2c6cb0f573038b5dcc7ac9c8f4cf95e89df9d14b398a3b8d7f3d20d522"
+        },
+        {
+          "start_line": 4080,
+          "end_line": 4190,
+          "content_sha256": "544a8a61315d72dd3446007ea04fc79962cc9df038628ca0cbccc17d0f91e16d"
+        }
+      ],
+      "source_manifest": "geometry-references.json",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "repository": "torvalds/linux"
+    },
+    {
+      "path": "fs/ext4/mballoc.c",
+      "blob_sha": "bb58eafb87bcd6d865f63135f4df03d586a15523",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/mballoc.c",
+      "sections": [
+        {
+          "start_line": 6730,
+          "end_line": 6786,
+          "content_sha256": "d113e9a57d42634f6fef48030bbf35840d4bde613058c6b006dcb7fc95ff48c0"
+        }
+      ],
+      "source_manifest": "geometry-references.json",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "repository": "torvalds/linux"
+    },
+    {
+      "path": "fs/ext4/ext4.h",
+      "blob_sha": "7617e2d454ea516fee9047366458c0bda568fddf",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/ext4.h",
+      "sections": [
+        {
+          "start_line": 334,
+          "end_line": 394,
+          "content_sha256": "1c4e91fb3ce3553a22769e83fdb3a36c5578e64850949c576bf104cbf91476ab"
+        },
+        {
+          "start_line": 454,
+          "end_line": 467,
+          "content_sha256": "0f616ea1b20f801b3633d28979bae23eee327692aece75a98d6387645960c20b"
+        }
+      ],
+      "source_manifest": "geometry-references.json",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "repository": "torvalds/linux"
+    },
+    {
+      "path": "include/linux/jbd2.h",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/include/linux/jbd2.h",
+      "blob_sha": "a53a00d36228ce281e31f94fddb50246da62bb32",
+      "saved_content_sha256": "47a3f6f0c6627b0fb7586f529e3ec1c4a43290613c690605bc0d101aa9c1d553",
+      "review_scope": "JBD2 superblock/commit/tag/revoke wire structs, feature and tag flag constants, checksum version mutual exclusion, default fast commit area size.",
+      "source_manifest": "journal-references.json",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8"
+    },
+    {
+      "path": "fs/jbd2/recovery.c",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/jbd2/recovery.c",
+      "blob_sha": "cac8c2cd4a92a749aa860eedf35b7f643ab345b4",
+      "saved_content_sha256": "ccb2b0572719fc07ea851cb91c3c89440bc0fd296b3a5a94f11f69d64f72cd45",
+      "review_scope": "Tag iteration and UUID stride, full64bit addresses, checksum-v1 big-endian descriptor+storedpayload stream, v2/v3 stored-payload CRC before escape restoration, metadata checksum zeroing and legacy zero commit checksum.",
+      "source_manifest": "journal-references.json",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8"
+    },
+    {
+      "path": "fs/jbd2/commit.c",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/jbd2/commit.c",
+      "blob_sha": "7203d2d2624d7afd0d7a3fe7f830845665dd4c14",
+      "saved_content_sha256": "736c3ef6d9795d5677b00b79b7b3092a054b4e77893456d47705b51d361a11da",
+      "review_scope": "Tag field encoding and conditional high address;16bit v2/full32bit v3 checksums; commit checksum field domains and timestamps. Async IO/durability integration is not implemented by these standalone codecs.",
+      "source_manifest": "journal-references.json",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8"
+    },
+    {
+      "path": "fs/jbd2/journal.c",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/jbd2/journal.c",
+      "blob_sha": "cb2c529a8f1bea33df6d4135e5782b9a77792732",
+      "saved_content_sha256": "73e06f46648f475b185fdc0526b05f3edc53b5c1c70b8baf684e0c3c76e1bf84",
+      "review_scope": "Exact8/12,10/14,16 tag sizes; known feature masks and checksum version conflicts; fixed1024byte superblock checksum at252; fastcommit block default.",
+      "source_manifest": "journal-references.json",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8"
+    },
+    {
+      "path": "fs/ext4/fast_commit.h",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/fast_commit.h",
+      "blob_sha": "2f77a37fb101802d3faac323eae852f23fdf9604",
+      "saved_content_sha256": "6e0978ea5aa1ea2ecefcb68077893fea1f7dc3725f044e48a84a9a967269373c",
+      "review_scope": "Exact HEAD,TAIL,ADD_RANGE,DEL_RANGE,CREAT,LINK,UNLINK,INODE,PAD TLV layouts and full-commit ineligibility reason indices.",
+      "source_manifest": "journal-references.json",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8"
+    },
+    {
+      "path": "fs/ext4/fast_commit.c",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/fast_commit.c",
+      "blob_sha": "2f0057e049346cf364be277c39e8ef3690cd0ad3",
+      "saved_content_sha256": "86c41541645a54cf72bec9c6c553d3213c60eca5c26a220ff3b9e6ade6c7ad46",
+      "review_scope": "Complete-tail scanner CRC starts0/resets eachtail, tailCRC excludes checksum/padding; canonical block padding and reserved tail space; committed allocation-exclusion prefix; inode replay preserves i_block except inline or missing extent header.",
+      "source_manifest": "journal-references.json",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8"
+    },
+    {
+      "path": "fs/ext4/extents.c",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/extents.c",
+      "blob_sha": "8cce1479be6d1e8d4f57428a0a0ed1088744e72e",
+      "saved_content_sha256": "33b7ab6447666503a01ad07392bdec04d9c5a87d10e17092f429262692af9b4f",
+      "review_scope": "Extent root/external capacities, header/index/leaf encodings, extent-block CRC at EH_MAX tail, inode-generation seed binding, split/merge/truncate mapping semantics. Independent bounded rebuilding engine; allocation/bitmap/journal ownership integration remains separate.",
+      "source_manifest": "extent-edit-references.json",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8"
+    },
+    {
+      "path": "fs/unicode/utf8-norm.c",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "blob_sha": "7b998c99c88df983161fdb58e44500f74b2189ed",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/unicode/utf8-norm.c",
+      "content_sha256": "14dbb8907b0e305ae40f7e381d39cfd8a1fe0285fb504892c5efaa718ae936ad",
+      "source_manifest": "casefold-references.json"
+    },
+    {
+      "path": "fs/unicode/utf8n.h",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "blob_sha": "fc703aa4b28ee0e0693270acb5c1213f89f7c3e6",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/unicode/utf8n.h",
+      "content_sha256": "2747b6c2e8d1ba24d2727d7dce7e2002aaf6ef586e3f25f855e0a76dbfc9a4ee",
+      "source_manifest": "casefold-references.json"
+    },
+    {
+      "path": "fs/unicode/mkutf8data.c",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "blob_sha": "401f5d3aeb0c0246faa26a90e597e74700de9fbe",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/unicode/mkutf8data.c",
+      "content_sha256": "f3d19cd8da77f1793001860994a46217bc70d1d862b6503c387042854a45c262",
+      "source_manifest": "casefold-references.json"
+    },
+    {
+      "path": "unicodetools/data/ucd/12.1.0-Update/UnicodeData.txt",
+      "repository": "unicode-org/unicodetools",
+      "commit": "63aff0ca8dea894a057d04e7aef7ae1241757680",
+      "blob_sha": "e65aec52f71ef6242b104d252fea5b4f9854938a",
+      "url": "https://github.com/unicode-org/unicodetools/blob/63aff0ca8dea894a057d04e7aef7ae1241757680/unicodetools/data/ucd/12.1.0-Update/UnicodeData.txt",
+      "content_sha256": "93ab1acd8fd9d450463b50ae77eab151a7cda48f98b25b56baed8070f80fc936",
+      "source_manifest": "casefold-references.json"
+    },
+    {
+      "path": "unicodetools/data/ucd/12.1.0-Update/CaseFolding.txt",
+      "repository": "unicode-org/unicodetools",
+      "commit": "63aff0ca8dea894a057d04e7aef7ae1241757680",
+      "blob_sha": "7eeb915abfd7f52276d9669f4b3c414c10092efb",
+      "url": "https://github.com/unicode-org/unicodetools/blob/63aff0ca8dea894a057d04e7aef7ae1241757680/unicodetools/data/ucd/12.1.0-Update/CaseFolding.txt",
+      "content_sha256": "9c772627c6ee77eea6a17b42927b8ee28ca05dc65d6a511062104baaf3d12294",
+      "source_manifest": "casefold-references.json"
+    },
+    {
+      "path": "unicodetools/data/ucd/12.1.0-Update/DerivedAge.txt",
+      "repository": "unicode-org/unicodetools",
+      "commit": "63aff0ca8dea894a057d04e7aef7ae1241757680",
+      "blob_sha": "63503150509ba7594594fda148bde0744c8d6807",
+      "url": "https://github.com/unicode-org/unicodetools/blob/63aff0ca8dea894a057d04e7aef7ae1241757680/unicodetools/data/ucd/12.1.0-Update/DerivedAge.txt",
+      "content_sha256": "2fc081011d8fabaf7cf4937732dd5a6d6a57e492c43f3adfeded513387ee0ec3",
+      "source_manifest": "casefold-references.json"
+    },
+    {
+      "path": "unicodetools/data/ucd/12.1.0-Update/DerivedCoreProperties.txt",
+      "repository": "unicode-org/unicodetools",
+      "commit": "63aff0ca8dea894a057d04e7aef7ae1241757680",
+      "blob_sha": "4a92ffd1a5b721c3a42f05e4460ab653dfdb2b8c",
+      "url": "https://github.com/unicode-org/unicodetools/blob/63aff0ca8dea894a057d04e7aef7ae1241757680/unicodetools/data/ucd/12.1.0-Update/DerivedCoreProperties.txt",
+      "content_sha256": "a6eb7a8671fb532fbd88c37fd7b20b5b2e7dbfc8b121f74c14abe2947db0da68",
+      "source_manifest": "casefold-references.json"
+    },
+    {
+      "path": "unicodetools/data/ucd/12.1.0-Update/ReadMe.txt",
+      "repository": "unicode-org/unicodetools",
+      "commit": "63aff0ca8dea894a057d04e7aef7ae1241757680",
+      "blob_sha": "5e16bdf60556ffdb292f2e3e59d9bbd5ab7fbb7b",
+      "url": "https://github.com/unicode-org/unicodetools/blob/63aff0ca8dea894a057d04e7aef7ae1241757680/unicodetools/data/ucd/12.1.0-Update/ReadMe.txt",
+      "content_sha256": "cb3613bcfc0ad962bf17cca18af090aac11c350fef294916e97bcb100839baff",
+      "source_manifest": "casefold-references.json"
+    },
+    {
+      "path": "unicodetools/data/ucd/12.1.0-Update/extracted/DerivedCombiningClass.txt",
+      "repository": "unicode-org/unicodetools",
+      "commit": "63aff0ca8dea894a057d04e7aef7ae1241757680",
+      "blob_sha": "de4fbc10b12a82216602d5644dc54505d63612d4",
+      "url": "https://github.com/unicode-org/unicodetools/blob/63aff0ca8dea894a057d04e7aef7ae1241757680/unicodetools/data/ucd/12.1.0-Update/extracted/DerivedCombiningClass.txt",
+      "content_sha256": "db6f38fb4aa8b9181b5e6a9f320de9d5c2c9b5687116a619b3cb90138b025e0b",
+      "source_manifest": "casefold-references.json"
+    },
+    {
+      "path": "unicodetools/data/ucd/12.1.0-Update/NormalizationCorrections.txt",
+      "repository": "unicode-org/unicodetools",
+      "commit": "63aff0ca8dea894a057d04e7aef7ae1241757680",
+      "blob_sha": "360f49cc9282a2f695c13fa706c8e97dc3bd3164",
+      "url": "https://github.com/unicode-org/unicodetools/blob/63aff0ca8dea894a057d04e7aef7ae1241757680/unicodetools/data/ucd/12.1.0-Update/NormalizationCorrections.txt",
+      "content_sha256": "8d485b418eb37a3915e2b0ca3e9bf9cdc07fdb0d57184182b60d3485363992ed",
+      "source_manifest": "casefold-references.json"
+    },
+    {
+      "path": "unicodetools/data/ucd/12.1.0-Update/NormalizationTest.txt",
+      "repository": "unicode-org/unicodetools",
+      "commit": "63aff0ca8dea894a057d04e7aef7ae1241757680",
+      "blob_sha": "54f43bdf4d85fc52e5c2b4b8fad779b9f337bc50",
+      "url": "https://github.com/unicode-org/unicodetools/blob/63aff0ca8dea894a057d04e7aef7ae1241757680/unicodetools/data/ucd/12.1.0-Update/NormalizationTest.txt",
+      "content_sha256": "8cabbd6293c88ca05f0b601ade0fd16978ac670a077c0e0f419986ddd33c6941",
+      "source_manifest": "casefold-references.json"
+    },
+    {
+      "path": "include/linux/unicode.h",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "blob_sha": "5e6b212a2aedab7ebf4363083339f4c5e9b82f8f",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/include/linux/unicode.h",
+      "content_sha256": "70f8792e02ed4e64849f1d1d69a0007460007a6fae74c902d05a18ccf20823d1",
+      "source_manifest": "casefold-references.json"
+    },
+    {
+      "path": "icu4c/LICENSE",
+      "repository": "unicode-org/icu",
+      "commit": "e2d85306162d3a0691b070b4f0a73e4012433444",
+      "blob_sha": "2e01e368768a4b992e22f98c05ead747134492a6",
+      "url": "https://github.com/unicode-org/icu/blob/e2d85306162d3a0691b070b4f0a73e4012433444/icu4c/LICENSE",
+      "content_sha256": "6a18c5fac70d7860b57f5b72b4e2c9a1ba6b3d2741eef7ff9767c5379364f10d",
+      "source_manifest": "casefold-references.json"
+    },
+    {
+      "path": "fs/quota/quota_v2.c",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "blob_sha": "a24fab5f9f8048dfd03fcb4c5de4f609331ae616",
+      "content_sha256": "4cac7a5b808edd36685caff4c3042ab5ae49ccaf686e6facbdb4a3e31dcd737f",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/quota/quota_v2.c",
+      "source_manifest": "quota-references.json"
+    },
+    {
+      "path": "fs/quota/quota_tree.c",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "blob_sha": "afceef3ddfaa4763a7901ce4ab7cdf802caaaf1c",
+      "content_sha256": "9e31ce178675e3bb67f93d7e1321f5e41d474432971117c87d912cb4d2354faa",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/quota/quota_tree.c",
+      "source_manifest": "quota-references.json"
+    },
+    {
+      "path": "fs/quota/quotaio_v2.h",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "blob_sha": "43cf0f0e29021e02a86c2fcff76b1c26ee1c26e4",
+      "content_sha256": "d30cb3db220429550dad34ed40c82507ce587c4965d4fabd1b89a0f81bf835e5",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/quota/quotaio_v2.h",
+      "source_manifest": "quota-references.json"
+    },
+    {
+      "path": "include/uapi/linux/dqblk_xfs.h",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "blob_sha": "8cda3e62e0e750934a9fc91fc3b67f301a4f67ae",
+      "content_sha256": "5fd24b79fce2c9a0de957c8611143555c4d769148a32e77bf14d763e8eb4c3c7",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/include/uapi/linux/dqblk_xfs.h",
+      "source_manifest": "quota-references.json"
+    },
+    {
+      "path": "fs/ext4/ioctl.c",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "blob_sha": "3ae9cb50a0c057f10f6bda8165ba45fd2c368cfb",
+      "content_sha256": "577a2a462b09c7ef5e0bcc18e80e1515decea1e9b30510976406763901027def",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/ioctl.c",
+      "source_manifest": "quota-references.json"
+    },
+    {
+      "path": "fs/quota/quota_tree.h",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "blob_sha": "31cf27e0e9e0f8c89f32270379fee37c6007c3ed",
+      "content_sha256": "89cee1b677cad085070c624306650ed854d179a35d2bd3df25e0ec43d0699549",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/quota/quota_tree.h",
+      "source_manifest": "quota-references.json"
+    },
+    {
+      "path": "include/linux/dqblk_v2.h",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "blob_sha": "da95932ad9e7595b1ae49fdd694948f0b2249575",
+      "content_sha256": "dd846e5d131f1f60f650a789de05dc7e55a127c0779c6c113bcb03a0d35cd41d",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/include/linux/dqblk_v2.h",
+      "source_manifest": "quota-references.json"
+    },
+    {
+      "path": "fs/quota/dquot.c",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "blob_sha": "376739f6420ed5a415fe7c2d2bcfab65c0820208",
+      "content_sha256": "9cee98c8f23080bd7f3c3cdd25bf41b3c6e593460d949d570f2d5638eb51ce08",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/quota/dquot.c",
+      "source_manifest": "quota-references.json"
+    },
+    {
+      "path": "fs/ext4/ialloc.c",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "blob_sha": "b1bc1950c9f03b9dca9729cfac532ff95d504948",
+      "content_sha256": "23a9ee8afe8508b10db326c017e024263dce6dfaaaa6b2fb43a8dbb782b4e581",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/ialloc.c",
+      "source_manifest": "quota-references.json"
+    },
+    {
+      "path": "fs/ext4/namei.c",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "blob_sha": "c4b5e252af0efbfcbaf83688a32d445327a74a02",
+      "content_sha256": "72e5348eea92c16dffa659c87040ebb630e736697a6bd77137fbde404a80b6e9",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/namei.c",
+      "source_manifest": "quota-references.json"
+    },
+    {
+      "path": "fs/ext4/ext4.h",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "blob_sha": "7617e2d454ea516fee9047366458c0bda568fddf",
+      "content_sha256": "436748dbc667aecd478bada4a8da58df6005ddc793aa5b903541f0051905fcc0",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/ext4.h",
+      "source_manifest": "quota-references.json"
+    },
+    {
+      "path": "include/uapi/linux/fscrypt.h",
+      "blob_sha": "3aff99f2696a05cb60950ba421cd36e285a2fa94",
+      "content_sha256": "368b0e3df7507a375b5ceff49cef598fb2c6e8e7ceec41cc858e2673eb1b8e8b",
+      "source_manifest": "security-references.json",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/include/uapi/linux/fscrypt.h"
+    },
+    {
+      "path": "include/uapi/linux/fsverity.h",
+      "blob_sha": "15384e22e331e8738cf05c971f00b3fe6fdfcbb6",
+      "content_sha256": "d24815f2affdf0fb011d1b24e6973ed453d473ef79e8978f8126b999883a6406",
+      "source_manifest": "security-references.json",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/include/uapi/linux/fsverity.h"
+    },
+    {
+      "path": "fs/crypto/fscrypt_private.h",
+      "blob_sha": "4e8e82a9ccf9a311133a963e367e327d421cbf02",
+      "content_sha256": "4de514c768f68e6e6043939b35de6f36c342a8f5b2661367c48181e89d5e8e85",
+      "source_manifest": "security-references.json",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/crypto/fscrypt_private.h"
+    },
+    {
+      "path": "fs/crypto/crypto.c",
+      "blob_sha": "07f9cbfe3ea4115b8fcc881ae5154b3c3e898c04",
+      "content_sha256": "18197e5124352a2263a00b342cdda1e86983ee6d8ee4095d529bb27497e529eb",
+      "source_manifest": "security-references.json",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/crypto/crypto.c"
+    },
+    {
+      "path": "fs/crypto/policy.c",
+      "blob_sha": "9915e39362dbabd78d279d1ae7875c01e9a8c4c9",
+      "content_sha256": "f899b08d7084fd53ff110bef7434cca0d1b288aef71d2b9f57c0a82de4cd1931",
+      "source_manifest": "security-references.json",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/crypto/policy.c"
+    },
+    {
+      "path": "fs/verity/fsverity_private.h",
+      "blob_sha": "6e6854c19078de0eec08f88565b918c2f61a3ce7",
+      "content_sha256": "fe6e3e874929070c532eb39fd8433e30390aeef3bba795ba8d1de6298d2bc367",
+      "source_manifest": "security-references.json",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/verity/fsverity_private.h"
+    },
+    {
+      "path": "fs/verity/open.c",
+      "blob_sha": "dfa0d1afe0feb3039845b6f4b4de0eb75a472d1d",
+      "content_sha256": "1c7189a11c21c5d66a3fcd79ddb1861f0703469874e6f901b90b9e4ed0974ad0",
+      "source_manifest": "security-references.json",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/verity/open.c"
+    },
+    {
+      "path": "fs/verity/hash_algs.c",
+      "blob_sha": "de53e14c8aa78b46bd9c02517c88c0fef1f9beb8",
+      "content_sha256": "3ab9ec783c0febb32b4288ff1ce03a4a80be57ee503e8c96a41c8227ad5be533",
+      "source_manifest": "security-references.json",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/verity/hash_algs.c"
+    },
+    {
+      "path": "fs/verity/verify.c",
+      "blob_sha": "4004a1d428751fdde86cbc61ff28b2f298ee9546",
+      "content_sha256": "50e092ecad431ca03fe24c2134bc12a22689af789ea98911e8a10ec1dc76d6f9",
+      "source_manifest": "security-references.json",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/verity/verify.c"
+    },
+    {
+      "path": "include/linux/fsverity.h",
+      "blob_sha": "a8f9aa75b7922f2919ad71e31cf316190c2dbada",
+      "content_sha256": "f705031df57fd3eb60eab4d5311c95a00d1210e5340da72951dba4f39d5ea031",
+      "source_manifest": "security-references.json",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/include/linux/fsverity.h"
+    },
+    {
+      "path": "fs/crypto/keysetup.c",
+      "blob_sha": "40fa05688d3a1d4aa33d29e9508441faf4bca933",
+      "content_sha256": "90085e0a0ba352fb5e1d720569e0b5608a7f4c1da02d13cca2f8408b6dc8d493",
+      "source_manifest": "security-references.json",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/crypto/keysetup.c"
+    },
+    {
+      "path": "fs/crypto/fname.c",
+      "blob_sha": "629eb0d72e860ebe9ce4436b74bca49a9eb7b696",
+      "content_sha256": "3c4b2269c604e6f88dbd5ffc0efc21cd7e24aede8647387ed4334fcd3b36b9ca",
+      "source_manifest": "security-references.json",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/crypto/fname.c"
+    },
+    {
+      "path": "fs/crypto/hkdf.c",
+      "blob_sha": "706f56d0076eed33fb046df2baae5500184218a3",
+      "content_sha256": "8a9ddb81c7fcf988d20f03a46bef3fd6aadbe0bbdb322731b1a7d054715527a0",
+      "source_manifest": "security-references.json",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/crypto/hkdf.c"
+    },
+    {
+      "path": "fs/ext4/verity.c",
+      "blob_sha": "ca61da53f313fa8c41cc832ad328dc5ec1d69694",
+      "content_sha256": "3d27c0c0d4ad2ac3d0f052f3be6cadf99e9363ab91ccfa7c82e533c0c73e12a7",
+      "source_manifest": "security-references.json",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/verity.c"
+    },
+    {
+      "path": "crypto/cts.c",
+      "blob_sha": "48898d5e24ffaa11bfa236d45245d0e20717290b",
+      "content_sha256": "15bb86289571387f755a146c9ad77405682622a04f61313da3903defa2381a14",
+      "source_manifest": "security-references.json",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/crypto/cts.c"
+    },
+    {
+      "path": "crypto/xts.c",
+      "blob_sha": "3da8f5e053d6099a4dc2f2be34bbe480e27610b4",
+      "content_sha256": "cda890aa68f02ab967e8ac896cbd16a19c0782490775dd9b06bd1fe7c20c6ae8",
+      "source_manifest": "security-references.json",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/crypto/xts.c"
+    },
+    {
+      "path": "fs/crypto/keysetup_v1.c",
+      "blob_sha": "3d673c36b678de085590c17e23b5a067d44f6ccc",
+      "content_sha256": "ceae69c7524e0ce0ae642eb0c6b6d7bd95789d203b6b372e1846ea4b2198bdee",
+      "source_manifest": "security-references.json",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/crypto/keysetup_v1.c"
+    },
+    {
+      "path": "fs/ext4/orphan.c",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/orphan.c",
+      "blob_sha": "c0022f0bff8749badfe80d2a7628bea5ce96ab1e",
+      "saved_content_sha256": "341b7d5e06ee6413ca8e8c9a52ce0b095f3fdc57a12285cc92f25941c4178fda",
+      "review_scope": "orphan-file insert/remove and legacy-chain journalling at lines1-280; orphan cleanup280-500; tail, inode checksum seed, LE64 physical-address plus entry-byte checksum domain and source initialization at lines522-635",
+      "source_manifest": "orphan-refs/references.json",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8"
+    },
+    {
+      "path": "fs/ext4/mmp.c",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/mmp.c",
+      "blob_sha": "6f57c181ff778d30632ab5a181c83cb660948ec2",
+      "saved_content_sha256": "40f7cde327667d32f7783123cbc9fb2bc904a1a4dccee692f30da1bec0d7da62",
+      "review_scope": "metadata-seed checksum bytes0..1020 at11-35; read/write completion and repeated heartbeat verification at42-249; mount initial observation, wait, new sequence write and second observation at275-390",
+      "source_manifest": "orphan-refs/references.json",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8"
+    },
+    {
+      "path": "fs/ext4/ext4.h",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/ext4.h",
+      "blob_sha": "7617e2d454ea516fee9047366458c0bda568fddf",
+      "saved_content_sha256": "436748dbc667aecd478bada4a8da58df6005ddc793aa5b903541f0051905fcc0",
+      "review_scope": "orphan-file tail and capacity at1493-1504; MMP sequence constants,1024-byte structure, informational fields and check intervals at2693-2751",
+      "source_manifest": "orphan-refs/references.json",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8"
+    },
+    {
+      "path": "fs/ext4/namei.c",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/namei.c",
+      "blob_sha": "c4b5e252af0efbfcbaf83688a32d445327a74a02",
+      "saved_content_sha256": "72e5348eea92c16dffa659c87040ebb630e736697a6bd77137fbde404a80b6e9",
+      "review_scope": "dirent/dxroot/node layouts254-269; leaf and dx checksum domains347-511; capacities577-595; signedness2297-2301; collision lowbit1984-2015; node split boundary2555-2582; depth growth2600-2616",
+      "source_manifest": "htree-refs/references.json",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8"
+    },
+    {
+      "path": "fs/namei.c",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/namei.c",
+      "blob_sha": "9e5500dad14f59caad5e79c57c97410d1900171a",
+      "saved_content_sha256": "a113b4abe299d4b0ba6cc6e958a70914e0e8d86147f5e81967fe4495dcd6e063",
+      "review_scope": "NOREPLACE forces LOOKUP_EXCL3849-3856 and3950-3951; existingtarget-EEXIST4083-4085 occurs before same-inode rename shortcut",
+      "source_manifest": "htree-refs/references.json",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8"
+    },
+    {
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "path": "fs/ext4/indirect.c",
+      "blob_sha": "da76353b3a5750987d7b4803c388248b749a68a8",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/indirect.c",
+      "review_scope": "ext4_block_to_path, indirect traversal, address width and truncation structure; independent source-bound reader"
+    },
+    {
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "path": "fs/ext4/inline.c",
+      "blob_sha": "408677fa8196727563deaa830971511fd596205a",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/inline.c",
+      "review_scope": "Inline inode/system.data layout, capacity, independent directory regions and size updates"
+    },
+    {
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "path": "fs/ext4/inode.c",
+      "blob_sha": "1123d995494b588744ba47fcee88e9cd0cc992dd",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/ext4/inode.c",
+      "review_scope": "Variable inode checksum fields, fast-symlink classification151-166, live unencrypted target sanity5415-5448 and special device decoding"
+    },
+    {
+      "path": "crypto/sm4.c",
+      "blob_sha": "f4cd7edc11f0545952a8251b591e8988e59bd517",
+      "sha256": "9a3121cebeee41e72e3ac4c1d3a5ca351b421e37cf949cd2169810dcdd85ab78",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/crypto/sm4.c",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "source_manifest": "extra-crypto-references/manifest.json"
+    },
+    {
+      "path": "crypto/sm4_generic.c",
+      "blob_sha": "d57444e8428cbf7f3d3ad04311eaa92d66309594",
+      "sha256": "accee5040f23f18f11823f1b33672d635265588b3b1fdcf54feaf0d32d7da927",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/crypto/sm4_generic.c",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "source_manifest": "extra-crypto-references/manifest.json"
+    },
+    {
+      "path": "include/crypto/sm4.h",
+      "blob_sha": "9656a9a403264cf26a7efe598b4b15ded9540fc7",
+      "sha256": "40dce8f9e087282fcc0e4ae4354e4a8d91f099929bdf2a16eef338198dd4ea8a",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/include/crypto/sm4.h",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "source_manifest": "extra-crypto-references/manifest.json"
+    },
+    {
+      "path": "crypto/essiv.c",
+      "blob_sha": "a47a3eab69351929759e5f929b26fe2b1c9d3fcb",
+      "sha256": "5c6994313f75389a8ef3e026914d129760ada762e5ed7af1f610ca3304162ec2",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/crypto/essiv.c",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "source_manifest": "extra-crypto-references/manifest.json"
+    },
+    {
+      "path": "fs/crypto/keysetup.c",
+      "blob_sha": "40fa05688d3a1d4aa33d29e9508441faf4bca933",
+      "sha256": "90085e0a0ba352fb5e1d720569e0b5608a7f4c1da02d13cca2f8408b6dc8d493",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "source_manifest": "extra-crypto-references/manifest.json"
+    },
+    {
+      "path": "fs/crypto/fscrypt_private.h",
+      "blob_sha": "4e8e82a9ccf9a311133a963e367e327d421cbf02",
+      "sha256": "4de514c768f68e6e6043939b35de6f36c342a8f5b2661367c48181e89d5e8e85",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "source_manifest": "extra-crypto-references/manifest.json"
+    },
+    {
+      "path": "crypto/cts.c",
+      "blob_sha": "48898d5e24ffaa11bfa236d45245d0e20717290b",
+      "sha256": "15bb86289571387f755a146c9ad77405682622a04f61313da3903defa2381a14",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "source_manifest": "extra-crypto-references/manifest.json"
+    },
+    {
+      "path": "crypto/xts.c",
+      "blob_sha": "3da8f5e053d6099a4dc2f2be34bbe480e27610b4",
+      "sha256": "cda890aa68f02ab967e8ac896cbd16a19c0782490775dd9b06bd1fe7c20c6ae8",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "source_manifest": "extra-crypto-references/manifest.json"
+    },
+    {
+      "path": "fs/crypto/keysetup_v1.c",
+      "blob_sha": "3d673c36b678de085590c17e23b5a067d44f6ccc",
+      "sha256": "ceae69c7524e0ce0ae642eb0c6b6d7bd95789d203b6b372e1846ea4b2198bdee",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "source_manifest": "extra-crypto-references/manifest.json"
+    },
+    {
+      "path": "crypto/testmgr.h",
+      "blob_sha": "1c69c11c0cdb4847076c0645dde60c2a9f53f63f",
+      "sha256": "1c816f5e40a0066df3dcdca0823a53d07d25ace3116d9f023768c9e94d8fef18",
+      "url": "https://raw.githubusercontent.com/torvalds/linux/028ef9c96e96197026887c0f092424679298aae8/crypto/testmgr.h",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "source_manifest": "extra-crypto-references/manifest.json"
+    },
+    {
+      "path": "crypto/adiantum.c",
+      "blob_sha": "5ddf585abb66699db0b292468097f81b414bc24d",
+      "sha256": "92832c8c4e75b6b4212772b0a3a33e593b20a064538c3111a3d15bbe571d411a",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/crypto/adiantum.c",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "source_manifest": "adiantum-references/manifest.json"
+    },
+    {
+      "path": "include/crypto/chacha.h",
+      "blob_sha": "1cc301a48469751f1d6d2e59d4cd7e2169fa22f5",
+      "sha256": "15443f1516c25842f2a3f8ae1e7e78e7d2f9c55efc2ea1f9684df652e0ab4f85",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/include/crypto/chacha.h",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "source_manifest": "adiantum-references/manifest.json"
+    },
+    {
+      "path": "lib/crypto/chacha.c",
+      "blob_sha": "e0c7cb4af31800006034b68cd2713b1ee0b0fa2c",
+      "sha256": "bb287155933d93cbf5a55fb0ce67a54c75d23fea95a01dfab136e4823418b977",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/lib/crypto/chacha.c",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "source_manifest": "adiantum-references/manifest.json"
+    },
+    {
+      "path": "include/crypto/poly1305.h",
+      "blob_sha": "190beb427c6dec4c4884df239017628e14d3c68d",
+      "sha256": "ee1640a6f62f78d683b0140f30fa92a465eec7ec0b985da800ce8f69cf9b4a65",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/include/crypto/poly1305.h",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "source_manifest": "adiantum-references/manifest.json"
+    },
+    {
+      "path": "include/crypto/nh.h",
+      "blob_sha": "465e85bf203f9a7dd1906906033f211870b6a138",
+      "sha256": "9097867c02b32c65624c13032623960ea50a98f6a52f991260fce54725828e88",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/include/crypto/nh.h",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "source_manifest": "adiantum-references/manifest.json"
+    },
+    {
+      "path": "lib/crypto/nh.c",
+      "blob_sha": "e1d0095b52897172f03b108afff7609cc031a3ac",
+      "sha256": "098e056ba9370f3647c0a8bcc73d1a1281c9997b0a8dcfcc6c5a0e9681e6709b",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/lib/crypto/nh.c",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "source_manifest": "adiantum-references/manifest.json"
+    },
+    {
+      "path": "include/crypto/internal/poly1305.h",
+      "blob_sha": "a72fff409ab8526d91cb629f6778014dc4251b3f",
+      "sha256": "14672500e38da1847c476f7b47379daa1c103019ec92dda166fca3d6546b450b",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/include/crypto/internal/poly1305.h",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "source_manifest": "adiantum-references/manifest.json"
+    },
+    {
+      "path": "lib/crypto/poly1305-donna32.c",
+      "blob_sha": "b66131b3f6d4b691e13858149c9d1694ac3cd01a",
+      "sha256": "e6c52879e668884dc8bb4bb75276a91d9236fbdaa2fa8631e4a72c596b293da5",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/lib/crypto/poly1305-donna32.c",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "source_manifest": "adiantum-references/manifest.json"
+    },
+    {
+      "path": "crypto/chacha.c",
+      "blob_sha": "ec16d5a33f3cd6748b2aa28e4ec80710b52c453e",
+      "sha256": "8144f051959772c94bfe4575acfeb000cd2a0414d7583206a20da4421c806aa1",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/crypto/chacha.c",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "source_manifest": "adiantum-references/manifest.json"
+    },
+    {
+      "path": "lib/crypto/chacha-block-generic.c",
+      "blob_sha": "4a6d627580cb629491ddcf59eaf001f6161c904d",
+      "sha256": "13010486549e2db6abf794b84a215cc0922a03b2fa65875155021d2e2f4f1731",
+      "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/lib/crypto/chacha-block-generic.c",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "source_manifest": "adiantum-references/manifest.json"
+    },
+    {
+      "path": "crypto/hctr2.c",
+      "url": "https://raw.githubusercontent.com/torvalds/linux/028ef9c96e96197026887c0f092424679298aae8/crypto/hctr2.c",
+      "bytes": 14283,
+      "sha256": "552bd585a667765283bbb1565e916688d145f911deb1538cc3c5c1e8fdaa0db4",
+      "blob_sha": "f4cd6c29b4d397d0dd13b5b818e9b37dafeb03aa",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "source_manifest": "hctr2-references/manifest.json"
+    },
+    {
+      "path": "crypto/xctr.c",
+      "url": "https://raw.githubusercontent.com/torvalds/linux/028ef9c96e96197026887c0f092424679298aae8/crypto/xctr.c",
+      "bytes": 5412,
+      "sha256": "6467499fe97c9f3e5a1c4a0385155730f6a5f1abb69d8b592d33c890f8e90e27",
+      "blob_sha": "607ab82cb19b0b63b0defaab36b4a6dfbc6d15e3",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "source_manifest": "hctr2-references/manifest.json"
+    },
+    {
+      "path": "include/crypto/polyval.h",
+      "url": "https://raw.githubusercontent.com/torvalds/linux/028ef9c96e96197026887c0f092424679298aae8/include/crypto/polyval.h",
+      "bytes": 5559,
+      "sha256": "a8b476324a513f3c509c2142306cd561a60543c9e57fe0f790987632ef798af4",
+      "blob_sha": "b28b8ef113538c456f554e2308698d0c7500e69b",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "source_manifest": "hctr2-references/manifest.json"
+    },
+    {
+      "path": "lib/crypto/polyval.c",
+      "bytes": 9999,
+      "sha256": "83a2f389376dfd48ade4ea72517c9bc9ec638cf365fb5a81926092f4594fe5f7",
+      "blob_sha": "5796275f574ae657910ac1392c06a3bbec5bd7bd",
+      "url": "https://raw.githubusercontent.com/torvalds/linux/028ef9c96e96197026887c0f092424679298aae8/lib/crypto/polyval.c",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "source_manifest": "hctr2-references/manifest.json"
+    },
+    {
+      "path": "crypto/testmgr.h",
+      "url": "https://raw.githubusercontent.com/torvalds/linux/028ef9c96e96197026887c0f092424679298aae8/crypto/testmgr.h",
+      "bytes": 1416675,
+      "sha256": "1c816f5e40a0066df3dcdca0823a53d07d25ace3116d9f023768c9e94d8fef18",
+      "blob_sha": "1c69c11c0cdb4847076c0645dde60c2a9f53f63f",
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "source_manifest": "hctr2-references/manifest.json"
+    }
+  ]
+}

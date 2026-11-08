@@ -339,7 +339,7 @@ impl DebugProfileOutArgs {
 pub struct TestArgs {
     #[arg(
         name = "TESTNAME",
-        help = "Only run tests containing this string in their names"
+        help = "Only run tests whose full path ends with this function name or path"
     )]
     pub test_name: Option<String>,
     #[command(flatten)]
