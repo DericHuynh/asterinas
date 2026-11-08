@@ -217,7 +217,10 @@ fn seal_raw(raw: &mut Vec<u8>, physical: u64, seed: u32, metadata: bool)
     write32(raw, length - 8, MAGIC);
     if metadata {
         let ghost source = raw@;
-        let checksum = calculate_checksum(&raw[..], physical, seed).unwrap();
+        let source_bytes = raw.as_slice();
+        proof { assert(source_bytes@ == source); }
+        let checksum = calculate_checksum(source_bytes, physical, seed).unwrap();
+        proof { assert(checksum == checksum_value(source, physical, seed)); }
         write32(raw, length - 4, checksum);
         proof {
             assert(raw@.take(length as int - 8) =~= source.take(length as int - 8));
@@ -896,6 +899,25 @@ proof fn block_word_membership_is_exact(block: BlockView, count: nat, number: u3
 pub open spec fn block_contains_number(block: BlockView, number: u32) -> bool {
     exists|i: nat| i < capacity_for(block.raw) && #[trigger] slot(block, i) == number
 }
+proof fn joint_slot_witness_has_a_block(blocks: Seq<BlockView>, count: nat, number: u32)
+    requires count <= blocks.len(), exists|b: int, i: nat| 0 <= b < count
+        && i < capacity_for(blocks[b].raw) && #[trigger] slot(blocks[b], i) == number,
+    ensures exists|b: int| 0 <= b < count && #[trigger] block_contains_number(blocks[b], number),
+{
+    if !(exists|b: int| 0 <= b < count && #[trigger] block_contains_number(blocks[b], number)) {
+        assert forall|b: int, i: nat| 0 <= b < count && i < capacity_for(blocks[b].raw)
+            implies #[trigger] slot(blocks[b], i) != number by {
+            assert(!block_contains_number(blocks[b], number));
+            if slot(blocks[b], i) == number {
+                assert(exists|j: nat| j < capacity_for(blocks[b].raw) && #[trigger] slot(blocks[b], j) == number);
+                assert(block_contains_number(blocks[b], number));
+            }
+        }
+        assert(!(exists|b: int, i: nat| 0 <= b < count
+            && i < capacity_for(blocks[b].raw) && #[trigger] slot(blocks[b], i) == number));
+    }
+}
+
 proof fn file_word_membership_is_exact(blocks: Seq<BlockView>, count: nat, number: u32)
     requires count <= blocks.len(),
     ensures occupied_file_words(blocks, count).contains(number)
@@ -919,6 +941,7 @@ proof fn file_word_membership_is_exact(blocks: Seq<BlockView>, count: nat, numbe
             && i < capacity_for(blocks[b].raw) && #[trigger] slot(blocks[b], i) == number);
         if current.contains(number) {
             if previous.contains(number) {
+                joint_slot_witness_has_a_block(blocks, previous_count, number);
                 assert(exists|b: int| 0 <= b < previous_count
                     && #[trigger] block_contains_number(blocks[b], number));
                 let b = choose|b: int| 0 <= b < previous_count
@@ -930,6 +953,7 @@ proof fn file_word_membership_is_exact(blocks: Seq<BlockView>, count: nat, numbe
                 }
             } else {
                 assert(words.contains(number));
+                assert(number != 0 && block_contains_number(block, number));
                 let i = choose|i: nat| i < capacity_for(block.raw) && #[trigger] slot(block, i) == number;
                 assert(exists|a: int, j: nat| 0 <= a < count
                     && j < capacity_for(blocks[a].raw) && #[trigger] slot(blocks[a], j) == number) by {
@@ -940,6 +964,7 @@ proof fn file_word_membership_is_exact(blocks: Seq<BlockView>, count: nat, numbe
         }
         if number != 0 && exists|b: int, i: nat| 0 <= b < count
             && i < capacity_for(blocks[b].raw) && #[trigger] slot(blocks[b], i) == number {
+            joint_slot_witness_has_a_block(blocks, count, number);
             assert(exists|b: int| 0 <= b < count
                 && #[trigger] block_contains_number(blocks[b], number));
             let b = choose|b: int| 0 <= b < count
@@ -994,49 +1019,196 @@ proof fn concatenation_is_duplicate_free_exactly_when_parts_are_disjoint(left: S
 pub open spec fn block_prefix_unique(block: BlockView, count: nat) -> bool {
     forall|i: nat, j: nat| i < j < count && slot(block, i) != 0 ==> #[trigger] slot(block, i) != #[trigger] slot(block, j)
 }
+pub open spec fn no_prefix_match(block: BlockView, count: nat, number: u32) -> bool {
+    forall|i: nat| i < count ==> #[trigger] slot(block, i) != number
+}
+proof fn block_prefix_uniqueness_step(block: BlockView, count: nat)
+    requires count < capacity_for(block.raw),
+    ensures block_prefix_unique(block, count + 1) <==> block_prefix_unique(block, count)
+        && (slot(block, count) == 0 || no_prefix_match(block, count, slot(block, count))),
+{
+    if block_prefix_unique(block, count + 1) {
+        assert(block_prefix_unique(block, count));
+        if slot(block, count) != 0 {
+            assert forall|i: nat| i < count implies #[trigger] slot(block, i) != slot(block, count) by {
+                if slot(block, i) == slot(block, count) {
+                    assert(slot(block, i) != 0 && slot(block, i) != slot(block, count));
+                }
+            }
+        }
+    } else if block_prefix_unique(block, count)
+        && (slot(block, count) == 0 || no_prefix_match(block, count, slot(block, count))) {
+        assert forall|i: nat, j: nat| i < j < count + 1 && slot(block, i) != 0
+            implies #[trigger] slot(block, i) != #[trigger] slot(block, j) by {
+            if j < count { assert(slot(block, i) != slot(block, j)); }
+            else {
+                assert(j == count && i < count);
+                if slot(block, count) != 0 { assert(slot(block, i) != slot(block, count)); }
+            }
+        }
+    }
+}
+proof fn pushing_a_word_preserves_uniqueness_exactly(words: Seq<u32>, last: u32)
+    ensures words.push(last).no_duplicates() <==> words.no_duplicates() && !words.contains(last),
+{
+    vstd::seq::lemma_seq_push_len(words, last);
+    if words.push(last).no_duplicates() {
+        assert forall|i: int, j: int| 0 <= i < words.len() && 0 <= j < words.len() && i != j
+            implies #[trigger] words[i] != #[trigger] words[j] by {
+            vstd::seq::lemma_seq_push_index_different(words, last, i);
+            vstd::seq::lemma_seq_push_index_different(words, last, j);
+            assert(words.push(last)[i] != words.push(last)[j]);
+        }
+        if words.contains(last) {
+            let i = words.lemma_contains_to_index(last);
+            vstd::seq::lemma_seq_push_index_different(words, last, i);
+            vstd::seq::lemma_seq_push_index_same(words, last, words.len() as int);
+            assert(words.push(last)[i] != words.push(last)[words.len() as int]);
+        }
+    } else if words.no_duplicates() && !words.contains(last) {
+        assert forall|i: int, j: int| 0 <= i < words.push(last).len()
+            && 0 <= j < words.push(last).len() && i != j
+            implies #[trigger] words.push(last)[i] != #[trigger] words.push(last)[j] by {
+            if i < words.len() {
+                vstd::seq::lemma_seq_push_index_different(words, last, i);
+                if j < words.len() {
+                    vstd::seq::lemma_seq_push_index_different(words, last, j);
+                    assert(words[i] != words[j]);
+                } else {
+                    assert(j == words.len());
+                    vstd::seq::lemma_seq_push_index_same(words, last, j);
+                    words.lemma_index_contains(i);
+                    assert(words[i] != last);
+                }
+            } else {
+                assert(i == words.len() && j < words.len());
+                vstd::seq::lemma_seq_push_index_same(words, last, i);
+                vstd::seq::lemma_seq_push_index_different(words, last, j);
+                words.lemma_index_contains(j);
+                assert(words[j] != last);
+            }
+        }
+    }
+}
 proof fn block_word_uniqueness_is_exact(block: BlockView, count: nat)
     requires count <= capacity_for(block.raw),
     ensures occupied_block_words(block, count).no_duplicates() <==> block_prefix_unique(block, count),
     decreases count,
 {
-    if count == 0 { occupied_block_zero(block); }
+    if count == 0 { occupied_block_zero(block); broadcast use vstd::seq::lemma_seq_empty; }
     else {
-        occupied_block_successor(block, (count - 1) as nat);
-        block_word_uniqueness_is_exact(block, (count - 1) as nat);
-        let previous = occupied_block_words(block, (count - 1) as nat);
-        let last = slot(block, (count - 1) as nat);
-        vstd::seq_lib::lemma_seq_contains_after_push(previous, last, last);
+        let previous_count = (count - 1) as nat;
+        occupied_block_successor(block, previous_count);
+        block_word_uniqueness_is_exact(block, previous_count);
+        block_prefix_uniqueness_step(block, previous_count);
+        let previous = occupied_block_words(block, previous_count);
+        let last = slot(block, previous_count);
+        block_word_membership_is_exact(block, previous_count, last);
+        pushing_a_word_preserves_uniqueness_exactly(previous, last);
         if last != 0 {
-            block_word_membership_is_exact(block, (count - 1) as nat, last);
-            concatenation_is_duplicate_free_exactly_when_parts_are_disjoint(previous, seq![last]);
-            assert(previous.push(last) =~= previous + seq![last]);
-            if block_prefix_unique(block, count) {
-                assert(block_prefix_unique(block, (count - 1) as nat));
-                assert(!previous.contains(last)) by {
-                    if previous.contains(last) {
-                        let i = choose|i: nat| i < count - 1 && #[trigger] slot(block, i) == last;
-                        assert(slot(block, i) != slot(block, (count - 1) as nat));
-                    }
-                }
-            } else if previous.no_duplicates() && !previous.contains(last) {
-                assert forall|i: nat, j: nat| i < j < count && slot(block, i) != 0
-                    implies #[trigger] slot(block, i) != #[trigger] slot(block, j) by {
-                    if j < count - 1 { assert(slot(block, i) != slot(block, j)); }
-                    else if slot(block, i) == last {
-                        assert(exists|k: nat| k < count - 1 && #[trigger] slot(block, k) == last);
-                        assert(previous.contains(last));
-                    }
-                }
-            }
-        } else {
-            if block_prefix_unique(block, (count - 1) as nat) {
-                assert forall|i: nat, j: nat| i < j < count && slot(block, i) != 0
-                    implies #[trigger] slot(block, i) != #[trigger] slot(block, j) by {
-                    if j < count - 1 { assert(slot(block, i) != slot(block, j)); }
-                }
-            } else if block_prefix_unique(block, count) {
-                assert(block_prefix_unique(block, (count - 1) as nat));
-            }
+            assert(!previous.contains(last) <==> no_prefix_match(block, previous_count, last));
+        }
+    }
+}
+
+proof fn unique_prefix_has_unique_earlier_blocks(blocks: Seq<BlockView>, count: nat)
+    requires 0 < count <= blocks.len(), globally_unique(blocks.take(count as int)),
+    ensures globally_unique(blocks.take(count as int - 1)),
+{
+    let prefix = blocks.take(count as int);
+    let earlier = blocks.take(count as int - 1);
+    vstd::seq::lemma_seq_subrange_len(blocks, 0, count as int);
+    vstd::seq::lemma_seq_subrange_len(blocks, 0, count as int - 1);
+    reveal(globally_unique);
+    assert forall|a: int, b: int, i: nat, j: nat|
+        0 <= a <= b < earlier.len() && i < capacity_for(earlier[a].raw)
+            && j < capacity_for(earlier[b].raw) && (a < b || i < j) && slot(earlier[a], i) != 0
+        implies #[trigger] slot(earlier[a], i) != #[trigger] slot(earlier[b], j) by {
+        vstd::seq::lemma_seq_subrange_index(blocks, 0, count as int - 1, a);
+        vstd::seq::lemma_seq_subrange_index(blocks, 0, count as int - 1, b);
+        vstd::seq::lemma_seq_subrange_index(blocks, 0, count as int, a);
+        vstd::seq::lemma_seq_subrange_index(blocks, 0, count as int, b);
+        distinct_global_slots(prefix, a, b, i, j);
+    }
+}
+proof fn unique_prefix_has_unique_last_block(blocks: Seq<BlockView>, count: nat)
+    requires 0 < count <= blocks.len(), globally_unique(blocks.take(count as int)),
+    ensures block_prefix_unique(blocks[count as int - 1], capacity_for(blocks[count as int - 1].raw)),
+{
+    let prefix = blocks.take(count as int);
+    let at = count as int - 1;
+    let last = blocks[at];
+    vstd::seq::lemma_seq_subrange_len(blocks, 0, count as int);
+    vstd::seq::lemma_seq_subrange_index(blocks, 0, count as int, at);
+    assert forall|i: nat, j: nat| i < j < capacity_for(last.raw) && slot(last, i) != 0
+        implies #[trigger] slot(last, i) != #[trigger] slot(last, j) by {
+        distinct_global_slots(prefix, at, at, i, j);
+    }
+}
+proof fn unique_prefix_has_disjoint_words(blocks: Seq<BlockView>, count: nat)
+    requires 0 < count <= blocks.len(), globally_unique(blocks.take(count as int)),
+    ensures forall|number: u32| #[trigger] occupied_file_words(blocks, (count - 1) as nat).contains(number)
+        ==> !occupied_block_words(blocks[count as int - 1], capacity_for(blocks[count as int - 1].raw)).contains(number),
+{
+    let prefix = blocks.take(count as int);
+    let previous_count = (count - 1) as nat;
+    let at = count as int - 1;
+    let last = blocks[at];
+    let earlier = occupied_file_words(blocks, previous_count);
+    let words = occupied_block_words(last, capacity_for(last.raw));
+    vstd::seq::lemma_seq_subrange_len(blocks, 0, count as int);
+    vstd::seq::lemma_seq_subrange_index(blocks, 0, count as int, at);
+    assert forall|number: u32| #[trigger] earlier.contains(number) implies !words.contains(number) by {
+        file_word_membership_is_exact(blocks, previous_count, number);
+        block_word_membership_is_exact(last, capacity_for(last.raw), number);
+        if words.contains(number) {
+            joint_slot_witness_has_a_block(blocks, previous_count, number);
+            let b = choose|b: int| 0 <= b < previous_count && #[trigger] block_contains_number(blocks[b], number);
+            let i = choose|i: nat| i < capacity_for(blocks[b].raw) && #[trigger] slot(blocks[b], i) == number;
+            let j = choose|j: nat| j < capacity_for(last.raw) && #[trigger] slot(last, j) == number;
+            vstd::seq::lemma_seq_subrange_index(blocks, 0, count as int, b);
+            distinct_global_slots(prefix, b, at, i, j);
+        }
+    }
+}
+proof fn unique_parts_form_a_unique_prefix(blocks: Seq<BlockView>, count: nat)
+    requires 0 < count <= blocks.len(), globally_unique(blocks.take(count as int - 1)),
+        block_prefix_unique(blocks[count as int - 1], capacity_for(blocks[count as int - 1].raw)),
+        forall|number: u32| #[trigger] occupied_file_words(blocks, (count - 1) as nat).contains(number)
+            ==> !occupied_block_words(blocks[count as int - 1], capacity_for(blocks[count as int - 1].raw)).contains(number),
+    ensures globally_unique(blocks.take(count as int)),
+{
+    let prefix = blocks.take(count as int);
+    let earlier = blocks.take(count as int - 1);
+    let previous_count = (count - 1) as nat;
+    let at = count as int - 1;
+    let last = blocks[at];
+    vstd::seq::lemma_seq_subrange_len(blocks, 0, count as int);
+    vstd::seq::lemma_seq_subrange_len(blocks, 0, count as int - 1);
+    vstd::seq::lemma_seq_subrange_index(blocks, 0, count as int, at);
+    reveal(globally_unique);
+    assert forall|a: int, b: int, i: nat, j: nat|
+        0 <= a <= b < prefix.len() && i < capacity_for(prefix[a].raw)
+            && j < capacity_for(prefix[b].raw) && (a < b || i < j) && slot(prefix[a], i) != 0
+        implies #[trigger] slot(prefix[a], i) != #[trigger] slot(prefix[b], j) by {
+        vstd::seq::lemma_seq_subrange_index(blocks, 0, count as int, a);
+        vstd::seq::lemma_seq_subrange_index(blocks, 0, count as int, b);
+        if b < at {
+            vstd::seq::lemma_seq_subrange_index(blocks, 0, count as int - 1, a);
+            vstd::seq::lemma_seq_subrange_index(blocks, 0, count as int - 1, b);
+            distinct_global_slots(earlier, a, b, i, j);
+        } else if a == b {
+            assert(a == at && slot(last, i) != slot(last, j));
+        } else if slot(prefix[a], i) == slot(prefix[b], j) {
+            assert(b == at && a < previous_count);
+            let number = slot(prefix[a], i);
+            file_word_membership_is_exact(blocks, previous_count, number);
+            block_word_membership_is_exact(last, capacity_for(last.raw), number);
+            assert(exists|c: int, k: nat| 0 <= c < previous_count && k < capacity_for(blocks[c].raw)
+                && #[trigger] slot(blocks[c], k) == number);
+            assert(exists|k: nat| k < capacity_for(last.raw) && #[trigger] slot(last, k) == number);
+            assert(occupied_file_words(blocks, previous_count).contains(number));
+            assert(occupied_block_words(last, capacity_for(last.raw)).contains(number));
         }
     }
 }
@@ -1045,93 +1217,30 @@ proof fn file_word_uniqueness_is_exact(blocks: Seq<BlockView>, count: nat)
     ensures occupied_file_words(blocks, count).no_duplicates() <==> globally_unique(blocks.take(count as int)),
     decreases count,
 {
-    let prefix = blocks.take(count as int);
-    vstd::seq::lemma_seq_subrange_len(blocks, 0, count as int);
-    if count == 0 { occupied_file_zero(blocks); reveal(globally_unique); }
-    else {
-        occupied_file_successor(blocks, (count - 1) as nat);
-        file_word_uniqueness_is_exact(blocks, (count - 1) as nat);
+    if count == 0 {
+        occupied_file_zero(blocks);
+        broadcast use vstd::seq::lemma_seq_empty;
+        vstd::seq::lemma_seq_subrange_len(blocks, 0, 0);
+        reveal(globally_unique);
+    } else {
         let previous_count = (count - 1) as nat;
-        let earlier_prefix = blocks.take(count as int - 1);
+        occupied_file_successor(blocks, previous_count);
+        file_word_uniqueness_is_exact(blocks, previous_count);
+        let last = blocks[count as int - 1];
         let earlier = occupied_file_words(blocks, previous_count);
-        let last_index = count as int - 1;
-        let last = blocks[last_index];
-        vstd::seq::lemma_seq_subrange_len(blocks, 0, count as int - 1);
-        vstd::seq::lemma_seq_subrange_index(blocks, 0, count as int, last_index);
         let words = occupied_block_words(last, capacity_for(last.raw));
         block_word_uniqueness_is_exact(last, capacity_for(last.raw));
         concatenation_is_duplicate_free_exactly_when_parts_are_disjoint(earlier, words);
-        if globally_unique(prefix) {
-            assert(globally_unique(earlier_prefix)) by {
-                reveal(globally_unique);
-                assert forall|a: int, b: int, i: nat, j: nat|
-                    0 <= a <= b < earlier_prefix.len() && i < capacity_for(earlier_prefix[a].raw)
-                        && j < capacity_for(earlier_prefix[b].raw) && (a < b || i < j) && slot(earlier_prefix[a], i) != 0
-                    implies #[trigger] slot(earlier_prefix[a], i) != #[trigger] slot(earlier_prefix[b], j) by {
-                    vstd::seq::lemma_seq_subrange_index(blocks, 0, count as int - 1, a);
-                    vstd::seq::lemma_seq_subrange_index(blocks, 0, count as int - 1, b);
-                    vstd::seq::lemma_seq_subrange_index(blocks, 0, count as int, a);
-                    vstd::seq::lemma_seq_subrange_index(blocks, 0, count as int, b);
-                    assert(earlier_prefix[a] == prefix[a] && earlier_prefix[b] == prefix[b]);
-                    distinct_global_slots(prefix, a, b, i, j);
-                }
-            }
-            assert(block_prefix_unique(last, capacity_for(last.raw))) by {
-                assert forall|i: nat, j: nat| i < j < capacity_for(last.raw) && slot(last, i) != 0
-                    implies #[trigger] slot(last, i) != #[trigger] slot(last, j) by {
-                    assert(prefix[last_index] == last);
-                    distinct_global_slots(prefix, last_index, last_index, i, j);
-                }
-            }
-            assert forall|number: u32| #[trigger] earlier.contains(number) implies !words.contains(number) by {
-                file_word_membership_is_exact(blocks, previous_count, number);
-                block_word_membership_is_exact(last, capacity_for(last.raw), number);
-                if words.contains(number) {
-                    assert(exists|b: int| 0 <= b < previous_count
-                        && #[trigger] block_contains_number(blocks[b], number));
-                    let b = choose|b: int| 0 <= b < previous_count
-                        && #[trigger] block_contains_number(blocks[b], number);
-                    let i = choose|i: nat| i < capacity_for(blocks[b].raw) && #[trigger] slot(blocks[b], i) == number;
-                    let j = choose|j: nat| j < capacity_for(last.raw) && #[trigger] slot(last, j) == number;
-                    vstd::seq::lemma_seq_subrange_index(blocks, 0, count as int, b);
-                    assert(number != 0 && prefix[b] == blocks[b] && prefix[last_index] == last);
-                    distinct_global_slots(prefix, b, last_index, i, j);
-                }
-            }
-        } else if earlier.no_duplicates() && words.no_duplicates()
-            && forall|number: u32| #[trigger] earlier.contains(number) ==> !words.contains(number) {
-            assert(globally_unique(prefix)) by {
-                reveal(globally_unique);
-                assert forall|a: int, b: int, i: nat, j: nat|
-                    0 <= a <= b < prefix.len() && i < capacity_for(prefix[a].raw)
-                        && j < capacity_for(prefix[b].raw) && (a < b || i < j) && slot(prefix[a], i) != 0
-                    implies #[trigger] slot(prefix[a], i) != #[trigger] slot(prefix[b], j) by {
-                    vstd::seq::lemma_seq_subrange_index(blocks, 0, count as int, a);
-                    vstd::seq::lemma_seq_subrange_index(blocks, 0, count as int, b);
-                    assert(prefix[a] == blocks[a] && prefix[b] == blocks[b]);
-                    if b < last_index {
-                        vstd::seq::lemma_seq_subrange_index(blocks, 0, count as int - 1, a);
-                        vstd::seq::lemma_seq_subrange_index(blocks, 0, count as int - 1, b);
-                        assert(earlier_prefix[a] == prefix[a] && earlier_prefix[b] == prefix[b]);
-                        distinct_global_slots(earlier_prefix, a, b, i, j);
-                    } else if a == b {
-                        assert(a == last_index && prefix[a] == last);
-                        assert(slot(last, i) != slot(last, j));
-                    } else if slot(prefix[a], i) == slot(prefix[b], j) {
-                        assert(b == last_index && a < previous_count && prefix[b] == last);
-                        let number = slot(prefix[a], i);
-                        file_word_membership_is_exact(blocks, previous_count, number);
-                        block_word_membership_is_exact(last, capacity_for(last.raw), number);
-                        assert(exists|c: int, k: nat| 0 <= c < previous_count
-                            && k < capacity_for(blocks[c].raw) && #[trigger] slot(blocks[c], k) == number);
-                        assert(exists|k: nat| k < capacity_for(last.raw) && #[trigger] slot(last, k) == number);
-                        assert(earlier.contains(number) && words.contains(number));
-                    }
-                }
-            }
+        if globally_unique(blocks.take(count as int)) {
+            unique_prefix_has_unique_earlier_blocks(blocks, count);
+            unique_prefix_has_unique_last_block(blocks, count);
+            unique_prefix_has_disjoint_words(blocks, count);
+        } else if occupied_file_words(blocks, count).no_duplicates() {
+            unique_parts_form_a_unique_prefix(blocks, count);
         }
     }
 }
+
 
 pub open spec fn ordered_window(values: Seq<u32>, first: nat, end: nat) -> bool {
     first <= end <= values.len()
@@ -1189,7 +1298,7 @@ proof fn whole_ordered_run(values: Seq<u32>, width: nat)
     requires ordered_run(values, width, 0), width >= values.len(),
     ensures ordered_window(values, 0, values.len()),
 {
-    assert(0nat * width == 0 && (0nat + 1) * width == width);
+    assert(0nat * width == 0 && (0nat + 1) * width == width) by (nonlinear_arith);
     assert((if width < values.len() { width } else { values.len() }) == values.len());
 }
 

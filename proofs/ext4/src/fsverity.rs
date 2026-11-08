@@ -124,21 +124,23 @@ proof fn rounded_count_bounds(blocks:nat,arity:nat)
         blocks>0 ==> ceil_arity(blocks,arity)>0,
 {
     vstd::arithmetic::div_mod::lemma_fundamental_div_mod(blocks as int,arity as int);
-    assert((blocks/arity)*arity>=blocks/arity) by(nonlinear_arith);
+    vstd::arithmetic::div_mod::lemma_mod_pos_bound(blocks as int,arity as int);
+    vstd::arithmetic::div_mod::lemma_div_pos_is_pos(blocks as int,arity as int);
+    vstd::arithmetic::mul::lemma_mul_inequality(1,arity as int,(blocks/arity) as int);
+    vstd::arithmetic::mul::lemma_mul_is_commutative(arity as int,(blocks/arity) as int);
     if blocks%arity==0 {
-        assert(ceil_arity(blocks,arity)==blocks/arity);
-    } else {
+        if blocks>0 {assert(blocks/arity>0);}
+    }else{
         assert(blocks%arity>=1);
-        assert(ceil_arity(blocks,arity)<=blocks) by(nonlinear_arith);
     }
 }
 proof fn data_count_bound(size:u64,block:u32)
     requires block>=1024,
     ensures ceil_arity(size as nat,block as nat)<=18014398509481984,
 {
-    vstd::arithmetic::div_mod::lemma_fundamental_div_mod(size as int,block as int);
-    assert((size as nat/block as nat)*block as nat<=size as nat) by(nonlinear_arith);
-    assert(size as nat/block as nat<=18014398509481983) by(nonlinear_arith);
+    vstd::arithmetic::div_mod::lemma_div_is_ordered_by_denominator(size as int,1024,block as int);
+    vstd::arithmetic::div_mod::lemma_div_is_ordered(size as int,u64::MAX as int,1024);
+    assert((u64::MAX as nat)/1024==18014398509481983);
 }
 proof fn count_sum_monotone(counts:Seq<u64>,a:nat,b:nat)
     requires a<=b<=counts.len(),
@@ -153,12 +155,60 @@ proof fn parent_slot_bound(children:nat,arity:nat,parent:nat,slot:nat)
     ensures parent*arity<children,parent*arity+slot<children+arity,
 {
     vstd::arithmetic::div_mod::lemma_fundamental_div_mod(children as int,arity as int);
+    vstd::arithmetic::mul::lemma_mul_is_commutative(arity as int,(children/arity) as int);
+    vstd::arithmetic::div_mod::lemma_mod_pos_bound(children as int,arity as int);
     if children%arity==0 {
         assert(parent<children/arity);
-    } else {
+        vstd::arithmetic::mul::lemma_mul_strict_inequality(parent as int,(children/arity) as int,arity as int);
+    }else{
         assert(parent<=children/arity);
+        vstd::arithmetic::mul::lemma_mul_inequality(parent as int,(children/arity) as int,arity as int);
     }
-    assert(parent*arity<children) by(nonlinear_arith);
+}
+proof fn geometry(block:u32,digest:u32)
+    requires block_size::accepted(block as nat),digest==32 || digest==64,
+    ensures 16<=block/digest<=2048,block%digest==0,
+        block as nat==(block/digest) as nat*digest as nat,
+{
+    if digest==32 {}else{assert(digest==64);}
+    vstd::arithmetic::div_mod::lemma_fundamental_div_mod(block as int,digest as int);
+}
+proof fn slot_bounds(slot:u64,arity:u64,digest:u32,block:u32)
+    requires slot<arity,digest>0,block as nat==arity as nat*digest as nat,
+    ensures (slot as nat)*(digest as nat)<block,
+        (slot as nat)*(digest as nat)+(digest as nat)<=block,
+{
+    vstd::arithmetic::mul::lemma_mul_strict_inequality(slot as int,arity as int,digest as int);
+    vstd::arithmetic::mul::lemma_mul_inequality(slot as int+1,arity as int,digest as int);
+    vstd::arithmetic::mul::lemma_mul_is_distributive_add_other_way(digest as int,slot as int,1);
+}
+proof fn index_parent_bound(index:nat,children:nat,arity:nat)
+    requires arity>0,index<children,
+    ensures index/arity<ceil_arity(children,arity),
+{
+    vstd::arithmetic::div_mod::lemma_fundamental_div_mod(children as int,arity as int);
+    vstd::arithmetic::mul::lemma_mul_is_commutative(arity as int,(children/arity) as int);
+    vstd::arithmetic::div_mod::lemma_div_is_ordered(index as int,children as int,arity as int);
+    if children%arity==0 {
+        vstd::arithmetic::div_mod::lemma_div_by_multiple_is_strongly_ordered(
+            index as int,children as int,(children/arity) as int,arity as int);
+    }
+}
+proof fn read_block_bounds(data:nat,block:nat,offset:nat,take:nat)
+    requires block>0,offset<data,0<take,offset+take<=data,
+    ensures offset/block<=((offset+take-1) as nat)/block<ceil_arity(data,block),
+{
+    vstd::arithmetic::div_mod::lemma_div_is_ordered(offset as int,offset as int+take as int-1,block as int);
+    index_parent_bound((offset+take-1) as nat,data,block);
+}
+proof fn destination_bound(start:nat,parents:nat,parent:nat,slot:u64,arity:u64,digest:u32,block:u32,total:nat)
+    requires parent<parents,start+parents<=total,slot<arity,digest>0,
+        block as nat==arity as nat*digest as nat,
+    ensures (start+parent)*block as nat+slot as nat*digest as nat+digest as nat<=total*block as nat,
+{
+    slot_bounds(slot,arity,digest,block);
+    vstd::arithmetic::mul::lemma_mul_inequality(start as int+parent as int+1,total as int,block as int);
+    vstd::arithmetic::mul::lemma_mul_is_distributive_add_other_way(block as int,start as int+parent as int,1);
 }
 pub closed spec fn ancestor(index:nat,arity:nat,steps:nat) -> nat
     decreases steps
@@ -197,6 +247,20 @@ impl Layout {
     }
     #[verifier::type_invariant]
     spec fn invariant(self) -> bool {self.layout_valid()}
+    proof fn level_children(&self,number:nat)
+        requires self.layout_valid(),number<self.levels,
+        ensures self.level_blocks@[number as int] as nat
+            ==ceil_arity(if number==0 {self.data_blocks as nat}
+                else {self.level_blocks@[number as int-1] as nat},
+                (self.block_bytes/self.digest_bytes) as nat),
+    {
+        assert(self.level_blocks@[number as int] as nat
+            ==level_count(self.data_blocks as nat,(self.block_bytes/self.digest_bytes) as nat,number+1));
+        if number>0 {
+            assert(self.level_blocks@[number as int-1] as nat
+                ==level_count(self.data_blocks as nat,(self.block_bytes/self.digest_bytes) as nat,number));
+        }
+    }
     pub fn dimensions(&self) -> (r:(u32,u32,u64,u8,u64)) ensures r==self.layout_fields(),self.layout_valid() {proof {use_type_invariant(self);}(self.block_bytes,self.digest_bytes,self.data_blocks,self.levels,self.tree_blocks)}
     pub fn level(&self,number:u8) -> (r:Option<(u64,u64)>)
         ensures r==self.layout_level(number),
@@ -220,15 +284,20 @@ pub fn layout(data_size:u64,algorithm:u8,log_blocksize:u8) -> (r:Result<Layout,E
     if log_blocksize<10 || log_blocksize>16 {return Err(Error::BlockSize);}
     let block=1u32<<log_blocksize;let arity=(block/digest) as u64;
     proof {
-        assert(1024<=block<=65536) by(bit_vector);
-        assert(block%32==0 && block%64==0) by(bit_vector);
+        assert(block==1024 || block==2048 || block==4096 || block==8192
+            || block==16384 || block==32768 || block==65536) by(bit_vector)
+            requires 10<=log_blocksize<=16,block==1u32<<log_blocksize,;
         assert(block_size::accepted(block as nat));
+        geometry(block,digest);
         data_count_bound(data_size,block);
     }
     let data_blocks=data_size/block as u64 + if data_size%block as u64==0 {0}else{1};
     let mut blocks=data_blocks;let mut levels=0usize;let mut counts=[0u64;8];
     while blocks>1
         invariant levels<=8,16<=arity<=2048,block>=1024,
+            block_size::accepted(block as nat),digest==32 || digest==64,
+            arity==(block/digest) as u64,block%digest==0,
+            data_blocks==ceil_arity(data_size as nat,block as nat),
             data_blocks<=18014398509481984,blocks<=data_blocks,
             (data_blocks>0 ==> blocks>0),
             blocks==level_count(data_blocks as nat,arity as nat,levels as nat),
@@ -244,9 +313,21 @@ pub fn layout(data_size:u64,algorithm:u8,log_blocksize:u8) -> (r:Result<Layout,E
         blocks=blocks/arity + if blocks%arity==0 {0}else{1};
         counts[levels]=blocks;levels+=1;
     }
+    proof {
+        assert((data_blocks<=1)==(levels==0));
+        assert(levels>0 ==> counts@[levels as int-1]==1);
+    }
     let mut starts=[0u64;8];let mut total=0u64;let mut level=levels;
     while level>0
         invariant level<=levels<=8,total as nat==count_sum(counts@,levels as nat)-count_sum(counts@,level as nat),
+            block_size::accepted(block as nat),digest==32 || digest==64,
+            16<=arity<=2048,arity==(block/digest) as u64,block%digest==0,
+            data_blocks==ceil_arity(data_size as nat,block as nat),
+            data_blocks<=18014398509481984,(data_blocks<=1)==(levels==0),
+            levels>0 ==> counts@[levels as int-1]==1,
+            forall|i:int| #![trigger counts@[i]] 0<=i<levels ==> counts@[i] as nat
+                ==level_count(data_blocks as nat,arity as nat,(i+1) as nat)
+                && 0<counts@[i]<=data_blocks,
             forall|j:int| #![trigger starts@[j]] level<=j<levels ==> starts@[j] as nat
                 ==count_sum(counts@,levels as nat)-count_sum(counts@,(j+1) as nat),
         decreases level,
@@ -256,6 +337,10 @@ pub fn layout(data_size:u64,algorithm:u8,log_blocksize:u8) -> (r:Result<Layout,E
     }
     if total>u64::MAX/block as u64 {return Err(Error::Overflow);}
     proof {
+        vstd::arithmetic::mul::lemma_mul_inequality(total as int,(u64::MAX/block as u64) as int,block as int);
+        vstd::arithmetic::div_mod::lemma_remainder_lower(u64::MAX as int,block as int);
+        assert(total as nat*block as nat<=u64::MAX);
+        assert(total as nat==count_sum(counts@,levels as nat));
         assert forall|j:int| #![trigger starts@[j]] 0<=j<levels implies starts@[j] as nat+counts@[j] as nat<=total as nat by {
             count_sum_monotone(counts@,(j+1) as nat,levels as nat);
             assert(count_sum(counts@,(j+1) as nat)==count_sum(counts@,j as nat)+counts@[j] as nat);
@@ -556,9 +641,13 @@ impl<'a> Verifier<'a> {
         proof {use_type_invariant(self);use_type_invariant(&self.layout);use_type_invariant(&self.descriptor);}
         if index>=self.layout.data_blocks {return Err(Error::DataBounds);}
         let arity=(self.layout.block_bytes/self.layout.digest_bytes) as u64;
+        proof {geometry(self.layout.block_bytes,self.layout.digest_bytes);}
         let mut numbers=[0u64;8];let mut offsets=[0usize;8];let mut child=index;let mut level=0usize;
         while level<self.layout.levels as usize
             invariant level<=self.layout.levels as usize<=8,arity>=16,
+                arity==(self.layout.block_bytes/self.layout.digest_bytes) as u64,
+                self.layout.block_bytes as nat==arity as nat*self.layout.digest_bytes as nat,
+                self.layout.digest_bytes>0,self.layout.block_bytes<=65536,index<self.layout.data_blocks,
                 self.verifier_valid(),child==ancestor(index as nat,arity as nat,level as nat),
                 forall|i:int| #![trigger numbers@[i]] 0<=i<level ==> numbers@[i] as nat
                     ==self.layout.level_start@[i] as nat+ancestor(index as nat,arity as nat,(i+1) as nat),
@@ -569,12 +658,18 @@ impl<'a> Verifier<'a> {
         {
             let parent=child/arity;
             numbers[level]=match self.layout.level_start[level].checked_add(parent){Some(n)=>n,None=>return Err(Error::Overflow)};
+            proof {
+                vstd::arithmetic::div_mod::lemma_mod_pos_bound(child as int,arity as int);
+                slot_bounds(child%arity,arity,self.layout.digest_bytes,self.layout.block_bytes);
+            }
             offsets[level]=((child%arity)*self.layout.digest_bytes as u64) as usize;
             child=parent;level+=1;
         }
         let mut wanted=copy(self.descriptor.root_hash());
         while level>0
             invariant level<=self.layout.levels as usize<=8,self.verifier_valid(),
+                index<self.layout.data_blocks,
+                arity==(self.layout.block_bytes/self.layout.digest_bytes) as u64,
                 wanted@==self.path_wanted(index as nat,level as nat),
                 forall|i:int| #![trigger numbers@[i]] 0<=i<self.layout.levels ==> numbers@[i] as nat
                     ==self.layout.level_start@[i] as nat+ancestor(index as nat,arity as nat,(i+1) as nat),
@@ -588,12 +683,43 @@ impl<'a> Verifier<'a> {
                         self.path_block(index as nat,i as nat))==self.path_wanted(index as nat,(i+1) as nat),
             decreases level,
         {
-            level-=1;let raw=block(self.tree,numbers[level],self.layout.block_bytes)?;
+            let ghost previous_level=level;
+            let ghost previous_wanted=wanted@;
+            level-=1;
+            let raw=block(self.tree,numbers[level],self.layout.block_bytes)?;
             let actual=hash_block(self.descriptor.algorithm,self.descriptor.salt(),raw)?;
+            proof {
+                assert(raw@==self.path_block(index as nat,level as nat));
+                assert(raw.len()==self.layout.block_bytes);
+                assert(previous_wanted==self.path_wanted(index as nat,level as nat+1));
+                assert(actual@==salted_hash_reference(self.descriptor.algorithm,
+                    self.descriptor.raw@.subrange(80,80+self.descriptor.salt_size as int),
+                    self.path_block(index as nat,level as nat)));
+            }
             if !bytes::equal(wanted.as_slice(),actual.as_slice()){return Err(Error::Corrupt);}
+            proof {
+                assert(salted_hash_reference(self.descriptor.algorithm,
+                    self.descriptor.raw@.subrange(80,80+self.descriptor.salt_size as int),
+                    self.path_block(index as nat,level as nat))==self.path_wanted(index as nat,level as nat+1));
+            }
             let at=offsets[level];let len=self.layout.digest_bytes as usize;
             if at>raw.len() || raw.len()-at<len {return Err(Error::TreeBounds);}
             wanted=copy(&raw[at..at+len]);
+            proof {
+                assert(at as nat==(ancestor(index as nat,arity as nat,level as nat)%arity as nat)
+                    *self.layout.digest_bytes as nat);
+                assert(wanted@==raw@.subrange(at as int,at as int+len as int));
+                assert(wanted@==self.path_slot(index as nat,level as nat));
+                assert(wanted@==self.path_wanted(index as nat,level as nat));
+                assert forall|i:int| #![trigger self.path_block(index as nat,i as nat)]
+                    level<=i<self.layout.levels implies
+                    self.path_block(index as nat,i as nat).len()==self.layout.block_bytes
+                    && salted_hash_reference(self.descriptor.algorithm,
+                        self.descriptor.raw@.subrange(80,80+self.descriptor.salt_size as int),
+                        self.path_block(index as nat,i as nat))==self.path_wanted(index as nat,(i+1) as nat) by {
+                    if i!=level {assert(previous_level<=i);}
+                }
+            }
         }
         let raw=padded_data(self.data,index,self.layout.block_bytes)?;
         let actual=hash_block(self.descriptor.algorithm,self.descriptor.salt(),raw.as_slice())?;
@@ -622,18 +748,47 @@ impl<'a> Verifier<'a> {
     {
         proof {use_type_invariant(self);}
         if length>MAX_READ_BYTES {return Err(Error::ResourceLimit);}
-        if offset>=self.descriptor.data_size || length==0 {return Ok(Vec::new());}
+        if offset>=self.descriptor.data_size {
+            proof {assert(self.read_paths_accepted(offset as nat,length as nat));}
+            return Ok(Vec::new());
+        }
+        if length==0 {
+            proof {
+                assert(self.read_paths_accepted(offset as nat,0));
+                assert(self.data@.subrange(offset as int,offset as int) =~= Seq::<u8>::empty());
+            }
+            return Ok(Vec::new());
+        }
         let available=self.descriptor.data_size-offset;
         let take=if available<length as u64 {available as usize}else{length};
         let end=offset+take as u64;
-        let mut i=offset/self.layout.block_bytes as u64;let last=(end-1)/self.layout.block_bytes as u64;
+        proof {
+            assert(0<take);
+            assert(offset as nat+take as nat<=self.data.len());
+            read_block_bounds(self.data.len() as nat,self.layout.block_bytes as nat,offset as nat,take as nat);
+        }
+        let mut i=offset/self.layout.block_bytes as u64;
+        let last=(end-1)/self.layout.block_bytes as u64;
         let ghost first=i;
-        loop
-            invariant first<=i<=last,last<self.layout.data_blocks,self.verifier_valid(),
-                forall|index:int| #![trigger self.block_path_accepted(index as nat)] first<=index<i ==> self.block_path_accepted(index as nat),
-            decreases last-i,
-        {self.verify_block(i)?;if i==last {break;}i+=1;}
-        let start=offset as usize;Ok(copy(&self.data[start..start+take]))
+        while i<=last
+            invariant first<=i<=last+1,last<self.layout.data_blocks,self.verifier_valid(),
+                first==offset/self.layout.block_bytes as u64,
+                last==((end-1) as u64)/(self.layout.block_bytes as u64),
+                0<take,offset<self.data.len(),end==offset as nat+take as nat,end<=self.data.len(),
+                take==if (self.data.len()-offset as nat)<length {(self.data.len()-offset as nat) as nat}else{length as nat},
+                forall|index:int| #![trigger self.block_path_accepted(index as nat)]
+                    first<=index<i ==> self.block_path_accepted(index as nat),
+            decreases last+1-i,
+        {
+            self.verify_block(i)?;i+=1;
+        }
+        proof {
+            assert(self.read_paths_accepted(offset as nat,length as nat));
+            assert(offset as nat+take as nat==if (self.data.len()-offset as nat)<length
+                {self.data.len() as nat}else{offset as nat+length as nat});
+        }
+        let start=offset as usize;
+        Ok(copy(&self.data[start..start+take]))
     }
 }
 
@@ -655,26 +810,31 @@ pub fn build(data:&[u8],algorithm:u8,log_blocksize:u8,salt:&[u8],budget:BuildBud
             forall|j:int| #![trigger tree@[j]] 0<=j<i ==> tree@[j]==0,
         decreases tree_size as usize-i,
     {tree.push(0);i+=1;}
-    let arity=(l.block_bytes/l.digest_bytes) as u64;let mut level=0usize;
+    let arity=(l.block_bytes/l.digest_bytes) as u64;
+    proof {geometry(l.block_bytes,l.digest_bytes);}
+    let mut level=0usize;
     while level<l.levels as usize
         invariant level<=l.levels as usize<=8,l.layout_valid(),
-            tree.len()==tree_size as usize,
+            tree.len()==tree_size as usize,tree_size<=usize::MAX as u64,
             tree_size as nat==l.tree_blocks as nat*l.block_bytes as nat,
             16<=arity<=2048,l.block_bytes as nat==arity as nat*l.digest_bytes as nat,
+            arity==(l.block_bytes/l.digest_bytes) as u64,
             l.digest_bytes==digest_bytes(algorithm),
         decreases l.levels as usize-level,
     {
         let children=if level==0 {l.data_blocks}else{l.level_blocks[level-1]};
+        proof {l.level_children(level as nat);}
         let mut parent=0u64;
         while parent<l.level_blocks[level]
             invariant parent<=l.level_blocks@[level as int],
                 level<l.levels as usize<=8,l.layout_valid(),
-                tree.len()==tree_size as usize,
+                tree.len()==tree_size as usize,tree_size<=usize::MAX as u64,
                 tree_size as nat==l.tree_blocks as nat*l.block_bytes as nat,
                 children<=18014398509481984,
                 children==if level==0 {l.data_blocks}else{l.level_blocks@[level as int-1]},
                 l.level_blocks@[level as int]==ceil_arity(children as nat,arity as nat),
                 16<=arity<=2048,l.block_bytes as nat==arity as nat*l.digest_bytes as nat,
+            arity==(l.block_bytes/l.digest_bytes) as u64,
                 l.digest_bytes==digest_bytes(algorithm),
             decreases l.level_blocks@[level as int]-parent,
         {
@@ -682,18 +842,19 @@ pub fn build(data:&[u8],algorithm:u8,log_blocksize:u8,salt:&[u8],budget:BuildBud
             while slot<arity
                 invariant slot<=arity,parent<l.level_blocks@[level as int],
                     level<l.levels as usize<=8,l.layout_valid(),
-                    tree.len()==tree_size as usize,
+                    tree.len()==tree_size as usize,tree_size<=usize::MAX as u64,
                     tree_size as nat==l.tree_blocks as nat*l.block_bytes as nat,
                     children<=18014398509481984,
                     children==if level==0 {l.data_blocks}else{l.level_blocks@[level as int-1]},
                     l.level_blocks@[level as int]==ceil_arity(children as nat,arity as nat),
                     16<=arity<=2048,l.block_bytes as nat==arity as nat*l.digest_bytes as nat,
+            arity==(l.block_bytes/l.digest_bytes) as u64,
                     l.digest_bytes==digest_bytes(algorithm),
                 decreases arity-slot,
             {
                 proof {
                     parent_slot_bound(children as nat,arity as nat,parent as nat,slot as nat);
-                    assert(parent as nat*arity as nat+slot as nat<=u64::MAX) by(nonlinear_arith);
+                    assert(parent as nat*arity as nat+slot as nat<=u64::MAX);
                 }
                 let child=parent*arity+slot;if child>=children {break;}
                 let digest=if level==0 {
@@ -703,12 +864,17 @@ pub fn build(data:&[u8],algorithm:u8,log_blocksize:u8,salt:&[u8],budget:BuildBud
                     let raw=block(tree.as_slice(),number,l.block_bytes)?;hash_block(algorithm,salt,raw)?
                 };
                 proof {
-                    assert((l.level_start@[level as int] as nat+parent as nat)*l.block_bytes as nat
-                        +slot as nat*l.digest_bytes as nat+l.digest_bytes as nat<=tree_size as nat) by(nonlinear_arith);
+                    destination_bound(l.level_start@[level as int] as nat,l.level_blocks@[level as int] as nat,
+                        parent as nat,slot,arity,l.digest_bytes,l.block_bytes,l.tree_blocks as nat);
                 }
                 let destination=(l.level_start[level]+parent)*l.block_bytes as u64+slot*l.digest_bytes as u64;
                 if destination>usize::MAX as u64 {return Err(Error::Overflow);}
+                proof {
+                    assert(destination as nat+digest.len()<=tree_size as nat);
+                    assert(tree.len() as nat==tree_size as nat);
+                }
                 let at=destination as usize;i=0;
+                proof {assert(at as nat+digest.len()<=tree.len());}
                 let ghost before_digest=tree@;
                 while i<digest.len()
                     invariant i<=digest.len(),digest.len()==l.digest_bytes,
@@ -743,7 +909,20 @@ fn aligned(value:u64,unit:u64) -> (r:Result<u64,Error>)
 {
     if unit==0 {return Err(Error::BlockSize);}
     let rem=value%unit;
-    if rem==0 {Ok(value)}else{match value.checked_add(unit-rem){Some(v)=>Ok(v),None=>Err(Error::Overflow)}}
+    proof {
+        vstd::arithmetic::div_mod::lemma_fundamental_div_mod(value as int,unit as int);
+        vstd::arithmetic::div_mod::lemma_mod_pos_bound(value as int,unit as int);
+    }
+    if rem==0 {Ok(value)}else{
+        let next=match value.checked_add(unit-rem){Some(v)=>v,None=>return Err(Error::Overflow)};
+        proof {
+            vstd::arithmetic::mul::lemma_mul_is_commutative(unit as int,(value/unit) as int);
+            vstd::arithmetic::mul::lemma_mul_is_distributive_add_other_way(unit as int,(value/unit) as int,1);
+            vstd::arithmetic::div_mod::lemma_fundamental_div_mod_converse_mod(
+                next as int,unit as int,(value/unit) as int+1,0);
+        }
+        Ok(next)
+    }
 }
 #[derive(Clone, Copy)]
 pub struct Ext4Locations {pub tree_offset:u64,pub descriptor_offset:u64,pub size_word_offset:u64,pub allocated_end:u64}
@@ -767,6 +946,11 @@ pub fn locate_ext4_descriptor(data_size:u64,last_allocated_end:u64,last_block:&[
     let len=match bytes::read_le32(last_block,last_block.len()-4){Some(n)=>n,None=>return Err(Error::Descriptor)};
     if len<256 || len as usize>MAX_DESCRIPTOR_BYTES {return Err(Error::Descriptor);}
     let word=last_allocated_end-4;if len as u64>word {return Err(Error::Descriptor);}
+    proof {
+        vstd::arithmetic::div_mod::lemma_fundamental_div_mod(word as int-len as int,last_block.len() as int);
+        vstd::arithmetic::div_mod::lemma_mod_pos_bound(word as int-len as int,last_block.len() as int);
+        vstd::arithmetic::div_mod::lemma_remainder_lower(word as int-len as int,last_block.len() as int);
+    }
     let at=((word-len as u64)/last_block.len() as u64)*last_block.len() as u64;
     if at<aligned(data_size,65536)? {return Err(Error::Descriptor);}
     Ok((at,len))
