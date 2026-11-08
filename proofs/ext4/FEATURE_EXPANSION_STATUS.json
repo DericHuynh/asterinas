@@ -394,7 +394,7 @@
       "whole_expansion_verified": false
     },
     {
-      "attempt": "proof-extra-modes-04",
+      "attempt": "proof-extra-modes-05",
       "modules": [
         "fscrypt_extra_modes"
       ],
@@ -408,21 +408,54 @@
       "source_sha256": {
         "fscrypt_extra_modes": "5c487fc43e901a3d635533635cd9146a79558455da9c32b97920ddda8ada1881"
       },
-      "command_sha256": "1e15ed3420631fb332ae1a8b15ca39910b42d310039737bac34c3a517ef484aa",
+      "command_sha256": "8f7bf29f33b45dd59866964e6a470ed54420ceb3e64798b5f64ece9b1e61a1e0",
       "filtered": true,
       "whole_expansion_verified": false,
       "dependency_closure_verified": false,
-      "unverified_dependency_implementation": [
-        "adiantum"
-      ],
-      "scope": "Typed SM4 mode loop byte references, bounds, binding, preparation and retirement; composed through unverified Adiantum contract. Public dispatch guarantees are limited to the recorded contracts; no complete mode inverse/security theorem.",
-      "unverified_dependency_source_variants": {
-        "module": "adiantum",
-        "focused_snapshot_sha256": "c44dee574f2775bd221b3f407dc4d718168c4a38bf7d136a79abbbf9346cd3c8",
-        "integrated_snapshot_sha256": "1684910d19d3916b58530bdee65cec9668bd9f28bb1c69a898af80457c99b82b",
-        "integrated_source_is_same_as_focused_dependency": false,
-        "scope": "Only fscrypt_extra_modes was verified under its focused dependency contracts; the retained older integrated Adiantum is not a checked proof composition."
-      }
+      "declared_source_context_matches_current": true,
+      "declared_new_module_sources": {
+        "adiantum": {
+          "focused_source_sha256": "34e764409e5409928d7fcd2be42d2ccd482aab15a9421dbe27b55456b6dd08fb",
+          "branch_source_sha256": "34e764409e5409928d7fcd2be42d2ccd482aab15a9421dbe27b55456b6dd08fb",
+          "matches": true
+        },
+        "aes": {
+          "focused_source_sha256": "035f6c518e3567cd5b83626800eefb0da4b058d3cfbeee1f9592d41a2afcdfb7",
+          "branch_source_sha256": "035f6c518e3567cd5b83626800eefb0da4b058d3cfbeee1f9592d41a2afcdfb7",
+          "matches": true
+        },
+        "crypto_sha2": {
+          "focused_source_sha256": "3b0e8c8970d743218cfe2a1eef5ffd539123bcf918a3abefe8bf52a60d2b8395",
+          "branch_source_sha256": "3b0e8c8970d743218cfe2a1eef5ffd539123bcf918a3abefe8bf52a60d2b8395",
+          "matches": true
+        },
+        "fscrypt_cipher": {
+          "focused_source_sha256": "d80f218cb4a1f81ce534f9e9e7f7e279f3ecbe629754ff8bd9eebc34bbc73f27",
+          "branch_source_sha256": "d80f218cb4a1f81ce534f9e9e7f7e279f3ecbe629754ff8bd9eebc34bbc73f27",
+          "matches": true
+        },
+        "fscrypt_context": {
+          "focused_source_sha256": "058f8889723d07591d94c96052d157f53bc3263d96d7b9e260b369ed3ce14ae7",
+          "branch_source_sha256": "058f8889723d07591d94c96052d157f53bc3263d96d7b9e260b369ed3ce14ae7",
+          "matches": true
+        },
+        "fscrypt_extra_modes": {
+          "focused_source_sha256": "5c487fc43e901a3d635533635cd9146a79558455da9c32b97920ddda8ada1881",
+          "branch_source_sha256": "5c487fc43e901a3d635533635cd9146a79558455da9c32b97920ddda8ada1881",
+          "matches": true
+        },
+        "hctr2": {
+          "focused_source_sha256": "1fc578298b68ddf642b041a55a6cd0db08873139adbda18c3ab2c9d30df04c1b",
+          "branch_source_sha256": "1fc578298b68ddf642b041a55a6cd0db08873139adbda18c3ab2c9d30df04c1b",
+          "matches": true
+        },
+        "sm4": {
+          "focused_source_sha256": "2bc60ec1aabd2633e57429f7e3e321879ae4b801eb53847504ec240fd7e535c7",
+          "branch_source_sha256": "2bc60ec1aabd2633e57429f7e3e321879ae4b801eb53847504ec240fd7e535c7",
+          "matches": true
+        }
+      },
+      "scope": "Selected extra-mode byte/binding/dispatch contracts rechecked against exact current crypto source identities. Adiantum11 supplies its implementation refinement on the matching source; general inverse/security and strict whole-crate composition remain open."
     },
     {
       "attempt": "proof-fast-commit-12",
@@ -518,9 +551,41 @@
       "command_sha256": "33981bb201a2f7833db85b88e91564076e01f83c63cc2b084a4cfed9fbe30c57",
       "filtered": true,
       "whole_expansion_verified": false
+    },
+    {
+      "attempt": "proof-adiantum-11",
+      "modules": [
+        "adiantum"
+      ],
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 158,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "source_sha256": {
+        "adiantum": "34e764409e5409928d7fcd2be42d2ccd482aab15a9421dbe27b55456b6dd08fb"
+      },
+      "command_sha256": "672f033c49a3d93e698eb5f28567634bbaf5c5ba3aadf940901b653e20c3cd1a",
+      "filtered": true,
+      "whole_expansion_verified": false,
+      "scope": "Exact successful XChaCha12/Adiantum byte refinement, canonical field arithmetic, NH/Poly1305 folds, derived AES key binding and implementation length/counter guards. No general mode inverse, cryptographic security, constant-time, physical erasure or mounted key/nonce authority theorem.",
+      "declared_new_modules": [
+        "adiantum",
+        "aes"
+      ],
+      "checked_dependency": {
+        "module": "aes",
+        "attempt": "proof-aes-08",
+        "verified_obligations": 78,
+        "source_sha256": "035f6c518e3567cd5b83626800eefb0da4b058d3cfbeee1f9592d41a2afcdfb7",
+        "matches_focused_dependency": true
+      }
     }
   ],
   "unique_checked_modules": [
+    "adiantum",
     "aes",
     "casefold",
     "cluster_allocation",
@@ -552,7 +617,7 @@
     "sm4",
     "unicode12_data"
   ],
-  "focused_verified_obligations": 1947,
+  "focused_verified_obligations": 2105,
   "current_source_matches_checked_modules": true,
   "independent_test_harness_fix": {
     "branch": "fix/osdk-test-qemu-exit",
@@ -752,6 +817,39 @@
       "command_sha256": "6a2bd913a8fb1757853728bba92c443ea9fca7884065f53818c12d9fc4dfb631",
       "filtered": true,
       "whole_expansion_verified": false
+    },
+    {
+      "attempt": "proof-extra-modes-04",
+      "modules": [
+        "fscrypt_extra_modes"
+      ],
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 78,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "source_sha256": {
+        "fscrypt_extra_modes": "5c487fc43e901a3d635533635cd9146a79558455da9c32b97920ddda8ada1881"
+      },
+      "command_sha256": "1e15ed3420631fb332ae1a8b15ca39910b42d310039737bac34c3a517ef484aa",
+      "filtered": true,
+      "whole_expansion_verified": false,
+      "dependency_closure_verified": false,
+      "unverified_dependency_implementation": [
+        "adiantum"
+      ],
+      "scope": "Typed SM4 mode loop byte references, bounds, binding, preparation and retirement; composed through unverified Adiantum contract. Public dispatch guarantees are limited to the recorded contracts; no complete mode inverse/security theorem.",
+      "unverified_dependency_source_variants": {
+        "module": "adiantum",
+        "focused_snapshot_sha256": "c44dee574f2775bd221b3f407dc4d718168c4a38bf7d136a79abbbf9346cd3c8",
+        "integrated_snapshot_sha256": "1684910d19d3916b58530bdee65cec9668bd9f28bb1c69a898af80457c99b82b",
+        "integrated_source_is_same_as_focused_dependency": false,
+        "scope": "Only fscrypt_extra_modes was verified under its focused dependency contracts; the retained older integrated Adiantum is not a checked proof composition."
+      },
+      "superseded_by": "proof-extra-modes-05",
+      "superseded_reason": "Extra05 rechecks the unchanged extra-mode source against exact current checked crypto dependencies, including Adiantum11."
     }
   ],
   "integrated_compile": {
@@ -764,7 +862,7 @@
     "artifact_sha256": "35f3179c41d6c28291ece562419a3c59e527d649fb4030fa495a8849a0f854b4",
     "command_sha256": "b54283c3b066846a63ae7e12c0be39834e509ab1f553a749b76cded3c921987d",
     "source_manifest_sha256": "16c4fb128aec114379412fde9de361081e246ee942dfe562dbf8ed80ff0ef8de",
-    "scope": "Coherent all32-module snapshot from published6161986 plus all30 exact focused-checked component sources; complete older unproved Adiantum/extent engines retained and live drafts excluded. Compilation does not close dependency or filesystem proof composition.",
+    "scope": "Historical coherent TC21 checkpoint with the complete older Adiantum source. It predates this exact Adiantum11 overlay and is not current compile evidence; no strict composition proof follows.",
     "source_base_commit": "616198621bd3acef8ee0b1c34a56589c4fe278cd",
     "checked_module_manifest": "checkpoint-input-07/manifest.json",
     "checked_module_manifest_sha256": "70855a24a23425a352b493a7b16aa8f409583b1d26bec22097f49d649b1d8989",
@@ -776,9 +874,15 @@
       "extent_edit"
     ],
     "dependency_closure_verified": false,
-    "current_source_matches": true,
+    "current_source_matches": false,
     "extra_mode_scope": "Extra04 remains conditional on its unverified dependency contracts. Exact earlier/new dependency variants are preserved in the composition map.",
-    "fast_commit_dependency": "Full published extent901d33e Mapping dependency matches FC12; the extent engine itself remains unverified."
+    "fast_commit_dependency": "Full published extent901d33e Mapping dependency matches FC12; the extent engine itself remains unverified.",
+    "current_source_mismatches": {
+      "adiantum": {
+        "artifact_source_sha256": "1684910d19d3916b58530bdee65cec9668bd9f28bb1c69a898af80457c99b82b",
+        "current_source_sha256": "34e764409e5409928d7fcd2be42d2ccd482aab15a9421dbe27b55456b6dd08fb"
+      }
+    }
   },
   "integrated_crypto_native": {
     "attempt": "extra-crypto-native-07",
@@ -812,12 +916,18 @@
     "formal_verification": false,
     "official_compatibility_suite_rerun": false,
     "full_suite_expected_cases": 376,
-    "artifact_scope": "All36 expansion privacy/ownership negatives and9 controls on the actual current coherent typecheck-21 all32-module compile-only artifact",
+    "artifact_scope": "Historical all36 expansion privacy/ownership negatives and9 controls on the actual TC21 compile-only artifact, before the Adiantum11 source overlay.",
     "library_attempt": "typecheck-21",
     "library_sha256": "35f3179c41d6c28291ece562419a3c59e527d649fb4030fa495a8849a0f854b4",
     "compat_source_sha256": "dec7b32f07ab53e36036a2cf83418d9c48c6baeec688353d55fbdb598bf82d98",
     "result_sha256": "9b81009b73e942cec562df9e81c4977669148e1649fbedc310ec1af29ebb9022",
-    "current_source_matches": true
+    "current_source_matches": false,
+    "current_source_mismatches": {
+      "adiantum": {
+        "artifact_source_sha256": "1684910d19d3916b58530bdee65cec9668bd9f28bb1c69a898af80457c99b82b",
+        "current_source_sha256": "34e764409e5409928d7fcd2be42d2ccd482aab15a9421dbe27b55456b6dd08fb"
+      }
+    }
   },
   "superseded_integrated_compiles": [
     {
@@ -1201,10 +1311,11 @@
     "golden_file_sha256": "060df1e9c6f8b80d0d10d66662b64bb3cf9e15a44fd1b11a921f5741bd9c0cb3",
     "golden_file": "/task/ext4-expansion/extra-crypto-native-06/commands.json",
     "local_algorithm_reimplementations": false,
-    "scope": "Runtime unified cipher/dispatch vectors from focused Extra04 artifact; only Extra mode selected for verification. Adiantum implementation proof remains pending, no complete inverse/security/composition theorem.",
+    "scope": "Historical 201-vector runtime result from the Extra04 artifact and its then-unverified older Adiantum dependency. Extra05 is separately recorded as a filtered proof recheck; these native vectors were not rerun against Extra05.",
     "attempt": "extra-modes-checked-native-01",
     "formal_verification": false,
-    "result_sha256": "6d010c16b00450f827ddf1000c34eb7e7c1b88ffe1437834f20e6ca82a73af86"
+    "result_sha256": "6d010c16b00450f827ddf1000c34eb7e7c1b88ffe1437834f20e6ca82a73af86",
+    "current_source_matches": false
   },
   "checked_fast_commit_conformance": {
     "attempt": "fast-commit-native-12",
@@ -1277,6 +1388,12 @@
       "focused_obligations": 159,
       "incorporation": "Exact verity-builder06 source and SHAcompletion01 dependency copied; independent branch publication metadata remains separate.",
       "pull_request": "https://github.com/DericHuynh/asterinas/pull/70"
+    },
+    "adiantum_refinement": {
+      "branch": "feat/verus-ext4-adiantum-proof",
+      "included_in_this_checkpoint": true,
+      "focused_obligations": 158,
+      "incorporation": "Exact Adiantum11 source overlay only; no pull request merged, no whole-crate certificate or activation gate changed."
     }
   },
   "integrated_extra_modes_native": {
@@ -1335,7 +1452,13 @@
       "legacy_map",
       "htree_edit",
       "fsverity"
-    ]
+    ],
+    "current_source_mismatches": {
+      "adiantum": {
+        "artifact_source_sha256": "1684910d19d3916b58530bdee65cec9668bd9f28bb1c69a898af80457c99b82b",
+        "current_source_sha256": "34e764409e5409928d7fcd2be42d2ccd482aab15a9421dbe27b55456b6dd08fb"
+      }
+    }
   },
   "superseded_checked_sha2_conformance": [
     {
@@ -1463,7 +1586,7 @@
     }
   },
   "component_composition": {
-    "status": "four exact component snapshots combined; current typecheck-21, six-family same-artifact native and API05 checks passed",
+    "status": "Exact Adiantum11 overlay added to the four-component base; Extra05 focused source context matches. TC21/native/API05 remain historical and strict whole-crate composition is unverified.",
     "base_commit": "616198621bd3acef8ee0b1c34a56589c4fe278cd",
     "components": {
       "crypto_sha2": {
@@ -1489,11 +1612,17 @@
         "before_sha256": "ec6f75c908b690bf0d5abc61fa32be9fdd300d026aafdbd4e7bb4c685769d799",
         "after_sha256": "75fb4cb6ccf0989d321f526b563c2ce3c7d593c814d6c3329b2b044838fa2efc",
         "obligations": 159
+      },
+      "adiantum": {
+        "attempt": "proof-adiantum-11",
+        "before_sha256": "1684910d19d3916b58530bdee65cec9668bd9f28bb1c69a898af80457c99b82b",
+        "after_sha256": "34e764409e5409928d7fcd2be42d2ccd482aab15a9421dbe27b55456b6dd08fb",
+        "obligations": 158
       }
     },
-    "focused_obligations": 1947,
-    "checked_modules": 30,
-    "focused_snapshots": 26,
+    "focused_obligations": 2105,
+    "checked_modules": 31,
+    "focused_snapshots": 27,
     "registry": {
       "sources": 258,
       "named_proofs": 985,
@@ -1513,11 +1642,6 @@
       "matches_fsverity_focused_dependency": true
     },
     "unproved_modules_retained_from_published_base": {
-      "adiantum": {
-        "source": "published base 616198621bd3acef8ee0b1c34a56589c4fe278cd",
-        "sha256": "1684910d19d3916b58530bdee65cec9668bd9f28bb1c69a898af80457c99b82b",
-        "live_draft_copied": false
-      },
       "extent_edit": {
         "source": "published base 616198621bd3acef8ee0b1c34a56589c4fe278cd",
         "sha256": "901d33e43fd9dbeacfc79724821161b613b5ccd4cfe57434d73a668ff165400f",
@@ -1530,7 +1654,19 @@
     "new_combined_artifact_runtime_evidence": "composed-native-21-01",
     "combined_compile": "typecheck-21",
     "combined_api_boundaries": "expansion-boundaries-native-05",
-    "new_combined_artifact_runtime_result_sha256": "876d792db4f999b02a842f675ae03d5c462789505f8851adc0440161a344974b"
+    "new_combined_artifact_runtime_result_sha256": "876d792db4f999b02a842f675ae03d5c462789505f8851adc0440161a344974b",
+    "combined_compile_current_source_matches": false,
+    "input_manifest_current_source_matches": false,
+    "adiantum_overlay": {
+      "publication_base_commit": "a9678467486d04dd512c6fb5fc0891a03ff4e127",
+      "source_sha256": "34e764409e5409928d7fcd2be42d2ccd482aab15a9421dbe27b55456b6dd08fb",
+      "focused_attempt": "proof-adiantum-11",
+      "focused_obligations": 158,
+      "aes_dependency_matches": true,
+      "extra_modes_recheck": "proof-extra-modes-05",
+      "all_declared_extra_mode_source_contexts_match": true,
+      "new_all_module_compile_or_strict_run_performed_on_this_branch": false
+    }
   },
   "completed_composed_compile_preparation": {
     "intended_attempt": "typecheck-21",
@@ -1539,7 +1675,14 @@
     "launcher_sha256": "2070bf3a360703be1d4cad6a2962a49313b9b70f7e438a5c780056c89f778aff",
     "input": "checkpoint-input-07",
     "verification_skipped": true,
-    "proof_evidence": false
+    "proof_evidence": false,
+    "current_source_matches": false,
+    "current_source_mismatches": {
+      "adiantum": {
+        "artifact_source_sha256": "1684910d19d3916b58530bdee65cec9668bd9f28bb1c69a898af80457c99b82b",
+        "current_source_sha256": "34e764409e5409928d7fcd2be42d2ccd482aab15a9421dbe27b55456b6dd08fb"
+      }
+    }
   },
   "composed_native_conformance": {
     "status": "passed",
@@ -1722,7 +1865,7 @@
         "scope": "Historical independent component evidence, not rerun as an independent oracle on TC21."
       }
     },
-    "scope": "Six existing native families coexist and produce expected results on the same actual TC21 artifact. This checks type/runtime composition and selected output identity.",
+    "scope": "Historical six-family runtime evidence on TC21, whose older Adiantum source differs from this branch. Exact artifacts/goldens remain unchanged; this run was not repeated for the overlay.",
     "limitations": [
       "TC21 used --no-verify; native composition does not establish strict whole-crate or dependency proof closure.",
       "Older unverified Adiantum and extent revisions are retained in this artifact and bound precisely in provider.json.",
@@ -1732,6 +1875,114 @@
     "attempt": "composed-native-21-01",
     "result_sha256": "876d792db4f999b02a842f675ae03d5c462789505f8851adc0440161a344974b",
     "sha_manifest_sha256": "4cff945b353352b9a6914dac5b73bc80db8215d7d39c6733ebf3c0a03ba46ee2",
-    "current_source_matches": true
+    "current_source_matches": false,
+    "current_source_mismatches": {
+      "adiantum": {
+        "artifact_source_sha256": "1684910d19d3916b58530bdee65cec9668bd9f28bb1c69a898af80457c99b82b",
+        "current_source_sha256": "34e764409e5409928d7fcd2be42d2ccd482aab15a9421dbe27b55456b6dd08fb"
+      }
+    }
+  },
+  "checked_adiantum_conformance": {
+    "status": "passed",
+    "formal_verification": false,
+    "attempt": "adiantum-checked-native-11",
+    "library_attempt": "proof-adiantum-11",
+    "source_sha256": "34e764409e5409928d7fcd2be42d2ccd482aab15a9421dbe27b55456b6dd08fb",
+    "library_sha256": "4a9d8f1ef834ec60f1f0da41234e77a72efffd5d8fba161f24023084c6b6c4c6",
+    "driver_source_sha256": "dbfe9d007545c132caf906ff35bd8c616f56c064fae0ffddf33da5bfa44891bf",
+    "driver_artifact_sha256": "a1894ad7f11bf0d48e953bd8b817b4d239ad752ba8420099e5e12c3a886544fc",
+    "linux_golden_commands": 26,
+    "independent_golden_commands": 51,
+    "bounds_and_counter_controls": 11,
+    "linux_commit": "028ef9c96e96197026887c0f092424679298aae8",
+    "oracle": "Pinned Linux XChaCha12/Adiantum vectors and independent Python integer ChaCha/NH/Poly1305 plus OpenSSL AES256 goldens.",
+    "local_algorithm_reimplementations": false,
+    "all_inputs_unchanged": true,
+    "result_sha256": "7de360a80d35814943b45122faba5eb530bab9289a4dc51515e004de2019cbdb",
+    "input_manifest_sha256": "decad236735700dfe636a620d7143f2fb131d5afc18c87cad68f92d02b101688",
+    "artifact_manifest_sha256": "c8b2450d2d1229c4cce02e5c2dc43ec2714908686f1539c56447f89b7f1ebd03",
+    "current_source_matches": true,
+    "scope": "Actual focused-checked Adiantum11/AES provider, 77 unchanged golden commands and 11 bound/counter controls; native evidence is not an inverse/security/constant-time or filesystem-composition proof."
+  },
+  "superseded_component_compositions": [
+    {
+      "status": "four exact component snapshots combined; current typecheck-21, six-family same-artifact native and API05 checks passed",
+      "base_commit": "616198621bd3acef8ee0b1c34a56589c4fe278cd",
+      "components": {
+        "crypto_sha2": {
+          "attempt": "proof-sha-completion-01",
+          "before_sha256": "df643cb36d0da2c763af66c9c6560190b080b7a18ad086432cbc20762c43f8bb",
+          "after_sha256": "3b0e8c8970d743218cfe2a1eef5ffd539123bcf918a3abefe8bf52a60d2b8395",
+          "obligations": 117
+        },
+        "legacy_map": {
+          "attempt": "proof-legacy-wide-02",
+          "before_sha256": "5b4a3a38f80325fdb2c3bb11964a35358975f501cfea238163724cda8d24baea",
+          "after_sha256": "d5fc15d4af1f9ddb86f09c12664e6b9cc19377e59b03220c3807a14210ae1d80",
+          "obligations": 48
+        },
+        "htree_edit": {
+          "attempt": "proof-directory-order-06",
+          "before_sha256": "8de62f53dab12e14b05703bffabae43d0e881b36fb41763b6d83dba6a12b0ae4",
+          "after_sha256": "9bdf4d2a2c714b16772bc939cf40fa2f5c77f9073a46ed93cb8ec2dae2553f18",
+          "obligations": 101
+        },
+        "fsverity": {
+          "attempt": "proof-verity-builder-06",
+          "before_sha256": "ec6f75c908b690bf0d5abc61fa32be9fdd300d026aafdbd4e7bb4c685769d799",
+          "after_sha256": "75fb4cb6ccf0989d321f526b563c2ce3c7d593c814d6c3329b2b044838fa2efc",
+          "obligations": 159
+        }
+      },
+      "focused_obligations": 1947,
+      "checked_modules": 30,
+      "focused_snapshots": 26,
+      "registry": {
+        "sources": 258,
+        "named_proofs": 985,
+        "public_executable_functions": 1249
+      },
+      "checked_component_sources_match": true,
+      "strict_composition_verified": false,
+      "input_manifest": "checkpoint-input-07/manifest.json",
+      "input_manifest_sha256": "70855a24a23425a352b493a7b16aa8f409583b1d26bec22097f49d649b1d8989",
+      "dependency_composition": "checkpoint-input-07/dependency-composition.json",
+      "dependency_composition_sha256": "14c27927e2eb62d57aabfe95ffddb9bf089776146def83d3c1eb90aa68a1458e",
+      "fsverity_sha_dependency": {
+        "module": "crypto_sha2",
+        "attempt": "proof-sha-completion-01",
+        "sha256": "3b0e8c8970d743218cfe2a1eef5ffd539123bcf918a3abefe8bf52a60d2b8395",
+        "verified_obligations": 117,
+        "matches_fsverity_focused_dependency": true
+      },
+      "unproved_modules_retained_from_published_base": {
+        "adiantum": {
+          "source": "published base 616198621bd3acef8ee0b1c34a56589c4fe278cd",
+          "sha256": "1684910d19d3916b58530bdee65cec9668bd9f28bb1c69a898af80457c99b82b",
+          "live_draft_copied": false
+        },
+        "extent_edit": {
+          "source": "published base 616198621bd3acef8ee0b1c34a56589c4fe278cd",
+          "sha256": "901d33e43fd9dbeacfc79724821161b613b5ccd4cfe57434d73a668ff165400f",
+          "live_draft_copied": false
+        }
+      },
+      "baseline_reports_trust_settings_and_gates_changed": false,
+      "wide_test_or_compatibility_runner_changes_copied": false,
+      "pull_requests_merged": false,
+      "new_combined_artifact_runtime_evidence": "composed-native-21-01",
+      "combined_compile": "typecheck-21",
+      "combined_api_boundaries": "expansion-boundaries-native-05",
+      "new_combined_artifact_runtime_result_sha256": "876d792db4f999b02a842f675ae03d5c462789505f8851adc0440161a344974b"
+    }
+  ],
+  "reference_model_corrections": {
+    "adiantum_encoded128": {
+      "scope": "Reduce the natural value modulo2^128 before its bounded u128 cast in the little-endian reference encoding.",
+      "runtime_algorithm_change": false,
+      "algorithm_golden_commands": 77,
+      "source_sha256": "34e764409e5409928d7fcd2be42d2ccd482aab15a9421dbe27b55456b6dd08fb"
+    }
   }
 }
