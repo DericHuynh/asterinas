@@ -9,13 +9,15 @@ and a [concurrent block/extent/transaction protocol](CONCURRENCY.md).
 It is not a complete filesystem and is not registered with the kernel VFS.
 No mount or filesystem write path is enabled.
 
-The unchanged official unfiltered strict run checks **5,481 obligations with zero errors** and compiles the core at source commit `5b48f3ec9beb62c5a4220f45e30a779e1b18ce80`. Its pinned inventory covers **258 source files, 985 named proof functions and 1,249 public executable functions**. The report binds the exact source, lock, runner and emitted-library hashes; writable mount activation remains closed.
+The certified 258-source parent passed an unchanged official unfiltered strict run that checked **5,481 obligations with zero errors** and compiled the core at source commit `5b48f3ec9beb62c5a4220f45e30a779e1b18ce80`. Its pinned inventory covers **258 source files, 985 named proof functions and 1,249 public executable functions**. The report binds the exact source, lock, runner and emitted-library hashes; writable mount activation remains closed.
+
+The current 259-source geometry extension has no whole-crate certificate yet. Its separate focused check passed 29 obligations with zero errors, and its actual compiled component passed 1,225 numeric cases, five privacy rejections and one allowed control. Top-level proof/evidence metadata remains pending; the complete parent records are nested as reference evidence. See [FS_GEOMETRY.md](FS_GEOMETRY.md).
 
 The official compatibility suite passes 372 host tests and 376 API rejection cases against this exact checked artifact. These are runtime/API checks, not formal proof. Fresh negative gate checks: passed; timeout regression: passed. A further 24 selected feature-regression families pass on the same compiled library, with remaining native coverage gaps recorded in the component ledger.
 
 [Proof status](proof-status.json) and [recorded evidence](verification-evidence.json) state the exact scope and retain the complete prior baseline evidence. The historical baseline at commit `9083e1d36cb433927df6c0b636c8377a4c350c22` checked 3,142 obligations; its tests and artifact do not stand in for current-artifact checks.
 
-The [implementation-first feature expansion](FEATURE_EXPANSION.md) and [component composition](COMPONENT_COMPOSITION.md) are included in this current declared-source proof. The 32 expansion modules retain their separate 2,339-obligation focused ledger; those counts are not additional to the 5,481 whole-crate obligations. Earlier native oracles and API runs retain their original artifact scope.
+The [implementation-first feature expansion](FEATURE_EXPANSION.md) and [component composition](COMPONENT_COMPOSITION.md) are included in the certified parent's 258-source proof. The 32 expansion modules retain their separate 2,339-obligation focused ledger; those counts are not additional to the 5,481 whole-crate obligations. Earlier native oracles and API runs retain their original artifact scope.
 
 ## Implementation and proof scope
 

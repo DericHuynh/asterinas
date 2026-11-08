@@ -1,78 +1,21 @@
 {
   "schema": 1,
-  "status": "declared models and executable host core passed strict whole-crate verification; mount/feature gates unchanged",
+  "status": "certified 258-source parent retained; fs_geometry focused29 and native1225+5+1 passed; current259-source whole-crate verification pending",
   "last_whole_crate_verified_commit": "5b48f3ec9beb62c5a4220f45e30a779e1b18ce80",
   "new_whole_crate_verification": {
-    "status": "passed",
-    "attempt": "official-strict-02",
-    "certified_source_commit": "5b48f3ec9beb62c5a4220f45e30a779e1b18ce80",
-    "entire_crate": true,
-    "unfiltered_official_runner": true,
-    "verification_results": {
-      "encountered-error": false,
-      "encountered-vir-error": false,
-      "success": true,
-      "verified": 5481,
-      "errors": 0,
-      "is-verifying-entire-crate": true
-    },
-    "verifier_command": [
-      "/task/ext4-expansion/strict-readiness-01/verus-4threads",
-      "--no-cheating",
-      "--no-external-by-default",
-      "--output-json",
-      "--compile",
-      "--crate-type=rlib",
-      "--crate-name=verified_ext4",
-      "--out-dir=build",
-      "--log",
-      "smt",
-      "--log-dir",
-      "build/verus-logs/121124",
-      "src/model.rs"
-    ],
-    "verified_obligations": 5481,
-    "verification_errors": 0,
-    "sources": 258,
-    "named_proofs": 985,
-    "public_executable_functions": 1249,
-    "elapsed_seconds": 1720.9792035160062,
-    "proof_report_sha256": "19a399e2da952b94fb2d6aaa480ed277691ea13b96800384011ea0496d588077",
-    "artifact_sha256": "b5577b84c2e2d66e8b3f0bbbf2c483620dbcdfc4186481293d82add60be6336a",
-    "lock_sha256": "b554e223df361a7c2a948bdca9d5ed3c61e1c78229f35985de2c0d36a5d73a6c",
-    "runner_sha256": "8004e8ba0aade3a525a2bffa4fb935d622511067f3ece82c90d62935955ce9c7",
-    "source_manifest_sha256": "d99a1239849d1dcf4862eb8c3272ee0e878e41f86c5f6f6631e673c15833d99b",
-    "scope": "declared models and executable core; no kernel filesystem claim",
-    "writable_mount_enabled": false,
-    "full_filesystem_implementation_claimed": false,
-    "physical_device_durability_claimed": false,
-    "compatibility_status": "passed",
-    "compatibility_test_count": 372,
-    "request_boundary_rejections": 376,
-    "compatibility_binding": {
-      "report_sha256": "ba002bbd1fc1667d0899f1a7fee75ca216aed1dd5be5f40495d66ad1e30f75f9",
-      "suite_stdout_sha256": "f53fafa3e965cf56da66f3f92d0a5dbbe9732772ba2e03af1cb528da1bbffba0",
-      "official_run": "/task/ext4-expansion/official-compat-01",
-      "official_result_sha256": "2f665620a13bafba41c52f02fb7b0ede4b035bc424dec44d3049381c61eafa42",
-      "official_input_manifest_sha256": "259d75fad980ae585d0b09bcfee6455a3153c41c5e881af5c492da50092f2fa1",
-      "official_command_sha256": "ab3ad8e431d0845fea4b45a3d92d4db7fdcb1d04150dc9513d359f2b2733289c",
-      "official_stdout_sha256": "b94ec9d14bd13abd6164de4f5b45ac0926e2f896cce80e13b04dfe64798edc57",
-      "elapsed_seconds": 537.6650990769995,
-      "tests_passed": 372,
-      "request_boundary_rejections": 376
-    },
-    "negative_gate_check_status": "passed",
-    "timeout_regression_status": "passed",
-    "verifier_launcher": {
-      "sha256": "cfb75026da949fa649a14ae1030bc6b9b87626cb97cd817aecfd26e8be6a0c3c",
-      "script": "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then\n    exec /workspace/scratch/verus/run \"$@\"\nfi\nexec /workspace/scratch/verus/run --num-threads 4 \"$@\"\n",
-      "adds_only": [
-        "--num-threads",
-        "4"
-      ],
-      "version_query_forwarded_unchanged": true,
-      "proof_solver_budgets_changed": false
-    }
+    "status": "pending_for_current_259_source_branch",
+    "current_source_matches": false,
+    "entire_crate": false,
+    "unfiltered_official_runner": false,
+    "verification_results": null,
+    "verified_obligations": null,
+    "verification_errors": null,
+    "sources": 259,
+    "named_proofs": 989,
+    "public_executable_functions": 1262,
+    "artifact_sha256": null,
+    "proof_report_sha256": null,
+    "certified_source_commit": null
   },
   "focused_diagnostics": [
     {
@@ -631,6 +574,29 @@
       "command_sha256": "c3420bc0059e683b62ef3ac1625894188bff96e7859dda1bd06f346122f887d6",
       "filtered": true,
       "whole_expansion_verified": false
+    },
+    {
+      "attempt": "proof-fs-geometry-03",
+      "modules": [
+        "fs_geometry"
+      ],
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 29,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "source_sha256": {
+        "fs_geometry": "65e6ad5666a0ca9039f8381c5b94aac7ebc80e543d0ec445862f555300db64e1"
+      },
+      "command_sha256": "a60fbe34c4fa82b1b91e79f370dff9a5b84d527860e26d5676fd4a230224a6bb",
+      "proof_result_sha256": "6418fb569c7087ee54586f43e61312eb212b3932a1c2fff9ec0c8748760b12f9",
+      "proof_stdout_sha256": "0a9dd09eaf9bd1a51ac42cd743b5349f703d579af63ccf4e05cbf32198d067fb",
+      "artifact_sha256": "4c6aa770caa99eecd7ddbb6a38622fd8fa3047f04896819ef7c27e35ccb54462",
+      "filtered": true,
+      "whole_expansion_verified": false,
+      "diagnostic_no_cheating_omitted": true
     }
   ],
   "unique_checked_modules": [
@@ -643,6 +609,7 @@
     "ea_restart",
     "extent_edit",
     "fast_commit",
+    "fs_geometry",
     "fscrypt_cipher",
     "fscrypt_context",
     "fscrypt_extra_modes",
@@ -667,7 +634,7 @@
     "sm4",
     "unicode12_data"
   ],
-  "focused_verified_obligations": 2339,
+  "focused_verified_obligations": 2368,
   "current_source_matches_checked_modules": true,
   "independent_test_harness_fix": {
     "branch": "fix/osdk-test-qemu-exit",
@@ -999,9 +966,9 @@
     "proof_evidence": false
   },
   "registry": {
-    "sources": 258,
-    "named_proofs": 985,
-    "public_executable_functions": 1249,
+    "sources": 259,
+    "named_proofs": 989,
+    "public_executable_functions": 1262,
     "baseline_inventory_prefixes_preserved": true,
     "expanded_entrypoint_declared": true
   },
@@ -2216,14 +2183,80 @@
     "baseline226_sources_unchanged_from_a967": true,
     "strict_pins_matcher_tools_and_feature_gates_changed": false,
     "root_manages_official_reports_library_and_classification": true,
-    "strict_dependency_closure_scope": "Declared source/model contracts in the current entire-crate check; no kernel, mount, physical-device or full-filesystem claim"
+    "strict_dependency_closure_scope": "Declared source/model contracts in the current entire-crate check; no kernel, mount, physical-device or full-filesystem claim",
+    "scope_relation_to_current_branch": "Historical32-module/258-source freeze only; does not certify the added fs_geometry module or259-source entrypoint."
   },
   "official_strict_progress": {
+    "status": "pending_for_current_259_source_branch",
+    "certified_source_commit": null,
+    "report_sha256": null,
+    "artifact_sha256": null
+  },
+  "historical_whole_crate_verified_baseline": {
+    "commit": "9083e1d36cb433927df6c0b636c8377a4c350c22",
+    "obligations": 3142,
+    "named_proofs": 915,
+    "public_executable_functions": 775,
+    "scope": "Historical baseline bytes and original artifact; native/API/gate results remain historical unless separately rerun"
+  },
+  "strict_composed_native_conformance": {
     "status": "passed",
-    "attempt": "official-strict-02",
-    "certified_source_commit": "5b48f3ec9beb62c5a4220f45e30a779e1b18ce80",
-    "report_sha256": "19a399e2da952b94fb2d6aaa480ed277691ea13b96800384011ea0496d588077",
-    "prior_unclassified_progress": {
+    "families": 24,
+    "artifact_sha256": "b5577b84c2e2d66e8b3f0bbbf2c483620dbcdfc4186481293d82add60be6336a",
+    "result_sha256": "f6a9458559079b8c852acbb6361c427f0f4dd0785f0b387f1e589f70c2dddc80",
+    "runner_sha256": "dafafeb47ae1527bbeea4beb18f400a5d4f66e57b57157210eaa7a3cf2a3d9bb",
+    "all_protected_inputs_unchanged": true,
+    "source_count": 258,
+    "scope": "Selected native regression composition on the exact full-proof artifact; no filesystem feature-completeness denominator, kernel mount, source/device authority or physical durability claim",
+    "evidence": "verification-evidence.json: expanded_feature_native_regressions"
+  },
+  "current_whole_crate_verification": {
+    "status": "pending",
+    "sources": 259,
+    "new_module": "fs_geometry",
+    "parent_certificate_retained": true,
+    "parent_source_commit": "5b48f3ec9beb62c5a4220f45e30a779e1b18ce80",
+    "whole_crate_obligations_not_inferred_by_adding_focused_counts": true
+  },
+  "checked_variable_geometry": {
+    "status": "focused proof and standalone native cases passed",
+    "module": "fs_geometry",
+    "source_sha256": "65e6ad5666a0ca9039f8381c5b94aac7ebc80e543d0ec445862f555300db64e1",
+    "focused_attempt": "proof-fs-geometry-03",
+    "focused_obligations": 29,
+    "focused_errors": 0,
+    "whole_crate_verified": false,
+    "native_attempt": "fs-geometry-checked-native-01",
+    "numeric_cases": 1225,
+    "negative_boundary_cases": 5,
+    "positive_boundary_controls": 1,
+    "native_result_sha256": "36c03284b4d739e4efb3ea1c3ef3b89772e5603219f10ed11fae4ee96922f404",
+    "provider_sha256": "4c6aa770caa99eecd7ddbb6a38622fd8fa3047f04896819ef7c27e35ccb54462",
+    "driver_sha256": "566f33da3af9373fe3d2c5b7942add7d01f546cc5d27f4518307e311779d168d",
+    "cases_sha256": "be08d2d8a6499389a475da6d9f474e29cb635ff62a0195d06fc7d9edfa603e94",
+    "block_bytes": [
+      1024,
+      2048,
+      4096,
+      8192,
+      16384,
+      32768,
+      65536
+    ],
+    "filesystem_count_bits": 64,
+    "partition_bytes_bits": 64,
+    "addressing_sector_bytes": 512,
+    "quota_format_block_bytes": 1024,
+    "physical_authority_created": false,
+    "restacked_to_commit": "b1cc48460eedb0126f2fc8e2ddb8c1d897c3f19b",
+    "sole_production_dependency": "block_size.rs; byte-identical to checked03 snapshot and certified parent",
+    "parent_projection_scope": "Addressable complete-sector prefix floor(partition_bytes/512); trailing unaligned bytes do not imply whole-byte-partition bounds.",
+    "portable_checker_scope": "Prepared wrapper around the exact tested assets; not executed after packaging."
+  },
+  "certified_parent_whole_crate_reference": {
+    "reference_only": true,
+    "applies_to_current_259_source_branch": false,
+    "record": {
       "status": "passed",
       "attempt": "official-strict-02",
       "certified_source_commit": "5b48f3ec9beb62c5a4220f45e30a779e1b18ce80",
@@ -2284,34 +2317,99 @@
       },
       "negative_gate_check_status": "passed",
       "timeout_regression_status": "passed",
-      "official_runner_changed": false,
-      "strict_flags_weakened": false,
-      "new_certificate_claimed": true,
-      "historical_baseline_backup": "strict-readiness-01",
-      "first_attempt": {
-        "attempt": "official-strict-01",
-        "status": "aggregate_timeout",
-        "elapsed_seconds": 2701.231748639999,
-        "proof_evidence": false
-      }
+      "verifier_launcher": {
+        "sha256": "cfb75026da949fa649a14ae1030bc6b9b87626cb97cd817aecfd26e8be6a0c3c",
+        "script": "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then\n    exec /workspace/scratch/verus/run \"$@\"\nfi\nexec /workspace/scratch/verus/run --num-threads 4 \"$@\"\n",
+        "adds_only": [
+          "--num-threads",
+          "4"
+        ],
+        "version_query_forwarded_unchanged": true,
+        "proof_solver_budgets_changed": false
+      },
+      "current_source_matches": false,
+      "scope_relation_to_current_branch": "Historical parent certificate for258 sources; does not include fs_geometry or certify this259-source extension."
     }
   },
-  "historical_whole_crate_verified_baseline": {
-    "commit": "9083e1d36cb433927df6c0b636c8377a4c350c22",
-    "obligations": 3142,
-    "named_proofs": 915,
-    "public_executable_functions": 775,
-    "scope": "Historical baseline bytes and original artifact; native/API/gate results remain historical unless separately rerun"
-  },
-  "strict_composed_native_conformance": {
-    "status": "passed",
-    "families": 24,
-    "artifact_sha256": "b5577b84c2e2d66e8b3f0bbbf2c483620dbcdfc4186481293d82add60be6336a",
-    "result_sha256": "f6a9458559079b8c852acbb6361c427f0f4dd0785f0b387f1e589f70c2dddc80",
-    "runner_sha256": "dafafeb47ae1527bbeea4beb18f400a5d4f66e57b57157210eaa7a3cf2a3d9bb",
-    "all_protected_inputs_unchanged": true,
-    "source_count": 258,
-    "scope": "Selected native regression composition on the exact full-proof artifact; no filesystem feature-completeness denominator, kernel mount, source/device authority or physical durability claim",
-    "evidence": "verification-evidence.json: expanded_feature_native_regressions"
+  "certified_parent_official_strict_progress_reference": {
+    "reference_only": true,
+    "record": {
+      "status": "passed",
+      "attempt": "official-strict-02",
+      "certified_source_commit": "5b48f3ec9beb62c5a4220f45e30a779e1b18ce80",
+      "report_sha256": "19a399e2da952b94fb2d6aaa480ed277691ea13b96800384011ea0496d588077",
+      "prior_unclassified_progress": {
+        "status": "passed",
+        "attempt": "official-strict-02",
+        "certified_source_commit": "5b48f3ec9beb62c5a4220f45e30a779e1b18ce80",
+        "entire_crate": true,
+        "unfiltered_official_runner": true,
+        "verification_results": {
+          "encountered-error": false,
+          "encountered-vir-error": false,
+          "success": true,
+          "verified": 5481,
+          "errors": 0,
+          "is-verifying-entire-crate": true
+        },
+        "verifier_command": [
+          "/task/ext4-expansion/strict-readiness-01/verus-4threads",
+          "--no-cheating",
+          "--no-external-by-default",
+          "--output-json",
+          "--compile",
+          "--crate-type=rlib",
+          "--crate-name=verified_ext4",
+          "--out-dir=build",
+          "--log",
+          "smt",
+          "--log-dir",
+          "build/verus-logs/121124",
+          "src/model.rs"
+        ],
+        "verified_obligations": 5481,
+        "verification_errors": 0,
+        "sources": 258,
+        "named_proofs": 985,
+        "public_executable_functions": 1249,
+        "elapsed_seconds": 1720.9792035160062,
+        "proof_report_sha256": "19a399e2da952b94fb2d6aaa480ed277691ea13b96800384011ea0496d588077",
+        "artifact_sha256": "b5577b84c2e2d66e8b3f0bbbf2c483620dbcdfc4186481293d82add60be6336a",
+        "lock_sha256": "b554e223df361a7c2a948bdca9d5ed3c61e1c78229f35985de2c0d36a5d73a6c",
+        "runner_sha256": "8004e8ba0aade3a525a2bffa4fb935d622511067f3ece82c90d62935955ce9c7",
+        "source_manifest_sha256": "d99a1239849d1dcf4862eb8c3272ee0e878e41f86c5f6f6631e673c15833d99b",
+        "scope": "declared models and executable core; no kernel filesystem claim",
+        "writable_mount_enabled": false,
+        "full_filesystem_implementation_claimed": false,
+        "physical_device_durability_claimed": false,
+        "compatibility_status": "passed",
+        "compatibility_test_count": 372,
+        "request_boundary_rejections": 376,
+        "compatibility_binding": {
+          "report_sha256": "ba002bbd1fc1667d0899f1a7fee75ca216aed1dd5be5f40495d66ad1e30f75f9",
+          "suite_stdout_sha256": "f53fafa3e965cf56da66f3f92d0a5dbbe9732772ba2e03af1cb528da1bbffba0",
+          "official_run": "/task/ext4-expansion/official-compat-01",
+          "official_result_sha256": "2f665620a13bafba41c52f02fb7b0ede4b035bc424dec44d3049381c61eafa42",
+          "official_input_manifest_sha256": "259d75fad980ae585d0b09bcfee6455a3153c41c5e881af5c492da50092f2fa1",
+          "official_command_sha256": "ab3ad8e431d0845fea4b45a3d92d4db7fdcb1d04150dc9513d359f2b2733289c",
+          "official_stdout_sha256": "b94ec9d14bd13abd6164de4f5b45ac0926e2f896cce80e13b04dfe64798edc57",
+          "elapsed_seconds": 537.6650990769995,
+          "tests_passed": 372,
+          "request_boundary_rejections": 376
+        },
+        "negative_gate_check_status": "passed",
+        "timeout_regression_status": "passed",
+        "official_runner_changed": false,
+        "strict_flags_weakened": false,
+        "new_certificate_claimed": true,
+        "historical_baseline_backup": "strict-readiness-01",
+        "first_attempt": {
+          "attempt": "official-strict-01",
+          "status": "aggregate_timeout",
+          "elapsed_seconds": 2701.231748639999,
+          "proof_evidence": false
+        }
+      }
+    }
   }
 }

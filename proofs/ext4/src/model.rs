@@ -453,3 +453,5 @@ pub mod resize_plan;
 pub mod sm4;
 
 pub mod unicode12_data;
+
+pub mod fs_geometry;

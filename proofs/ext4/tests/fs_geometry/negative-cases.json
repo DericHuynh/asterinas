@@ -1,0 +1,27 @@
+[
+  {
+    "name": "forge_private_fields",
+    "source": "negative/forge_private_fields.rs",
+    "expected_error": "E0451"
+  },
+  {
+    "name": "mutate_block_bytes",
+    "source": "negative/mutate_block_bytes.rs",
+    "expected_error": "E0616"
+  },
+  {
+    "name": "mutate_filesystem_count",
+    "source": "negative/mutate_filesystem_count.rs",
+    "expected_error": "E0616"
+  },
+  {
+    "name": "mutate_partition_bytes",
+    "source": "negative/mutate_partition_bytes.rs",
+    "expected_error": "E0616"
+  },
+  {
+    "name": "substitute_public_view",
+    "source": "negative/substitute_public_view.rs",
+    "expected_error": "E0308"
+  }
+]

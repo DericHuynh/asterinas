@@ -1,6 +1,8 @@
 # Ext4 feature expansion: implementation and proof ledger
 
-This branch adds executable feature components and their Verus contracts. The exact current source at commit `5b48f3ec9beb62c5a4220f45e30a779e1b18ce80` passed the unchanged official unfiltered strict check and compilation: **5,481 obligations, zero errors**, including **985 named proofs and 1,249 public executable APIs across 258 source files**. This checks the declared host models and executable core; it does not establish complete ext4 features or a mounted filesystem.
+This branch adds executable feature components and their Verus contracts. The certified parent source at commit `5b48f3ec9beb62c5a4220f45e30a779e1b18ce80` passed the unchanged official unfiltered strict check and compilation: **5,481 obligations, zero errors**, including **985 named proofs and 1,249 public executable APIs across 258 source files**. This checks the declared host models and executable core; it does not establish complete ext4 features or a mounted filesystem.
+
+This extension adds numeric filesystem geometry with **29 focused obligations, zero errors**, and **1,225 numeric cases, five privacy rejections and one allowed control** against its actual focused-compiled library. The current **259-source** registry has not passed a new whole-crate check; the parent certificate below covers its original 258 sources. See [FS_GEOMETRY.md](FS_GEOMETRY.md) for exact hashes, scope and reproduction.
 
 The official compatibility suite passes 372 host tests and 376 API rejection cases against this exact checked artifact. These are runtime/API checks, not formal proof. Fresh negative gate checks: passed; timeout regression: passed.
 
@@ -10,6 +12,7 @@ The existing full-feature and mount gates remain closed. A completed codec, nume
 
 | Design domain | Executable work added | Current proof boundary | Remaining filesystem work |
 | --- | --- | --- | --- |
+| Variable filesystem geometry | Checked 1–64 KiB byte/sector/primary-superblock/quota placements with u64 bounds | 29 focused obligations, zero errors; 1,225 numeric cases, five privacy rejections and one allowed control; full 259-source integration pending | Source-owned geometry admission, exact-range BIO integration and allocator/device/durability refinement |
 | Legacy block maps | Direct/single/double/triple decomposition, source-block lookup, sparse reads, bounded whole-tree collection and wide filesystem counts with LE32 pointers | Exact path, lookup/read bytes, emitted ranges/nonalias/claim membership and wide geometry/source-fit contracts passed a focused check (48); full reachable-tree/path coverage remains open | Allocation, truncate/revoke transactions and whole-source ownership admission |
 | Inode formats | Variable-inode CRC, type/device codecs, fast-symlink storage and separate live plain-target validation | Focused check passed for exact checksum/masked bytes, sealing frames and plain-target bounds | Unified live-inode admission, long/encrypted symlinks and special-file VFS operations |
 | Inline data | system.data decoding, reads, fixed-capacity regular writes/truncation and directory decoding | Focused check passed for exact source/read/write bytes, cached non-overlap and preservation of every other attribute header/local value | Directory edits, re-layout, growth, block conversion and journal composition |

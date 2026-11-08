@@ -1,5 +1,7 @@
 # Feature expansion findings
 
+The additive numeric geometry extension has a separate 29-obligation focused result with zero errors, plus 1,225 numeric cases, five privacy rejections and one allowed control. The inherited 5,481-obligation certificate covers the 258-source parent; the current 259-source extension still requires whole-crate integration verification. See [FS_GEOMETRY.md](FS_GEOMETRY.md).
+
 These findings concern the independent draft implementation unless explicitly identified otherwise. No Linux ext4 defect has been established. Native diagnostics, invariant review, frontend errors and successful SMT discharge are recorded separately.
 
 | Finding | Trigger and correction | Discovery | Regression/evidence |

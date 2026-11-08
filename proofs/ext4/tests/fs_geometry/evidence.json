@@ -1,0 +1,83 @@
+{
+  "status": "passed for the recorded source/provider/driver/cases only",
+  "source_sha256": "65e6ad5666a0ca9039f8381c5b94aac7ebc80e543d0ec445862f555300db64e1",
+  "source_unchanged_during_publication": true,
+  "proof_attempt": "proof-fs-geometry-03",
+  "focused_verified_obligations": 29,
+  "focused_errors": 0,
+  "is_verifying_entire_crate": false,
+  "diagnostic_no_cheating_omitted": true,
+  "proof_result_sha256": "6418fb569c7087ee54586f43e61312eb212b3932a1c2fff9ec0c8748760b12f9",
+  "proof_stdout_sha256": "0a9dd09eaf9bd1a51ac42cd743b5349f703d579af63ccf4e05cbf32198d067fb",
+  "proof_command_sha256": "a60fbe34c4fa82b1b91e79f370dff9a5b84d527860e26d5676fd4a230224a6bb",
+  "library_sha256": "4c6aa770caa99eecd7ddbb6a38622fd8fa3047f04896819ef7c27e35ccb54462",
+  "native_attempt": "fs-geometry-checked-native-01",
+  "numeric_cases": 1225,
+  "negative_boundary_cases": 5,
+  "positive_boundary_controls": 1,
+  "native_result_sha256": "36c03284b4d739e4efb3ea1c3ef3b89772e5603219f10ed11fae4ee96922f404",
+  "native_provider_manifest_sha256": "d6bbe572b9379cab16b506395462c3b00dd4e4b91210eb48ba1c280039d7cb08",
+  "native_numeric_results_sha256": "b7686cbb221a4513ac31c488e8473f17c7cbb03d72ceb2c6a7bdfe5a4545eef0",
+  "native_negative_results_sha256": "01831b2c7d0f49b3dcfb508b9732c2d53251e36febb8c08abf516ca5d03b4dc7",
+  "driver_sha256": "566f33da3af9373fe3d2c5b7942add7d01f546cc5d27f4518307e311779d168d",
+  "cases_sha256": "be08d2d8a6499389a475da6d9f474e29cb635ff62a0195d06fc7d9edfa603e94",
+  "allowed_source_sha256": "5417e53f1979d33f0fe62c608f97decfb73db73a142458461391c6c580de62c5",
+  "negative_source_sha256": {
+    "forge_private_fields": "f4fa205937d49681b522368d75e495e5804a0a081627bc7f682602aae751e3cd",
+    "mutate_block_bytes": "314b88542c4cc8350b70675ad2b010a849da5f4c141672aac38f046b2d3a3b57",
+    "mutate_filesystem_count": "eae7a6ae85a3075abc544e534a85cce5b9307760545b74a24dda2a95199d7194",
+    "mutate_partition_bytes": "39e0d32fb44186c3833df2f62146d73033986edad0013f7e1e08170e87a050fa",
+    "substitute_public_view": "f9c4bfc99433b2ef46606bc94ee0d5be7d0cdfdbec56b59fa5c5698cbee047de"
+  },
+  "copied_assets": {
+    "driver.rs": {
+      "tested_source": "/task/ext4-expansion/fs-geometry-native-preparation-01/native-main.rs",
+      "sha256": "566f33da3af9373fe3d2c5b7942add7d01f546cc5d27f4518307e311779d168d",
+      "bytes_unchanged": true
+    },
+    "cases.json": {
+      "tested_source": "/task/ext4-expansion/fs-geometry-native-preparation-01/native-cases.json",
+      "sha256": "be08d2d8a6499389a475da6d9f474e29cb635ff62a0195d06fc7d9edfa603e94",
+      "bytes_unchanged": true
+    },
+    "allowed.rs": {
+      "tested_source": "/task/ext4-expansion/fs-geometry-native-preparation-01/allowed.rs",
+      "sha256": "5417e53f1979d33f0fe62c608f97decfb73db73a142458461391c6c580de62c5",
+      "bytes_unchanged": true
+    },
+    "negative/forge_private_fields.rs": {
+      "tested_source": "/task/ext4-expansion/fs-geometry-native-preparation-01/negative/forge_private_fields.rs",
+      "sha256": "f4fa205937d49681b522368d75e495e5804a0a081627bc7f682602aae751e3cd",
+      "bytes_unchanged": true
+    },
+    "negative/mutate_block_bytes.rs": {
+      "tested_source": "/task/ext4-expansion/fs-geometry-native-preparation-01/negative/mutate_block_bytes.rs",
+      "sha256": "314b88542c4cc8350b70675ad2b010a849da5f4c141672aac38f046b2d3a3b57",
+      "bytes_unchanged": true
+    },
+    "negative/mutate_filesystem_count.rs": {
+      "tested_source": "/task/ext4-expansion/fs-geometry-native-preparation-01/negative/mutate_filesystem_count.rs",
+      "sha256": "eae7a6ae85a3075abc544e534a85cce5b9307760545b74a24dda2a95199d7194",
+      "bytes_unchanged": true
+    },
+    "negative/mutate_partition_bytes.rs": {
+      "tested_source": "/task/ext4-expansion/fs-geometry-native-preparation-01/negative/mutate_partition_bytes.rs",
+      "sha256": "39e0d32fb44186c3833df2f62146d73033986edad0013f7e1e08170e87a050fa",
+      "bytes_unchanged": true
+    },
+    "negative/substitute_public_view.rs": {
+      "tested_source": "/task/ext4-expansion/fs-geometry-native-preparation-01/negative/substitute_public_view.rs",
+      "sha256": "f9c4bfc99433b2ef46606bc94ee0d5be7d0cdfdbec56b59fa5c5698cbee047de",
+      "bytes_unchanged": true
+    }
+  },
+  "negative_manifest_change": "Only source paths are normalized from task-local absolute paths to paths relative to this test directory; five source files and expected codes are byte-identical.",
+  "historical_parent_certificate": {
+    "source_commit": "5b48f3ec9beb62c5a4220f45e30a779e1b18ce80",
+    "sources": 258,
+    "excludes_fs_geometry": true
+  },
+  "extended_259_source_whole_crate_verified": false,
+  "kernel_or_hardware_refinement_claim": false,
+  "portable_checker_executed_after_packaging": false
+}
