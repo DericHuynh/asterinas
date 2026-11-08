@@ -6,6 +6,8 @@
 //! a per-block state array for every free cluster. This is allocator bookkeeping,
 //! not a device lease, namespace permit, or proof of completed physical I/O.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{meta_bg::{self, Geometry}, recovery_request::Completion};
 

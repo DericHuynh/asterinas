@@ -4,6 +4,8 @@
 //! Deleted records remain in the certificate, so no byte span or live record
 //! can be silently omitted. Namespace/target validation is a separate layer.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{bytes, crc, directory::{self, Entry}};
 

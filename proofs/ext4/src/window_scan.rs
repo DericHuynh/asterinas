@@ -5,7 +5,7 @@
 use vstd::prelude::*;
 use crate::{crc, journal_view, journal_window::{self as window, Operation, WindowView},
     journal_window_device as device, journal_window_media::{self as media, Media}, replay_refinement::Disk,
-    ring, scan, scan_trace::Source, window_provenance::{self as provenance, context}, window_snapshot, window_stream::{self as stream}};
+    ring, scan, scan_trace::Source, window_provenance::{self as provenance, *}, window_snapshot, window_stream::{self as stream}};
 
 verus! {
 

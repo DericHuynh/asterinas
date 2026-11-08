@@ -4,6 +4,8 @@
 //! Parent inputs must be bound to admitted disk bytes by the caller. This layer
 //! owns a checked accounting graph; it authenticates neither disk nor caller.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::ea_refs::{self, Kind, Ledger, Location, ParentReference, Reference};
 

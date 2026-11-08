@@ -1,0 +1,112 @@
+{
+  "schema": 1,
+  "license": "MPL-2.0",
+  "status": "cargo_checked_not_formally_reverified",
+  "branch": "feat/verus-ext4-no-std-refresh",
+  "branch_base_commit": "b1cc48460eedb0126f2fc8e2ddb8c1d897c3f19b",
+  "worktree": "/root/asterinas-ext4-no-std-refresh-stack",
+  "preserved_preparation": {
+    "branch": "prep/verus-ext4-no-std-refresh-checked-01",
+    "worktree": "/root/asterinas-ext4-no-std-refresh",
+    "head": "a9678467486d04dd512c6fb5fc0891a03ff4e127",
+    "all_file_bytes_preserved": true
+  },
+  "source_map": {
+    "path": "NOSTD_SOURCE_MAP.json",
+    "sha256": "3fa7d162f722d757bf4cc80d5b443f6f2e20ec5d590ebf7a56f2cfdf66284c00",
+    "scope": "Frozen transformation/preparation record preserved byte-identical, including its historical pending/not-run fields. This file does not describe current Cargo/proof status."
+  },
+  "checked_input_binding": {
+    "attempt": "/task/ext4-no-std-refresh/checks-01",
+    "input_manifest_sha256": "fa53206863afe45744dc65467c5f60ba162463d762499f72d87f7dcad12218ad",
+    "checked_inputs": 261,
+    "rust_sources": 258,
+    "cargo_files": 2,
+    "source_map_metadata_inputs": 1,
+    "all261_byte_identical_after_restack": true,
+    "root_cargo_toml_sha256": "25c8acf858d36a72389e6d4a772ebaa91613a01619495f807f06684ddf0177b4",
+    "root_cargo_matches_tested_preparation": true,
+    "source_or_build_input_changed": false,
+    "checks_rerun_in_new_worktree": false
+  },
+  "cargo_validation": {
+    "status": "passed",
+    "formal_verification": false,
+    "original_cwd": "/root/asterinas-ext4-no-std-refresh",
+    "compiler_toolchain": "nightly-2026-07-21-x86_64-unknown-linux-gnu",
+    "checks": [
+      {
+        "name": "host-check",
+        "returncode": 0,
+        "elapsed_seconds": 33.14003486400179
+      },
+      {
+        "name": "kernel-target-check",
+        "returncode": 0,
+        "elapsed_seconds": 12.806185651003034
+      },
+      {
+        "name": "feature-tree",
+        "returncode": 0,
+        "elapsed_seconds": 0.03357322599913459
+      }
+    ],
+    "vstd_features": {
+      "alloc": true,
+      "std": false,
+      "default": false
+    },
+    "all_inputs_unchanged": true,
+    "result_sha256": "e6cc0d9e9ab3567edbfb63f6dfb96408ab8664050796f4419d8c9eb733aacef4",
+    "commands_sha256": {
+      "host-check.command.json": "98ae0515c5461f11e2b8c5dba33d56d5c2089bcfec0276ce6e5e71ceea2573d4",
+      "kernel-target-check.command.json": "6f8c7e2cc3c394ad7023050011edb2de6ae914a7a2014064fcdf8c05308bb7c7",
+      "feature-tree.command.json": "6e527363ad210cd55b49ce062e92fff6bfcff45d29372713657cc3e0d27e7264"
+    },
+    "output_sha256": {
+      "host-check.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "host-check.stderr": "2471564f69178feaca67f1a10cb38ed2388841683d262cb00dc9d79b9b407c01",
+      "kernel-target-check.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "kernel-target-check.stderr": "c8e3775098e2bdd0d5e6d6e236453f57ff927db8d7538bc8c4191a63bd24f2f1",
+      "feature-tree.stdout": "3c2ab9f24af2378dae4aa5b7d60748df43ce46c1941e666e6d774c2509d6a9b8",
+      "feature-tree.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "portable_formal_verification": {
+    "status": "not_run",
+    "formal_certificate": false,
+    "verification_results": null,
+    "canonical_result_transferred": false,
+    "compiler_erasure_or_kernel_refinement_proved": false
+  },
+  "canonical_core_reference": {
+    "source_commit": "5b48f3ec9beb62c5a4220f45e30a779e1b18ce80",
+    "official_strict_attempt": "official-strict-02",
+    "obligations": 5481,
+    "errors": 0,
+    "entire_crate": true,
+    "source_files": 258,
+    "named_proofs": 985,
+    "public_executable_functions": 1249,
+    "canonical_evidence_sha256": "ba75a178671eea0381095087444dab229da972f994185c64b74e5dd767dcda93",
+    "proof_report_sha256": "19a399e2da952b94fb2d6aaa480ed277691ea13b96800384011ea0496d588077",
+    "applies_to_portable_sources": false,
+    "url": "https://github.com/DericHuynh/asterinas/blob/b1cc48460eedb0126f2fc8e2ddb8c1d897c3f19b/proofs/ext4/verification-evidence.json",
+    "nested_evidence": "verification-evidence.json: canonical_verification_reference",
+    "complete_canonical_document_preserved": true
+  },
+  "mechanical_source_audit": {
+    "all258_canonical_source_hashes_match_published_base": true,
+    "all258_macro_tails_equal_after_only_six_proof_qualifications_reversed": true,
+    "qualified_proof_calls": 6,
+    "runtime_statements_guards_or_public_signatures_changed": false,
+    "proof_bodies_or_modules_removed": false,
+    "new_local_trust_or_unsafe_or_cfg_exclusion": false,
+    "formal_erasure_theorem": false
+  },
+  "kernel_integration_present": false,
+  "full_filesystem_implementation_present": false,
+  "full_feature_support_present": false,
+  "writable_mount_enabled": false,
+  "scope": "Portable no_std+alloc source package and finite Cargo/type/feature validation only; no formal re-verification, kernel linkage, source ownership, signatures, physical I/O or durability authority."
+}

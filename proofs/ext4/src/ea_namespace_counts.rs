@@ -3,10 +3,11 @@
 //! Exact references and dot/parent counts over the complete EA namespace index.
 //! Slot arithmetic reuses the source-independent namespace counting model.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{block_claims, ea_directory_index::{self as directory_index, DirectoryIndex, IndexView},
-    name_set, namespace_counts::{Slot, SlotView, zero, is_dot, is_dotdot, step, fold,
-        prefix_counts_are_bounded, views, matching, dot_ok, dots_valid}};
+    name_set, namespace_counts::*};
 
 verus! {
 

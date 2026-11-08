@@ -2,20 +2,51 @@
 
 # Ext4 core and Verus proofs for Asterinas
 
-This package implements and verifies part of an independent, safe Rust
-implementation of Linux-compatible ext4. The implemented profile is still a
-subset; the expanded target includes [full feature coverage](FEATURE_COVERAGE.md)
-and a [concurrent block/extent/transaction protocol](CONCURRENCY.md).
-It is not a complete filesystem and is not registered with the kernel VFS.
+This branch packages the independent, safe Rust ext4 core as a
+`no_std` + `alloc` Cargo library. Host and
+`x86_64-unknown-none` Cargo checks pass on the exact portable source and
+build-input bytes. The target feature audit enables `vstd/alloc` without
+`vstd/std` or `vstd/default`. The portable source variant has **not
+been formally reverified**. See [portable package status](NOSTD_PORTABILITY_STATUS.json)
+and [source-preservation evidence](NOSTD_PACKAGE.md).
+
+The implemented filesystem profile remains a subset; the expanded target
+includes [full feature coverage](FEATURE_COVERAGE.md) and a
+[concurrent block/extent/transaction protocol](CONCURRENCY.md). The package
+is not a complete filesystem and is not registered with the kernel VFS.
 No mount or filesystem write path is enabled.
 
-The unchanged official unfiltered strict run checks **5,481 obligations with zero errors** and compiles the core at source commit `5b48f3ec9beb62c5a4220f45e30a779e1b18ce80`. Its pinned inventory covers **258 source files, 985 named proof functions and 1,249 public executable functions**. The report binds the exact source, lock, runner and emitted-library hashes; writable mount activation remains closed.
+The proof and runtime results below refer to the canonical source at
+`5b48f3ec9beb62c5a4220f45e30a779e1b18ce80` and its checked artifacts.
+Its unchanged official unfiltered strict run checks **5,481 obligations with
+zero errors** and compiles the core. Its pinned inventory covers **258 source
+files, 985 named proof functions and 1,249 public executable functions**.
+These results are retained as canonical references; they do not certify the
+portable import and scaffold edits.
 
-The official compatibility suite passes 372 host tests and 376 API rejection cases against this exact checked artifact. These are runtime/API checks, not formal proof. Fresh negative gate checks: passed; timeout regression: passed. A further 24 selected feature-regression families pass on the same compiled library, with remaining native coverage gaps recorded in the component ledger.
+Against that canonical artifact, the official compatibility suite passes
+372 host tests and 376 API rejection cases; the fresh negative gate and
+timeout regression pass. Another 24 selected feature-regression families
+pass on the same library. These are runtime/API checks, with their original
+artifact scope retained in the component ledger. They were not rerun for
+this portable package.
 
-[Proof status](proof-status.json) and [recorded evidence](verification-evidence.json) state the exact scope and retain the complete prior baseline evidence. The historical baseline at commit `9083e1d36cb433927df6c0b636c8377a4c350c22` checked 3,142 obligations; its tests and artifact do not stand in for current-artifact checks.
+[Proof status](proof-status.json) distinguishes the current Cargo-checked,
+formally unverified portable source from the canonical reference.
+[Recorded evidence](verification-evidence.json) nests the complete canonical
+document under `canonical_verification_reference`; its portable top-level
+proof result and certificate/artifact fields are unset.
+The historical baseline at
+`9083e1d36cb433927df6c0b636c8377a4c350c22` checked 3,142 obligations;
+its tests and artifact retain their original scope.
 
-The [implementation-first feature expansion](FEATURE_EXPANSION.md) and [component composition](COMPONENT_COMPOSITION.md) are included in this current declared-source proof. The 32 expansion modules retain their separate 2,339-obligation focused ledger; those counts are not additional to the 5,481 whole-crate obligations. Earlier native oracles and API runs retain their original artifact scope.
+The [implementation-first feature expansion](FEATURE_EXPANSION.md) and
+[component composition](COMPONENT_COMPOSITION.md) are included in the
+canonical declared-source proof. The 32 expansion modules retain their
+separate 2,339-obligation focused ledger; those counts are not additional
+to the 5,481 whole-crate obligations. References to checked or pinned
+results in the remaining component tables describe those canonical
+sources and artifacts, rather than a new proof of this package.
 
 ## Implementation and proof scope
 

@@ -2,6 +2,8 @@
 
 //! Affine prepared ordinary namespace exchange with exact owned before and after images.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{ea_namespace::NamespaceView, ns_mutation_model as model, ns_exchange::{self, Update}};
 

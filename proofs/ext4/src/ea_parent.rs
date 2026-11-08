@@ -3,6 +3,8 @@
 //! Complete source-bound EA descriptor projection for one ordinary parent.
 //! This read-only object grants no VFS, allocation, count-edit or I/O authority.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{bytes, ea_refs::{self, Kind, Location, Reference, ParentReference},
     ea_source::{self, Header, Node, NodeView}, inode, xattr::{self, Body, BodyView, Block},

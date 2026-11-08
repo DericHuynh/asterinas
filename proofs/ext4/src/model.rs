@@ -3,7 +3,10 @@
 //! Verified-core and model entry point. See ../proof-status.json for scope.
 //! This library is not registered with the kernel VFS.
 
+#![no_std]
 #![deny(unsafe_code)]
+
+extern crate alloc;
 
 use vstd::prelude::*;
 

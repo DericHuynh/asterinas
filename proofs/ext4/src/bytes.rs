@@ -3,6 +3,8 @@
 //! Total, allocation-free decoding. Offsets are checked by subtraction, so an
 //! attacker-controlled usize cannot wrap before a bounds check.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 
 verus! {

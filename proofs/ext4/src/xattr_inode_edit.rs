@@ -4,6 +4,8 @@
 //! ctime, ordinary i_version and both inode checksum halves are checked.
 //! A checked byte result conveys no source, credential or block authority.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{bytes, inode, inode_blocks, inode_time, inode_time_fields::{self as time, Field}, xattr, xattr_replace};
 

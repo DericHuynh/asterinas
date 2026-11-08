@@ -4,6 +4,8 @@
 //! This is a framed byte codec, not namespace or device authority. Source-bound
 //! absence, complete HTree routing and final namespace admission are separate.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{bytes, crc, directory, directory_block::{self, BlockView},
     directory_piece::{self, Piece, PieceView}};

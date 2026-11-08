@@ -5,6 +5,8 @@
 //! Changing a live project requires quota transfer and inode checksum/journal
 //! composition by the filesystem operation; neither is implicit in this codec.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::bytes;
 

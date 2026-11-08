@@ -4,6 +4,8 @@
 //! Supplied block numbers are checked descriptions. This module does not mint
 //! allocation, frame, initialized-data, replay or write authority.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{bytes, crc, extent_node::{self, BlockChecksum}, extent_span::{ExtentSpan, ExtentState}};
 

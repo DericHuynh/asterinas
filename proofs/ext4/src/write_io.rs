@@ -4,6 +4,8 @@
 //! local geometry and bytes; it does not replace global filesystem authority.
 //! A successful device report needs a concrete adapter contract before use.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{bytes, epoch, frozen::FrozenBlock, journal_state, journal_superblock, layout::JournalLayout,
     recovery_io::{Command, CommandView}, recovery_request::Completion, super_state, superblock,

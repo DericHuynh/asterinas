@@ -4,6 +4,8 @@
 //! allocation certificate. EA values, the journal and reserved slots receive
 //! no active namespace entry. This supplies no mounted or credential authority.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{block_claims, bytes, ea_allocation::{self, Allocation, AllocationView},
     ea_integrity, ea_ordinary::{self, OrdinaryView}, ea_parent, ea_source,

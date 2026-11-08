@@ -4,6 +4,8 @@
 //! Parsed addresses describe bytes only; role, epoch and replay policy are
 //! supplied by a separately admitted filesystem transaction.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{bytes, crc, jbd2_features::{self as features, Checksum, Features}};
 

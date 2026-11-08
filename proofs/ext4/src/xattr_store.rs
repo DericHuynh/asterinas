@@ -3,6 +3,8 @@
 //! Owned complete-key xattr values and Linux create/replace/remove semantics.
 //! This layer owns bytes, not filesystem blocks or credential authority.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{bytes, xattr_entry, xattr_table::{self, Table, ValueRef}};
 

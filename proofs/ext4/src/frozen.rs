@@ -3,8 +3,10 @@
 //! Owned, initialized 4 KiB snapshots. No Clone or mutable borrow is exposed.
 //! CortenMM frame/DMA loans must refine this ownership before kernel use.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
-use crate::bytes::be32;
+use crate::bytes::*;
 
 verus! {
 

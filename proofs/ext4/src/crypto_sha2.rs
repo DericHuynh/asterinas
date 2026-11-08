@@ -5,6 +5,8 @@
 //! refinement, side-channel properties and key-memory erasure are proof work.
 //! No collision-resistance or authenticity theorem is asserted by this module.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 
 verus! {

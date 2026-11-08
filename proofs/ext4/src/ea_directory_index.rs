@@ -4,6 +4,8 @@
 //! Namespace links, parent topology, mount/recovery and runtime authority are
 //! separate; this catalogue retains the actual EA-enabled allocation view.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{ea_allocation::{self, Allocation, AllocationView}, ea_directory::{self, Directory, DirectoryView},
     ea_namespace_nodes::{self as nodes, Nodes, TableView}, ea_ordinary,

@@ -1,30 +1,22 @@
 {
   "schema": 1,
   "license": "MPL-2.0",
-  "phase": "partial_implementation_and_checked_proofs",
+  "phase": "no_std_portable_source_cargo_checked_not_formally_reverified",
   "format_goal": "linux_compatible_ext4_full_on_disk_feature_coverage",
   "implementation_present": true,
   "full_filesystem_implementation_present": false,
   "kernel_integration_present": false,
   "writable_mount_enabled": false,
   "verification": {
-    "status": "core_and_models_checked",
-    "verus_verified_units": 5481,
-    "verification_errors": 0,
-    "checked_named_proof_functions": 985,
-    "checked_named_executable_functions": 1249,
-    "runner_validated": true,
-    "positive_unfiltered_strict_runner_passed": true,
-    "negative_gate_checks_passed": 6,
-    "host_compatibility_tests_passed": 372,
-    "request_boundary_rejections_passed": 376,
-    "compatibility_status": "passed",
-    "negative_gate_check_status": "passed",
-    "timeout_regression_status": "passed",
-    "certified_source_commit": "5b48f3ec9beb62c5a4220f45e30a779e1b18ce80",
-    "proof_report_sha256": "19a399e2da952b94fb2d6aaa480ed277691ea13b96800384011ea0496d588077",
-    "host_library_sha256": "b5577b84c2e2d66e8b3f0bbbf2c483620dbcdfc4186481293d82add60be6336a",
-    "evidence": "verification-evidence.json"
+    "status": "cargo_checked_not_formally_reverified",
+    "formal_certificate": false,
+    "verus_verified_units": null,
+    "verification_errors": null,
+    "portable_host_cargo_check": "passed",
+    "portable_x86_64_unknown_none_check": "passed",
+    "portable_vstd_alloc_only_feature_audit": "passed",
+    "portable_formal_reverification": "not_run",
+    "evidence": "NOSTD_PORTABILITY_STATUS.json"
   },
   "claims": {
     "abstract_redo": "checked",
@@ -235,5 +227,26 @@
       "request_boundary_rejections_passed": 340
     },
     "current_artifact_or_test_evidence": false
-  }
+  },
+  "canonical_verification_reference": {
+    "status": "core_and_models_checked",
+    "verus_verified_units": 5481,
+    "verification_errors": 0,
+    "checked_named_proof_functions": 985,
+    "checked_named_executable_functions": 1249,
+    "runner_validated": true,
+    "positive_unfiltered_strict_runner_passed": true,
+    "negative_gate_checks_passed": 6,
+    "host_compatibility_tests_passed": 372,
+    "request_boundary_rejections_passed": 376,
+    "compatibility_status": "passed",
+    "negative_gate_check_status": "passed",
+    "timeout_regression_status": "passed",
+    "certified_source_commit": "5b48f3ec9beb62c5a4220f45e30a779e1b18ce80",
+    "proof_report_sha256": "19a399e2da952b94fb2d6aaa480ed277691ea13b96800384011ea0496d588077",
+    "host_library_sha256": "b5577b84c2e2d66e8b3f0bbbf2c483620dbcdfc4186481293d82add60be6336a",
+    "evidence": "verification-evidence.json",
+    "applies_to_current_portable_sources": false
+  },
+  "claims_scope": "The retained proof/model claims refer to canonical 5b48 source only. They are not a formal certificate for the portable import/scaffold edits."
 }

@@ -6,6 +6,8 @@
 //! encryption, not authentication. Constant-time compilation, physical key
 //! erasure and nonce-generation policy remain separate obligations.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::aes::AesKey;
 

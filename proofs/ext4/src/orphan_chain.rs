@@ -4,6 +4,8 @@
 //! checksum resealing and atomic journal publication belong to the caller;
 //! these plans describe exact field changes and do not authorize disk writes.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{block_size, bytes};
 

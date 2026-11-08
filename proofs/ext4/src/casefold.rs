@@ -6,6 +6,8 @@
 //! Default-ignorable input characters disappear but remain CCC-zero barriers
 //! while ordering neighboring combining characters, matching the Linux cursor.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{bytes, unicode12_data as data};
 

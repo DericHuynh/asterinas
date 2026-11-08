@@ -6,6 +6,8 @@
 //! PKCS#7 signature validation, immutable-inode publication and kernel storage
 //! integration remain separate. This implementation is awaiting proof.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{bytes,block_size,crypto_sha2};
 

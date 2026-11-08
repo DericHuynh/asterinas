@@ -4,6 +4,8 @@
 //! This framed byte codec reseals and reparses the leaf. Namespace admission and
 //! source binding remain the responsibility of its caller.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{bytes, crc, directory, directory_block,
     directory_piece::{self, Piece, PieceView}, ns_dir_edit, ns_rename_block};

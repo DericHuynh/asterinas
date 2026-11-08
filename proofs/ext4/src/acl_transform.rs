@@ -3,6 +3,8 @@
 //! Pure Linux POSIX ACL chmod and creation-mask transformations.
 //! This codec does not grant inode mutation or authenticate a parent/child pair.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{acl::{self, Acl, AclView, Entry}, acl_xattr, bytes};
 

@@ -4,6 +4,8 @@
 //! original EA_INODE-enabled source. The result is an immutable candidate,
 //! not a namespace, journal, VFS, allocator or device authority.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{block_claims::{self, Census, Claim, Slot}, bytes, crc,
     ea_billing::{self, Usage}, ea_index::{self, Index, IndexView},
