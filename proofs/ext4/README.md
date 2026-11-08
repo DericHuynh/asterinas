@@ -9,13 +9,15 @@ and a [concurrent block/extent/transaction protocol](CONCURRENCY.md).
 It is not a complete filesystem and is not registered with the kernel VFS.
 No mount or filesystem write path is enabled.
 
-The unchanged official unfiltered strict run checks **5,481 obligations with zero errors** and compiles the core at source commit `5b48f3ec9beb62c5a4220f45e30a779e1b18ce80`. Its pinned inventory covers **258 source files, 985 named proof functions and 1,249 public executable functions**. The report binds the exact source, lock, runner and emitted-library hashes; writable mount activation remains closed.
+The certified parent passed the unchanged official unfiltered strict run with **5,481 obligations and zero errors**, compiling the core at source commit `5b48f3ec9beb62c5a4220f45e30a779e1b18ce80`. Its pinned inventory covers **258 source files, 985 named proof functions and 1,249 public executable functions**. The report binds the exact source, lock, runner and emitted-library hashes; writable mount activation remains closed.
 
-The official compatibility suite passes 372 host tests and 376 API rejection cases against this exact checked artifact. These are runtime/API checks, not formal proof. Fresh negative gate checks: passed; timeout regression: passed. A further 24 selected feature-regression families pass on the same compiled library, with remaining native coverage gaps recorded in the component ledger.
+The certified parent's official compatibility suite passed 372 host tests and 376 API rejection cases against its recorded artifact. These are runtime/API checks, not formal proof. Fresh negative gate checks: passed; timeout regression: passed. A further 24 selected feature-regression families pass on the same compiled library, with remaining native coverage gaps recorded in the component ledger.
 
-[Proof status](proof-status.json) and [recorded evidence](verification-evidence.json) state the exact scope and retain the complete prior baseline evidence. The historical baseline at commit `9083e1d36cb433927df6c0b636c8377a4c350c22` checked 3,142 obligations; its tests and artifact do not stand in for current-artifact checks.
+[Proof status](proof-status.json) and [recorded evidence](verification-evidence.json) mark whole-crate verification pending for this 259-source branch. They retain the complete certified-parent JSON as reference-only, explicitly inapplicable to this branch. The historical baseline at commit `9083e1d36cb433927df6c0b636c8377a4c350c22` checked 3,142 obligations; its tests and artifact do not stand in for current-artifact checks.
 
-The [implementation-first feature expansion](FEATURE_EXPANSION.md) and [component composition](COMPONENT_COMPOSITION.md) are included in this current declared-source proof. The 32 expansion modules retain their separate 2,339-obligation focused ledger; those counts are not additional to the 5,481 whole-crate obligations. Earlier native oracles and API runs retain their original artifact scope.
+The [implementation-first feature expansion](FEATURE_EXPANSION.md) and [component composition](COMPONENT_COMPOSITION.md) are included in the certified parent declared-source proof. The 32 expansion modules retain their separate 2,339-obligation focused ledger; those counts are not additional to the 5,481 whole-crate obligations. Earlier native oracles and API runs retain their original artifact scope.
+
+The isolated [sector-granular crash model](SECTOR_CRASH.md) adds a focused 37-obligation proof and seven native RAM-model test families, three intended API rejections and an allowed-use control. Those component results do not extend the recorded 258-source strict certificate to this 259-source branch. Physical atomicity, fences, CortenMM/device refinement and writable admission remain open.
 
 ## Implementation and proof scope
 
@@ -267,7 +269,7 @@ The negative checks include an actual failing Verus assertion in a disposable co
 The separate timeout regression fault-injects a disposable runner and checks
 current partial logs, stale-log/artifact invalidation and failure reporting. It
 executes no verifier subprocess and supplies no formal filesystem proof evidence.
-The historical baseline has 340 negative Rust compilation checks for certificate/source substitution, edit/queue ownership violations, request reuse/forgery, completion redirection, state replacement, command mutation and finishing through a live command loan. The fresh current-artifact suite passes 376 API rejection cases.
+The historical baseline has 340 negative Rust compilation checks for certificate/source substitution, edit/queue ownership violations, request reuse/forgery, completion redirection, state replacement, command mutation and finishing through a live command loan. The recorded certified-parent-artifact suite passed 376 API rejection cases.
 [CI](../../.github/workflows/verify_ext4.yml) runs the same checks.
 
 The emitted host library exercises proof erasure and Linux byte compatibility.

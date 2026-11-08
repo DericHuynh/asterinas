@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "license": "MPL-2.0",
+  "scope": "RAM model API rejection controls; no physical authority claim",
+  "allowed_control": "sector_crash_allowed.rs",
+  "cases": {
+    "forged_private_owner.rs": {
+      "source": "// Expected Rust rejection: every SectorCrash field is private.\nuse verified_ext4_sector_crash::sector_crash::{SectorCrash,RequestId};\nfn main() {\n let _owner=SectorCrash{base:vec![0;4096],issued:vec![1;4096],stable:vec![1;4096],\n stable_pieces:vec![true;8],identity:RequestId{namespace:0,epoch:0,serial:0,target:0},completed:true};\n}\n",
+      "source_sha256": "292728bdcc206c9192b3e4bbc35f27c325330a38e8801a1ccf3aa8a3bc9d1c98",
+      "diagnostic_code": "E0451",
+      "diagnostic_term": "private"
+    },
+    "physical_receipt_factory.rs": {
+      "source": "// Expected Rust rejection: there is no physical receipt type/factory.\nuse verified_ext4_sector_crash::sector_crash::FenceReceipt;\nfn main() { let _receipt = FenceReceipt::new(); }\n",
+      "source_sha256": "da061a259028587bd7c878d4501ffc5ed4dbb305d2c399655c16d03a088c22df",
+      "diagnostic_code": "E0432",
+      "diagnostic_term": "FenceReceipt"
+    },
+    "substituted_piece_bytes.rs": {
+      "source": "// Expected Rust rejection: stable-piece reports take identity+index only.\nuse verified_ext4_sector_crash::sector_crash::{SectorCrash,RequestId};\nfn main() {\n let id=RequestId{namespace:0,epoch:0,serial:0,target:0};\n let owner=SectorCrash::candidate(&[0;4096],&[1;4096],id).unwrap();\n let _owner=owner.record_stable_piece(id,0,&[2;512]);\n}\n",
+      "source_sha256": "4b083819826ad2ea640809c858e0da6420702ed32416bdf9ede034515c024f8b",
+      "diagnostic_code": "E0061",
+      "diagnostic_term": "record_stable_piece"
+    }
+  }
+}

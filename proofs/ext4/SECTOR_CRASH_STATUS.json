@@ -1,0 +1,182 @@
+{
+  "schema": 1,
+  "state": "focused_component_checked_and_native_checked_not_integrated",
+  "branch": "feat/verus-ext4-sector-crash",
+  "base_commit": "b1cc48460eedb0126f2fc8e2ddb8c1d897c3f19b",
+  "historical_source_preparation_base": "a9678467486d04dd512c6fb5fc0891a03ff4e127",
+  "isolated_model_root": "src/model.rs",
+  "official_model_root_change": "Additive pub mod sector_crash declaration only in isolated branch.",
+  "all_existing_core_source_bodies_and_runtime_feature_gates_unchanged": true,
+  "verification_run": true,
+  "front_end_run": true,
+  "smt_run": true,
+  "native_build_or_tests_run": true,
+  "public_named_proofs": [
+    "stable_piece_preserves_every_outside_byte",
+    "stable_piece_uses_only_the_exact_issued_bytes",
+    "stale_or_redirected_reports_enable_neither_transition",
+    "software_completion_changes_no_stable_byte",
+    "an_already_completed_report_cannot_be_consumed_twice",
+    "an_admitted_cut_retains_every_known_stable_byte",
+    "completed_write_can_still_have_no_new_stable_piece",
+    "every_initial_piece_subset_is_an_admitted_candidate_cut",
+    "matching_conditional_fence_has_exact_issued_stable_bytes",
+    "two_changed_distinct_sectors_admit_a_mixed_cut",
+    "separate_1120_and_2044_locations_have_a_mixed_byte_cut",
+    "whole_image_premise_restricts_4096_cut_to_the_old_choice",
+    "whole_image_4096_cut_embeds_one_existing_atomic_media_event"
+  ],
+  "public_total_exec_functions": [
+    "same_request",
+    "candidate",
+    "record_completion",
+    "record_stable_piece",
+    "candidate_cut",
+    "stable_bytes",
+    "issued_bytes",
+    "stable_piece_flags",
+    "request_identity",
+    "software_completed"
+  ],
+  "source_revision": "revision02_exact_report_completeness_contracts",
+  "source_sha256": "de504df5898b7df291faa133be28342f2c6686c28e0ae39b61b591b1fd8e103b",
+  "source_lines": 475,
+  "model_root_sha256": "0bcf364fa1292a506e47204d205cd82e33719ec721a5b8e3510ab4c918edf50e",
+  "lock_sha256": "fec9bda302af16d844bfd1f49d1cf6ba13e552e32cc5cf0c1d0c48949bce005d",
+  "strict_lock_registry": {
+    "status": "registered_component_checked_not_whole_branch_checked",
+    "model_files": 259,
+    "required_proofs": 998,
+    "required_executable_functions": 1259,
+    "inventory_counts_are_not_verification_counts": true,
+    "old_inventory_prefixes_preserved": true,
+    "all_pins_flags_and_other_keys_unchanged": true
+  },
+  "focused_component_proof": {
+    "evidence_locator": "/task/ext4-expansion/proof-sector-01",
+    "module": "sector_crash",
+    "module_sha256": "de504df5898b7df291faa133be28342f2c6686c28e0ae39b61b591b1fd8e103b",
+    "verified_obligations": 37,
+    "errors": 0,
+    "elapsed_seconds": 38.31680363199848,
+    "diagnostic_only": true,
+    "is_verifying_entire_crate": false,
+    "no_cheating_omitted_for_diagnostic_only": true,
+    "provider_file_sha256": {
+      "command.json": "c5aa3a3b9655bb37e4d5141b115dc979ac940b8063d2899d88a5aabb1744fd51",
+      "result.json": "54dd598ab383dc7f694c1726c0b3d9edb5e15c1116b5a69d837bebbe2d203c8d",
+      "stdout": "08d0b5238872e51363c79367ef03a2b91b881046de2f3f1859ea8e8cf860279a",
+      "stderr": "7b57e20ed7879d4b3301139ee6fd0c68775959b87e4c5a1debc93cfd9aada20e",
+      "source-sha256.json": "c0dadd015cc484908358793bf6893c1a36a4a60b1060bcd13f6dfa6bec1cf9f0",
+      "baseline-toolchain.lock.json": "fec9bda302af16d844bfd1f49d1cf6ba13e552e32cc5cf0c1d0c48949bce005d",
+      "build/libverified_ext4.rlib": "11b24c5856b0e35a23d347f02a82e86554f971bd60211565aedbac019a663535"
+    },
+    "retained_source_snapshot_files": 259,
+    "declared_modules": 226,
+    "compiled_source_files_with_root": 227,
+    "retained_source_count_is_not_verification_coverage": true,
+    "all_declared_dependency_module_bytes_match_current_branch": true,
+    "original_baseline_source_paths_unchanged_between_historical_and_current_bases": 226,
+    "baseline_source_comparison_is_not_an_initial_entrypoint_identity_claim": true,
+    "whole_branch_certificate": false
+  },
+  "native_checks": {
+    "state": "passed",
+    "evidence_locator": "/task/ext4-expansion/sector-checked-native-01",
+    "formal_verification": false,
+    "test_families": 7,
+    "allowed_control_passed": true,
+    "intended_api_rejections": 3,
+    "exact_focused_provider_library_used": true,
+    "no_local_model_reimplementation": true,
+    "before_after_inputs_unchanged": true,
+    "evidence_file_sha256": {
+      "result.json": "807d22e266d5d2ccd8cc8b63fc7240b66f8e486e049bb0f028d84e0353d78a50",
+      "commands.json": "89680fb182050823a3ab2d6472104296a0c0fe284aee61ccc14f24f0bc9aa754",
+      "sha256.json": "08bbb848d28f4e752271aa111057cb25acf208a50dba07ec8473207bbcef450a",
+      "tests.stdout": "f3b15ef08bd193d25da5a1bdc56853e2a19bed9e30d8988b9c0ba2c47d46b005",
+      "before-bindings.json": "8a3e4d24693b14bf6f13477f639e9386188c7f97aa53d12924d96673bac1e389",
+      "after-bindings.json": "8a3e4d24693b14bf6f13477f639e9386188c7f97aa53d12924d96673bac1e389",
+      "orchestrator.py": "2cb85231de6aa0b5b61927c3fede1f863c7490abc52234dca8b146ea56036cdc"
+    },
+    "input_source_sha256": {
+      "tests.rs": "aab6a1f8625c42e65e7575f1bf971d85232c95cb01d66bdce090e227a5081e96",
+      "allowed_model_use.rs": "90ecb0394c597a50e0f8c0f9dd3783817b16a0298c81f9b3ed197f6970be0a6e",
+      "compile-fail/forged_private_owner.rs": "292728bdcc206c9192b3e4bbc35f27c325330a38e8801a1ccf3aa8a3bc9d1c98",
+      "compile-fail/physical_receipt_factory.rs": "da061a259028587bd7c878d4501ffc5ed4dbb305d2c399655c16d03a088c22df",
+      "compile-fail/substituted_piece_bytes.rs": "4b083819826ad2ea640809c858e0da6420702ed32416bdf9ede034515c024f8b"
+    },
+    "negative_api_results": {
+      "forged_private_owner.rs": {
+        "intended_diagnostic": "E0451",
+        "diagnostic_term": "private",
+        "rejected": true
+      },
+      "physical_receipt_factory.rs": {
+        "intended_diagnostic": "E0432",
+        "diagnostic_term": "FenceReceipt",
+        "rejected": true
+      },
+      "substituted_piece_bytes.rs": {
+        "intended_diagnostic": "E0061",
+        "diagnostic_term": "record_stable_piece",
+        "rejected": true
+      }
+    },
+    "compiled_tests_sha256": "468b98f03a871afe1230ae7625b48f98a55cbbe21935ad9a7dbbc7e26f5ffa84",
+    "rustc_sha256": "b53b780f77f952062f8ca8a3b70aef2390b1e45ad91939be94afdc9543026853",
+    "portable_checker": {
+      "path": "tools/check_sector_crash.py",
+      "state": "prepared_and_python_syntax_checked_not_executed",
+      "historical_native_run_used_recorded_scratch_orchestrator": true,
+      "requires_exact_recorded_provider_and_pinned_toolchain": true
+    }
+  },
+  "report_acceptance_contracts": {
+    "completion": "Ok iff identity matches and not already completed; Identity iff mismatched, AlreadyCompleted iff matching and already complete.",
+    "stable_piece": "Ok iff identity matches and piece is in range; Identity iff mismatched, Piece iff matching and out of range. Completion status does not reject.",
+    "repeated_stable_piece": "Accepted idempotently; exact installed-state relation preserves all bytes/flags if already stable.",
+    "rejection_frame": "Every Err returns the exact unchanged valid owner.",
+    "executable_method_bodies_unchanged": true
+  },
+  "hardware_interpretation": "Conditional atomic512 premise required; no physical receipt/authority constructors.",
+  "embedding_scope": "One old atomic4096 write_media::apply event, only with extra whole_image_cut premise.",
+  "design_obligations": {
+    "G12": "checked_piece_RAM_relations_only",
+    "G13": "checked_constructive_mixed_byte_witness_only",
+    "G19": "checked_abstract_single_request_condition_only",
+    "G20": "checked_single_event_conditional_embedding_only"
+  },
+  "limits": [
+    "Focused sector37/0 is not a whole-259-source or unfiltered strict branch proof.",
+    "No hardware atomicity, DMA completion, physical fence or disk durability evidence.",
+    "No CRC-noncollision or universal checksum-invalidity theorem; no Linux defect claim.",
+    "No CortenMM frame, allocator, device, source, credential or mounted filesystem authority.",
+    "No queue/multi-request publication, checkpoint, bootstrap or repeated recovery closure.",
+    "No reset, cancellation, request reuse or loan-release transition; physical identity uniqueness remains external.",
+    "Old-media refinement covers one event only, under an additional whole-image atomicity premise.",
+    "No writable mount activation or filesystem write path is enabled."
+  ],
+  "standalone_root_preserved_in_scratch": {
+    "original_repository_path": "proofs/ext4/src/sector_crash_model.rs",
+    "preserved_path": "/task/ext4-expansion/sector-crash-prep-01/sector_crash_model.rs",
+    "sha256": "41ad7d0a91fa7500875b9f19e43f45b4e237b84c071aaf2950fce5ae0c223d09",
+    "lines": 458,
+    "reason": "Preserve prepared standalone root bytes outside the pinned repository src inventory; isolated branch now uses an additive official model declaration."
+  },
+  "revision01_preserved": {
+    "path": "/task/ext4-expansion/sector-crash-prep-01/revision01/src/sector_crash.rs",
+    "sha256": "b9bbbbc2f43132a16d9f1b6990c4bf0b11ac6cc7fb3661b747a7ac075eb388f5",
+    "lines": 459
+  },
+  "global_proof_status_not_updated": false,
+  "global_verification_evidence_not_updated": false,
+  "inherited_strict_report_scope": "Complete b1cc JSON nested under certified_parent_reference, reference_only true and applies_to_current_259_source_branch false; current whole-crate state pending, no certificate.",
+  "central_status_updated_for_pending_current_branch": true,
+  "central_metadata_parent_reference_only": true,
+  "central_metadata_parent_original_sha256": {
+    "proof-status.json": "12661763196f52bc96bade5f26edfa7907ba06d6d8f9712775a7ce8f5a4899d4",
+    "verification-evidence.json": "ba75a178671eea0381095087444dab229da972f994185c64b74e5dd767dcda93",
+    "FEATURE_EXPANSION.md": "5dd931020393a8208b6f9ec8c1cc03c3b1d511f4cd14330f08fe08b9026b8340"
+  }
+}
