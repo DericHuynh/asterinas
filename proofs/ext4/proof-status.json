@@ -66,7 +66,59 @@
     },
     "detailed_evidence": "SECTOR_CRASH_STATUS.json",
     "whole_current_declared_source_certificate": false,
-    "physical_fence_or_device_authority": false
+    "physical_fence_or_device_authority": false,
+    "publication_native_replay": {
+      "status": "passed",
+      "evidence_locator": "/task/ext4-expansion/sector-published-native-01",
+      "formal_verification": false,
+      "model_source_sha256": "de504df5898b7df291faa133be28342f2c6686c28e0ae39b61b591b1fd8e103b",
+      "model_source_lines": 475,
+      "checker_sha256": "42c9bbce50a7bd04b1c63fe64acfe731ae6903aa0b79ee81989751a19a2d39ce",
+      "provider_library_sha256": "11b24c5856b0e35a23d347f02a82e86554f971bd60211565aedbac019a663535",
+      "test_families": 7,
+      "intended_api_rejections": 3,
+      "allowed_control_passed": true,
+      "negative_api_results": {
+        "forged_private_owner.rs": {
+          "intended_diagnostic": "E0451",
+          "diagnostic_term": "private",
+          "rejected": true
+        },
+        "physical_receipt_factory.rs": {
+          "intended_diagnostic": "E0432",
+          "diagnostic_term": "FenceReceipt",
+          "rejected": true
+        },
+        "substituted_piece_bytes.rs": {
+          "intended_diagnostic": "E0061",
+          "diagnostic_term": "record_stable_piece",
+          "rejected": true
+        }
+      },
+      "before_after_inputs_unchanged": true,
+      "compiled_actual_provider": true,
+      "no_local_model_reimplementation": true,
+      "evidence_file_sha256": {
+        "result.json": "9f59142f92afc6b3fdeb8b22954abc640e2700bb4b2672ab70bccdd86fd303b5",
+        "commands.json": "57bfee893728b0f7be977439ced43cbce165e07402f324779c7104f992e0ba66",
+        "sha256.json": "49cde3305d57b20d1505e7d2f5533eb27109da46b30c61b2b93ec4a49b0a44ed",
+        "before-bindings.json": "82750d74b8713436b225c010f82a8b72ba4a4d968730757e06dace85d67ed719",
+        "after-bindings.json": "82750d74b8713436b225c010f82a8b72ba4a4d968730757e06dace85d67ed719",
+        "tests.stdout": "f3b15ef08bd193d25da5a1bdc56853e2a19bed9e30d8988b9c0ba2c47d46b005"
+      },
+      "focused_provider_verification": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 37,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "whole_branch_certificate": false,
+      "physical_durability_claimed": false,
+      "tested_branch_head_before_commit": "b1cc48460eedb0126f2fc8e2ddb8c1d897c3f19b",
+      "tested_unchanged_model_and_checker_committed_at": "4f5ed75a507eb2070d84b6f6d6e8771fef74b0ca",
+      "scope": "Publication replay on the exact focused sector library; later docs/status-only changes do not change tested executable inputs."
+    }
   },
   "claims": {
     "sector_piece_RAM_model": "focused_component_checked",
