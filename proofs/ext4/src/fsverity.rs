@@ -230,6 +230,8 @@ impl Layout {
             && self.block_bytes%self.digest_bytes==0
             && ((self.data_blocks<=1)==(self.levels==0))
             && (self.levels>0 ==> self.level_blocks@[self.levels as int-1]==1)
+            && (forall|i:int| #![trigger self.level_blocks@[i]] 0<=i<self.levels as int-1
+                ==> self.level_blocks@[i]>1)
             && (forall|i:int| #![trigger self.level_blocks@[i]] 0<=i<self.levels ==> self.level_blocks@[i] as nat
                 ==level_count(self.data_blocks as nat,(self.block_bytes/self.digest_bytes) as nat,(i+1) as nat))
             && (forall|i:int| #![trigger self.level_blocks@[i]] 0<=i<self.levels ==> 0<self.level_blocks@[i]<=self.data_blocks
@@ -278,7 +280,8 @@ impl Layout {
 pub fn layout(data_size:u64,algorithm:u8,log_blocksize:u8) -> (r:Result<Layout,Error>)
     ensures match r {Ok(l)=>l.layout_valid() && 10<=log_blocksize<=16
         && l.layout_fields().0==1u32<<log_blocksize && l.layout_fields().1==digest_bytes(algorithm)
-        && l.layout_fields().2==ceil_arity(data_size as nat,l.layout_fields().0 as nat),Err(_)=>true},
+        && l.layout_fields().2==ceil_arity(data_size as nat,l.layout_fields().0 as nat)
+        && layout_reference(l,data_size,algorithm,log_blocksize),Err(_)=>true},
 {
     let digest=digest_size(algorithm)? as u32;
     if log_blocksize<10 || log_blocksize>16 {return Err(Error::BlockSize);}
@@ -306,25 +309,50 @@ pub fn layout(data_size:u64,algorithm:u8,log_blocksize:u8) -> (r:Result<Layout,E
                 && 0<counts@[i]<=data_blocks,
             data_blocks<=1 ==> levels==0,
             levels>0 ==> counts@[levels as int-1]==blocks,
+            levels as nat+reference_height(blocks as nat,arity as nat,(8-levels) as nat)
+                ==reference_height(data_blocks as nat,arity as nat,8),
+            forall|i:int| #![trigger counts@[i]] 0<=i<levels as int-1 ==> counts@[i]>1,
         decreases 9-levels,
     {
+        let ghost previous_blocks=blocks;
+        let ghost previous_levels=levels;
+        let ghost previous_counts=counts@;
         if levels==8 {return Err(Error::TooDeep);}
-        proof {rounded_count_bounds(blocks as nat,arity as nat);}
+        proof {
+            rounded_count_bounds(blocks as nat,arity as nat);
+            reference_height_step(blocks as nat,arity as nat,(8-levels) as nat);
+        }
         blocks=blocks/arity + if blocks%arity==0 {0}else{1};
         counts[levels]=blocks;levels+=1;
+        proof {
+            assert(counts@==previous_counts.update(previous_levels as int,blocks));
+            assert forall|i:int| 0<=i<levels as int-1 implies #[trigger] counts@[i]>1 by {
+                assert(i<previous_levels);
+                vstd::seq::lemma_seq_update_different(previous_counts,i,previous_levels as int,blocks);
+                if i<previous_levels as int-1 {assert(previous_counts[i]>1);}
+                else {
+                    assert(i==previous_levels as int-1 && previous_levels>0);
+                    assert(previous_counts[i]==previous_blocks && previous_blocks>1);
+                }
+            }
+        }
     }
     proof {
+        reference_height_small(blocks as nat,arity as nat,(8-levels) as nat);
+        assert(levels as nat==reference_height(data_blocks as nat,arity as nat,8));
         assert((data_blocks<=1)==(levels==0));
         assert(levels>0 ==> counts@[levels as int-1]==1);
     }
     let mut starts=[0u64;8];let mut total=0u64;let mut level=levels;
     while level>0
         invariant level<=levels<=8,total as nat==count_sum(counts@,levels as nat)-count_sum(counts@,level as nat),
+            levels as nat==reference_height(data_blocks as nat,arity as nat,8),
             block_size::accepted(block as nat),digest==32 || digest==64,
             16<=arity<=2048,arity==(block/digest) as u64,block%digest==0,
             data_blocks==ceil_arity(data_size as nat,block as nat),
             data_blocks<=18014398509481984,(data_blocks<=1)==(levels==0),
             levels>0 ==> counts@[levels as int-1]==1,
+            forall|i:int| #![trigger counts@[i]] 0<=i<levels as int-1 ==> counts@[i]>1,
             forall|i:int| #![trigger counts@[i]] 0<=i<levels ==> counts@[i] as nat
                 ==level_count(data_blocks as nat,arity as nat,(i+1) as nat)
                 && 0<counts@[i]<=data_blocks,
@@ -346,6 +374,8 @@ pub fn layout(data_size:u64,algorithm:u8,log_blocksize:u8) -> (r:Result<Layout,E
             assert(count_sum(counts@,(j+1) as nat)==count_sum(counts@,j as nat)+counts@[j] as nat);
         }
     }
+    let ghost result=Layout {block_bytes:block,digest_bytes:digest,data_blocks,levels:levels as u8,level_start:starts,level_blocks:counts,tree_blocks:total};
+    proof {link_layout(result,data_size,algorithm,log_blocksize);}
     Ok(Layout {block_bytes:block,digest_bytes:digest,data_blocks,levels:levels as u8,level_start:starts,level_blocks:counts,tree_blocks:total})
 }
 
@@ -792,78 +822,955 @@ impl<'a> Verifier<'a> {
     }
 }
 
+
+// Exact builder references. Recursive content functions stay opaque; the
+// implementation uses one-step observations rather than unfolding SHA rounds.
+pub closed spec fn build_profile(algorithm:u8,bits:u8,salt:Seq<u8>) -> bool {
+    (algorithm==1 || algorithm==2) && 10<=bits<=16 && salt.len()<=32
+}
+pub closed spec fn reference_block_bytes(bits:u8) -> u32 {
+    if 10<=bits<=16 {1u32<<bits}else{0u32}
+}
+pub closed spec fn reference_arity(algorithm:u8,bits:u8) -> nat {
+    if algorithm==1 || algorithm==2 {
+        reference_block_bytes(bits) as nat/digest_bytes(algorithm)
+    }else{0}
+}
+#[verifier::opaque]
+pub closed spec fn reference_height(blocks:nat,arity:nat,fuel:nat) -> nat
+    decreases fuel
+{
+    if blocks<=1 || fuel==0 || arity==0 {0}
+    else {1+reference_height(ceil_arity(blocks,arity),arity,(fuel-1) as nat)}
+}
+#[verifier::opaque]
+pub closed spec fn reference_tree_blocks(blocks:nat,arity:nat,levels:nat) -> nat
+    decreases levels
+{
+    if levels==0 {0}else{reference_tree_blocks(blocks,arity,(levels-1) as nat)
+        +level_count(blocks,arity,levels)}
+}
+pub closed spec fn reference_data_blocks(data:Seq<u8>,bits:u8) -> nat {
+    ceil_arity(data.len(),reference_block_bytes(bits) as nat)
+}
+pub closed spec fn reference_levels(data:Seq<u8>,algorithm:u8,bits:u8) -> nat {
+    reference_height(reference_data_blocks(data,bits),reference_arity(algorithm,bits),8)
+}
+pub closed spec fn reference_level_start(blocks:nat,arity:nat,levels:nat,level:nat) -> nat {
+    if level>=levels {0}else{(reference_tree_blocks(blocks,arity,levels)
+        -reference_tree_blocks(blocks,arity,level+1)) as nat}
+}
+#[verifier::opaque]
+pub closed spec fn canonical_level(data:Seq<u8>,algorithm:u8,bits:u8,salt:Seq<u8>,level:nat) -> Seq<u8>
+    decreases level
+{
+    if !build_profile(algorithm,bits,salt) {Seq::empty()}
+    else {
+        let block=reference_block_bytes(bits) as nat;
+        let digest=digest_bytes(algorithm);
+        let arity=reference_arity(algorithm,bits);
+        let blocks=reference_data_blocks(data,bits);
+        let children=level_count(blocks,arity,level);
+        let parents=level_count(blocks,arity,level+1);
+        Seq::new(parents*block,|j:int| {
+            let child=(j / (digest as int)) as nat;
+            if child>=children {0u8}else{
+                let message=if level==0 {data_block_reference(data,child,block)}
+                    else {canonical_level(data,algorithm,bits,salt,(level-1) as nat)
+                        .subrange((child*block) as int,((child+1)*block) as int)};
+                salted_hash_reference(algorithm,salt,message)[j % (digest as int)]
+            }
+        })
+    }
+}
+#[verifier::opaque]
+pub closed spec fn canonical_wire(data:Seq<u8>,algorithm:u8,bits:u8,salt:Seq<u8>,levels:nat) -> Seq<u8>
+    decreases levels
+{
+    if levels==0 {Seq::empty()}else{
+        canonical_level(data,algorithm,bits,salt,(levels-1) as nat)
+            +canonical_wire(data,algorithm,bits,salt,(levels-1) as nat)
+    }
+}
+#[verifier::opaque]
+pub closed spec fn canonical_tree(data:Seq<u8>,algorithm:u8,bits:u8,salt:Seq<u8>) -> Seq<u8> {
+    canonical_wire(data,algorithm,bits,salt,reference_levels(data,algorithm,bits))
+}
+#[verifier::opaque]
+pub closed spec fn canonical_root(data:Seq<u8>,algorithm:u8,bits:u8,salt:Seq<u8>) -> Seq<u8> {
+    let block=reference_block_bytes(bits) as nat;
+    let blocks=reference_data_blocks(data,bits);
+    if blocks==0 {Seq::new(digest_bytes(algorithm),|i:int| 0u8)}
+    else if blocks==1 {salted_hash_reference(algorithm,salt,data_block_reference(data,0,block))}
+    else {
+        salted_hash_reference(algorithm,salt,
+            canonical_level(data,algorithm,bits,salt,(reference_levels(data,algorithm,bits)-1) as nat)
+                .take(block as int))
+    }
+}
+#[verifier::opaque]
+pub closed spec fn canonical_descriptor(data:Seq<u8>,algorithm:u8,bits:u8,salt:Seq<u8>) -> Seq<u8> {
+    descriptor_wire(algorithm,bits,data.len() as u64,canonical_root(data,algorithm,bits,salt),salt,Seq::empty())
+}
+proof fn canonical_tree_unfold(data:Seq<u8>,algorithm:u8,bits:u8,salt:Seq<u8>)
+    ensures canonical_tree(data,algorithm,bits,salt)==canonical_wire(data,algorithm,bits,salt,reference_levels(data,algorithm,bits)),
+{reveal_with_fuel(canonical_tree,1);}
+proof fn canonical_root_unfold(data:Seq<u8>,algorithm:u8,bits:u8,salt:Seq<u8>)
+    ensures canonical_root(data,algorithm,bits,salt)
+        ==if reference_data_blocks(data,bits)==0 {Seq::new(digest_bytes(algorithm),|i:int| 0u8)}
+        else if reference_data_blocks(data,bits)==1 {salted_hash_reference(algorithm,salt,
+            data_block_reference(data,0,reference_block_bytes(bits) as nat))}
+        else {salted_hash_reference(algorithm,salt,canonical_level(data,algorithm,bits,salt,
+            (reference_levels(data,algorithm,bits)-1) as nat).take(reference_block_bytes(bits) as int))},
+{reveal_with_fuel(canonical_root,1);}
+proof fn canonical_descriptor_unfold(data:Seq<u8>,algorithm:u8,bits:u8,salt:Seq<u8>)
+    ensures canonical_descriptor(data,algorithm,bits,salt)==descriptor_wire(algorithm,bits,data.len() as u64,
+        canonical_root(data,algorithm,bits,salt),salt,Seq::empty()),
+{reveal_with_fuel(canonical_descriptor,1);}
+
+#[verifier::opaque]
+pub closed spec fn layout_reference(l:Layout,size:u64,algorithm:u8,bits:u8) -> bool {
+    &&& l.layout_valid() && (algorithm==1 || algorithm==2) && 10<=bits<=16
+    &&& l.block_bytes==reference_block_bytes(bits) && l.digest_bytes==digest_bytes(algorithm)
+    &&& l.data_blocks==ceil_arity(size as nat,l.block_bytes as nat)
+    &&& l.levels==reference_height(l.data_blocks as nat,(l.block_bytes/l.digest_bytes) as nat,8)
+    &&& l.tree_blocks==reference_tree_blocks(l.data_blocks as nat,(l.block_bytes/l.digest_bytes) as nat,l.levels as nat)
+    &&& forall|k:int| #![trigger l.level_start@[k]] 0<=k<l.levels ==>
+        l.level_start@[k] as nat==reference_level_start(l.data_blocks as nat,
+            (l.block_bytes/l.digest_bytes) as nat,l.levels as nat,k as nat)
+}
+#[verifier::opaque]
+pub closed spec fn construction_frontier(tree:Seq<u8>,data:Seq<u8>,algorithm:u8,bits:u8,salt:Seq<u8>,
+    l:Layout,level:nat,cut:nat) -> bool
+{
+    &&& layout_reference(l,data.len() as u64,algorithm,bits) && build_profile(algorithm,bits,salt)
+    &&& data.len()<=u64::MAX
+    &&& tree.len()==l.tree_blocks as nat*l.block_bytes as nat
+    &&& level<=l.levels
+    &&& (if level<l.levels {cut<=l.level_blocks@[level as int] as nat*l.block_bytes as nat}else{cut==0})
+    &&& forall|k:int,j:int| 0<=k<l.levels && 0<=j<l.level_blocks@[k] as nat*l.block_bytes as nat ==>
+        #[trigger] tree[l.level_start@[k] as nat*l.block_bytes as nat+j]
+            ==if k<level || k==level && j<cut {canonical_level(data,algorithm,bits,salt,k as nat)[j]}else{0u8}
+}
+#[verifier::ext_equal]
+pub struct BuiltView {pub tree:Seq<u8>,pub descriptor:Seq<u8>,pub digest:Seq<u8>}
+pub closed spec fn build_content(data:Seq<u8>,algorithm:u8,bits:u8,salt:Seq<u8>,budget:BuildBudget,v:BuiltView) -> bool {
+    &&& build_profile(algorithm,bits,salt) && data.len()<=u64::MAX
+    &&& v.tree==canonical_tree(data,algorithm,bits,salt)
+    &&& v.descriptor==canonical_descriptor(data,algorithm,bits,salt)
+    &&& v.digest==hash_reference(algorithm,measured_header(v.descriptor))
+    &&& v.descriptor.len()==256 && v.digest.len()==digest_bytes(algorithm)
+    &&& v.tree.len()<=budget.tree_bytes && reference_data_blocks(data,bits)<=budget.data_blocks
+}
+proof fn reference_height_small(blocks:nat,arity:nat,fuel:nat)
+    requires blocks<=1,
+    ensures reference_height(blocks,arity,fuel)==0,
+{reveal_with_fuel(reference_height,1);}
+proof fn reference_height_step(blocks:nat,arity:nat,fuel:nat)
+    requires blocks>1,arity>0,fuel>0,
+    ensures reference_height(blocks,arity,fuel)==1+reference_height(ceil_arity(blocks,arity),arity,(fuel-1) as nat),
+{reveal_with_fuel(reference_height,1);}
+proof fn reference_sum_zero(blocks:nat,arity:nat)
+    ensures reference_tree_blocks(blocks,arity,0)==0,
+{reveal_with_fuel(reference_tree_blocks,1);}
+proof fn reference_sum_step(blocks:nat,arity:nat,levels:nat)
+    ensures reference_tree_blocks(blocks,arity,levels+1)
+        ==reference_tree_blocks(blocks,arity,levels)+level_count(blocks,arity,levels+1),
+{reveal_with_fuel(reference_tree_blocks,1);}
+proof fn count_sum_reference(counts:Seq<u64>,blocks:nat,arity:nat,depth:nat)
+    requires depth<=counts.len(),forall|k:int| #![trigger counts[k]] 0<=k<depth ==>
+        counts[k] as nat==level_count(blocks,arity,(k+1) as nat),
+    ensures count_sum(counts,depth)==reference_tree_blocks(blocks,arity,depth),
+    decreases depth,
+{
+    if depth==0 {reference_sum_zero(blocks,arity);}
+    else {
+        count_sum_reference(counts,blocks,arity,(depth-1) as nat);
+        reference_sum_step(blocks,arity,(depth-1) as nat);
+        assert(counts[depth as int-1] as nat==level_count(blocks,arity,depth));
+    }
+}
+proof fn link_layout(l:Layout,size:u64,algorithm:u8,bits:u8)
+    requires l.layout_valid(),(algorithm==1 || algorithm==2),10<=bits<=16,
+        l.block_bytes==reference_block_bytes(bits),l.digest_bytes==digest_bytes(algorithm),
+        l.data_blocks==ceil_arity(size as nat,l.block_bytes as nat),
+        l.levels==reference_height(l.data_blocks as nat,(l.block_bytes/l.digest_bytes) as nat,8),
+    ensures layout_reference(l,size,algorithm,bits),
+{
+    reveal(layout_reference);
+    count_sum_reference(l.level_blocks@,l.data_blocks as nat,(l.block_bytes/l.digest_bytes) as nat,l.levels as nat);
+    assert forall|k:int| #![trigger l.level_start@[k]] 0<=k<l.levels implies
+        l.level_start@[k] as nat==reference_level_start(l.data_blocks as nat,
+            (l.block_bytes/l.digest_bytes) as nat,l.levels as nat,k as nat) by {
+        count_sum_reference(l.level_blocks@,l.data_blocks as nat,(l.block_bytes/l.digest_bytes) as nat,(k+1) as nat);
+        count_sum_monotone(l.level_blocks@,(k+1) as nat,l.levels as nat);
+    }
+}
+proof fn layout_source_data_count(l:Layout,data:Seq<u8>,algorithm:u8,bits:u8)
+    requires layout_reference(l,data.len() as u64,algorithm,bits),data.len()<=u64::MAX,
+    ensures reference_data_blocks(data,bits)==l.data_blocks,
+{
+    reveal(layout_reference);
+}
+
+proof fn canonical_level_shape(data:Seq<u8>,algorithm:u8,bits:u8,salt:Seq<u8>,level:nat)
+    requires build_profile(algorithm,bits,salt),
+    ensures canonical_level(data,algorithm,bits,salt,level).len()
+        ==level_count(reference_data_blocks(data,bits),reference_arity(algorithm,bits),level+1)
+            *reference_block_bytes(bits) as nat,
+{
+    broadcast use vstd::seq::group_seq_lemmas;
+    reveal_with_fuel(canonical_level,1);
+}
+proof fn canonical_level_byte(data:Seq<u8>,algorithm:u8,bits:u8,salt:Seq<u8>,level:nat,j:int)
+    requires build_profile(algorithm,bits,salt),0<=j<canonical_level(data,algorithm,bits,salt,level).len(),
+    ensures canonical_level(data,algorithm,bits,salt,level)[j]
+        ==if (j / (digest_bytes(algorithm) as int)) as nat>=level_count(reference_data_blocks(data,bits),reference_arity(algorithm,bits),level) {0u8}
+        else {salted_hash_reference(algorithm,salt,
+            if level==0 {data_block_reference(data,(j / (digest_bytes(algorithm) as int)) as nat,reference_block_bytes(bits) as nat)}
+            else {canonical_level(data,algorithm,bits,salt,(level-1) as nat).subrange(
+                (((j / (digest_bytes(algorithm) as int)) as nat)*reference_block_bytes(bits) as nat) as int,
+                ((((j / (digest_bytes(algorithm) as int)) as nat)+1)*reference_block_bytes(bits) as nat) as int)})
+                    [j % (digest_bytes(algorithm) as int)]},
+{
+    broadcast use vstd::seq::group_seq_lemmas;
+    let block=reference_block_bytes(bits) as nat;
+    let digest=digest_bytes(algorithm);
+    let child=(j / (digest as int)) as nat;
+    let children=level_count(reference_data_blocks(data,bits),reference_arity(algorithm,bits),level);
+    if child<children {
+        if level>0 {
+            canonical_level_shape(data,algorithm,bits,salt,(level-1) as nat);
+            assert(canonical_level(data,algorithm,bits,salt,(level-1) as nat).len()==children*block);
+            assert((child+1)*block<=canonical_level(data,algorithm,bits,salt,(level-1) as nat).len()) by(nonlinear_arith)
+                requires child<children,block>=0,
+                    canonical_level(data,algorithm,bits,salt,(level-1) as nat).len()==children*block;
+        }
+        let message=if level==0 {data_block_reference(data,child,block)}
+            else {canonical_level(data,algorithm,bits,salt,(level-1) as nat)
+                .subrange((child*block) as int,((child+1)*block) as int)};
+        salted_reference_length(algorithm,salt,message);
+    }
+    reveal_with_fuel(canonical_level,1);
+}
+proof fn canonical_wire_zero(data:Seq<u8>,algorithm:u8,bits:u8,salt:Seq<u8>)
+    ensures canonical_wire(data,algorithm,bits,salt,0)==Seq::<u8>::empty(),
+{reveal_with_fuel(canonical_wire,1);}
+proof fn canonical_wire_step(data:Seq<u8>,algorithm:u8,bits:u8,salt:Seq<u8>,levels:nat)
+    ensures canonical_wire(data,algorithm,bits,salt,levels+1)
+        ==canonical_level(data,algorithm,bits,salt,levels)+canonical_wire(data,algorithm,bits,salt,levels),
+{reveal_with_fuel(canonical_wire,1);}
+proof fn canonical_wire_shape(data:Seq<u8>,algorithm:u8,bits:u8,salt:Seq<u8>,levels:nat)
+    requires build_profile(algorithm,bits,salt),
+    ensures canonical_wire(data,algorithm,bits,salt,levels).len()
+        ==reference_tree_blocks(reference_data_blocks(data,bits),reference_arity(algorithm,bits),levels)
+            *reference_block_bytes(bits) as nat,
+    decreases levels,
+{
+    broadcast use vstd::seq::group_seq_lemmas;
+    if levels==0 {
+        canonical_wire_zero(data,algorithm,bits,salt);
+        reference_sum_zero(reference_data_blocks(data,bits),reference_arity(algorithm,bits));
+        assert(0nat*reference_block_bytes(bits) as nat==0) by(nonlinear_arith);
+    }
+    else {
+        canonical_wire_shape(data,algorithm,bits,salt,(levels-1) as nat);
+        canonical_level_shape(data,algorithm,bits,salt,(levels-1) as nat);
+        canonical_wire_step(data,algorithm,bits,salt,(levels-1) as nat);
+        reference_sum_step(reference_data_blocks(data,bits),reference_arity(algorithm,bits),(levels-1) as nat);
+        assert(canonical_wire(data,algorithm,bits,salt,levels).len()
+            ==reference_tree_blocks(reference_data_blocks(data,bits),reference_arity(algorithm,bits),levels)*reference_block_bytes(bits) as nat) by(nonlinear_arith)
+            requires canonical_wire(data,algorithm,bits,salt,levels).len()
+                ==canonical_level(data,algorithm,bits,salt,(levels-1) as nat).len()
+                    +canonical_wire(data,algorithm,bits,salt,(levels-1) as nat).len(),
+                reference_tree_blocks(reference_data_blocks(data,bits),reference_arity(algorithm,bits),levels)
+                    ==reference_tree_blocks(reference_data_blocks(data,bits),reference_arity(algorithm,bits),(levels-1) as nat)
+                        +level_count(reference_data_blocks(data,bits),reference_arity(algorithm,bits),levels),
+                canonical_level(data,algorithm,bits,salt,(levels-1) as nat).len()
+                    ==level_count(reference_data_blocks(data,bits),reference_arity(algorithm,bits),levels)*reference_block_bytes(bits) as nat,
+                canonical_wire(data,algorithm,bits,salt,(levels-1) as nat).len()
+                    ==reference_tree_blocks(reference_data_blocks(data,bits),reference_arity(algorithm,bits),(levels-1) as nat)*reference_block_bytes(bits) as nat;
+    }
+}
+
+
+proof fn salted_reference_length(algorithm:u8,salt:Seq<u8>,message:Seq<u8>)
+    requires algorithm==1 || algorithm==2,
+    ensures salted_hash_reference(algorithm,salt,message).len()==digest_bytes(algorithm),
+{
+    if algorithm==1 {crypto_sha2::digest256_reference_length(salt_prefix(algorithm,salt)+message);}
+    else {crypto_sha2::digest512_reference_length(salt_prefix(algorithm,salt)+message);}
+}
+proof fn level_adjacent(l:Layout,k:nat)
+    requires l.layout_valid(),k+1<l.levels,
+    ensures l.level_start@[k as int] as nat==l.level_start@[(k+1) as int] as nat
+        +l.level_blocks@[(k+1) as int] as nat,
+{
+    count_sum_monotone(l.level_blocks@,k+1,l.levels as nat);
+    count_sum_monotone(l.level_blocks@,k+2,l.levels as nat);
+    assert(count_sum(l.level_blocks@,k+2)==count_sum(l.level_blocks@,k+1)+l.level_blocks@[(k+1) as int] as nat);
+}
+proof fn level_separated(l:Layout,low:nat,high:nat)
+    requires l.layout_valid(),low<high<l.levels,
+    ensures l.level_start@[high as int] as nat+l.level_blocks@[high as int] as nat
+        <=l.level_start@[low as int] as nat,
+{
+    count_sum_monotone(l.level_blocks@,low+1,high);
+    count_sum_monotone(l.level_blocks@,low+1,l.levels as nat);
+    count_sum_monotone(l.level_blocks@,high+1,l.levels as nat);
+    assert(count_sum(l.level_blocks@,high+1)==count_sum(l.level_blocks@,high)+l.level_blocks@[high as int] as nat);
+}
+proof fn level_byte_bound(l:Layout,k:nat,j:int)
+    requires l.layout_valid(),k<l.levels,0<=j<l.level_blocks@[k as int] as nat*l.block_bytes as nat,
+    ensures 0<=l.level_start@[k as int] as nat*l.block_bytes as nat+j
+        <l.tree_blocks as nat*l.block_bytes as nat,
+{
+    assert(l.level_start@[k as int] as nat+l.level_blocks@[k as int] as nat<=l.tree_blocks);
+    assert(l.level_start@[k as int] as nat*l.block_bytes as nat+j<l.tree_blocks as nat*l.block_bytes as nat)
+        by(nonlinear_arith)
+        requires 0<=j<l.level_blocks@[k as int] as nat*l.block_bytes as nat,
+            l.level_start@[k as int] as nat+l.level_blocks@[k as int] as nat<=l.tree_blocks,
+            l.block_bytes>0;
+}
+proof fn other_level_outside_write(l:Layout,level:nat,other:nat,cut:nat,amount:nat,j:int)
+    requires l.layout_valid(),level<l.levels,other<l.levels,other!=level,
+        cut+amount<=l.level_blocks@[level as int] as nat*l.block_bytes as nat,
+        0<=j<l.level_blocks@[other as int] as nat*l.block_bytes as nat,
+    ensures l.level_start@[other as int] as nat*l.block_bytes as nat+j
+            <l.level_start@[level as int] as nat*l.block_bytes as nat+cut
+        ||l.level_start@[other as int] as nat*l.block_bytes as nat+j
+            >=l.level_start@[level as int] as nat*l.block_bytes as nat+cut+amount,
+{
+    if other<level {
+        level_separated(l,other,level);
+        assert(l.level_start@[other as int] as nat*l.block_bytes as nat+j
+            >=l.level_start@[level as int] as nat*l.block_bytes as nat+cut+amount) by(nonlinear_arith)
+            requires l.level_start@[level as int] as nat+l.level_blocks@[level as int] as nat
+                <=l.level_start@[other as int] as nat,
+                cut+amount<=l.level_blocks@[level as int] as nat*l.block_bytes as nat,j>=0;
+    } else {
+        level_separated(l,level,other);
+        assert(l.level_start@[other as int] as nat*l.block_bytes as nat+j
+            <l.level_start@[level as int] as nat*l.block_bytes as nat+cut) by(nonlinear_arith)
+            requires l.level_start@[other as int] as nat+l.level_blocks@[other as int] as nat
+                <=l.level_start@[level as int] as nat,
+                j<l.level_blocks@[other as int] as nat*l.block_bytes as nat,cut>=0;
+    }
+}
+proof fn zero_frontier(tree:Seq<u8>,data:Seq<u8>,algorithm:u8,bits:u8,salt:Seq<u8>,l:Layout)
+    requires layout_reference(l,data.len() as u64,algorithm,bits),build_profile(algorithm,bits,salt),
+        data.len()<=u64::MAX,tree.len()==l.tree_blocks as nat*l.block_bytes as nat,
+        forall|i:int| #![trigger tree[i]] 0<=i<tree.len() ==> tree[i]==0,
+    ensures construction_frontier(tree,data,algorithm,bits,salt,l,0,0),
+{
+    reveal(layout_reference);
+    reveal(construction_frontier);
+    assert forall|k:int,j:int| 0<=k<l.levels && 0<=j<l.level_blocks@[k] as nat*l.block_bytes as nat
+        implies #[trigger] tree[l.level_start@[k] as nat*l.block_bytes as nat+j]==0u8 by {
+        level_byte_bound(l,k as nat,j);
+    }
+}
+proof fn frontier_splice_advance(before:Seq<u8>,after:Seq<u8>,data:Seq<u8>,algorithm:u8,bits:u8,
+    salt:Seq<u8>,l:Layout,level:nat,cut:nat,payload:Seq<u8>)
+    requires l.layout_valid(),construction_frontier(before,data,algorithm,bits,salt,l,level,cut),level<l.levels,
+        cut+payload.len()<=l.level_blocks@[level as int] as nat*l.block_bytes as nat,
+        payload==canonical_level(data,algorithm,bits,salt,level).subrange(cut as int,(cut+payload.len()) as int),
+        after.len()==before.len(),
+        forall|i:int| #![trigger after[i]] 0<=i<after.len() ==> after[i]==
+            if l.level_start@[level as int] as nat*l.block_bytes as nat+cut<=i
+                <l.level_start@[level as int] as nat*l.block_bytes as nat+cut+payload.len()
+            {payload[i-(l.level_start@[level as int] as nat*l.block_bytes as nat+cut) as int]}else{before[i]},
+    ensures construction_frontier(after,data,algorithm,bits,salt,l,level,cut+payload.len()),
+{
+    reveal(layout_reference);
+    reveal(construction_frontier);
+    canonical_level_shape(data,algorithm,bits,salt,level);
+    assert forall|k:int,j:int| 0<=k<l.levels && 0<=j<l.level_blocks@[k] as nat*l.block_bytes as nat
+        implies #[trigger] after[l.level_start@[k] as nat*l.block_bytes as nat+j]
+            ==if k<level ||k==level && j<cut+payload.len()
+                {canonical_level(data,algorithm,bits,salt,k as nat)[j]}else{0u8} by {
+        level_byte_bound(l,k as nat,j);
+        if k==level {
+            if j<cut {
+                assert(after[l.level_start@[k] as nat*l.block_bytes as nat+j]
+                    ==before[l.level_start@[k] as nat*l.block_bytes as nat+j]);
+            }else if j<cut+payload.len() {
+                vstd::seq::lemma_seq_subrange_index(canonical_level(data,algorithm,bits,salt,level),
+                    cut as int,(cut+payload.len()) as int,j-cut as int);
+                assert(payload[j-cut as int]==canonical_level(data,algorithm,bits,salt,level)[j]);
+            }else{
+                assert(after[l.level_start@[k] as nat*l.block_bytes as nat+j]
+                    ==before[l.level_start@[k] as nat*l.block_bytes as nat+j]);
+            }
+        }else{
+            other_level_outside_write(l,level,k as nat,cut,payload.len(),j);
+            assert(after[l.level_start@[k] as nat*l.block_bytes as nat+j]
+                ==before[l.level_start@[k] as nat*l.block_bytes as nat+j]);
+        }
+    }
+}
+proof fn frontier_zero_extension(tree:Seq<u8>,data:Seq<u8>,algorithm:u8,bits:u8,salt:Seq<u8>,
+    l:Layout,level:nat,cut:nat,end:nat)
+    requires l.layout_valid(),construction_frontier(tree,data,algorithm,bits,salt,l,level,cut),level<l.levels,
+        cut<=end<=l.level_blocks@[level as int] as nat*l.block_bytes as nat,
+        forall|j:int| #![trigger canonical_level(data,algorithm,bits,salt,level)[j]]
+            cut<=j<end ==> canonical_level(data,algorithm,bits,salt,level)[j]==0,
+    ensures construction_frontier(tree,data,algorithm,bits,salt,l,level,end),
+{
+    reveal(construction_frontier);
+    assert forall|k:int,j:int| 0<=k<l.levels && 0<=j<l.level_blocks@[k] as nat*l.block_bytes as nat
+        implies #[trigger] tree[l.level_start@[k] as nat*l.block_bytes as nat+j]
+            ==if k<level ||k==level && j<end {canonical_level(data,algorithm,bits,salt,k as nat)[j]}else{0u8} by {
+        if k==level && cut<=j<end {assert(canonical_level(data,algorithm,bits,salt,level)[j]==0);}
+    }
+}
+proof fn frontier_finish_level(tree:Seq<u8>,data:Seq<u8>,algorithm:u8,bits:u8,salt:Seq<u8>,l:Layout,level:nat)
+    requires l.layout_valid(),level<l.levels,construction_frontier(tree,data,algorithm,bits,salt,l,level,
+        l.level_blocks@[level as int] as nat*l.block_bytes as nat),
+    ensures construction_frontier(tree,data,algorithm,bits,salt,l,level+1,0),
+{
+    reveal(construction_frontier);
+    assert forall|k:int,j:int| 0<=k<l.levels && 0<=j<l.level_blocks@[k] as nat*l.block_bytes as nat
+        implies #[trigger] tree[l.level_start@[k] as nat*l.block_bytes as nat+j]
+            ==if k<level+1 {canonical_level(data,algorithm,bits,salt,k as nat)[j]}else{0u8} by {
+        if k==level {assert(j<l.level_blocks@[level as int] as nat*l.block_bytes as nat);}
+    }
+}
+proof fn scaled_child_span(child:nat,block:nat)
+    ensures 0<=child*block<=(child+1)*block,child*block+block==(child+1)*block,
+{
+    assert(0<=child*block<=(child+1)*block && child*block+block==(child+1)*block) by(nonlinear_arith)
+        requires child>=0,block>=0;
+}
+
+proof fn frontier_completed_block(tree:Seq<u8>,data:Seq<u8>,algorithm:u8,bits:u8,salt:Seq<u8>,
+    l:Layout,frontier_level:nat,cut:nat,level:nat,child:u64)
+    requires l.layout_valid(),level<l.levels,
+        construction_frontier(tree,data,algorithm,bits,salt,l,frontier_level,cut),
+        level<frontier_level,child<l.level_blocks@[level as int],
+    ensures canonical_level(data,algorithm,bits,salt,level).len()
+            ==l.level_blocks@[level as int] as nat*l.block_bytes as nat,
+        (child as nat+1)*l.block_bytes as nat<=canonical_level(data,algorithm,bits,salt,level).len(),
+        tree_block_reference(tree,l.level_start@[level as int] as nat+child as nat,l.block_bytes as nat)
+        ==canonical_level(data,algorithm,bits,salt,level).subrange(
+            (child as nat*l.block_bytes as nat) as int,((child as nat+1)*l.block_bytes as nat) as int),
+{
+    reveal(layout_reference);
+    broadcast use vstd::seq::group_seq_lemmas;
+    reveal(construction_frontier);
+    canonical_level_shape(data,algorithm,bits,salt,level);
+    let first=(l.level_start@[level as int] as nat+child as nat)*l.block_bytes as nat;
+    let local=child as nat*l.block_bytes as nat;
+    assert(first+l.block_bytes as nat<=tree.len()) by(nonlinear_arith)
+        requires first==(l.level_start@[level as int] as nat+child as nat)*l.block_bytes as nat,
+            l.level_start@[level as int] as nat+l.level_blocks@[level as int] as nat<=l.tree_blocks,
+            child<l.level_blocks@[level as int],tree.len()==l.tree_blocks as nat*l.block_bytes as nat;
+    assert(local+l.block_bytes as nat<=canonical_level(data,algorithm,bits,salt,level).len()) by(nonlinear_arith)
+        requires local==child as nat*l.block_bytes as nat,child<l.level_blocks@[level as int],
+            canonical_level(data,algorithm,bits,salt,level).len()==l.level_blocks@[level as int] as nat*l.block_bytes as nat;
+    assert forall|i:int| 0<=i<l.block_bytes implies
+        #[trigger] tree.subrange(first as int,(first+l.block_bytes as nat) as int)[i]
+        ==#[trigger] canonical_level(data,algorithm,bits,salt,level)
+            .subrange(local as int,(local+l.block_bytes as nat) as int)[i] by {
+        vstd::seq::lemma_seq_subrange_index(tree,first as int,(first+l.block_bytes as nat) as int,i);
+        vstd::seq::lemma_seq_subrange_index(canonical_level(data,algorithm,bits,salt,level),
+            local as int,(local+l.block_bytes as nat) as int,i);
+        let byte=local as int+i;
+        assert(0<=byte<l.level_blocks@[level as int] as nat*l.block_bytes as nat) by(nonlinear_arith)
+            requires byte==local as int+i,local==child as nat*l.block_bytes as nat,
+                0<=i<l.block_bytes,child<l.level_blocks@[level as int],l.block_bytes>0;
+        assert(first+i==l.level_start@[level as int] as nat*l.block_bytes as nat+byte) by(nonlinear_arith)
+            requires first==(l.level_start@[level as int] as nat+child as nat)*l.block_bytes as nat,
+                local==child as nat*l.block_bytes as nat,byte==local as int+i;
+        assert(tree[l.level_start@[level as int] as nat*l.block_bytes as nat+byte]
+            ==canonical_level(data,algorithm,bits,salt,level)[byte]);
+        assert(tree[first+i]==canonical_level(data,algorithm,bits,salt,level)[local as int+i]);
+    }
+    assert(tree.subrange(first as int,(first+l.block_bytes as nat) as int)
+        =~=canonical_level(data,algorithm,bits,salt,level).subrange(local as int,(local+l.block_bytes as nat) as int));
+}
+proof fn canonical_child_span(data:Seq<u8>,algorithm:u8,bits:u8,salt:Seq<u8>,l:Layout,level:nat,child:u64)
+    requires data.len()<=u64::MAX,l.layout_valid(),layout_reference(l,data.len() as u64,algorithm,bits),
+        build_profile(algorithm,bits,salt),level<l.levels,
+        child<if level==0 {l.data_blocks}else{l.level_blocks@[level as int-1]},
+    ensures level>0 ==> 0<=child as nat*l.block_bytes as nat
+        <=(child as nat+1)*l.block_bytes as nat
+        <=canonical_level(data,algorithm,bits,salt,(level-1) as nat).len(),
+{
+    reveal(layout_reference);
+    if level>0 {
+        canonical_level_shape(data,algorithm,bits,salt,(level-1) as nat);
+        scaled_child_span(child as nat,l.block_bytes as nat);
+        assert(canonical_level(data,algorithm,bits,salt,(level-1) as nat).len()
+            ==l.level_blocks@[level as int-1] as nat*l.block_bytes as nat);
+        assert((child as nat+1)*l.block_bytes as nat
+            <=canonical_level(data,algorithm,bits,salt,(level-1) as nat).len()) by(nonlinear_arith)
+            requires child<l.level_blocks@[level as int-1],l.block_bytes>0,
+                canonical_level(data,algorithm,bits,salt,(level-1) as nat).len()
+                    ==l.level_blocks@[level as int-1] as nat*l.block_bytes as nat;
+    }
+}
+
+proof fn canonical_digest_chunk(data:Seq<u8>,algorithm:u8,bits:u8,salt:Seq<u8>,l:Layout,
+    level:nat,child:u64,digest:Seq<u8>)
+    requires data.len()<=u64::MAX,l.layout_valid(),layout_reference(l,data.len() as u64,algorithm,bits),
+        build_profile(algorithm,bits,salt),level<l.levels,
+        child<if level==0 {l.data_blocks}else{l.level_blocks@[level as int-1]},
+        level>0 ==> 0<=child as nat*l.block_bytes as nat
+            <=(child as nat+1)*l.block_bytes as nat
+            <=canonical_level(data,algorithm,bits,salt,(level-1) as nat).len(),
+        digest.len()==l.digest_bytes,
+        digest==salted_hash_reference(algorithm,salt,if level==0
+            {data_block_reference(data,child as nat,l.block_bytes as nat)}
+            else{canonical_level(data,algorithm,bits,salt,(level-1) as nat).subrange(
+                (child as nat*l.block_bytes as nat) as int,((child as nat+1)*l.block_bytes as nat) as int)}),
+    ensures canonical_level(data,algorithm,bits,salt,level).len()
+            ==l.level_blocks@[level as int] as nat*l.block_bytes as nat,
+        child as nat*l.digest_bytes as nat+digest.len()
+            <=l.level_blocks@[level as int] as nat*l.block_bytes as nat,
+        canonical_level(data,algorithm,bits,salt,level)
+        .subrange((child as nat*l.digest_bytes as nat) as int,((child as nat+1)*l.digest_bytes as nat) as int)==digest,
+        canonical_level(data,algorithm,bits,salt,level)
+            .subrange((child as nat*l.digest_bytes as nat) as int,
+                (child as nat*l.digest_bytes as nat+digest.len()) as int)==digest,
+{
+    reveal(layout_reference);
+    broadcast use vstd::seq::group_seq_lemmas;
+    canonical_level_shape(data,algorithm,bits,salt,level);
+    geometry(l.block_bytes,l.digest_bytes);
+    let arity=(l.block_bytes/l.digest_bytes) as u64;
+    let children=if level==0 {l.data_blocks}else{l.level_blocks@[level as int-1]};
+    assert(l.level_blocks@[level as int] as nat
+        ==level_count(l.data_blocks as nat,arity as nat,level+1));
+    if level>0 {assert(l.level_blocks@[level as int-1] as nat
+        ==level_count(l.data_blocks as nat,arity as nat,level));}
+    assert(l.level_blocks@[level as int] as nat==ceil_arity(children as nat,arity as nat));
+    index_parent_bound(child as nat,children as nat,arity as nat);
+    vstd::arithmetic::div_mod::lemma_fundamental_div_mod(child as int,arity as int);
+    vstd::arithmetic::div_mod::lemma_mod_pos_bound(child as int,arity as int);
+    destination_bound(0,l.level_blocks@[level as int] as nat,(child/arity) as nat,
+        child%arity,arity,l.digest_bytes,l.block_bytes,l.level_blocks@[level as int] as nat);
+    let first=child as nat*l.digest_bytes as nat;
+    assert(first+l.digest_bytes as nat<=canonical_level(data,algorithm,bits,salt,level).len()) by(nonlinear_arith)
+        requires first==child as nat*l.digest_bytes as nat,
+            child as int==(child/arity) as int*arity as int+(child%arity) as int,
+            l.block_bytes as nat==arity as nat*l.digest_bytes as nat,
+            (child/arity) as nat*l.block_bytes as nat+(child%arity) as nat*l.digest_bytes as nat+l.digest_bytes as nat
+                <=l.level_blocks@[level as int] as nat*l.block_bytes as nat,
+            canonical_level(data,algorithm,bits,salt,level).len()==l.level_blocks@[level as int] as nat*l.block_bytes as nat;
+    assert forall|i:int| 0<=i<digest.len() implies
+        #[trigger] canonical_level(data,algorithm,bits,salt,level)
+            .subrange(first as int,(first+digest.len()) as int)[i]==#[trigger] digest[i] by {
+        let j=first as int+i;
+        vstd::arithmetic::div_mod::lemma_fundamental_div_mod(j,l.digest_bytes as int);
+        vstd::arithmetic::div_mod::lemma_mod_pos_bound(j,l.digest_bytes as int);
+        assert(j / (l.digest_bytes as int)==(child as int) && j % (l.digest_bytes as int)==i) by(nonlinear_arith)
+            requires j==child as nat*l.digest_bytes as nat+i,0<=i<l.digest_bytes,l.digest_bytes>0,
+                j==(j / (l.digest_bytes as int))*l.digest_bytes as int+j % (l.digest_bytes as int),
+                0 <= j % (l.digest_bytes as int) < (l.digest_bytes as int);
+        canonical_level_byte(data,algorithm,bits,salt,level,j);
+        vstd::seq::lemma_seq_subrange_index(canonical_level(data,algorithm,bits,salt,level),
+            first as int,(first+digest.len()) as int,i);
+    }
+    assert(canonical_level(data,algorithm,bits,salt,level).subrange(first as int,(first+digest.len()) as int)=~=digest);
+    scaled_child_span(child as nat,l.digest_bytes as nat);
+    assert(first+digest.len()==(child as nat+1)*l.digest_bytes as nat);
+    assert(canonical_level(data,algorithm,bits,salt,level)
+        .subrange(first as int,((child as nat+1)*l.digest_bytes as nat) as int)==digest);
+}
+proof fn canonical_padding_is_zero(data:Seq<u8>,algorithm:u8,bits:u8,salt:Seq<u8>,l:Layout,
+    level:nat,first:nat,end:nat)
+    requires l.layout_valid(),layout_reference(l,data.len() as u64,algorithm,bits),build_profile(algorithm,bits,salt),
+        data.len()<=u64::MAX,level<l.levels,first<=end<=l.level_blocks@[level as int] as nat*l.block_bytes as nat,
+        first>=(if level==0 {l.data_blocks as nat}else{l.level_blocks@[level as int-1] as nat})*l.digest_bytes as nat,
+    ensures forall|j:int| #![trigger canonical_level(data,algorithm,bits,salt,level)[j]]
+        first<=j<end ==> canonical_level(data,algorithm,bits,salt,level)[j]==0,
+{
+    reveal(layout_reference);
+    canonical_level_shape(data,algorithm,bits,salt,level);
+    let children=if level==0 {l.data_blocks as nat}else{l.level_blocks@[level as int-1] as nat};
+    assert forall|j:int| first<=j<end implies #[trigger] canonical_level(data,algorithm,bits,salt,level)[j]==0 by {
+        vstd::arithmetic::div_mod::lemma_fundamental_div_mod(j,l.digest_bytes as int);
+        vstd::arithmetic::div_mod::lemma_mod_pos_bound(j,l.digest_bytes as int);
+        assert(j / (l.digest_bytes as int)>=(children as int)) by(nonlinear_arith)
+            requires j>=first,first>=children*l.digest_bytes as nat,l.digest_bytes>0,
+                j==(j / (l.digest_bytes as int))*l.digest_bytes as int+j % (l.digest_bytes as int),
+                0 <= j % (l.digest_bytes as int) < (l.digest_bytes as int);
+        canonical_level_byte(data,algorithm,bits,salt,level,j);
+    }
+}
+
+
+proof fn concat_prefix_bytes(head:Seq<u8>,tail:Seq<u8>)
+    ensures (head+tail).subrange(0,head.len() as int)==head,
+{
+    let joined=head+tail;
+    vstd::seq::lemma_seq_add_len(head,tail);
+    vstd::seq::lemma_seq_subrange_len(joined,0,head.len() as int);
+    assert forall|i:int| 0<=i<head.len() implies #[trigger] joined.subrange(0,head.len() as int)[i]==#[trigger] head[i] by {
+        vstd::seq::lemma_seq_subrange_index(joined,0,head.len() as int,i);
+        vstd::seq::lemma_seq_add_index1(head,tail,i);
+    }
+    assert(joined.subrange(0,head.len() as int)=~=head);
+}
+proof fn concat_shifted_bytes(head:Seq<u8>,tail:Seq<u8>,lo:int,hi:int)
+    requires 0<=lo<=hi<=tail.len(),
+    ensures (head+tail).subrange(head.len() as int+lo,head.len() as int+hi)==tail.subrange(lo,hi),
+{
+    let joined=head+tail;let first=head.len() as int+lo;let end=head.len() as int+hi;
+    vstd::seq::lemma_seq_add_len(head,tail);
+    vstd::seq::lemma_seq_subrange_len(joined,first,end);
+    vstd::seq::lemma_seq_subrange_len(tail,lo,hi);
+    assert forall|i:int| 0<=i<hi-lo implies #[trigger] joined.subrange(first,end)[i]==#[trigger] tail.subrange(lo,hi)[i] by {
+        vstd::seq::lemma_seq_subrange_index(joined,first,end,i);
+        vstd::seq::lemma_seq_add_index2(head,tail,first+i);
+        vstd::seq::lemma_seq_subrange_index(tail,lo,hi,i);
+    }
+    assert(joined.subrange(first,end)=~=tail.subrange(lo,hi));
+}
+proof fn reference_sum_monotone(blocks:nat,arity:nat,first:nat,end:nat)
+    requires first<=end,
+    ensures reference_tree_blocks(blocks,arity,first)<=reference_tree_blocks(blocks,arity,end),
+    decreases end,
+{
+    if first<end {
+        reference_sum_monotone(blocks,arity,first,(end-1) as nat);
+        reference_sum_step(blocks,arity,(end-1) as nat);
+    }
+}
+proof fn canonical_wire_level_projection(data:Seq<u8>,algorithm:u8,bits:u8,salt:Seq<u8>,levels:nat,level:nat)
+    requires build_profile(algorithm,bits,salt),level<levels,
+    ensures canonical_wire(data,algorithm,bits,salt,levels).subrange(
+        (reference_level_start(reference_data_blocks(data,bits),reference_arity(algorithm,bits),levels,level)
+            *reference_block_bytes(bits) as nat) as int,
+        ((reference_level_start(reference_data_blocks(data,bits),reference_arity(algorithm,bits),levels,level)
+            +level_count(reference_data_blocks(data,bits),reference_arity(algorithm,bits),level+1))
+            *reference_block_bytes(bits) as nat) as int)==canonical_level(data,algorithm,bits,salt,level),
+    decreases levels,
+{
+    let blocks=reference_data_blocks(data,bits);let arity=reference_arity(algorithm,bits);
+    let block=reference_block_bytes(bits) as nat;let previous=(levels-1) as nat;
+    let head=canonical_level(data,algorithm,bits,salt,previous);
+    let tail=canonical_wire(data,algorithm,bits,salt,previous);
+    canonical_wire_step(data,algorithm,bits,salt,previous);
+    canonical_level_shape(data,algorithm,bits,salt,previous);
+    canonical_wire_shape(data,algorithm,bits,salt,previous);
+    canonical_wire_shape(data,algorithm,bits,salt,levels);
+    reference_sum_step(blocks,arity,previous);reference_sum_step(blocks,arity,level);
+    reference_sum_monotone(blocks,arity,level+1,levels);
+    let total=reference_tree_blocks(blocks,arity,levels);
+    let previous_total=reference_tree_blocks(blocks,arity,previous);
+    let prefix=reference_tree_blocks(blocks,arity,level+1);
+    let prefix_before=reference_tree_blocks(blocks,arity,level);
+    let count=level_count(blocks,arity,level+1);let top_count=level_count(blocks,arity,levels);
+    let start=reference_level_start(blocks,arity,levels,level);
+    assert(prefix<=total && start+prefix==total);
+    assert(prefix==prefix_before+count && total==previous_total+top_count);
+    assert(head.len()==top_count*block && tail.len()==previous_total*block);
+    if level==previous {
+        assert(start==0);
+        assert(start*block==0 && (start+count)*block==head.len()) by(nonlinear_arith)
+            requires start==0,head.len()==count*block;
+        concat_prefix_bytes(head,tail);
+    }else{
+        canonical_wire_level_projection(data,algorithm,bits,salt,previous,level);
+        reference_sum_monotone(blocks,arity,level+1,previous);
+        let old_start=reference_level_start(blocks,arity,previous,level);
+        assert(prefix<=previous_total && old_start+prefix==previous_total);
+        let lo=old_start*block;let hi=(old_start+count)*block;
+        assert(lo<=hi && hi<=tail.len()) by(nonlinear_arith)
+            requires lo==old_start*block,hi==(old_start+count)*block,tail.len()==previous_total*block,
+                old_start+prefix==previous_total,prefix==prefix_before+count;
+        assert(start*block==head.len()+lo && (start+count)*block==head.len()+hi) by(nonlinear_arith)
+            requires start+prefix==total,old_start+prefix==previous_total,total==previous_total+top_count,
+                head.len()==top_count*block,lo==old_start*block,hi==(old_start+count)*block;
+        concat_shifted_bytes(head,tail,lo as int,hi as int);
+    }
+}
+proof fn linked_canonical_level_projection(data:Seq<u8>,algorithm:u8,bits:u8,salt:Seq<u8>,l:Layout,level:nat)
+    requires l.layout_valid(),layout_reference(l,data.len() as u64,algorithm,bits),
+        build_profile(algorithm,bits,salt),data.len()<=u64::MAX,level<l.levels,
+    ensures canonical_level(data,algorithm,bits,salt,level).len()
+            ==l.level_blocks@[level as int] as nat*l.block_bytes as nat,
+        canonical_tree(data,algorithm,bits,salt).len()==l.tree_blocks as nat*l.block_bytes as nat,
+        canonical_tree(data,algorithm,bits,salt).subrange(
+            (l.level_start@[level as int] as nat*l.block_bytes as nat) as int,
+            ((l.level_start@[level as int] as nat+l.level_blocks@[level as int] as nat)*l.block_bytes as nat) as int)
+            ==canonical_level(data,algorithm,bits,salt,level),
+{
+    reveal(layout_reference);
+    assert(reference_data_blocks(data,bits)==l.data_blocks);
+    assert(reference_arity(algorithm,bits)==(l.block_bytes/l.digest_bytes) as nat);
+    assert(reference_levels(data,algorithm,bits)==l.levels);
+    canonical_tree_unfold(data,algorithm,bits,salt);
+    canonical_level_shape(data,algorithm,bits,salt,level);
+    canonical_wire_shape(data,algorithm,bits,salt,l.levels as nat);
+    canonical_wire_level_projection(data,algorithm,bits,salt,l.levels as nat,level);
+    assert(reference_level_start(reference_data_blocks(data,bits),reference_arity(algorithm,bits),l.levels as nat,level)
+        ==l.level_start@[level as int]);
+    assert(level_count(reference_data_blocks(data,bits),reference_arity(algorithm,bits),level+1)
+        ==l.level_blocks@[level as int]);
+}
+
+proof fn prefix_weight_cover(counts:Seq<u64>,depth:nat,block:nat,x:nat) -> (k:nat)
+    requires block>0,0<depth<=counts.len(),forall|i:int| #![trigger counts[i]] 0<=i<depth ==> counts[i]>0,
+        x<count_sum(counts,depth)*block,
+    ensures k<depth,count_sum(counts,k)*block<=x,x<count_sum(counts,k+1)*block,
+    decreases depth,
+{
+    let previous=(depth-1) as nat;let boundary=count_sum(counts,previous)*block;
+    if x<boundary {
+        assert(previous>0) by {
+            if previous==0 {
+                assert(count_sum(counts,previous)==0);
+                assert(boundary==0) by(nonlinear_arith)
+                    requires boundary==count_sum(counts,previous)*block,count_sum(counts,previous)==0;
+            }
+        }
+        prefix_weight_cover(counts,previous,block,x)
+    }else{previous}
+}
+proof fn frontier_completed_tree(tree:Seq<u8>,data:Seq<u8>,algorithm:u8,bits:u8,salt:Seq<u8>,l:Layout)
+    requires construction_frontier(tree,data,algorithm,bits,salt,l,l.levels as nat,0),
+    ensures tree==canonical_tree(data,algorithm,bits,salt),
+{
+    reveal(layout_reference);
+    broadcast use vstd::seq::group_seq_lemmas;
+    reveal(construction_frontier);
+    canonical_tree_unfold(data,algorithm,bits,salt);
+    canonical_wire_shape(data,algorithm,bits,salt,l.levels as nat);
+    assert(reference_levels(data,algorithm,bits)==l.levels);
+    assert(tree.len()==canonical_tree(data,algorithm,bits,salt).len());
+    assert forall|pos:int| 0<=pos<tree.len() implies #[trigger] tree[pos]==#[trigger] canonical_tree(data,algorithm,bits,salt)[pos] by {
+        assert(l.levels>0) by {
+            if l.levels==0 {
+                assert(count_sum(l.level_blocks@,0)==0 && l.tree_blocks==0);
+                assert(tree.len()==0) by(nonlinear_arith)
+                    requires tree.len()==l.tree_blocks as nat*l.block_bytes as nat,l.tree_blocks==0;
+            }
+        }
+        let reversed=(tree.len() as int-1-pos) as nat;
+        let k=prefix_weight_cover(l.level_blocks@,l.levels as nat,l.block_bytes as nat,reversed);
+        let first=l.level_start@[k as int] as nat*l.block_bytes as nat;
+        let count=l.level_blocks@[k as int] as nat*l.block_bytes as nat;
+        assert(first<=pos<first+count) by(nonlinear_arith)
+            requires first==l.level_start@[k as int] as nat*l.block_bytes as nat,
+                count==l.level_blocks@[k as int] as nat*l.block_bytes as nat,
+                tree.len()==l.tree_blocks as nat*l.block_bytes as nat,
+                reversed==tree.len() as int-1-pos,
+                l.level_start@[k as int] as nat==count_sum(l.level_blocks@,l.levels as nat)-count_sum(l.level_blocks@,k+1),
+                l.tree_blocks==count_sum(l.level_blocks@,l.levels as nat),
+                count_sum(l.level_blocks@,k)*l.block_bytes as nat<=reversed
+                    <count_sum(l.level_blocks@,k+1)*l.block_bytes as nat,
+                count_sum(l.level_blocks@,k+1)==count_sum(l.level_blocks@,k)+l.level_blocks@[k as int] as nat;
+        linked_canonical_level_projection(data,algorithm,bits,salt,l,k);
+        assert(first+count<=tree.len()) by(nonlinear_arith)
+            requires first==l.level_start@[k as int] as nat*l.block_bytes as nat,
+                count==l.level_blocks@[k as int] as nat*l.block_bytes as nat,
+                l.level_start@[k as int] as nat+l.level_blocks@[k as int] as nat<=l.tree_blocks,
+                tree.len()==l.tree_blocks as nat*l.block_bytes as nat;
+        assert(first+count==(l.level_start@[k as int] as nat+l.level_blocks@[k as int] as nat)*l.block_bytes as nat) by(nonlinear_arith)
+            requires first==l.level_start@[k as int] as nat*l.block_bytes as nat,
+                count==l.level_blocks@[k as int] as nat*l.block_bytes as nat;
+        assert(canonical_tree(data,algorithm,bits,salt).subrange(first as int,(first+count) as int)
+            ==canonical_level(data,algorithm,bits,salt,k));
+        let byte=pos-first as int;
+        assert(0<=byte<count);
+        vstd::seq::lemma_seq_subrange_index(canonical_tree(data,algorithm,bits,salt),
+            first as int,(first+count) as int,byte);
+        assert(tree[l.level_start@[k as int] as nat*l.block_bytes as nat+byte]
+            ==canonical_level(data,algorithm,bits,salt,k)[byte]);
+        assert(pos==l.level_start@[k as int] as nat*l.block_bytes as nat+byte);
+        assert(tree[pos]==canonical_level(data,algorithm,bits,salt,k)[byte]);
+    }
+    assert(tree=~=canonical_tree(data,algorithm,bits,salt));
+}
+
+
+proof fn built_root_is_reference(tree:Seq<u8>,data:Seq<u8>,algorithm:u8,bits:u8,salt:Seq<u8>,l:Layout,root:Seq<u8>)
+    requires construction_frontier(tree,data,algorithm,bits,salt,l,l.levels as nat,0),
+        root==if l.data_blocks==0 {Seq::new(l.digest_bytes as nat,|i:int| 0u8)}
+            else if l.levels==0 {salted_hash_reference(algorithm,salt,data_block_reference(data,0,l.block_bytes as nat))}
+            else {salted_hash_reference(algorithm,salt,tree_block_reference(tree,0,l.block_bytes as nat))},
+    ensures root==canonical_root(data,algorithm,bits,salt),
+{
+    reveal(layout_reference);
+    reveal(construction_frontier);
+    canonical_root_unfold(data,algorithm,bits,salt);
+    assert(reference_data_blocks(data,bits)==l.data_blocks);
+    assert(reference_levels(data,algorithm,bits)==l.levels);
+    if l.data_blocks==0 { }
+    else if l.levels==0 {assert(l.data_blocks==1);}
+    else {
+        let top=(l.levels-1) as nat;
+        assert(l.level_start@[top as int]==0);
+        assert(l.level_blocks@[top as int]==1);
+        frontier_completed_block(tree,data,algorithm,bits,salt,l,l.levels as nat,0,top,0);
+        assert(0nat*l.block_bytes as nat==0 && (0nat+1)*l.block_bytes as nat==l.block_bytes) by(nonlinear_arith);
+        assert(canonical_level(data,algorithm,bits,salt,top).take(l.block_bytes as int)
+            ==canonical_level(data,algorithm,bits,salt,top).subrange(0,l.block_bytes as int));
+        assert(tree_block_reference(tree,0,l.block_bytes as nat)
+            ==canonical_level(data,algorithm,bits,salt,top).take(l.block_bytes as int));
+    }
+}
+
+
+proof fn zero_bytes_empty()
+    ensures Seq::<u8>::empty()==Seq::new(0,|i:int| 0u8),
+{
+    broadcast use vstd::seq::group_seq_lemmas;
+    assert(Seq::<u8>::empty()=~=Seq::new(0,|i:int| 0u8));
+}
+proof fn zero_bytes_push(before:Seq<u8>,count:nat)
+    requires before==Seq::new(count,|i:int| 0u8),
+    ensures before.push(0u8)==Seq::new(count+1,|i:int| 0u8),
+{
+    broadcast use vstd::seq::group_seq_lemmas;
+    assert(before.push(0u8)=~=Seq::new(count+1,|i:int| 0u8));
+}
+proof fn descriptor_wire_algorithm(algorithm:u8,bits:u8,size:u64,root:Seq<u8>,salt:Seq<u8>,signature:Seq<u8>)
+    ensures descriptor_wire(algorithm,bits,size,root,salt,signature)[1]==algorithm,
+        descriptor_wire(algorithm,bits,size,root,salt,signature).len()==256+signature.len(),
+{
+    broadcast use vstd::seq::group_seq_lemmas;
+}
+
 #[derive(Clone, Copy)]
 pub struct BuildBudget {pub tree_bytes:usize,pub data_blocks:u64}
 pub struct BuiltTree {tree:Vec<u8>,descriptor:Vec<u8>,digest:Vec<u8>}
 impl BuiltTree {
-    pub fn tree(&self) -> &[u8] {self.tree.as_slice()}
-    pub fn descriptor(&self) -> &[u8] {self.descriptor.as_slice()}
-    pub fn built_digest(&self) -> &[u8] {self.digest.as_slice()}
+    pub closed spec fn built_view(&self) -> BuiltView {BuiltView {tree:self.tree@,descriptor:self.descriptor@,digest:self.digest@}}
+    pub fn tree(&self) -> (r:&[u8]) ensures r@==self.built_view().tree {self.tree.as_slice()}
+    pub fn descriptor(&self) -> (r:&[u8]) ensures r@==self.built_view().descriptor {self.descriptor.as_slice()}
+    pub fn built_digest(&self) -> (r:&[u8]) ensures r@==self.built_view().digest {self.digest.as_slice()}
 }
-pub fn build(data:&[u8],algorithm:u8,log_blocksize:u8,salt:&[u8],budget:BuildBudget) -> Result<BuiltTree,Error> {
+pub fn build(data:&[u8],algorithm:u8,log_blocksize:u8,salt:&[u8],budget:BuildBudget) -> (r:Result<BuiltTree,Error>)
+    ensures match r {Ok(v)=>build_content(data@,algorithm,log_blocksize,salt@,budget,v.built_view()),Err(_)=>true},
+{
     if salt.len()>32 {return Err(Error::Salt);}
     let l=layout(data.len() as u64,algorithm,log_blocksize)?;let tree_size=l.tree_bytes()?;
     if tree_size>budget.tree_bytes as u64 || tree_size>usize::MAX as u64 || l.data_blocks>budget.data_blocks {return Err(Error::ResourceLimit);}
+    proof {assert(data.len()<=u64::MAX);assert(build_profile(algorithm,log_blocksize,salt@));}
     let mut tree=Vec::new();let mut i=0usize;
     while i<tree_size as usize
         invariant i<=tree_size as usize,tree.len()==i,tree_size<=usize::MAX,
+            layout_reference(l,data.len() as u64,algorithm,log_blocksize),
+            build_profile(algorithm,log_blocksize,salt@),data.len()<=u64::MAX,
+            tree_size as nat==l.tree_blocks as nat*l.block_bytes as nat,
+            tree_size<=budget.tree_bytes,l.data_blocks<=budget.data_blocks,
             forall|j:int| #![trigger tree@[j]] 0<=j<i ==> tree@[j]==0,
         decreases tree_size as usize-i,
     {tree.push(0);i+=1;}
+    proof {zero_frontier(tree@,data@,algorithm,log_blocksize,salt@,l);}
     let arity=(l.block_bytes/l.digest_bytes) as u64;
     proof {geometry(l.block_bytes,l.digest_bytes);}
     let mut level=0usize;
     while level<l.levels as usize
         invariant level<=l.levels as usize<=8,l.layout_valid(),
+            layout_reference(l,data.len() as u64,algorithm,log_blocksize),
+            build_profile(algorithm,log_blocksize,salt@),data.len()<=u64::MAX,
+            construction_frontier(tree@,data@,algorithm,log_blocksize,salt@,l,level as nat,0),
+            tree_size<=budget.tree_bytes,l.data_blocks<=budget.data_blocks,
             tree.len()==tree_size as usize,tree_size<=usize::MAX as u64,
             tree_size as nat==l.tree_blocks as nat*l.block_bytes as nat,
             16<=arity<=2048,l.block_bytes as nat==arity as nat*l.digest_bytes as nat,
-            arity==(l.block_bytes/l.digest_bytes) as u64,
-            l.digest_bytes==digest_bytes(algorithm),
+            arity==(l.block_bytes/l.digest_bytes) as u64,l.digest_bytes==digest_bytes(algorithm),
         decreases l.levels as usize-level,
     {
         let children=if level==0 {l.data_blocks}else{l.level_blocks[level-1]};
         proof {l.level_children(level as nat);}
         let mut parent=0u64;
         while parent<l.level_blocks[level]
-            invariant parent<=l.level_blocks@[level as int],
-                level<l.levels as usize<=8,l.layout_valid(),
+            invariant parent<=l.level_blocks@[level as int],level<l.levels as usize<=8,l.layout_valid(),
+                layout_reference(l,data.len() as u64,algorithm,log_blocksize),
+                build_profile(algorithm,log_blocksize,salt@),data.len()<=u64::MAX,
+                construction_frontier(tree@,data@,algorithm,log_blocksize,salt@,l,level as nat,
+                    parent as nat*l.block_bytes as nat),
+                tree_size<=budget.tree_bytes,l.data_blocks<=budget.data_blocks,
                 tree.len()==tree_size as usize,tree_size<=usize::MAX as u64,
-                tree_size as nat==l.tree_blocks as nat*l.block_bytes as nat,
-                children<=18014398509481984,
+                tree_size as nat==l.tree_blocks as nat*l.block_bytes as nat,children<=18014398509481984,
                 children==if level==0 {l.data_blocks}else{l.level_blocks@[level as int-1]},
                 l.level_blocks@[level as int]==ceil_arity(children as nat,arity as nat),
                 16<=arity<=2048,l.block_bytes as nat==arity as nat*l.digest_bytes as nat,
-            arity==(l.block_bytes/l.digest_bytes) as u64,
-                l.digest_bytes==digest_bytes(algorithm),
+                arity==(l.block_bytes/l.digest_bytes) as u64,l.digest_bytes==digest_bytes(algorithm),
             decreases l.level_blocks@[level as int]-parent,
         {
             let mut slot=0u64;
             while slot<arity
-                invariant slot<=arity,parent<l.level_blocks@[level as int],
-                    level<l.levels as usize<=8,l.layout_valid(),
+                invariant slot<=arity,parent<l.level_blocks@[level as int],level<l.levels as usize<=8,l.layout_valid(),
+                    slot==arity ==> construction_frontier(tree@,data@,algorithm,log_blocksize,salt@,l,level as nat,
+                        (parent as nat+1)*l.block_bytes as nat),
+                    layout_reference(l,data.len() as u64,algorithm,log_blocksize),
+                    build_profile(algorithm,log_blocksize,salt@),data.len()<=u64::MAX,
+                    construction_frontier(tree@,data@,algorithm,log_blocksize,salt@,l,level as nat,
+                        parent as nat*l.block_bytes as nat+slot as nat*l.digest_bytes as nat),
+                    tree_size<=budget.tree_bytes,l.data_blocks<=budget.data_blocks,
                     tree.len()==tree_size as usize,tree_size<=usize::MAX as u64,
-                    tree_size as nat==l.tree_blocks as nat*l.block_bytes as nat,
-                    children<=18014398509481984,
+                    tree_size as nat==l.tree_blocks as nat*l.block_bytes as nat,children<=18014398509481984,
                     children==if level==0 {l.data_blocks}else{l.level_blocks@[level as int-1]},
                     l.level_blocks@[level as int]==ceil_arity(children as nat,arity as nat),
                     16<=arity<=2048,l.block_bytes as nat==arity as nat*l.digest_bytes as nat,
-            arity==(l.block_bytes/l.digest_bytes) as u64,
-                    l.digest_bytes==digest_bytes(algorithm),
+                    arity==(l.block_bytes/l.digest_bytes) as u64,l.digest_bytes==digest_bytes(algorithm),
+                ensures construction_frontier(tree@,data@,algorithm,log_blocksize,salt@,l,level as nat,
+                    (parent as nat+1)*l.block_bytes as nat),
                 decreases arity-slot,
             {
+                let ghost cut=parent as nat*l.block_bytes as nat+slot as nat*l.digest_bytes as nat;
                 proof {
                     parent_slot_bound(children as nat,arity as nat,parent as nat,slot as nat);
                     assert(parent as nat*arity as nat+slot as nat<=u64::MAX);
                 }
-                let child=parent*arity+slot;if child>=children {break;}
+                let child=parent*arity+slot;
+                if child>=children {
+                    proof {
+                        let end=(parent as nat+1)*l.block_bytes as nat;
+                        assert(cut==child as nat*l.digest_bytes as nat) by(nonlinear_arith)
+                            requires child as nat==parent as nat*arity as nat+slot as nat,
+                                cut==parent as nat*l.block_bytes as nat+slot as nat*l.digest_bytes as nat,
+                                l.block_bytes as nat==arity as nat*l.digest_bytes as nat;
+                        assert(cut>=children as nat*l.digest_bytes as nat) by(nonlinear_arith)
+                            requires cut==child as nat*l.digest_bytes as nat,child>=children;
+                        assert(cut<=end && end<=l.level_blocks@[level as int] as nat*l.block_bytes as nat) by(nonlinear_arith)
+                            requires cut==parent as nat*l.block_bytes as nat+slot as nat*l.digest_bytes as nat,
+                                end==(parent as nat+1)*l.block_bytes as nat,
+                                slot<=arity,l.block_bytes as nat==arity as nat*l.digest_bytes as nat,
+                                parent<l.level_blocks@[level as int],l.block_bytes>0,l.digest_bytes>0;
+                        canonical_padding_is_zero(data@,algorithm,log_blocksize,salt@,l,level as nat,cut,end);
+                        frontier_zero_extension(tree@,data@,algorithm,log_blocksize,salt@,l,level as nat,cut,end);
+                        assert(construction_frontier(tree@,data@,algorithm,log_blocksize,salt@,l,level as nat,
+                            (parent as nat+1)*l.block_bytes as nat));
+                    }
+                    break;
+                }
                 let digest=if level==0 {
                     let raw=padded_data(data,child,l.block_bytes)?;hash_block(algorithm,salt,raw.as_slice())?
                 } else {
                     let number=l.level_start[level-1]+child;
-                    let raw=block(tree.as_slice(),number,l.block_bytes)?;hash_block(algorithm,salt,raw)?
+                    let raw=block(tree.as_slice(),number,l.block_bytes)?;
+                    proof {
+                        frontier_completed_block(tree@,data@,algorithm,log_blocksize,salt@,l,
+                            level as nat,cut,(level-1) as nat,child);
+                        scaled_child_span(child as nat,l.block_bytes as nat);
+                        assert(0<=child as nat*l.block_bytes as nat
+                            <=(child as nat+1)*l.block_bytes as nat
+                            <=canonical_level(data@,algorithm,log_blocksize,salt@,(level-1) as nat).len());
+                        assert(raw@==canonical_level(data@,algorithm,log_blocksize,salt@,(level-1) as nat)
+                            .subrange((child as nat*l.block_bytes as nat) as int,((child as nat+1)*l.block_bytes as nat) as int));
+                    }
+                    hash_block(algorithm,salt,raw)?
                 };
                 proof {
+                    canonical_child_span(data@,algorithm,log_blocksize,salt@,l,level as nat,child);
+                    canonical_digest_chunk(data@,algorithm,log_blocksize,salt@,l,level as nat,child,digest@);
+                    assert(cut==child as nat*l.digest_bytes as nat) by(nonlinear_arith)
+                        requires child as nat==parent as nat*arity as nat+slot as nat,
+                            cut==parent as nat*l.block_bytes as nat+slot as nat*l.digest_bytes as nat,
+                            l.block_bytes as nat==arity as nat*l.digest_bytes as nat;
+                    assert(cut+digest.len()<=l.level_blocks@[level as int] as nat*l.block_bytes as nat);
+                    assert(0<=cut<=cut+digest.len()
+                        <=canonical_level(data@,algorithm,log_blocksize,salt@,level as nat).len());
+                    assert(digest@==canonical_level(data@,algorithm,log_blocksize,salt@,level as nat)
+                        .subrange(cut as int,(cut+digest.len()) as int));
                     destination_bound(l.level_start@[level as int] as nat,l.level_blocks@[level as int] as nat,
                         parent as nat,slot,arity,l.digest_bytes,l.block_bytes,l.tree_blocks as nat);
                 }
@@ -872,6 +1779,9 @@ pub fn build(data:&[u8],algorithm:u8,log_blocksize:u8,salt:&[u8],budget:BuildBud
                 proof {
                     assert(destination as nat+digest.len()<=tree_size as nat);
                     assert(tree.len() as nat==tree_size as nat);
+                    assert(destination as nat==l.level_start@[level as int] as nat*l.block_bytes as nat+cut) by(nonlinear_arith)
+                        requires destination as nat==(l.level_start@[level as int] as nat+parent as nat)*l.block_bytes as nat+slot as nat*l.digest_bytes as nat,
+                            cut==parent as nat*l.block_bytes as nat+slot as nat*l.digest_bytes as nat;
                 }
                 let at=destination as usize;i=0;
                 proof {assert(at as nat+digest.len()<=tree.len());}
@@ -879,30 +1789,111 @@ pub fn build(data:&[u8],algorithm:u8,log_blocksize:u8,salt:&[u8],budget:BuildBud
                 while i<digest.len()
                     invariant i<=digest.len(),digest.len()==l.digest_bytes,
                         at as nat+digest.len()<=tree.len(),tree.len()==before_digest.len(),
+                        tree.len()==tree_size as usize,tree_size<=usize::MAX as u64,
+                        slot<=arity,16<=arity<=2048,l.layout_valid(),level<l.levels as usize<=8,
+                        arity==(l.block_bytes/l.digest_bytes) as u64,
+                        l.block_bytes as nat==arity as nat*l.digest_bytes as nat,
+                        children<=18014398509481984,
+                        children==if level==0 {l.data_blocks}else{l.level_blocks@[level as int-1]},
+                        l.level_blocks@[level as int]==ceil_arity(children as nat,arity as nat),
+                        layout_reference(l,data.len() as u64,algorithm,log_blocksize),
+                        build_profile(algorithm,log_blocksize,salt@),data.len()<=u64::MAX,
+                        level<l.levels,parent<l.level_blocks@[level as int],
+                        tree_size as nat==l.tree_blocks as nat*l.block_bytes as nat,
+                        tree_size<=budget.tree_bytes,l.data_blocks<=budget.data_blocks,
+                        cut==parent as nat*l.block_bytes as nat+slot as nat*l.digest_bytes as nat,
+                        cut+digest.len()<=l.level_blocks@[level as int] as nat*l.block_bytes as nat,
+                        canonical_level(data@,algorithm,log_blocksize,salt@,level as nat).len()
+                            ==l.level_blocks@[level as int] as nat*l.block_bytes as nat,
+                        at as nat==l.level_start@[level as int] as nat*l.block_bytes as nat+cut,
+                        construction_frontier(before_digest,data@,algorithm,log_blocksize,salt@,l,level as nat,cut),
+                        digest@==canonical_level(data@,algorithm,log_blocksize,salt@,level as nat)
+                            .subrange(cut as int,(cut+digest.len()) as int),
                         forall|j:int| #![trigger tree@[j]] 0<=j<tree.len() ==> tree@[j]==
                             if at<=j<at+i {digest@[j-at as int]}else{before_digest[j]},
                     decreases digest.len()-i,
-                {tree[at+i]=digest[i];i+=1;}slot+=1;
+                {tree[at+i]=digest[i];i+=1;}
+                proof {
+                    frontier_splice_advance(before_digest,tree@,data@,algorithm,log_blocksize,salt@,
+                        l,level as nat,cut,digest@);
+                }
+                let ghost previous_slot=slot;
+                slot+=1;
+                proof {
+                    assert(parent as nat*l.block_bytes as nat+slot as nat*l.digest_bytes as nat==cut+digest.len()) by(nonlinear_arith)
+                        requires cut==parent as nat*l.block_bytes as nat+previous_slot as nat*l.digest_bytes as nat,
+                            slot as nat==previous_slot as nat+1,digest.len()==l.digest_bytes;
+                    if slot==arity {
+                        assert(parent as nat*l.block_bytes as nat+slot as nat*l.digest_bytes as nat
+                            ==(parent as nat+1)*l.block_bytes as nat) by(nonlinear_arith)
+                            requires slot==arity,l.block_bytes as nat==arity as nat*l.digest_bytes as nat;
+                        assert(construction_frontier(tree@,data@,algorithm,log_blocksize,salt@,l,level as nat,
+                            (parent as nat+1)*l.block_bytes as nat));
+                    }
+                }
+            }
+            proof {
+                if slot==arity {
+                    assert(parent as nat*l.block_bytes as nat+slot as nat*l.digest_bytes as nat
+                        ==(parent as nat+1)*l.block_bytes as nat) by(nonlinear_arith)
+                        requires slot==arity,l.block_bytes as nat==arity as nat*l.digest_bytes as nat;
+                }
+                assert(construction_frontier(tree@,data@,algorithm,log_blocksize,salt@,l,level as nat,
+                    (parent as nat+1)*l.block_bytes as nat));
             }
             parent+=1;
         }
+        proof {frontier_finish_level(tree@,data@,algorithm,log_blocksize,salt@,l,level as nat);}
         level+=1;
     }
+    proof {frontier_completed_tree(tree@,data@,algorithm,log_blocksize,salt@,l);}
     let mut root=Vec::new();
     if l.data_blocks==0 {
         i=0;
+        proof {zero_bytes_empty();}
         while i<l.digest_bytes as usize
-            invariant i<=l.digest_bytes as usize,root.len()==i,
+            invariant i<=l.digest_bytes as usize,root.len()==i,root@==Seq::new(i as nat,|j:int| 0u8),
                 l.digest_bytes==32 || l.digest_bytes==64,
+                layout_reference(l,data.len() as u64,algorithm,log_blocksize),
+                build_profile(algorithm,log_blocksize,salt@),data.len()<=u64::MAX,l.data_blocks==0,
+                construction_frontier(tree@,data@,algorithm,log_blocksize,salt@,l,l.levels as nat,0),
+                tree@==canonical_tree(data@,algorithm,log_blocksize,salt@),
+                tree.len()<=budget.tree_bytes,l.data_blocks<=budget.data_blocks,
             decreases l.digest_bytes as usize-i,
-        {root.push(0);i+=1;}
+        {
+            let ghost previous_root=root@;
+            let ghost previous_i=i;
+            root.push(0);i+=1;
+            proof {zero_bytes_push(previous_root,previous_i as nat);}
+        }
     }
     else if l.levels==0 {let raw=padded_data(data,0,l.block_bytes)?;root=hash_block(algorithm,salt,raw.as_slice())?;}
-    else {root=hash_block(algorithm,salt,block(tree.as_slice(),0,l.block_bytes)?)?;}
+    else {
+        proof {
+            assert(l.level_start@[l.levels as int-1]==0);
+            frontier_completed_block(tree@,data@,algorithm,log_blocksize,salt@,l,l.levels as nat,0,(l.levels-1) as nat,0);
+        }
+        root=hash_block(algorithm,salt,block(tree.as_slice(),0,l.block_bytes)?)?;
+    }
+    proof {
+        built_root_is_reference(tree@,data@,algorithm,log_blocksize,salt@,l,root@);
+        assert(root@==canonical_root(data@,algorithm,log_blocksize,salt@));
+    }
     let descriptor=encode_descriptor(algorithm,log_blocksize,data.len() as u64,root.as_slice(),salt,&[])?;
+    proof {descriptor_wire_algorithm(algorithm,log_blocksize,data.len() as u64,root@,salt@,seq![]);}
     let parsed=parse(descriptor.as_slice(),data.len() as u64,log_blocksize,log_blocksize)?;
-    let digest=parsed.measure()?;Ok(BuiltTree {tree,descriptor,digest})
+    proof {use_type_invariant(&parsed);assert(parsed.descriptor_fields().0==algorithm);}
+    let digest=parsed.measure()?;
+    proof {
+        canonical_descriptor_unfold(data@,algorithm,log_blocksize,salt@);
+        layout_source_data_count(l,data@,algorithm,log_blocksize);
+        assert(descriptor@==canonical_descriptor(data@,algorithm,log_blocksize,salt@));
+        assert(build_content(data@,algorithm,log_blocksize,salt@,budget,
+            BuiltView {tree:tree@,descriptor:descriptor@,digest:digest@}));
+    }
+    Ok(BuiltTree {tree,descriptor,digest})
 }
+
 
 fn aligned(value:u64,unit:u64) -> (r:Result<u64,Error>)
     ensures match r {Ok(v)=>unit>0 && value<=v && v%unit==0 && (v as nat) < (value as nat+unit as nat),Err(_)=>true},

@@ -2,7 +2,7 @@
 
 This branch adds executable feature components before completing their proofs and filesystem integration, as requested. The last whole-crate verified baseline is commit `9083e1d36cb433927df6c0b636c8377a4c350c22`: 3,142 obligations, 915 named proofs, 775 public executable APIs, 372 native tests and 340 API rejection cases. That evidence applies to the baseline bytes. It does not certify new files.
 
-All 32 new host modules are now declared in the actual model entrypoint and pinned source/API/proof inventory: 258 source files, 979 named proofs and 1,249 public executable APIs. This records what must be checked; a new strict whole-crate result is still pending. Diagnostic snapshots explicitly declare their selected modules, preserve their exact bytes, and retain every failure. Compile-only diagnostics use `--no-verify` and are never proof evidence. Focused proof checks use module filters and still require a later unfiltered strict check before publication as verified code.
+All 32 new host modules are now declared in the actual model entrypoint and pinned source/API/proof inventory: 258 source files, 981 named proofs and 1,249 public executable APIs. This records what must be checked; a new strict whole-crate result is still pending. Diagnostic snapshots explicitly declare their selected modules, preserve their exact bytes, and retain every failure. Compile-only diagnostics use `--no-verify` and are never proof evidence. Focused proof checks use module filters and still require a later unfiltered strict check before publication as verified code.
 
 The existing full-feature and mount gates remain closed. A completed codec, numeric protocol or test image does not authorize a mounted operation.
 
@@ -24,12 +24,12 @@ The existing full-feature and mount gates remain closed. A completed codec, nume
 | Quota / project | vfsv0/vfsv1 radix images, records, consuming U/G/P reservation/transfer/free ledger and project inheritance checks | Project fields/inheritance (11), exact ledger lifecycle/framing (68) and quota wire decoding/rebuild contracts (89) passed focused checks | Whole free-list/source ownership, authoritative clock/credentials and atomic quota+inode/allocator transactions |
 | Casefold | Pinned Unicode 12.1 NFDICF, Hangul, ignored-character barriers and strict/opaque UTF-8 rules | Pinned-table shape/order/scalar/expansion (150) and UTF-8/search/normalized-key refinement to the Rust reference model (65) passed focused checks | Formal Linux Unicode equivalence and casefold/encryption lookup/hash/duplicate/mutation integration |
 | Fscrypt | Policy/context/KDF/IV handling, AES, SM4, XTS, CBC-CS3, CBC-ESSIV, Adiantum-XChaCha12-AES and AES-256-HCTR2; unified currently accepted cipher-pair dispatch | AES schedule/block refinement, bidirectional reference round-trip and retirement framing (78), SM4 refinement (28), and policy/context/KDF/IV reference contracts (57) and base XTS/CBC-CS3 key-binding, data/name and mode byte contracts (73) passed focused checks; remaining mode composition proofs are open | Remaining primitive/mode composition, key provisioning, nonce authority, no-key names, encrypted symlinks and VFS transactions |
-| Fsverity | SHA-256/512 Merkle construction, descriptors, layout and verified-read algorithm | Streaming SHA-256/512 and HMAC/HKDF contracts (115), plus descriptor/layout/read/Merkle-path byte contracts (83), passed focused checks; full builder-content recurrence remains open | PKCS#7 verification/policy, source-owned tree allocation, enable transaction and immutable runtime binding |
+| Fsverity | SHA-256/512 Merkle construction, descriptors, layout and verified-read algorithm | Streaming/one-shot SHA counter-fit completion and existing HMAC/HKDF contracts (117), plus exact canonical successful-build tree/root/descriptor/measurement and descriptor/layout/read/Merkle-path contracts (159), passed focused checks | Successful completion iff admission, PKCS#7 verification/policy, source-owned tree allocation, enable transaction, immutable runtime binding and disk durability |
 | Framekernel runtime | Safe CortenMM USegment/FrameAllocOptions and VmReader/VmWriter adapter; private BIO buffers, no_std source package and scoped RAM Snapshot bridge | Existing three adapter kernel tests passed. The separate package/bridge passed source and feature checks; its scoped RAM test passed 1/0 with 146 filtered. Formal transport refinement remains open | Proof-to-erasure binding, coherent source capture/device-wide alias exclusion, hardware atomicity/drain/reset contracts and mounted VFS |
 
 The DIR_PREALLOC and IMAGIC_INODES compatibility markers still need an explicit pinned-Linux policy review. JOURNAL_DEV requires an external-device ownership and recovery implementation. COMPRESSION and DIRDATA remain intentional Linux-compatible rejections. Existing READONLY and STABLE_INODES restrictions remain applicable.
 
-Focused diagnostics currently cover **26 unique new modules and 1,517 obligations**, with zero reported errors and compilation, across the 22 current entries below. Superseded snapshots are excluded from this total.
+Focused diagnostics currently cover **26 unique new modules and 1,595 obligations**, with zero reported errors and compilation, across the 22 current entries below. Superseded snapshots are excluded from this total.
 
 | Module or bundle | Obligations | Snapshot |
 | --- | ---: | --- |
@@ -47,14 +47,20 @@ Focused diagnostics currently cover **26 unique new modules and 1,517 obligation
 | Casefold reference pipeline | 65 | proof-casefold-02 |
 | AES reference/round-trip/retirement | 78 | proof-aes-08 |
 | Quota reservation ledger | 68 | proof-quota-ledger-05 |
-| SHA-256/512, HMAC and HKDF | 115 | proof-sha2-08 |
+| SHA-256/512 counter-fit completion, HMAC and HKDF | 117 | proof-sha-completion-01 |
 | Fscrypt policy/context/KDF/IV | 57 | proof-fscrypt-context-05 |
 | JBD2 tag/descriptor/revoke/escape codecs | 63 | proof-jbd2-tags-11 |
 | Quota wire decoding/rebuild | 89 | proof-quota-wire-05 |
 | MMP codec and reported protocol history | 105 | proof-mmp-08 |
 | Base fscrypt XTS/CBC-CS3 and binding byte contracts | 73 | proof-fscrypt-cipher-05 |
 | Orphan-file checksums, membership and uniqueness | 107 | proof-orphan-file-14 |
-| Fsverity descriptor/layout/read/Merkle-path contracts | 83 | proof-fsverity-07 |
+| Fsverity canonical successful-build content and descriptor/layout/read/Merkle-path contracts | 159 | proof-verity-builder-06 |
+
+The fsverity builder proof links every successful result to the canonical salted-SHA tree recurrence, top-first tree wire layout, root-dependent 256-byte descriptor and measured-header digest.
+Its construction frontier proves completed levels, the current digest prefix and zero padding, while the public getters expose the exact result bytes.
+The executable layout/build algorithms and public executable names are unchanged.
+This is an Ok-implies-content result; build success iff its numeric admission conditions hold remains separate work.
+The budget fields are numeric limits and confer no CortenMM allocation or inode authority.
 
 Each result uses an immutable snapshot and a module filter. The recorded focused commands are filtered diagnostics, not the final unfiltered strict --no-cheating gate or a proof of filesystem composition. Exact commands, flags and source hashes are recorded in [FEATURE_EXPANSION_STATUS.json](FEATURE_EXPANSION_STATUS.json). Earlier failed and superseded snapshots remain historical evidence.
 
@@ -64,18 +70,18 @@ Pinned references for the expansion are listed in [FEATURE_EXPANSION_SOURCES.jso
 
 The implementation diagnostics are independent of formal discharge:
 
-- The first 28 modules compiled together in typecheck-05 before proof annotations. Typecheck-18 compiles the coherent all-32-module checkpoint, including all current focused-checked components. It uses db4c9f8 plus exact newly checked orphan-file/fsverity snapshots; ongoing unproved drafts remain separate. This compile-only result does not certify later live changes or replace the pending strict proof.
+- The first 28 modules compiled together in typecheck-05 before proof annotations. Typecheck-18 compiled a coherent historical all-32-module checkpoint using db4c9f8 plus the then-current orphan-file/fsverity snapshots. It predates this branch's SHA completion and fsverity builder contracts; its source_matches_current field is false. No new integrated compile was performed, and the strict whole-crate proof remains pending.
 - HTree outputs were installed into real ext4 images across several block/checksum/filetype profiles, including an indexed depth-one directory; e2fsck and debugfs accepted the completed fixtures.
 - Casefold-checked-native-02 imports the proof-casefold-02 artifact directly and matches the pinned Linux normalization corpus in 1,226,715 comparisons with zero mismatches. This is checked-artifact interoperability evidence, not a formal C-equivalence theorem.
 - SHA/HMAC/Merkle results passed 78 independent Python-oracle cases; AES/XTS/CTS passed 59 OpenSSL/NIST cases. These tests establish no cryptographic proof or constant-time guarantee.
-- Checked-sha2-native-01 imports the focused-checked 115-obligation SHA/HMAC/HKDF artifact and matches 616 Python hashlib/hmac vectors with zero mismatches, covering streaming/padding boundaries, long keys, HKDF maximum/partial outputs and rejected inputs. No replacement hash implementation is supplied by the harness.
+- Sha-completion-native-01 replays the unchanged 616-case independent Python hashlib/hmac corpus against the focused-checked 117-obligation SHA/HMAC/HKDF artifact, with zero mismatches. It covers streaming/padding boundaries, long keys, HKDF maximum/partial outputs and rejected inputs, with no replacement hash implementation. The earlier checked-sha2-native-01 run remains historical evidence.
 - Journal/extent diagnostics passed 2,859 assertions; e2fsprogs replayed generated escaped journal payloads in 28 independent recovery cases across checksum/version-width profiles, revokes and corrupted controls.
 - Legacy maps, inline data, inode checksums, symlink classification and descriptor CRCs were compared with Linux/libext2fs/debugfs and real images. An inconsistent inline-directory i_size was caught and corrected.
 - Sparse backup enumeration matched an independent oracle up to 4,294,967,000 groups in under 4 ms per native test process. The previous draft scanned every group.
 - Six plain fast-symlink regressions cover empty/interior-NUL/unterminated targets, incompatible flags and invalid geometry.
 - The integrated 32-module artifact passed 474 crypto/context/verity commands with every primitive imported from that artifact; none of the native programs supplied replacement algorithms. These are runtime checks, not proofs.
 - Cipher-checked-native-01 imports the focused-checked AES/SHA/context/cipher artifact and replays all 59 pinned OpenSSL/NIST-validated commands successfully, including mode tails, V1/V2 dispatch, binding and retirement controls. These are runtime inverse checks, not a full mode-inverse or cryptographic security theorem.
-- Verity-checked-native-01 imports the focused-checked fsverity/SHA artifact and matches 12 independent Python-generated measurements and all 24 tree/descriptor files, plus 420 bounded read probes, oversized-read rejection and corruption controls. Full builder-content recurrence, signature policy and mounted publication remain open.
+- Verity-builder-checked-native-01 replays the unchanged driver against the actual proof-verity-builder-06 fsverity/SHA artifact: 12 independent Python-generated measurements, all 24 tree/descriptor files, 420 bounded read probes, 12 oversized-read rejections and retained corruption controls pass. Exact source, library, provider and output hashes are retained. This finite test evidence is separate from the successful-build canonical-content proof; successful-completion iff admission, signature policy, source ownership, immutable publication and disk durability remain open. The earlier verity-checked-native-01 run is retained.
 - Mmp-checked-native-01 imports the focused-checked MMP artifact and passes three codec/protocol tests, including ordered claim/stop, stale or competing observations, backward clocks, and an aborted descriptor followed by late success. Reports remain modeled software inputs; no physical lease or persistence authority is established.
 - The focused-checked AES/SM4 artifacts pass the published AES-128/AES-256 and SM4 known-answer vectors, inverse checks and retired-key rejection. The first vector harness incorrectly expected AES-192 support; the API correctly rejects that unsupported key length. That failed expectation and its corrected run are retained separately.
 - Cluster-init-native-07 imports the focused-checked proof-cluster-07 artifact and passes eight native scenarios, including six completion permutations, plus the existing 13 cluster API rejection cases. The scenarios exercise the modeled standalone ledger; they do not attest real concurrent I/O, reset quiescence or durability.

@@ -625,7 +625,8 @@ impl HashCore256 {
     }
     fn update256(mut self, input: &[u8]) -> (r:Result<Self,Error>)
         requires self.valid256(),
-        ensures match r {Ok(next)=>next.valid256() && next.input256()==self.input256()+input@,Err(_)=>true},
+        ensures r.is_ok() <==> (self.input256().len()+(input.len() as nat)<=2305843009213693951nat),
+            match r {Ok(next)=>next.valid256() && next.input256()==self.input256()+input@,Err(_)=>true},
     {
         let ghost initial_used=self.used;
         let ghost initial_length=self.length;
@@ -814,7 +815,9 @@ impl Sha256 {
         ensures r.valid256(),r.input256()==Seq::<u8>::empty(),
     {Self {core:HashCore256::new256()}}
     pub fn update256(&mut self,input:&[u8]) -> (r:Result<(),Error>)
-        ensures final(self).valid256(),r.is_ok() ==> final(self).input256()==old(self).input256()+input@,
+        ensures final(self).valid256(),
+            r.is_ok() <==> (old(self).input256().len()+(input.len() as nat)<=2305843009213693951nat),
+            r.is_ok() ==> final(self).input256()==old(self).input256()+input@,
             r.is_err() ==> final(self).physical256()==old(self).physical256()
                 && final(self).input256()==old(self).input256(),
     {
@@ -859,7 +862,8 @@ impl HashCore512 {
     }
     fn update512(mut self, input: &[u8]) -> (r:Result<Self,Error>)
         requires self.valid512(),
-        ensures match r {Ok(next)=>next.valid512() && next.input512()==self.input512()+input@,Err(_)=>true},
+        ensures r.is_ok() <==> (self.input512().len()+(input.len() as nat)<=(u64::MAX as nat)),
+            match r {Ok(next)=>next.valid512() && next.input512()==self.input512()+input@,Err(_)=>true},
     {
         let ghost initial_used=self.used;
         let ghost initial_length=self.length;
@@ -1073,7 +1077,9 @@ impl Sha512 {
         ensures r.valid512(),r.input512()==Seq::<u8>::empty(),
     {Self {core:HashCore512::new512()}}
     pub fn update512(&mut self,input:&[u8]) -> (r:Result<(),Error>)
-        ensures final(self).valid512(),r.is_ok() ==> final(self).input512()==old(self).input512()+input@,
+        ensures final(self).valid512(),
+            r.is_ok() <==> (old(self).input512().len()+(input.len() as nat)<=(u64::MAX as nat)),
+            r.is_ok() ==> final(self).input512()==old(self).input512()+input@,
             r.is_err() ==> final(self).physical512()==old(self).physical512()
                 && final(self).input512()==old(self).input512(),
     {
@@ -1096,12 +1102,14 @@ impl Sha512 {
     }
 }
 pub fn sha256(input:&[u8]) -> (r:Result<Vec<u8>,Error>)
-    ensures match r {Ok(v)=>v.len()==32 && v@==digest256_reference(input@),Err(_)=>true},
+    ensures r.is_ok() <==> ((input.len() as nat)<=2305843009213693951nat),
+        match r {Ok(v)=>v.len()==32 && v@==digest256_reference(input@),Err(_)=>true},
 {
     let mut h=Sha256::new256(); h.update256(input)?; Ok(h.finalize256())
 }
 pub fn sha512(input:&[u8]) -> (r:Result<Vec<u8>,Error>)
-    ensures match r {Ok(v)=>v.len()==64 && v@==digest512_reference(input@),Err(_)=>true},
+    ensures r.is_ok() <==> ((input.len() as nat)<=(u64::MAX as nat)),
+        match r {Ok(v)=>v.len()==64 && v@==digest512_reference(input@),Err(_)=>true},
 {
     let mut h=Sha512::new512(); h.update512(input)?; Ok(h.finalize512())
 }
@@ -1379,6 +1387,21 @@ pub fn hkdf_sha512_expand(prk:&[u8],info:&[u8],output_len:usize) -> (r:Result<Ve
         ceil64_count(output_len as nat,(counter-1) as nat);
     }
     Ok(output)
+}
+
+/// Expose the fixed digest width without revealing the compression rounds.
+pub proof fn digest256_reference_length(input: Seq<u8>)
+    ensures digest256_reference(input).len() == 32,
+{
+    digest256_definition(input);
+    finished256_definition(message256(input), input.len());
+}
+
+/// Expose the fixed digest width without revealing the compression rounds.
+pub proof fn digest512_reference_length(input: Seq<u8>)
+    ensures digest512_reference(input).len() == 64,
+{
+    digest512_length(input);
 }
 
 }
