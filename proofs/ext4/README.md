@@ -26,6 +26,7 @@ feature engines and proof obligations after that baseline. Its focused results
 are recorded in [FEATURE_EXPANSION_STATUS.json](FEATURE_EXPANSION_STATUS.json).
 The baseline totals above do not certify those additions; a new strict
 whole-crate result remains pending.
+The [component composition](COMPONENT_COMPOSITION.md) combines exact checked SHA, legacy-map, HTree-catalogue and fsverity-builder snapshots; its coherent compile-only checkpoint, six-family same-artifact native checks and API boundaries pass, while strict composition remains pending.
 
 ## Implementation and proof scope
 

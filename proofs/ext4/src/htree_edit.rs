@@ -236,6 +236,14 @@ pub fn context(primary: &[u8], raw_inode: &[u8], number: u32, parent: u32,
     let sectors_per_block = block_bytes as u64 / 512;
     proof { assert(1024 <= block_bytes <= 65536); assert(2 <= sectors_per_block <= 128); }
     if old_tree_blocks > u64::MAX / sectors_per_block { return Err(Error::Accounting); }
+    proof {
+        vstd::arithmetic::div_mod::lemma_fundamental_div_mod(u64::MAX as int, sectors_per_block as int);
+        assert(old_tree_blocks as nat * sectors_per_block as nat <= u64::MAX) by (nonlinear_arith)
+            requires sectors_per_block > 0,
+                old_tree_blocks as nat <= u64::MAX as nat / sectors_per_block as nat,
+                u64::MAX as nat == (u64::MAX as nat / sectors_per_block as nat) * sectors_per_block as nat
+                    + u64::MAX as nat % sectors_per_block as nat;
+    }
     let tree_sectors = old_tree_blocks * sectors_per_block;
     if tree_sectors > old_sectors { return Err(Error::Accounting); }
     let generation = bytes::read_le32(raw_inode, 100).unwrap();
@@ -251,22 +259,92 @@ pub fn context(primary: &[u8], raw_inode: &[u8], number: u32, parent: u32,
         retained_sectors: old_sectors - tree_sectors, old_tree_blocks })
 }
 
-fn lex_less(a: &[u8], b: &[u8]) -> bool {
+/// Byte-name order used by directory reconstruction. This relation does not
+/// imply that the supplied entry catalogue is complete or source-owned.
+pub open spec fn name_prefix_equal(a: Seq<u8>, b: Seq<u8>, count: nat) -> bool {
+    count <= a.len() && count <= b.len()
+        && forall|i: int| 0 <= i < count ==> #[trigger] a[i] == #[trigger] b[i]
+}
+pub open spec fn name_less(a: Seq<u8>, b: Seq<u8>) -> bool {
+    (exists|i: int| 0 <= i < a.len() && i < b.len()
+        && #[trigger] a[i] < #[trigger] b[i] && name_prefix_equal(a, b, i as nat))
+        || (a.len() < b.len() && name_prefix_equal(a, b, a.len()))
+}
+proof fn first_greater_excludes_less(a: Seq<u8>, b: Seq<u8>, at: int)
+    requires 0 <= at < a.len(), at < b.len(),
+        name_prefix_equal(a, b, at as nat), a[at] > b[at],
+    ensures !name_less(a, b),
+{
+    assert forall|i: int| #![trigger a[i], b[i]]
+        0 <= i < a.len() && i < b.len() implies
+        !(a[i] < b[i] && name_prefix_equal(a, b, i as nat)) by {
+        if i < at { assert(a[i] == b[i]); }
+        else if i > at {
+            if name_prefix_equal(a, b, i as nat) { assert(a[at] == b[at]); }
+        }
+    }
+    if a.len() < b.len() && name_prefix_equal(a, b, a.len()) {
+        assert(a[at] == b[at]);
+    }
+}
+fn lex_less(a: &[u8], b: &[u8]) -> (r: bool)
+    ensures r == name_less(a@, b@),
+{
     let length = if a.len() < b.len() { a.len() } else { b.len() };
     let mut i = 0usize;
     while i < length
-        invariant i <= length, length <= a.len(), length <= b.len(),
+        invariant i <= length, length == if a.len() < b.len() { a.len() } else { b.len() },
+            name_prefix_equal(a@, b@, i as nat),
         decreases length - i,
     {
-        if a[i] < b[i] { return true; }
-        if a[i] > b[i] { return false; }
+        if a[i] < b[i] {
+            proof {
+                assert(exists|k: int| 0 <= k < a.len() && k < b.len()
+                    && #[trigger] a@[k] < #[trigger] b@[k]
+                    && name_prefix_equal(a@, b@, k as nat)) by {
+                    let k = i as int;
+                    assert(a@[k] < b@[k] && name_prefix_equal(a@, b@, k as nat));
+                }
+            }
+            return true;
+        }
+        if a[i] > b[i] {
+            proof { first_greater_excludes_less(a@, b@, i as int); }
+            return false;
+        }
+        proof {
+            assert forall|j: int| #![trigger a@[j], b@[j]]
+                0 <= j < i + 1 implies a@[j] == b@[j] by {
+                if j < i { assert(a@[j] == b@[j]); }
+            }
+        }
         i += 1;
+    }
+    proof {
+        assert forall|j: int| #![trigger a@[j], b@[j]]
+            0 <= j < a.len() && j < b.len() implies
+            !(a@[j] < b@[j] && name_prefix_equal(a@, b@, j as nat)) by {
+            assert(j < length); assert(a@[j] == b@[j]);
+        }
     }
     a.len() < b.len()
 }
-fn less(a: usize, b: usize, order: u8, entries: &[Entry], hashes: &[dir_hash::Hash]) -> bool
+pub open spec fn entry_index_less(a: nat, b: nat, order: u8,
+    entries: Seq<EntryView>, hashes: Seq<dir_hash::Hash>) -> bool
+{
+    if order == 2 && entries[a as int].inode != entries[b as int].inode {
+        entries[a as int].inode < entries[b as int].inode
+    } else if order == 1 && hashes[a as int].major != hashes[b as int].major {
+        hashes[a as int].major < hashes[b as int].major
+    } else if order == 1 && hashes[a as int].minor != hashes[b as int].minor {
+        hashes[a as int].minor < hashes[b as int].minor
+    } else { name_less(entries[a as int].name, entries[b as int].name) }
+}
+fn less(a: usize, b: usize, order: u8, entries: &[Entry], hashes: &[dir_hash::Hash]) -> (r: bool)
     requires a < entries.len(), b < entries.len(),
         order == 1 ==> a < hashes.len() && b < hashes.len(),
+    ensures r == entry_index_less(a as nat, b as nat, order,
+        entries@.map_values(|e: Entry| e.view()), hashes@),
 {
     if order == 2 {
         if entries[a].inode != entries[b].inode { return entries[a].inode < entries[b].inode; }
@@ -276,29 +354,46 @@ fn less(a: usize, b: usize, order: u8, entries: &[Entry], hashes: &[dir_hash::Ha
     }
     lex_less(&entries[a].name, &entries[b].name)
 }
+
 fn sorted(entries: &[Entry], hashes: &[dir_hash::Hash], order: u8) -> (r: Vec<usize>)
     requires entries.len() <= MAX_ENTRIES, order == 1 ==> hashes.len() == entries.len(),
     ensures r.len() == entries.len(),
+        r@.to_multiset() == Seq::<usize>::new(entries.len() as nat, |i: int| i as usize).to_multiset(),
         forall|i: int| 0 <= i < r.len() ==> #[trigger] r@[i] < entries.len(),
 {
+    let ghost identity = Seq::<usize>::new(entries.len() as nat, |i: int| i as usize);
     let length = entries.len(); let mut src: Vec<usize> = Vec::new(); let mut dst: Vec<usize> = Vec::new(); let mut i = 0usize;
     while i < length
         invariant length == entries.len(), i <= length <= MAX_ENTRIES, src.len() == i, dst.len() == i,
+            identity == Seq::<usize>::new(length as nat, |j: int| j as usize), src@ == identity.take(i as int),
             forall|j: int| 0 <= j < i ==> #[trigger] src@[j] < length,
             forall|j: int| 0 <= j < i ==> #[trigger] dst@[j] < length,
         decreases length - i,
-    { src.push(i); dst.push(0usize); i += 1; }
+    { src.push(i); dst.push(0usize);
+      proof { assert(src@ =~= identity.take(i as int + 1)); } i += 1; }
+    proof { identity.lemma_take_len(); assert(src@ == identity); }
     let mut width = 1usize;
     while width < length
         invariant length == entries.len(), 0 < width, src.len() == length, dst.len() == length, length <= MAX_ENTRIES,
+            identity == Seq::<usize>::new(length as nat, |j: int| j as usize),
+            src@.to_multiset() == identity.to_multiset(),
             order == 1 ==> hashes.len() == entries.len(),
             forall|j: int| 0 <= j < length ==> #[trigger] src@[j] < length,
             forall|j: int| 0 <= j < length ==> #[trigger] dst@[j] < length,
         decreases length - width,
     {
         let mut left = 0usize;
+        proof {
+            broadcast use vstd::seq_lib::group_to_multiset_ensures;
+            broadcast use vstd::multiset::group_multiset_axioms;
+            assert(dst@.take(0) =~= Seq::<usize>::empty());
+            assert(src@.take(0) =~= Seq::<usize>::empty());
+        }
         while left < length
             invariant length == entries.len(), left <= length, src.len() == length, dst.len() == length, 0 < width, length <= MAX_ENTRIES,
+                identity == Seq::<usize>::new(length as nat, |j: int| j as usize),
+                src@.to_multiset() == identity.to_multiset(),
+                dst@.take(left as int).to_multiset() == src@.take(left as int).to_multiset(),
                 order == 1 ==> hashes.len() == entries.len(),
                 forall|j: int| 0 <= j < length ==> #[trigger] src@[j] < length,
                 forall|j: int| 0 <= j < length ==> #[trigger] dst@[j] < length,
@@ -307,21 +402,72 @@ fn sorted(entries: &[Entry], hashes: &[dir_hash::Hash], order: u8) -> (r: Vec<us
             let middle = left + if width < length - left { width } else { length - left };
             let right = middle + if width < length - middle { width } else { length - middle };
             let mut a = left; let mut b = middle; let mut out = left;
+            proof {
+                broadcast use vstd::seq_lib::group_to_multiset_ensures;
+                broadcast use vstd::multiset::group_multiset_axioms;
+                assert(dst@.subrange(left as int, left as int) =~= Seq::<usize>::empty());
+                assert(src@.subrange(left as int, left as int) =~= Seq::<usize>::empty());
+                assert(src@.subrange(middle as int, middle as int) =~= Seq::<usize>::empty());
+            }
             while out < right
                 invariant length == entries.len(), left <= a <= middle <= b <= right <= length <= MAX_ENTRIES, left <= out <= right,
                     out as int == a as int + b as int - middle as int,
                     src.len() == length, dst.len() == length,
+                    identity == Seq::<usize>::new(length as nat, |j: int| j as usize),
+                    src@.to_multiset() == identity.to_multiset(),
+                    dst@.take(left as int).to_multiset() == src@.take(left as int).to_multiset(),
+                    dst@.subrange(left as int, out as int).to_multiset()
+                        == src@.subrange(left as int, a as int).to_multiset()
+                            .add(src@.subrange(middle as int, b as int).to_multiset()),
                     order == 1 ==> hashes.len() == entries.len(),
                     forall|j: int| 0 <= j < length ==> #[trigger] src@[j] < length,
                     forall|j: int| 0 <= j < length ==> #[trigger] dst@[j] < length,
                 decreases right - out,
             {
+                let ghost previous_a = a;
+                let ghost previous_b = b;
+                let ghost previous_output = dst@;
                 if a < middle && (b == right || !less(src[b], src[a], order, entries, hashes)) {
                     dst.set(out, src[a]); a += 1;
                 } else { dst.set(out, src[b]); b += 1; }
+                proof {
+                    broadcast use vstd::seq_lib::group_to_multiset_ensures;
+                    broadcast use vstd::multiset::group_multiset_axioms;
+                    assert(dst@.take(left as int) =~= previous_output.take(left as int));
+                    if a > previous_a {
+                        assert(dst@.subrange(left as int, out as int + 1)
+                            =~= previous_output.subrange(left as int, out as int).push(src@[previous_a as int]));
+                        assert(src@.subrange(left as int, a as int)
+                            =~= src@.subrange(left as int, previous_a as int).push(src@[previous_a as int]));
+                    } else {
+                        assert(dst@.subrange(left as int, out as int + 1)
+                            =~= previous_output.subrange(left as int, out as int).push(src@[previous_b as int]));
+                        assert(src@.subrange(middle as int, b as int)
+                            =~= src@.subrange(middle as int, previous_b as int).push(src@[previous_b as int]));
+                    }
+                }
                 out += 1;
             }
+            proof {
+                broadcast use vstd::seq_lib::group_to_multiset_ensures;
+                broadcast use vstd::multiset::group_multiset_axioms;
+                assert(a == middle && b == right);
+                assert(src@.subrange(left as int, right as int)
+                    =~= src@.subrange(left as int, middle as int) + src@.subrange(middle as int, right as int));
+                assert(src@.take(right as int)
+                    =~= src@.take(left as int) + src@.subrange(left as int, right as int));
+                assert(dst@.take(right as int)
+                    =~= dst@.take(left as int) + dst@.subrange(left as int, right as int));
+                vstd::seq_lib::lemma_multiset_commutative(src@.subrange(left as int, middle as int), src@.subrange(middle as int, right as int));
+                vstd::seq_lib::lemma_multiset_commutative(dst@.take(left as int), dst@.subrange(left as int, right as int));
+                vstd::seq_lib::lemma_multiset_commutative(src@.take(left as int), src@.subrange(left as int, right as int));
+                assert(dst@.take(right as int).to_multiset() == src@.take(right as int).to_multiset());
+            }
             left = right;
+        }
+        proof {
+            assert(dst@.take(length as int) =~= dst@);
+            assert(src@.take(length as int) =~= src@);
         }
         let old = src; src = dst; dst = old;
         width = if width > length / 2 { length } else { width * 2 };
@@ -765,8 +911,54 @@ fn validate_pool(ctx: &Context, pool: &[u64], forbidden: &[ReservedRange], budge
     Ok(())
 }
 
+/// Logical catalogue carried by a plan, separately from wire encoding.
+pub open spec fn entry_catalogue(entries: Seq<Entry>) -> Seq<EntryView> {
+    entries.map_values(|entry: Entry| entry.view())
+}
+#[verifier::opaque]
+pub open spec fn retained_catalogue(entries: Seq<EntryView>, count: nat,
+    skip_a: Option<usize>, skip_b: Option<usize>) -> Seq<EntryView>
+    decreases count,
+{
+    if count == 0 { Seq::empty() } else {
+        retained_catalogue(entries, (count - 1) as nat, skip_a, skip_b)
+            + if skip_a == Some((count - 1) as usize) || skip_b == Some((count - 1) as usize) {
+                Seq::empty()
+            } else { seq![entries[count as int - 1]] }
+    }
+}
+proof fn retained_catalogue_step(entries: Seq<EntryView>, count: nat,
+    skip_a: Option<usize>, skip_b: Option<usize>)
+    requires count < entries.len(),
+    ensures retained_catalogue(entries, 0, skip_a, skip_b) == Seq::<EntryView>::empty(),
+        retained_catalogue(entries, count + 1, skip_a, skip_b)
+            == retained_catalogue(entries, count, skip_a, skip_b)
+                + if skip_a == Some(count as usize) || skip_b == Some(count as usize) {
+                    Seq::empty()
+                } else { seq![entries[count as int]] },
+{ reveal(retained_catalogue); }
+proof fn retaining_all_entries(entries: Seq<EntryView>, count: nat)
+    requires count <= entries.len(),
+    ensures retained_catalogue(entries, count, None, None) == entries.take(count as int),
+    decreases count,
+{
+    reveal(retained_catalogue);
+    if count > 0 {
+        retaining_all_entries(entries, (count - 1) as nat);
+        assert(entries.take(count as int)
+            =~= entries.take(count as int - 1).push(entries[count as int - 1]));
+    }
+}
 pub fn rebuild(ctx: &Context, entries: &[Entry], pool: &[u64], forbidden: &[ReservedRange],
-    budget: Budget, seconds: i64, nanoseconds: u32) -> Result<Plan, Error>
+    budget: Budget, seconds: i64, nanoseconds: u32) -> (r: Result<Plan, Error>)
+    ensures match r {
+        Ok(plan) => plan.view().entries == entry_catalogue(entries@)
+            && plan.view().deltas == Seq::<LinkDelta>::empty()
+            && plan.view().empty_victim == None
+            && plan.view().indexed == ctx.view().indexed
+            && plan.view().old_tree_blocks == ctx.view().old_tree_blocks,
+        Err(_) => true,
+    },
 {
     proof { use_type_invariant(ctx); }
 
@@ -845,18 +1037,28 @@ pub fn rebuild(ctx: &Context, entries: &[Entry], pool: &[u64], forbidden: &[Rese
     let mut retained = Vec::new(); i = 0;
     while i < entries.len()
         invariant i <= entries.len(), retained.len() == i,
+            entry_catalogue(retained@) == entry_catalogue(entries@).take(i as int),
         decreases entries.len() - i,
-    { retained.push(clone_entry(&entries[i])); i += 1; }
+    {
+        retained.push(clone_entry(&entries[i]));
+        proof { assert(entry_catalogue(retained@) =~= entry_catalogue(entries@).take(i as int + 1)); }
+        i += 1;
+    }
     Ok(Plan { images, mappings, inode_image, extent_root: root, entries: retained,
         deltas: Vec::new(), indexed: ctx.indexed, levels, old_tree_blocks: ctx.old_tree_blocks,
         empty_victim_required: None })
 }
 fn locate(entries: &[Entry], name: &[u8]) -> (r: Option<usize>)
-    ensures match r { Some(index) => index < entries.len(), None => true },
+    ensures match r {
+        Some(index) => index < entries.len() && entry_catalogue(entries@)[index as int].name == name@
+            && forall|j: int| 0 <= j < index ==> (#[trigger] entry_catalogue(entries@)[j]).name != name@,
+        None => forall|j: int| 0 <= j < entries.len() ==> (#[trigger] entry_catalogue(entries@)[j]).name != name@,
+    },
 {
     let mut i = 0usize;
     while i < entries.len()
         invariant i <= entries.len(),
+            forall|j: int| 0 <= j < i ==> (#[trigger] entry_catalogue(entries@)[j]).name != name@,
         decreases entries.len() - i,
     {
         if bytes::equal(&entries[i].name, name) { return Some(i); }
@@ -864,13 +1066,21 @@ fn locate(entries: &[Entry], name: &[u8]) -> (r: Option<usize>)
     }
     None
 }
-fn copy_entries(entries: &[Entry], skip_a: Option<usize>, skip_b: Option<usize>) -> Vec<Entry> {
+fn copy_entries(entries: &[Entry], skip_a: Option<usize>, skip_b: Option<usize>) -> (r: Vec<Entry>)
+    ensures entry_catalogue(r@) == retained_catalogue(entry_catalogue(entries@), entries.len() as nat, skip_a, skip_b),
+{
+    proof { reveal(retained_catalogue); }
     let mut out = Vec::new(); let mut i = 0usize;
     while i < entries.len()
         invariant i <= entries.len(), out.len() <= i,
+            entry_catalogue(out@) == retained_catalogue(entry_catalogue(entries@), i as nat, skip_a, skip_b),
         decreases entries.len() - i,
     {
         if skip_a != Some(i) && skip_b != Some(i) { out.push(clone_entry(&entries[i])); }
+        proof {
+            retained_catalogue_step(entry_catalogue(entries@), i as nat, skip_a, skip_b);
+            assert(entry_catalogue(out@) == retained_catalogue(entry_catalogue(entries@), i as nat + 1, skip_a, skip_b));
+        }
         i += 1;
     }
     out
@@ -880,14 +1090,29 @@ fn copy_entries(entries: &[Entry], skip_a: Option<usize>, skip_b: Option<usize>)
 /// inode fields. The caller composes target initialization, orphan/link-count
 /// changes and any child-parent changes before whole-filesystem admission.
 pub fn insert(ctx: &Context, entries: &[Entry], value: Entry, pool: &[u64],
-    forbidden: &[ReservedRange], budget: Budget, seconds: i64, nanoseconds: u32) -> Result<Plan, Error>
+    forbidden: &[ReservedRange], budget: Budget, seconds: i64, nanoseconds: u32) -> (r: Result<Plan, Error>)
+    ensures match r {
+        Ok(plan) => plan.view().entries == entry_catalogue(entries@).push(value.view())
+            && plan.view().deltas == seq![LinkDelta { inode: value.view().inode,
+                generation: value.view().generation, file_type: value.view().file_type, delta: 1 }]
+            && plan.view().empty_victim == None,
+        Err(_) => true,
+    },
 {
     proof { use_type_invariant(ctx); }
 
     if locate(entries, &value.name).is_some() { return Err(Error::Exists); }
     if entries.len() >= budget.entries || entries.len() >= MAX_ENTRIES { return Err(Error::Budget); }
     let change = LinkDelta { inode: value.inode, generation: value.generation, file_type: value.file_type, delta: 1 };
-    let mut changed = copy_entries(entries, None, None); changed.push(value);
+    let ghost added = value.view();
+    let mut changed = copy_entries(entries, None, None);
+    proof {
+        retaining_all_entries(entry_catalogue(entries@), entries.len() as nat);
+        entry_catalogue(entries@).lemma_take_len();
+        assert(entry_catalogue(changed@) == entry_catalogue(entries@));
+    }
+    changed.push(value);
+    proof { assert(entry_catalogue(changed@) =~= entry_catalogue(entries@).push(added)); }
     let mut plan = match rebuild(ctx, &changed, pool, forbidden, budget, seconds, nanoseconds) {
         Ok(value) => value, Err(error) => { return Err(error); }
     };
@@ -896,7 +1121,27 @@ pub fn insert(ctx: &Context, entries: &[Entry], value: Entry, pool: &[u64],
 
 pub fn delete(ctx: &Context, entries: &[Entry], name: &[u8], expected_inode: u32,
     expected_generation: u32, pool: &[u64], forbidden: &[ReservedRange],
-    budget: Budget, seconds: i64, nanoseconds: u32) -> Result<Plan, Error>
+    budget: Budget, seconds: i64, nanoseconds: u32) -> (r: Result<Plan, Error>)
+    ensures match r {
+        Ok(plan) => {
+            let catalogue = entry_catalogue(entries@);
+            name_valid(name@) && exists|ordinal: usize|
+                ordinal < entries.len()
+                && catalogue[ordinal as int].name == name@
+                && (forall|j: int| 0 <= j < ordinal ==> (#[trigger] catalogue[j]).name != name@)
+                && catalogue[ordinal as int].inode == expected_inode
+                && catalogue[ordinal as int].generation == expected_generation
+                && plan.view().entries == retained_catalogue(catalogue, entries.len() as nat, Some(ordinal), None)
+                && plan.view().deltas == seq![LinkDelta {
+                    inode: catalogue[ordinal as int].inode,
+                    generation: catalogue[ordinal as int].generation,
+                    file_type: catalogue[ordinal as int].file_type, delta: -1i8 }]
+                && plan.view().empty_victim == if catalogue[ordinal as int].file_type == 2 {
+                    Some((catalogue[ordinal as int].inode, catalogue[ordinal as int].generation))
+                } else { None }
+        },
+        Err(_) => true,
+    },
 {
     proof { use_type_invariant(ctx); }
 
@@ -916,7 +1161,61 @@ pub fn delete(ctx: &Context, entries: &[Entry], name: &[u8], expected_inode: u32
 
 pub fn rename(ctx: &Context, entries: &[Entry], old_name: &[u8], new_name: &[u8],
     expected_inode: u32, expected_generation: u32, replace: bool, pool: &[u64],
-    forbidden: &[ReservedRange], budget: Budget, seconds: i64, nanoseconds: u32) -> Result<Mutation, Error>
+    forbidden: &[ReservedRange], budget: Budget, seconds: i64, nanoseconds: u32) -> (r: Result<Mutation, Error>)
+    ensures match r {
+        Ok(Mutation::NoChange) => {
+            let catalogue = entry_catalogue(entries@);
+            name_valid(old_name@) && name_valid(new_name@) && replace
+                && exists|source_at: usize|
+                    source_at < entries.len()
+                    && catalogue[source_at as int].name == old_name@
+                    && (forall|j: int| 0 <= j < source_at ==> (#[trigger] catalogue[j]).name != old_name@)
+                    && catalogue[source_at as int].inode == expected_inode
+                    && catalogue[source_at as int].generation == expected_generation
+                    && (old_name@ == new_name@ || exists|target_at: usize|
+                        target_at < entries.len()
+                        && catalogue[target_at as int].name == new_name@
+                        && (forall|j: int| 0 <= j < target_at ==> (#[trigger] catalogue[j]).name != new_name@)
+                        && catalogue[target_at as int].inode == catalogue[source_at as int].inode
+                        && catalogue[target_at as int].generation == catalogue[source_at as int].generation
+                        && catalogue[target_at as int].file_type == catalogue[source_at as int].file_type)
+        },
+        Ok(Mutation::Rebuild(plan)) => {
+            let catalogue = entry_catalogue(entries@);
+            name_valid(old_name@) && name_valid(new_name@) && old_name@ != new_name@
+                && exists|source_at: usize, target_at: Option<usize>|
+                    source_at < entries.len()
+                    && catalogue[source_at as int].name == old_name@
+                    && (forall|j: int| 0 <= j < source_at ==> (#[trigger] catalogue[j]).name != old_name@)
+                    && catalogue[source_at as int].inode == expected_inode
+                    && catalogue[source_at as int].generation == expected_generation
+                    && (match target_at {
+                        Some(ordinal) => ordinal < entries.len()
+                            && catalogue[ordinal as int].name == new_name@
+                            && (forall|j: int| 0 <= j < ordinal ==> (#[trigger] catalogue[j]).name != new_name@)
+                            && replace
+                            && catalogue[ordinal as int].inode != catalogue[source_at as int].inode
+                            && ((catalogue[ordinal as int].file_type == 2) == (catalogue[source_at as int].file_type == 2)),
+                        None => forall|j: int| 0 <= j < entries.len() ==> (#[trigger] catalogue[j]).name != new_name@,
+                    })
+                    && plan.view().entries == retained_catalogue(catalogue, entries.len() as nat, Some(source_at), target_at)
+                        .push(EntryView { name: new_name@, inode: catalogue[source_at as int].inode,
+                            generation: catalogue[source_at as int].generation, file_type: catalogue[source_at as int].file_type })
+                    && plan.view().deltas == match target_at {
+                        Some(ordinal) => seq![LinkDelta { inode: catalogue[ordinal as int].inode,
+                            generation: catalogue[ordinal as int].generation,
+                            file_type: catalogue[ordinal as int].file_type, delta: -1i8 }],
+                        None => Seq::<LinkDelta>::empty(),
+                    }
+                    && plan.view().empty_victim == match target_at {
+                        Some(ordinal) => if catalogue[ordinal as int].file_type == 2 {
+                            Some((catalogue[ordinal as int].inode, catalogue[ordinal as int].generation))
+                        } else { None },
+                        None => None,
+                    }
+        },
+        Err(_) => true,
+    },
 {
     proof { use_type_invariant(ctx); }
 
@@ -944,6 +1243,14 @@ pub fn rename(ctx: &Context, entries: &[Entry], old_name: &[u8], new_name: &[u8]
     }
     let mut changed = copy_entries(entries, Some(source_at), target_at);
     changed.push(Entry { name: copy(new_name), inode: source.inode, generation: source.generation, file_type: source.file_type });
+    proof {
+        let catalogue = entry_catalogue(entries@);
+        assert(source.view() == catalogue[source_at as int]);
+        assert(entry_catalogue(changed@) =~=
+            retained_catalogue(catalogue, entries.len() as nat, Some(source_at), target_at)
+                .push(EntryView { name: new_name@, inode: source.view().inode,
+                    generation: source.view().generation, file_type: source.view().file_type }));
+    }
     let mut plan = match rebuild(ctx, &changed, pool, forbidden, budget, seconds, nanoseconds) {
         Ok(value) => value, Err(error) => { return Err(error); }
     };

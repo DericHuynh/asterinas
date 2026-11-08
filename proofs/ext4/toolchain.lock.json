@@ -1258,7 +1258,10 @@
     "mmp::an_offered_write_is_bound_to_the_source_image",
     "crypto_sha2::digest256_reference_length",
     "crypto_sha2::digest512_reference_length",
-    "hctr2::hctr2_raw_key_bridge"
+    "hctr2::hctr2_raw_key_bridge",
+    "legacy_map::larger_filesystem_bounds_preserve_legacy_root",
+    "legacy_map::legacy_pointer_byte_spans_do_not_depend_on_filesystem_width",
+    "legacy_map::filesystem_count_changes_preserve_legacy_pointer_interpretation"
   ],
   "required_flags": [
     "--no-cheating",

@@ -147,25 +147,6 @@
       "whole_expansion_verified": false
     },
     {
-      "attempt": "proof-legacy-06",
-      "modules": [
-        "legacy_map"
-      ],
-      "verification_results": {
-        "encountered-error": false,
-        "encountered-vir-error": false,
-        "verified": 44,
-        "errors": 0,
-        "is-verifying-entire-crate": false
-      },
-      "source_sha256": {
-        "legacy_map": "5b4a3a38f80325fdb2c3bb11964a35358975f501cfea238163724cda8d24baea"
-      },
-      "command_sha256": "1a040f6ff6eee2e35f16eb79b0516b73b10c68afbcb7f2dd044b030077fabe80",
-      "filtered": true,
-      "whole_expansion_verified": false
-    },
-    {
       "attempt": "proof-orphan-chain-01",
       "modules": [
         "orphan_chain"
@@ -375,63 +356,6 @@
       "whole_expansion_verified": false
     },
     {
-      "attempt": "proof-fsverity-08",
-      "modules": [
-        "fsverity"
-      ],
-      "verification_results": {
-        "encountered-error": false,
-        "encountered-vir-error": false,
-        "verified": 83,
-        "errors": 0,
-        "is-verifying-entire-crate": false
-      },
-      "source_sha256": {
-        "fsverity": "ec6f75c908b690bf0d5abc61fa32be9fdd300d026aafdbd4e7bb4c685769d799"
-      },
-      "command_sha256": "6a2bd913a8fb1757853728bba92c443ea9fca7884065f53818c12d9fc4dfb631",
-      "filtered": true,
-      "whole_expansion_verified": false
-    },
-    {
-      "attempt": "proof-sha2-09",
-      "modules": [
-        "crypto_sha2"
-      ],
-      "verification_results": {
-        "encountered-error": false,
-        "encountered-vir-error": false,
-        "verified": 117,
-        "errors": 0,
-        "is-verifying-entire-crate": false
-      },
-      "source_sha256": {
-        "crypto_sha2": "df643cb36d0da2c763af66c9c6560190b080b7a18ad086432cbc20762c43f8bb"
-      },
-      "command_sha256": "00004753dd669d4b9e9562d935a52130ae1040f09880b067fc3b249ff0618a61",
-      "filtered": true,
-      "whole_expansion_verified": false
-    },
-    {
-      "attempt": "proof-htree-edit-08",
-      "modules": [
-        "htree_edit"
-      ],
-      "verification_results": {
-        "encountered-error": false,
-        "encountered-vir-error": false,
-        "verified": 96,
-        "errors": 0,
-        "is-verifying-entire-crate": false
-      },
-      "source_sha256": {
-        "htree_edit": "8de62f53dab12e14b05703bffabae43d0e881b36fb41763b6d83dba6a12b0ae4"
-      },
-      "command_sha256": "4e4c0b1bb00aa0eadd6b05bf04a1c762a789500273a631ad93bf722ad3fe6677",
-      "filtered": true,
-      "whole_expansion_verified": false
-    },
-    {
       "attempt": "proof-hctr2-05",
       "modules": [
         "hctr2"
@@ -518,6 +442,82 @@
       "command_sha256": "f848a77d14059b08591034fde53ef691ea251d38c48237a478cc79bffff6c1e7",
       "filtered": true,
       "whole_expansion_verified": false
+    },
+    {
+      "attempt": "proof-sha-completion-01",
+      "modules": [
+        "crypto_sha2"
+      ],
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 117,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "source_sha256": {
+        "crypto_sha2": "3b0e8c8970d743218cfe2a1eef5ffd539123bcf918a3abefe8bf52a60d2b8395"
+      },
+      "command_sha256": "f2921fd5eadfc24da9da602ef68f5cedeba337521727db0a1b9e6aaf13116aaa",
+      "filtered": true,
+      "whole_expansion_verified": false
+    },
+    {
+      "attempt": "proof-legacy-wide-02",
+      "modules": [
+        "legacy_map"
+      ],
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 48,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "source_sha256": {
+        "legacy_map": "d5fc15d4af1f9ddb86f09c12664e6b9cc19377e59b03220c3807a14210ae1d80"
+      },
+      "command_sha256": "9471710e07b727951274ce955e131e1fc57e5360ddfde7b7027e4ef5844fb2a1",
+      "filtered": true,
+      "whole_expansion_verified": false
+    },
+    {
+      "attempt": "proof-directory-order-06",
+      "modules": [
+        "htree_edit"
+      ],
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 101,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "source_sha256": {
+        "htree_edit": "9bdf4d2a2c714b16772bc939cf40fa2f5c77f9073a46ed93cb8ec2dae2553f18"
+      },
+      "command_sha256": "7f5b254d030806e161b666960632478077b205fb721457a11ecf081061fd0f2e",
+      "filtered": true,
+      "whole_expansion_verified": false
+    },
+    {
+      "attempt": "proof-verity-builder-06",
+      "modules": [
+        "fsverity"
+      ],
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 159,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "source_sha256": {
+        "fsverity": "75fb4cb6ccf0989d321f526b563c2ce3c7d593c814d6c3329b2b044838fa2efc"
+      },
+      "command_sha256": "33981bb201a2f7833db85b88e91564076e01f83c63cc2b084a4cfed9fbe30c57",
+      "filtered": true,
+      "whole_expansion_verified": false
     }
   ],
   "unique_checked_modules": [
@@ -552,7 +552,7 @@
     "sm4",
     "unicode12_data"
   ],
-  "focused_verified_obligations": 1862,
+  "focused_verified_obligations": 1947,
   "current_source_matches_checked_modules": true,
   "independent_test_harness_fix": {
     "branch": "fix/osdk-test-qemu-exit",
@@ -676,29 +676,109 @@
       "command_sha256": "d6247c899fde33f003a29e0118dc25f5cf2db216a8b48ef60e036a108cbe6ba3",
       "filtered": true,
       "whole_expansion_verified": false
+    },
+    {
+      "attempt": "proof-sha2-09",
+      "modules": [
+        "crypto_sha2"
+      ],
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 117,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "source_sha256": {
+        "crypto_sha2": "df643cb36d0da2c763af66c9c6560190b080b7a18ad086432cbc20762c43f8bb"
+      },
+      "command_sha256": "00004753dd669d4b9e9562d935a52130ae1040f09880b067fc3b249ff0618a61",
+      "filtered": true,
+      "whole_expansion_verified": false
+    },
+    {
+      "attempt": "proof-legacy-06",
+      "modules": [
+        "legacy_map"
+      ],
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 44,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "source_sha256": {
+        "legacy_map": "5b4a3a38f80325fdb2c3bb11964a35358975f501cfea238163724cda8d24baea"
+      },
+      "command_sha256": "1a040f6ff6eee2e35f16eb79b0516b73b10c68afbcb7f2dd044b030077fabe80",
+      "filtered": true,
+      "whole_expansion_verified": false
+    },
+    {
+      "attempt": "proof-htree-edit-08",
+      "modules": [
+        "htree_edit"
+      ],
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 96,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "source_sha256": {
+        "htree_edit": "8de62f53dab12e14b05703bffabae43d0e881b36fb41763b6d83dba6a12b0ae4"
+      },
+      "command_sha256": "4e4c0b1bb00aa0eadd6b05bf04a1c762a789500273a631ad93bf722ad3fe6677",
+      "filtered": true,
+      "whole_expansion_verified": false
+    },
+    {
+      "attempt": "proof-fsverity-08",
+      "modules": [
+        "fsverity"
+      ],
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 83,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "source_sha256": {
+        "fsverity": "ec6f75c908b690bf0d5abc61fa32be9fdd300d026aafdbd4e7bb4c685769d799"
+      },
+      "command_sha256": "6a2bd913a8fb1757853728bba92c443ea9fca7884065f53818c12d9fc4dfb631",
+      "filtered": true,
+      "whole_expansion_verified": false
     }
   ],
   "integrated_compile": {
-    "attempt": "typecheck-20",
+    "attempt": "typecheck-21",
     "new_modules": 32,
     "returncode": 0,
     "verification_skipped": true,
     "proof_evidence": false,
-    "artifact_sha256": "ca8436810c1524beb7b882a2c207a12186d132575386572d5364cf4d1bdd9c33",
-    "command_sha256": "d80d686c116b639f479f31b33841b9c2946add4315fcb8a3a2787af4fa8253e3",
-    "source_manifest_sha256": "97f22dbe62861ccef5cbfea1a8087b81a32a601de99683b63de14903f4d2c180",
-    "scope": "Coherent all32-module snapshot based on c4b2818 plus the exact current30 focused-checked sources. Adiantum and extent_edit retain the complete unproved base versions; their live proof drafts are excluded.",
-    "source_base_commit": "c4b28187143bf56a7b424a11aea356bf32302202",
-    "checked_module_manifest": "checkpoint-input-06/manifest.json",
-    "checked_module_manifest_sha256": "236a7c6393867e88427d0f52da3677f17130c8e3f2d0adde86195a7d2fefff75",
+    "snapshot_unchanged": true,
+    "artifact_sha256": "35f3179c41d6c28291ece562419a3c59e527d649fb4030fa495a8849a0f854b4",
+    "command_sha256": "b54283c3b066846a63ae7e12c0be39834e509ab1f553a749b76cded3c921987d",
+    "source_manifest_sha256": "16c4fb128aec114379412fde9de361081e246ee942dfe562dbf8ed80ff0ef8de",
+    "scope": "Coherent all32-module snapshot from published6161986 plus all30 exact focused-checked component sources; complete older unproved Adiantum/extent engines retained and live drafts excluded. Compilation does not close dependency or filesystem proof composition.",
+    "source_base_commit": "616198621bd3acef8ee0b1c34a56589c4fe278cd",
+    "checked_module_manifest": "checkpoint-input-07/manifest.json",
+    "checked_module_manifest_sha256": "70855a24a23425a352b493a7b16aa8f409583b1d26bec22097f49d649b1d8989",
+    "dependency_composition": "checkpoint-input-07/dependency-composition.json",
+    "dependency_composition_sha256": "14c27927e2eb62d57aabfe95ffddb9bf089776146def83d3c1eb90aa68a1458e",
     "checked_modules": 30,
     "unverified_modules": [
       "adiantum",
       "extent_edit"
     ],
     "dependency_closure_verified": false,
-    "extra_mode_scope": "Extra04 is conditional on the unverified Adiantum implementation contract; no complete mode inverse/security theorem.",
-    "fast_commit_dependency": "The full preserved extent_edit source matches FC12 dependency overlay901d33e; FC uses the identical Mapping enum. This is not verification of the extent engine."
+    "current_source_matches": true,
+    "extra_mode_scope": "Extra04 remains conditional on its unverified dependency contracts. Exact earlier/new dependency variants are preserved in the composition map.",
+    "fast_commit_dependency": "Full published extent901d33e Mapping dependency matches FC12; the extent engine itself remains unverified."
   },
   "integrated_crypto_native": {
     "attempt": "extra-crypto-native-07",
@@ -707,7 +787,7 @@
   },
   "registry": {
     "sources": 258,
-    "named_proofs": 982,
+    "named_proofs": 985,
     "public_executable_functions": 1249,
     "baseline_inventory_prefixes_preserved": true,
     "expanded_entrypoint_declared": true
@@ -728,14 +808,16 @@
     "staged_negative_cases": 36,
     "checked_negative_cases": 36,
     "checked_positive_controls": 9,
-    "attempt": "expansion-boundaries-native-04",
+    "attempt": "expansion-boundaries-native-05",
     "formal_verification": false,
     "official_compatibility_suite_rerun": false,
     "full_suite_expected_cases": 376,
-    "artifact_scope": "All36 expansion ownership/privacy negative cases and9 allowed controls on actual coherent typecheck-20 all32-module compile-only artifact",
-    "library_sha256": "ca8436810c1524beb7b882a2c207a12186d132575386572d5364cf4d1bdd9c33",
+    "artifact_scope": "All36 expansion privacy/ownership negatives and9 controls on the actual current coherent typecheck-21 all32-module compile-only artifact",
+    "library_attempt": "typecheck-21",
+    "library_sha256": "35f3179c41d6c28291ece562419a3c59e527d649fb4030fa495a8849a0f854b4",
     "compat_source_sha256": "dec7b32f07ab53e36036a2cf83418d9c48c6baeec688353d55fbdb598bf82d98",
-    "result_sha256": "47f107f014416a1685c263d3474db53e619ed27d2172e4686b1f12a6af764acb"
+    "result_sha256": "9b81009b73e942cec562df9e81c4977669148e1649fbedc310ec1af29ebb9022",
+    "current_source_matches": true
   },
   "superseded_integrated_compiles": [
     {
@@ -807,6 +889,36 @@
       "scope": "Coherent all32-module snapshot based on 4c9a571 plus the exact current28 focused-checked module sources. Ongoing unproved drafts remain separate.",
       "source_base_commit": "4c9a5717af0dbeb50c85f34c3399ddc3395f06f5",
       "checked_module_manifest": "checkpoint-input-04/manifest.json"
+    },
+    {
+      "attempt": "typecheck-20",
+      "new_modules": 32,
+      "returncode": 0,
+      "verification_skipped": true,
+      "proof_evidence": false,
+      "artifact_sha256": "ca8436810c1524beb7b882a2c207a12186d132575386572d5364cf4d1bdd9c33",
+      "command_sha256": "d80d686c116b639f479f31b33841b9c2946add4315fcb8a3a2787af4fa8253e3",
+      "source_manifest_sha256": "97f22dbe62861ccef5cbfea1a8087b81a32a601de99683b63de14903f4d2c180",
+      "scope": "Coherent all32-module snapshot based on c4b2818 plus the exact current30 focused-checked sources. Adiantum and extent_edit retain the complete unproved base versions; their live proof drafts are excluded.",
+      "source_base_commit": "c4b28187143bf56a7b424a11aea356bf32302202",
+      "checked_module_manifest": "checkpoint-input-06/manifest.json",
+      "checked_module_manifest_sha256": "236a7c6393867e88427d0f52da3677f17130c8e3f2d0adde86195a7d2fefff75",
+      "checked_modules": 30,
+      "unverified_modules": [
+        "adiantum",
+        "extent_edit"
+      ],
+      "dependency_closure_verified": false,
+      "extra_mode_scope": "Extra04 is conditional on the unverified Adiantum implementation contract; no complete mode inverse/security theorem.",
+      "fast_commit_dependency": "The full preserved extent_edit source matches FC12 dependency overlay901d33e; FC uses the identical Mapping enum. This is not verification of the extent engine.",
+      "current_source_matches": false,
+      "historical_after_component_composition": true,
+      "source_changes_since_result": [
+        "crypto_sha2",
+        "legacy_map",
+        "htree_edit",
+        "fsverity"
+      ]
     }
   ],
   "cluster_initialization_runtime": {
@@ -864,17 +976,22 @@
     "cases": 616,
     "mismatches": 0,
     "formal_verification": false,
-    "library_attempt": "proof-sha2-08",
-    "source_sha256": "0255e293c56f635b3d27787a53c33b9b031e2c1e3f3210b237baecbee40003e0",
-    "library_sha256": "681048475313c609939e1a598bbb2fb1f09f189a0f9325f88070df86615bdead",
-    "driver_sha256": "6c44e4c641a7fa0f88b23e8a0d5a7d61f250bb063c765dbc28a26ba2eafd99d4",
     "commands_sha256": "ceaa9a4249f6555421cb5f7c5eb5beba3577da44ff8234fdcc826eccecc4a934",
     "expected_sha256": "fe125aa53c32679c3f2c431043538b41414c9c9b08fbf7f156a7da5c941f7ba0",
     "oracle": "Python hashlib/hmac SHA-256/512; independent RFC5869 HKDF recurrence using hmac",
     "cases_scope": "Direct/streaming padding and block boundaries, long HMAC keys, HKDF partial and maximum output, bad PRK/output rejection",
-    "seconds": 0.09852527000475675,
-    "implementation": "Actual focused-checked library; no mechanical erasure or local hash implementation",
-    "attempt": "checked-sha2-native-01"
+    "implementation": "Actual new focused-checked library; original 616-case driver and corpus replayed without local hash implementation",
+    "library_attempt": "proof-sha-completion-01",
+    "source_sha256": "3b0e8c8970d743218cfe2a1eef5ffd539123bcf918a3abefe8bf52a60d2b8395",
+    "library_sha256": "ba1d1fff4e88f3c797df5487349e16bb3883e6226fa1c415e8b349d817abe9cf",
+    "driver_sha256": "f886d030cfe262dc9944bcc6c200af8db4faef963f948d84155db06f7d7aa531",
+    "seconds": 0.1790086010005325,
+    "corpus_origin": "checked-sha2-native-01",
+    "attempt": "sha-completion-native-01",
+    "source_matches_focused_snapshot": true,
+    "result_sha256": "da1acfa31b8e80a5ee659f404a8f3c6b41b8f2c18034c9ab6087c5e949616c03",
+    "driver_executable_sha256": "f886d030cfe262dc9944bcc6c200af8db4faef963f948d84155db06f7d7aa531",
+    "driver_source_sha256": "3eb0a8ce5e9b9cc7a6006b81cb59a16cc8944554e96c082b34f270bd8a524075"
   },
   "checked_quota_wire_conformance": {
     "status": "passed",
@@ -991,22 +1108,51 @@
       "artifact_scope": "All36 expansion ownership/privacy negative cases and9 allowed controls on actual coherent typecheck-17 all32-module artifact",
       "library_sha256": "d567be6a336d1322b9ab34ff531cbd39357214e905835c19df5de7bb8b00908f",
       "compat_source_sha256": "dec7b32f07ab53e36036a2cf83418d9c48c6baeec688353d55fbdb598bf82d98"
+    },
+    {
+      "staged_negative_cases": 36,
+      "checked_negative_cases": 36,
+      "checked_positive_controls": 9,
+      "attempt": "expansion-boundaries-native-04",
+      "formal_verification": false,
+      "official_compatibility_suite_rerun": false,
+      "full_suite_expected_cases": 376,
+      "artifact_scope": "All36 expansion ownership/privacy negative cases and9 allowed controls on actual coherent typecheck-20 all32-module compile-only artifact",
+      "library_sha256": "ca8436810c1524beb7b882a2c207a12186d132575386572d5364cf4d1bdd9c33",
+      "compat_source_sha256": "dec7b32f07ab53e36036a2cf83418d9c48c6baeec688353d55fbdb598bf82d98",
+      "result_sha256": "47f107f014416a1685c263d3474db53e619ed27d2172e4686b1f12a6af764acb",
+      "current_source_matches": false,
+      "historical_after_component_composition": true,
+      "source_changes_since_result": [
+        "crypto_sha2",
+        "legacy_map",
+        "htree_edit",
+        "fsverity"
+      ]
     }
   ],
   "checked_verity_conformance": {
     "status": "passed",
     "formal_verification": false,
-    "library_attempt": "proof-fsverity-07",
-    "library_sha256": "f25b27e530a395a0f8bf79355a1fe7f68df6d3b2d51490c95f96558f62aa4d34",
-    "source_sha256": "f9405ceac34deaea271e6df14364c4f2bd6f664473e4fd119d52fc5d7784d995",
+    "library_attempt": "proof-verity-builder-06",
+    "library_sha256": "a005b43cfaf2615dcbe1932d3a6eaa3593ad45d8a405c7c27fc9b413768a6840",
+    "source_sha256": "75fb4cb6ccf0989d321f526b563c2ce3c7d593c814d6c3329b2b044838fa2efc",
     "merkle_cases": 12,
     "generated_files_compared": 24,
     "bounded_read_probes": 420,
     "oversized_read_rejections": 12,
     "oracle": "Pinned independently Python-generated tree/descriptor bytes and measurements, plus source-slice reads and data/tree/descriptor corruption controls",
     "implementation": "Actual focused-checked fsverity/SHA artifact; no local hash or filesystem implementation",
-    "scope": "Read/layout/Merkle interoperability; full builder-content recurrence, signature policy and mounted immutable publication remain open",
-    "attempt": "verity-checked-native-01"
+    "scope": "Finite exact-artifact read/layout/Merkle interoperability; successful-build canonical content has a separate focused proof. Successful-completion iff admission, source ownership, signature policy, immutable publication and disk durability remain open",
+    "attempt": "verity-builder-checked-native-01",
+    "sha_source_sha256": "3b0e8c8970d743218cfe2a1eef5ffd539123bcf918a3abefe8bf52a60d2b8395",
+    "source_matches_focused_snapshot": true,
+    "driver_sha256": "fd2de018d266c5ebe2b54edbd0217cbb2000b4366cbe7d97d19eebee2dead010",
+    "generated_files_manifest_sha256": "c08e56d80ddbea0a59bd1a37db648ab887c1c81ba9bb64302def5ea0809abc55",
+    "provider_manifest_sha256": "f0dfb8c2ae9bbf181b36747890bc2ea746bda66047bca502d54eec8d219ce3e6",
+    "input_files_unchanged": true,
+    "independent_golden_files_unchanged": true,
+    "result_sha256": "44dd9519fbfb1003d316135a33c4ba4646773a22d3f38c44e352904ac260a6d2"
   },
   "checked_orphan_conformance": {
     "status": "passed",
@@ -1045,7 +1191,7 @@
     "scope": "Exact byte interoperability; not a full mode-inverse/security theorem or mounted key/nonce authority",
     "attempt": "hctr2-checked-native-01"
   },
-  "htree_focused_scope": "96 obligations: typed Context geometry, buffer/index/arithmetic bounds and observational getters. Full sorting, wire-format, entry preservation and namespace-operation refinement remain open.",
+  "htree_focused_scope": "101 obligations: byte-name/key comparator correctness, sort-index permutation, locate/copy filtering and exact successful rebuild/insert/delete/rename catalogue/delta/NoChange contracts, retaining geometry/bounds/getters. Merge-sort ordering, full wire/layout correctness, source-catalogue ownership and namespace/concurrent-journal authority remain open.",
   "checked_extra_modes_conformance": {
     "status": "passed",
     "native_cases": 201,
@@ -1109,16 +1255,29 @@
     "sha_success_completeness": {
       "pull_request": "https://github.com/DericHuynh/asterinas/pull/67",
       "commit": "99f5892",
-      "included_in_this_checkpoint": false,
+      "included_in_this_checkpoint": true,
+      "incorporation": "Exact checked component source copied into main composition; pull request history retained without merging.",
       "main_focused_obligations": 117
     },
     "legacy_wide_filesystem": {
       "pull_request": "https://github.com/DericHuynh/asterinas/pull/68",
       "commit": "e0c76c4",
-      "included_in_this_checkpoint": false,
-      "main_focused_obligations": 44
+      "included_in_this_checkpoint": true,
+      "incorporation": "Exact checked component source copied into main composition; pull request history retained without merging.",
+      "main_focused_obligations": 48
     },
-    "htree_refinement": "Main remains proof-htree-edit-08 (96): context, bounds and observational interfaces only; separate stronger drafts/branches are not counted."
+    "htree_refinement": {
+      "pull_request": "https://github.com/DericHuynh/asterinas/pull/69",
+      "included_in_this_checkpoint": true,
+      "focused_obligations": 101,
+      "incorporation": "Exact directory-order06 source copied; separate branch metadata/history retained without merging."
+    },
+    "fsverity_builder": {
+      "included_in_this_checkpoint": true,
+      "focused_obligations": 159,
+      "incorporation": "Exact verity-builder06 source and SHAcompletion01 dependency copied; independent branch publication metadata remains separate.",
+      "pull_request": "https://github.com/DericHuynh/asterinas/pull/70"
+    }
   },
   "integrated_extra_modes_native": {
     "status": "passed",
@@ -1168,6 +1327,411 @@
       "No mounted filesystem, source ownership or hardware durability authority"
     ],
     "attempt": "integrated-extra-native-20-01",
-    "result_sha256": "e856d8bdd89901f0116b0794b771f820087fcf821437184825c29fd4c6c8d900"
+    "result_sha256": "e856d8bdd89901f0116b0794b771f820087fcf821437184825c29fd4c6c8d900",
+    "current_source_matches": false,
+    "historical_after_component_composition": true,
+    "source_changes_since_result": [
+      "crypto_sha2",
+      "legacy_map",
+      "htree_edit",
+      "fsverity"
+    ]
+  },
+  "superseded_checked_sha2_conformance": [
+    {
+      "status": "passed",
+      "cases": 616,
+      "mismatches": 0,
+      "formal_verification": false,
+      "library_attempt": "proof-sha2-08",
+      "source_sha256": "0255e293c56f635b3d27787a53c33b9b031e2c1e3f3210b237baecbee40003e0",
+      "library_sha256": "681048475313c609939e1a598bbb2fb1f09f189a0f9325f88070df86615bdead",
+      "driver_sha256": "6c44e4c641a7fa0f88b23e8a0d5a7d61f250bb063c765dbc28a26ba2eafd99d4",
+      "commands_sha256": "ceaa9a4249f6555421cb5f7c5eb5beba3577da44ff8234fdcc826eccecc4a934",
+      "expected_sha256": "fe125aa53c32679c3f2c431043538b41414c9c9b08fbf7f156a7da5c941f7ba0",
+      "oracle": "Python hashlib/hmac SHA-256/512; independent RFC5869 HKDF recurrence using hmac",
+      "cases_scope": "Direct/streaming padding and block boundaries, long HMAC keys, HKDF partial and maximum output, bad PRK/output rejection",
+      "seconds": 0.09852527000475675,
+      "implementation": "Actual focused-checked library; no mechanical erasure or local hash implementation",
+      "attempt": "checked-sha2-native-01"
+    }
+  ],
+  "superseded_checked_verity_conformance": [
+    {
+      "status": "passed",
+      "formal_verification": false,
+      "library_attempt": "proof-fsverity-07",
+      "library_sha256": "f25b27e530a395a0f8bf79355a1fe7f68df6d3b2d51490c95f96558f62aa4d34",
+      "source_sha256": "f9405ceac34deaea271e6df14364c4f2bd6f664473e4fd119d52fc5d7784d995",
+      "merkle_cases": 12,
+      "generated_files_compared": 24,
+      "bounded_read_probes": 420,
+      "oversized_read_rejections": 12,
+      "oracle": "Pinned independently Python-generated tree/descriptor bytes and measurements, plus source-slice reads and data/tree/descriptor corruption controls",
+      "implementation": "Actual focused-checked fsverity/SHA artifact; no local hash or filesystem implementation",
+      "scope": "Read/layout/Merkle interoperability; full builder-content recurrence, signature policy and mounted immutable publication remain open",
+      "attempt": "verity-checked-native-01"
+    }
+  ],
+  "checked_legacy_wide_fs": {
+    "attempt": "legacy-wide-native-02",
+    "status": "passed",
+    "formal_verification": false,
+    "library_attempt": "proof-legacy-wide-02",
+    "library_sha256": "851eeb39c72a6217d43dc1175e4839ad6a8483b75f94b22a1e6f373c76bb7e94",
+    "source_sha256": "d5fc15d4af1f9ddb86f09c12664e6b9cc19377e59b03220c3807a14210ae1d80",
+    "test_source_sha256": "b1d4cce0fa73754c745e58bce4499ae718d560d72e30d4019300898f17200082",
+    "runner_sha256": "dbc896dfa93c8e579ab086ea770dcd3351b38886249dec1e86f0ca98a4d01f10",
+    "report_sha256": "84d16827b9499e336447ebbb07c86911511fe3fcd15f71a894000c24860c57b2",
+    "tests_passed": 13,
+    "tests_failed": 0,
+    "test_and_runner_sources_copied_to_main": false,
+    "implementation": "Actual focused-checked compiled rlib; no local reimplementation or erasure",
+    "scope": "Synthetic legacy inodes and real Snapshot APIs: wide structural geometry, LE32 pointers, logical bounds, full-source preflight, budgets, sparse reads/collection and aliases",
+    "baseline_negative_control": {
+      "attempt": "proof-legacy-06",
+      "source_sha256": "5b4a3a38f80325fdb2c3bb11964a35358975f501cfea238163724cda8d24baea",
+      "library_sha256": "58845500f8c4b55b092d5701a8529fa87947c834a679622ce9e716b6453dbfad",
+      "command_sha256": "1a040f6ff6eee2e35f16eb79b0516b73b10c68afbcb7f2dd044b030077fabe80",
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 44,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "filtered": true,
+      "whole_expansion_verified": false,
+      "negative_control": "expected failure: geometry rejected at 2^32+1 blocks"
+    },
+    "limitations": [
+      "No positive multi-terabyte snapshot read was attempted",
+      "Structural parser acceptance does not establish full Linux filesystem admission",
+      "Filtered proof diagnostic, not a strict whole-crate verification result",
+      "No mount, allocation, device writes or writable VFS path is enabled"
+    ]
+  },
+  "checked_directory_conformance": {
+    "attempt": "directory-checked-native-06",
+    "status": "passed",
+    "formal_verification": false,
+    "library_attempt": "proof-directory-order-06",
+    "library_sha256": "e3782c545891e819f88ada219f4d2fc253b769dfaa473b7511538ba2b72a4c9d",
+    "source_sha256": "9bdf4d2a2c714b16772bc939cf40fa2f5c77f9073a46ed93cb8ec2dae2553f18",
+    "provenance_sha256": "8f44874c7d8cce8d772d72da990dcedab7efdc9cafa9411944ca8f1d1c9eb9e2",
+    "sha_manifest_sha256": "7152afad430683b74e86c13621b807700ca27a840ebd4c4079dd05c0d8b3339c",
+    "native_tests": 10,
+    "substantive_native_tests": 9,
+    "native_assertions": 30568,
+    "format_profiles": 336,
+    "namespace_mutation_profiles": 28,
+    "independent_hash_cases": 108,
+    "independent_hash_assertions": 110,
+    "independent_filesystem_cases": 5,
+    "all_block_sizes": [
+      1024,
+      2048,
+      4096,
+      8192,
+      16384,
+      32768,
+      65536
+    ],
+    "implementation": "Actual directory-order06 checked artifact; no source erasure or local directory implementation.",
+    "scope": "Component catalogue/format tests, independent C directory hashes and five exact-pool filesystem reconstructions; no source ownership or namespace authority.",
+    "limitations": [
+      "Focused comparator/permutation and exact rebuild/insert/delete/rename catalogue contracts do not constitute full HTree wire-format proof closure.",
+      "Native generation/type/catalogue/delta/empty-victim tests do not confer source completeness, target ownership or victim-emptiness authority.",
+      "e2fsck/debugfs validate exact-pool rebuilds of five preexisting disposable filesystem fixtures; namespace edits are separately tested as unadmitted plans.",
+      "No kernel mounting, crash injection or physical durability is established.",
+      "The 50000-entry depth-two stress case was intentionally excluded; 400-entry depth-one reconstruction is included."
+    ],
+    "fixture_correction": {
+      "older_fixture": "/task/ext4-expansion/htree-native-02/linux-collision.json",
+      "issue": "Older metadata major-hash field does not apply to all four names.",
+      "independently_confirmed_legacy_hashes": [
+        61132750,
+        42542844,
+        209098722,
+        209098722
+      ],
+      "production_mismatch": false,
+      "current_native_test_valid": true,
+      "reason": "The two colliding names straddle a leaf boundary after the first two noncolliding names; expected continuation boundary remains 209098723.",
+      "old_evidence_edited": false,
+      "initial_oracle_assertion_failure_preserved": true
+    }
+  },
+  "component_composition": {
+    "status": "four exact component snapshots combined; current typecheck-21, six-family same-artifact native and API05 checks passed",
+    "base_commit": "616198621bd3acef8ee0b1c34a56589c4fe278cd",
+    "components": {
+      "crypto_sha2": {
+        "attempt": "proof-sha-completion-01",
+        "before_sha256": "df643cb36d0da2c763af66c9c6560190b080b7a18ad086432cbc20762c43f8bb",
+        "after_sha256": "3b0e8c8970d743218cfe2a1eef5ffd539123bcf918a3abefe8bf52a60d2b8395",
+        "obligations": 117
+      },
+      "legacy_map": {
+        "attempt": "proof-legacy-wide-02",
+        "before_sha256": "5b4a3a38f80325fdb2c3bb11964a35358975f501cfea238163724cda8d24baea",
+        "after_sha256": "d5fc15d4af1f9ddb86f09c12664e6b9cc19377e59b03220c3807a14210ae1d80",
+        "obligations": 48
+      },
+      "htree_edit": {
+        "attempt": "proof-directory-order-06",
+        "before_sha256": "8de62f53dab12e14b05703bffabae43d0e881b36fb41763b6d83dba6a12b0ae4",
+        "after_sha256": "9bdf4d2a2c714b16772bc939cf40fa2f5c77f9073a46ed93cb8ec2dae2553f18",
+        "obligations": 101
+      },
+      "fsverity": {
+        "attempt": "proof-verity-builder-06",
+        "before_sha256": "ec6f75c908b690bf0d5abc61fa32be9fdd300d026aafdbd4e7bb4c685769d799",
+        "after_sha256": "75fb4cb6ccf0989d321f526b563c2ce3c7d593c814d6c3329b2b044838fa2efc",
+        "obligations": 159
+      }
+    },
+    "focused_obligations": 1947,
+    "checked_modules": 30,
+    "focused_snapshots": 26,
+    "registry": {
+      "sources": 258,
+      "named_proofs": 985,
+      "public_executable_functions": 1249
+    },
+    "checked_component_sources_match": true,
+    "strict_composition_verified": false,
+    "input_manifest": "checkpoint-input-07/manifest.json",
+    "input_manifest_sha256": "70855a24a23425a352b493a7b16aa8f409583b1d26bec22097f49d649b1d8989",
+    "dependency_composition": "checkpoint-input-07/dependency-composition.json",
+    "dependency_composition_sha256": "14c27927e2eb62d57aabfe95ffddb9bf089776146def83d3c1eb90aa68a1458e",
+    "fsverity_sha_dependency": {
+      "module": "crypto_sha2",
+      "attempt": "proof-sha-completion-01",
+      "sha256": "3b0e8c8970d743218cfe2a1eef5ffd539123bcf918a3abefe8bf52a60d2b8395",
+      "verified_obligations": 117,
+      "matches_fsverity_focused_dependency": true
+    },
+    "unproved_modules_retained_from_published_base": {
+      "adiantum": {
+        "source": "published base 616198621bd3acef8ee0b1c34a56589c4fe278cd",
+        "sha256": "1684910d19d3916b58530bdee65cec9668bd9f28bb1c69a898af80457c99b82b",
+        "live_draft_copied": false
+      },
+      "extent_edit": {
+        "source": "published base 616198621bd3acef8ee0b1c34a56589c4fe278cd",
+        "sha256": "901d33e43fd9dbeacfc79724821161b613b5ccd4cfe57434d73a668ff165400f",
+        "live_draft_copied": false
+      }
+    },
+    "baseline_reports_trust_settings_and_gates_changed": false,
+    "wide_test_or_compatibility_runner_changes_copied": false,
+    "pull_requests_merged": false,
+    "new_combined_artifact_runtime_evidence": "composed-native-21-01",
+    "combined_compile": "typecheck-21",
+    "combined_api_boundaries": "expansion-boundaries-native-05",
+    "new_combined_artifact_runtime_result_sha256": "876d792db4f999b02a842f675ae03d5c462789505f8851adc0440161a344974b"
+  },
+  "completed_composed_compile_preparation": {
+    "intended_attempt": "typecheck-21",
+    "status": "root executed typecheck-21 successfully; compile-only evidence",
+    "launcher": "run-compile-checkpoint07.py",
+    "launcher_sha256": "2070bf3a360703be1d4cad6a2962a49313b9b70f7e438a5c780056c89f778aff",
+    "input": "checkpoint-input-07",
+    "verification_skipped": true,
+    "proof_evidence": false
+  },
+  "composed_native_conformance": {
+    "status": "passed",
+    "aggregate_exit_code": 0,
+    "families_passed": 6,
+    "families_failed": 0,
+    "one_actual_provider_artifact": "/task/ext4-expansion/typecheck-21/build/libverified_ext4.rlib",
+    "provider_sha256": "35f3179c41d6c28291ece562419a3c59e527d649fb4030fa495a8849a0f854b4",
+    "provider_source_manifest_sha256": "16c4fb128aec114379412fde9de361081e246ee942dfe562dbf8ed80ff0ef8de",
+    "compile_only_provider": true,
+    "formal_verification": false,
+    "explicit_native_assertion_counters": 33740,
+    "additional_typed_counts": {
+      "sha_vectors": 616,
+      "legacy_rust_tests": 13,
+      "extra_mode_vectors": 201,
+      "fsverity_merkle_cases": 12,
+      "fsverity_generated_files_compared": 24,
+      "fsverity_bounded_read_probes": 420,
+      "fsverity_oversized_read_rejections": 12
+    },
+    "fresh_generated_binary_or_mapping_files_compared": 71,
+    "families": {
+      "fc": {
+        "assertions": 3172,
+        "emitted_wire_files": 28,
+        "wire_files_byte_equal": true,
+        "record_position_manifest_byte_equal": true,
+        "historical_oracle": "/task/ext4-expansion/fast-commit-native-12/oracle-result.json",
+        "status": "passed",
+        "provider_artifact": "/task/ext4-expansion/typecheck-21/build/libverified_ext4.rlib",
+        "provider_sha256": "35f3179c41d6c28291ece562419a3c59e527d649fb4030fa495a8849a0f854b4",
+        "formal_verification": false,
+        "local_production_algorithm_replacements": false
+      },
+      "dir": {
+        "assertions": 30568,
+        "rust_tests": 10,
+        "substantive_tests": 9,
+        "format_profiles": 336,
+        "namespace_mutation_profiles": 28,
+        "fresh_wire_cases": [
+          {
+            "case": 0,
+            "source_fixture": "/task/ext4-expansion/htree-native-02/oracle-00",
+            "emitted_shape": "2 0",
+            "fresh_output_equal": true
+          },
+          {
+            "case": 1,
+            "source_fixture": "/task/ext4-expansion/htree-native-02/oracle-01",
+            "emitted_shape": "2 0",
+            "fresh_output_equal": true
+          },
+          {
+            "case": 2,
+            "source_fixture": "/task/ext4-expansion/htree-native-02/oracle-02",
+            "emitted_shape": "2 0",
+            "fresh_output_equal": true
+          },
+          {
+            "case": 3,
+            "source_fixture": "/task/ext4-expansion/htree-native-02/oracle-03",
+            "emitted_shape": "2 0",
+            "fresh_output_equal": true
+          },
+          {
+            "case": 4,
+            "source_fixture": "/task/ext4-expansion/htree-native-02/oracle-04",
+            "emitted_shape": "1 0",
+            "fresh_output_equal": true
+          }
+        ],
+        "emitted_wire_files": 19,
+        "wire_files_byte_equal": true,
+        "historical_fsck_oracle": "/task/ext4-expansion/directory-checked-native-06/oracle-result.json",
+        "historical_hash_oracle": "/task/ext4-expansion/directory-checked-native-06/hash-oracle-result.json",
+        "independent_linux_image_oracles_rerun": false,
+        "status": "passed",
+        "provider_artifact": "/task/ext4-expansion/typecheck-21/build/libverified_ext4.rlib",
+        "provider_sha256": "35f3179c41d6c28291ece562419a3c59e527d649fb4030fa495a8849a0f854b4",
+        "formal_verification": false,
+        "local_production_algorithm_replacements": false
+      },
+      "sha": {
+        "vectors": 616,
+        "mismatches": 0,
+        "expected_sha256": "fe125aa53c32679c3f2c431043538b41414c9c9b08fbf7f156a7da5c941f7ba0",
+        "expected_origin": "Python hashlib/hmac and independent HKDF recurrence",
+        "driver_output_sha256": "fe125aa53c32679c3f2c431043538b41414c9c9b08fbf7f156a7da5c941f7ba0",
+        "status": "passed",
+        "provider_artifact": "/task/ext4-expansion/typecheck-21/build/libverified_ext4.rlib",
+        "provider_sha256": "35f3179c41d6c28291ece562419a3c59e527d649fb4030fa495a8849a0f854b4",
+        "formal_verification": false,
+        "local_production_algorithm_replacements": false
+      },
+      "wide": {
+        "rust_tests": 13,
+        "failed": 0,
+        "scope": "LE32 legacy pointer and wide-volume geometry, real Snapshot APIs; no positive multi-terabyte source image",
+        "status": "passed",
+        "provider_artifact": "/task/ext4-expansion/typecheck-21/build/libverified_ext4.rlib",
+        "provider_sha256": "35f3179c41d6c28291ece562419a3c59e527d649fb4030fa495a8849a0f854b4",
+        "formal_verification": false,
+        "local_production_algorithm_replacements": false
+      },
+      "verity": {
+        "merkle_cases": 12,
+        "generated_files_compared": 24,
+        "bounded_read_probes": 420,
+        "oversized_read_rejections": 12,
+        "independent_golden_files_unchanged": true,
+        "source_data_and_salt_unchanged": true,
+        "status": "passed",
+        "provider_artifact": "/task/ext4-expansion/typecheck-21/build/libverified_ext4.rlib",
+        "provider_sha256": "35f3179c41d6c28291ece562419a3c59e527d649fb4030fa495a8849a0f854b4",
+        "formal_verification": false,
+        "local_production_algorithm_replacements": false
+      },
+      "extra": {
+        "vectors": 201,
+        "failed": 0,
+        "categories": {
+          "sm4": 40,
+          "xts": 37,
+          "cts": 38,
+          "essiv": 22,
+          "bound": 64
+        },
+        "golden_sha256": "060df1e9c6f8b80d0d10d66662b64bb3cf9e15a44fd1b11a921f5741bd9c0cb3",
+        "retained_adiantum_source_sha256": "1684910d19d3916b58530bdee65cec9668bd9f28bb1c69a898af80457c99b82b",
+        "status": "passed",
+        "provider_artifact": "/task/ext4-expansion/typecheck-21/build/libverified_ext4.rlib",
+        "provider_sha256": "35f3179c41d6c28291ece562419a3c59e527d649fb4030fa495a8849a0f854b4",
+        "formal_verification": false,
+        "local_production_algorithm_replacements": false
+      }
+    },
+    "source_driver_goldens_unchanged": true,
+    "all_258_provider_sources_rehashed": true,
+    "historical_component_oracles": {
+      "fast_commit_provenance": {
+        "path": "/task/ext4-expansion/fast-commit-native-12/provenance.json",
+        "sha256": "72b00b063ca48b3844f873e2422bd2f02a13b0cd8d1c1f3e999fa521af5527cd",
+        "scope": "Historical independent component evidence, not rerun as an independent oracle on TC21."
+      },
+      "fast_commit_independent_crc_layout": {
+        "path": "/task/ext4-expansion/fast-commit-native-12/oracle-result.json",
+        "sha256": "35fe41db5718aec176b9ec9a9908bac7f968f5c0d79fdd64afc322750db26572",
+        "scope": "Historical independent component evidence, not rerun as an independent oracle on TC21."
+      },
+      "directory_provenance": {
+        "path": "/task/ext4-expansion/directory-checked-native-06/provenance.json",
+        "sha256": "8f44874c7d8cce8d772d72da990dcedab7efdc9cafa9411944ca8f1d1c9eb9e2",
+        "scope": "Historical independent component evidence, not rerun as an independent oracle on TC21."
+      },
+      "directory_independent_fsck_debugfs": {
+        "path": "/task/ext4-expansion/directory-checked-native-06/oracle-result.json",
+        "sha256": "b7a9d68315325f65365a8911689525196d8a020e81135895c6fc29d2a70d37cd",
+        "scope": "Historical independent component evidence, not rerun as an independent oracle on TC21."
+      },
+      "directory_independent_c_hashes": {
+        "path": "/task/ext4-expansion/directory-checked-native-06/hash-oracle-result.json",
+        "sha256": "493230259ba154f7985d73da3eabb4b55f02292bafe33e1b562f75edbd577b09",
+        "scope": "Historical independent component evidence, not rerun as an independent oracle on TC21."
+      },
+      "sha_independent_golden_provenance": {
+        "path": "/task/ext4-expansion/sha-completion-native-01/result.json",
+        "sha256": "da1acfa31b8e80a5ee659f404a8f3c6b41b8f2c18034c9ab6087c5e949616c03",
+        "scope": "Historical independent component evidence, not rerun as an independent oracle on TC21."
+      },
+      "verity_independent_golden_provenance": {
+        "path": "/task/ext4-expansion/verity-builder-checked-native-01/provider.json",
+        "sha256": "f0dfb8c2ae9bbf181b36747890bc2ea746bda66047bca502d54eec8d219ce3e6",
+        "scope": "Historical independent component evidence, not rerun as an independent oracle on TC21."
+      },
+      "extra_golden_provenance": {
+        "path": "/task/ext4-expansion/integrated-extra-native-20-01/result.json",
+        "sha256": "e856d8bdd89901f0116b0794b771f820087fcf821437184825c29fd4c6c8d900",
+        "scope": "Historical independent component evidence, not rerun as an independent oracle on TC21."
+      }
+    },
+    "scope": "Six existing native families coexist and produce expected results on the same actual TC21 artifact. This checks type/runtime composition and selected output identity.",
+    "limitations": [
+      "TC21 used --no-verify; native composition does not establish strict whole-crate or dependency proof closure.",
+      "Older unverified Adiantum and extent revisions are retained in this artifact and bound precisely in provider.json.",
+      "Historical independent component oracles were not rerun on TC21; fresh FC/HTree bytes match those independently checked component outputs.",
+      "No kernel mounting, writable VFS, namespace/allocation authority, crash injection, hardware durability or whole-filesystem completeness is established."
+    ],
+    "attempt": "composed-native-21-01",
+    "result_sha256": "876d792db4f999b02a842f675ae03d5c462789505f8851adc0440161a344974b",
+    "sha_manifest_sha256": "4cff945b353352b9a6914dac5b73bc80db8215d7d39c6733ebf3c0a03ba46ee2",
+    "current_source_matches": true
   }
 }
