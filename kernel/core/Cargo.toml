@@ -61,6 +61,7 @@ takeable.workspace = true
 time.workspace = true
 typeflags-util.workspace = true
 typeflags.workspace = true
+verified-ext4.workspace = true
 xarray.workspace = true
 xmas-elf.workspace = true
 zerocopy.workspace = true

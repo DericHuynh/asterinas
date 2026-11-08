@@ -27,6 +27,7 @@ use aster_block::{
 };
 use device_id::DeviceId;
 use ostd::mm::{FrameAllocOptions, PAGE_SIZE, USegment, VmIo};
+use verified_ext4::snapshot::Snapshot;
 
 const FS_BLOCK_BYTES: usize = 4096;
 const SECTORS_PER_BLOCK: u64 = 8;
@@ -64,6 +65,23 @@ pub(super) struct CapturedSource {
 }
 
 impl CapturedSource {
+    /// Lend a core snapshot view of these immutable RAM bytes.
+    ///
+    /// Both callback lifetimes are local to this operation, so its result
+    /// cannot borrow a snapshot, block or namespace obtained through the
+    /// callback argument. Return owned data to retain an inspection result.
+    ///
+    /// The view describes the captured bytes only. It supplies no assertion
+    /// about coherent device capture, physical source identity or authority
+    /// to mount, write or acknowledge durability.
+    pub(super) fn with_snapshot<R>(
+        &self,
+        read: impl for<'snapshot, 'image> FnOnce(&'snapshot Snapshot<'image>) -> R,
+    ) -> R {
+        let snapshot = Snapshot::from_bytes(&self.bytes);
+        read(&snapshot)
+    }
+
     pub(super) fn bytes(&self) -> &[u8] {
         &self.bytes
     }
@@ -489,6 +507,46 @@ mod test {
         );
         assert_eq!(device.flush(&mut lease), Err(Error::FaultedLease));
         assert_eq!(disk.submissions.load(Ordering::Relaxed), submissions);
+    }
+
+    #[ktest]
+    fn captured_source_lends_bounded_verified_snapshot() {
+        let disk = MemoryDisk::new(2);
+        let start = FS_BLOCK_BYTES - 3;
+        disk.storage.write_bytes(start, b"abcdefghi").unwrap();
+        let device = Device::open(disk.clone()).unwrap();
+        let captured = device.capture(2 * FS_BLOCK_BYTES).unwrap();
+
+        // The verified reader observes the owned capture even after the
+        // backing frames change. This is a RAM sample, not a device lease.
+        disk.storage.write_bytes(start, b"XXXXXXXXX").unwrap();
+        let owned = captured.with_snapshot(|source| {
+            let length = (2 * FS_BLOCK_BYTES) as u64;
+            assert_eq!(source.partition_bytes(), length);
+            assert_eq!(source.shadow_depth(), 0);
+            let block = source.block(1).unwrap();
+            assert_eq!(&block.as_slice()[..6], b"defghi");
+            assert!(source.block(2).is_none());
+            assert!(source.block(u32::MAX).is_none());
+
+            // Filesystem blocks need not have the CortenMM frame size.
+            let subblock = verified_ext4::source_block::capture(source, 3, 1024).unwrap();
+            assert_eq!(&subblock.raw()[1021..], b"abc");
+            assert!(verified_ext4::source_block::capture(source, 8, 1024).is_none());
+
+            assert!(source.capture_bytes(length, 0).unwrap().is_empty());
+            assert!(source.capture_bytes(length - 1, 2).is_none());
+            assert!(source.capture_bytes(length + 1, 0).is_none());
+            assert!(source.capture_bytes(u64::MAX, 1).is_none());
+            assert!(source.capture_bytes(0, 65537).is_none());
+
+            // This Vec can leave the callback; borrowed reader views cannot.
+            source.capture_bytes(start as u64, 9).unwrap()
+        });
+        drop(captured);
+        drop(device);
+        drop(disk);
+        assert_eq!(owned.as_slice(), b"abcdefghi");
     }
 
     #[ktest]
