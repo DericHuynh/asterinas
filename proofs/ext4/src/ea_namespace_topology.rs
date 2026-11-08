@@ -11,6 +11,80 @@ verus! {
 
 pub struct TreeView { pub index: IndexView, pub parents: Seq<u32>, pub depths: Seq<u32> }
 
+/// A declarative bounded rank for the raw parent graph. This predicate does
+/// not mention the validator, colors, execution trace, or a Tree certificate.
+#[verifier::opaque]
+pub open spec fn rank_witness(parents: Seq<u32>, ranks: Seq<u32>) -> bool {
+    &&& ranks.len() == parents.len()
+    &&& (forall|n: int| model::active(parents, n) ==> #[trigger] model::node_rank(parents, ranks, n))
+    &&& (forall|n: int| 0 <= n < ranks.len() && !model::active(parents, n) ==> #[trigger] ranks[n] == 0)
+}
+
+#[verifier::opaque]
+pub open spec fn bounded_rooted(parents: Seq<u32>) -> bool {
+    model::shape(parents) && exists|ranks: Seq<u32>| rank_witness(parents, ranks)
+}
+
+proof fn path_rank_distance_from(parents: Seq<u32>, ranks: Seq<u32>, path: Seq<u32>,
+    start: u32, end: u32, index: nat)
+    requires rank_witness(parents, ranks), model::path_chain(parents, path, start, end),
+        index < path.len(), forall|i: int| 0 <= i < path.len() ==> (#[trigger] path[i]) != 2,
+    ensures ranks[path[index as int] as int] as nat == ranks[end as int] as nat + path.len() - index,
+    decreases path.len() - index,
+{
+    reveal(rank_witness); reveal(model::path_chain);
+    let n = path[index as int];
+    assert(model::node_rank(parents, ranks, n as int));
+    if index + 1 < path.len() {
+        path_rank_distance_from(parents, ranks, path, start, end, index + 1);
+        assert(parents[n as int] == path[index as int + 1]);
+    } else {
+        assert(index + 1 == path.len() && parents[n as int] == end);
+    }
+}
+
+proof fn gathered_path_has_rank_distance(parents: Seq<u32>, ranks: Seq<u32>,
+    old: Seq<u8>, now: Seq<u8>, path: Seq<u32>, start: u32, end: u32)
+    requires rank_witness(parents, ranks), model::shape(parents),
+        model::path_chain(parents, path, start, end), model::gathered(old, now, path),
+        old.len() == parents.len(), old[2] == 2,
+    ensures ranks[start as int] as nat == ranks[end as int] as nat + path.len(),
+        !path.contains(end),
+{
+    reveal(model::path_chain); reveal(model::gathered);
+    assert forall|i: int| 0 <= i < path.len() implies (#[trigger] path[i]) != 2 by {
+        assert(old[path[i] as int] == 0);
+    }
+    if path.len() > 0 {
+        path_rank_distance_from(parents, ranks, path, start, end, 0);
+    }
+    assert(!path.contains(end)) by {
+        if path.contains(end) {
+            let i = choose|i: int| 0 <= i < path.len() && (#[trigger] path[i]) == end;
+            path_rank_distance_from(parents, ranks, path, start, end, i as nat);
+            assert(path.len() - i > 0);
+        }
+    }
+}
+
+proof fn resolved_depth_matches_rank(parents: Seq<u32>, ranks: Seq<u32>,
+    colors: Seq<u8>, depths: Seq<u32>, number: u32)
+    requires model::shape(parents), rank_witness(parents, ranks),
+        model::ranked(parents, colors, depths), model::closed(parents, colors),
+        number < colors.len(), colors[number as int] == 2,
+    ensures depths[number as int] == ranks[number as int],
+    decreases depths[number as int],
+{
+    reveal(model::shape); reveal(rank_witness); reveal(model::ranked); reveal(model::closed);
+    assert(model::node_rank(parents, depths, number as int));
+    assert(model::node_rank(parents, ranks, number as int));
+    if number != 2 {
+        let parent = parents[number as int];
+        assert(colors[parent as int] == 2);
+        resolved_depth_matches_rank(parents, ranks, colors, depths, parent);
+    }
+}
+
 #[verifier::opaque]
 pub open spec fn valid(v: TreeView) -> bool {
     &&& parent_table::valid(TableView { index: v.index, parents: v.parents }) && model::shape(v.parents)
@@ -81,16 +155,32 @@ proof fn checked_parent_table_has_graph_shape(v: TableView)
     ensures model::shape(v.parents),
 { reveal(parent_table::valid); reveal(model::shape); }
 
-fn build_parent_table(table: ParentTable) -> (r: Option<Tree>)
-    ensures match r { Some(tree) => tree.wf() && tree.view().index == table.view().index && tree.view().parents == table.view().parents, None => true },
+/// Validate an already checked parent table. A bounded rooted parent graph
+/// is accepted; rejection proves that no bounded rank witness exists.
+pub fn build_parent_table(table: ParentTable) -> (r: Option<Tree>)
+    ensures match r {
+        Some(tree) => tree.wf() && tree.view().index == table.view().index
+            && tree.view().parents == table.view().parents && bounded_rooted(table.view().parents),
+        None => !bounded_rooted(table.view().parents),
+    },
 {
     let capacity = table.len() as u32;
     proof { checked_parent_table_has_graph_shape(table.view()); }
+    let ghost mut witness = Seq::<u32>::empty();
+    proof {
+        if bounded_rooted(table.view().parents) {
+            reveal(bounded_rooted);
+            witness = choose|ranks: Seq<u32>| rank_witness(table.view().parents, ranks);
+            assert(rank_witness(table.view().parents, witness));
+        }
+    }
+    assert(bounded_rooted(table.view().parents) ==> rank_witness(table.view().parents, witness));
     let mut colors = Vec::<u8>::new();
     let mut depths = Vec::<u32>::new();
     let mut i = 0u32;
     while i < capacity
         invariant table.wf(), model::shape(table.view().parents), capacity == table.view().parents.len(),
+            bounded_rooted(table.view().parents) ==> rank_witness(table.view().parents, witness),
             3 <= capacity <= block_claims::MAX_BLOCKS as nat + 1, i <= capacity, colors.len() == i, depths.len() == i,
             forall|n: int| 0 <= n < i ==> (#[trigger] colors@[n]) == 0 && depths@[n] == 0,
         decreases capacity - i,
@@ -99,10 +189,16 @@ fn build_parent_table(table: ParentTable) -> (r: Option<Tree>)
         depths.push(0);
         i += 1;
     }
-    assert(colors@[2] == 0 && depths@[2] == 0);
+    assert(i == capacity && colors.len() == capacity && depths.len() == capacity);
+    assert(colors@[2] == 0 && depths@[2] == 0) by {
+        assert(0 <= 2 < i);
+    }
+    let ghost zero_colors = colors@;
     colors.set(2, 2u8);
     assert forall|n: int| 0 <= n < colors.len() implies ((#[trigger] colors@[n]) == (if n == 2 { 2u8 } else { 0u8 }))
-        && depths@[n] == 0 by { }
+        && depths@[n] == 0 by {
+        assert(zero_colors[n] == 0 && depths@[n] == 0);
+    }
     assert(colors@[2] == 2 && depths@[2] == 0);
     assert(model::node_rank(table.view().parents, depths@, 2)) by { reveal(model::shape); }
     assert(model::ranked(table.view().parents, colors@, depths@)) by { reveal(model::ranked); reveal(model::shape); }
@@ -112,6 +208,7 @@ fn build_parent_table(table: ParentTable) -> (r: Option<Tree>)
     let mut number = 0u32;
     while number < capacity
         invariant table.wf(), model::shape(table.view().parents), capacity == table.view().parents.len(),
+            bounded_rooted(table.view().parents) ==> rank_witness(table.view().parents, witness),
             3 <= capacity <= block_claims::MAX_BLOCKS as nat + 1, number <= capacity,
             model::ranked(table.view().parents, colors@, depths@), model::closed(table.view().parents, colors@), model::no_pending(colors@),
             model::processed(table.view().parents, colors@, number as nat), colors.len() == capacity, depths.len() == capacity,
@@ -128,15 +225,34 @@ fn build_parent_table(table: ParentTable) -> (r: Option<Tree>)
             proof { model::empty_path_is_ready(table.view().parents, colors@, number); }
             while colors[cursor as usize] == 0
                 invariant table.wf(), model::shape(table.view().parents), capacity == table.view().parents.len(),
+                    bounded_rooted(table.view().parents) ==> rank_witness(table.view().parents, witness),
                     3 <= capacity <= block_claims::MAX_BLOCKS as nat + 1,
                     colors.len() == capacity, depths@ == old_depths, old_depths.len() == capacity, old_colors.len() == capacity,
                     model::ranked(table.view().parents, old_colors, old_depths), model::closed(table.view().parents, old_colors), model::no_pending(old_colors),
                     model::processed(table.view().parents, old_colors, number as nat),
                     model::path_chain(table.view().parents, path, number, cursor), model::gathered(old_colors, colors@, path),
-                    model::active(table.view().parents, cursor as int), path_length == path.len(), path_length <= MAX_DEPTH,
+                    model::active(table.view().parents, cursor as int),
+                    model::active(table.view().parents, number as int), number < capacity,
+                    old_colors[number as int] == 0, path_length == path.len(), path_length <= MAX_DEPTH,
                 decreases MAX_DEPTH - path_length,
             {
-                if path_length == MAX_DEPTH { return None; }
+                if path_length == MAX_DEPTH {
+                    proof {
+                        if bounded_rooted(table.view().parents) {
+                            reveal(model::ranked);
+                            gathered_path_has_rank_distance(table.view().parents, witness,
+                                old_colors, colors@, path, number, cursor);
+                            reveal(rank_witness); reveal(model::ranked); reveal(model::gathered);
+                            assert(colors@[cursor as int] == old_colors[cursor as int]);
+                            assert(cursor != 2);
+                            assert(model::node_rank(table.view().parents, witness, cursor as int));
+                            assert(number != 2);
+                            assert(model::node_rank(table.view().parents, witness, number as int));
+                            assert(false);
+                        }
+                    }
+                    return None;
+                }
                 let next = table.parent(cursor).unwrap();
                 let ghost previous = colors@;
                 proof { model::append_fresh_path_node(table.view().parents, old_colors, previous, path, number, cursor, next); }
@@ -145,17 +261,50 @@ fn build_parent_table(table: ParentTable) -> (r: Option<Tree>)
                 path_length += 1;
                 cursor = next;
             }
-            if colors[cursor as usize] != 2 || path_length == 0 { return None; }
+            if colors[cursor as usize] != 2 || path_length == 0 {
+                proof {
+                    if bounded_rooted(table.view().parents) {
+                        reveal(model::ranked);
+                        gathered_path_has_rank_distance(table.view().parents, witness,
+                            old_colors, colors@, path, number, cursor);
+                        reveal(model::ranked); reveal(model::no_pending);
+                        reveal(model::gathered); reveal(model::path_chain);
+                        assert(colors@[cursor as int] == old_colors[cursor as int]);
+                        assert(colors@[cursor as int] == 2);
+                        if path_length == 0 {
+                            assert(cursor == number && old_colors[number as int] == 0);
+                            assert(false);
+                        }
+                    }
+                }
+                return None;
+            }
             let anchor = cursor;
             let base = depths[anchor as usize];
             assert(old_colors[anchor as int] == 2 && !path.contains(anchor)) by { reveal(model::gathered); }
-            if base > MAX_DEPTH - path_length { return None; }
+            if base > MAX_DEPTH - path_length {
+                proof {
+                    if bounded_rooted(table.view().parents) {
+                        reveal(model::ranked);
+                        gathered_path_has_rank_distance(table.view().parents, witness,
+                            old_colors, colors@, path, number, anchor);
+                        resolved_depth_matches_rank(table.view().parents, witness,
+                            old_colors, old_depths, anchor);
+                        reveal(rank_witness); reveal(model::ranked);
+                        assert(number != 2);
+                        assert(model::node_rank(table.view().parents, witness, number as int));
+                        assert(false);
+                    }
+                }
+                return None;
+            }
             let mut done = 0u32;
             cursor = number;
             assert(path[0] == number && path.no_duplicates()) by { reveal(model::path_chain); }
             assert(model::depth_prefix(old_depths, depths@, path, base, 0)) by { reveal(model::depth_prefix); reveal(model::path_chain); }
             while done < path_length
                 invariant table.wf(), model::shape(table.view().parents), capacity == table.view().parents.len(),
+                    bounded_rooted(table.view().parents) ==> rank_witness(table.view().parents, witness),
                     3 <= capacity <= block_claims::MAX_BLOCKS as nat + 1, anchor < capacity,
                     colors.len() == capacity, depths.len() == capacity, old_colors.len() == capacity, old_depths.len() == capacity,
                     model::ranked(table.view().parents, old_colors, old_depths), model::closed(table.view().parents, old_colors), model::no_pending(old_colors),
@@ -181,6 +330,7 @@ fn build_parent_table(table: ParentTable) -> (r: Option<Tree>)
             assert(path[0] == number) by { reveal(model::path_chain); }
             while done < path_length
                 invariant table.wf(), model::shape(table.view().parents), capacity == table.view().parents.len(),
+                    bounded_rooted(table.view().parents) ==> rank_witness(table.view().parents, witness),
                     3 <= capacity <= block_claims::MAX_BLOCKS as nat + 1, anchor < capacity, old_colors.len() == capacity,
                     colors.len() == capacity, depths.len() == capacity,
                     model::no_pending(old_colors), model::closed(table.view().parents, old_colors), old_colors[anchor as int] == 2,
@@ -228,16 +378,47 @@ fn build_parent_table(table: ParentTable) -> (r: Option<Tree>)
             assert(colors@[n] == 0);
         }
     }
+    proof { every_valid_tree_has_a_bounded_rank_witness(assembled); }
     Some(Tree { table, depths })
 }
 
 
+/// Local graph admission over the complete, already captured directory index.
+/// Entry counts and parents are declarative source projections.
+#[verifier::opaque]
+pub open spec fn admissible(index: IndexView) -> bool {
+    parent_table::admissible(index) && bounded_rooted(parent_table::parent_projection(index))
+}
+
 pub fn build(index: &DirectoryIndex<'_>) -> (r: Option<Tree>)
     ensures index.wf(), match r {
-        Some(tree) => tree.wf() && valid(tree.view()) && tree.view().index == index.view(), None => true },
+        Some(tree) => tree.wf() && valid(tree.view()) && tree.view().index == index.view()
+            && admissible(index.view())
+            && tree.view().parents == parent_table::parent_projection(index.view()),
+        None => !admissible(index.view()),
+    },
 {
-    let table = match parent_table::build(index) { Some(table) => table, None => { return None; } };
-    match build_parent_table(table) { Some(tree) => Some(tree), None => None }
+    let table = match parent_table::build(index) {
+        Some(table) => table,
+        None => { proof { reveal(admissible); } return None; }
+    };
+    match build_parent_table(table) {
+        Some(tree) => { proof { reveal(admissible); } Some(tree) },
+        None => { proof { reveal(admissible); } None },
+    }
+}
+
+
+/// Soundness and acceptance completeness use the same mathematical graph
+/// property. The witness is the tree's exact computed depths on success.
+pub proof fn every_valid_tree_has_a_bounded_rank_witness(v: TreeView)
+    requires valid(v),
+    ensures bounded_rooted(v.parents), rank_witness(v.parents, v.depths),
+{
+    reveal(valid); reveal(rank_witness); reveal(bounded_rooted);
+    assert(exists|ranks: Seq<u32>| rank_witness(v.parents, ranks)) by {
+        assert(rank_witness(v.parents, v.depths));
+    }
 }
 
 pub proof fn every_source_directory_reaches_root(v: TreeView, number: u32)

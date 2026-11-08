@@ -17509,3 +17509,426 @@ mod ea_durable_namespace {
         );
     }
 }
+
+mod ea_admission_completeness {
+    use core::{
+        ea_allocation, ea_directory_index, ea_index, ea_namespace, ea_namespace_counts,
+        ea_namespace_parent, ea_namespace_topology, ea_source, snapshot::Snapshot,
+    };
+
+    use super::{
+        ea_inode_values::{fixture, fixture_with_features, offset, seal_raw, Fixture},
+        *,
+    };
+
+    fn seal_super(raw: &mut [u8]) {
+        let checksum = core::crc::crc32c(0xffff_ffff, &raw[1024..2044]);
+        raw[2044..2048].copy_from_slice(&checksum.to_le_bytes());
+    }
+
+    fn seal_group(raw: &mut [u8], seed: u32) {
+        let width = core::superblock::descriptor_length(&raw[1024..2048]).unwrap();
+        let group_seed = core::crc::crc32c(seed, &0u32.to_le_bytes());
+        let prefix = core::crc::crc32c(group_seed, &raw[4096..4126]);
+        let zeroed = core::crc::crc32c(prefix, &[0, 0]);
+        let checksum = core::crc::crc32c(zeroed, &raw[4128..4096 + width]) as u16;
+        raw[4126..4128].copy_from_slice(&checksum.to_le_bytes());
+    }
+
+    fn set_links(raw: &mut [u8], f: &Fixture, number: u32, links: u16) {
+        let at = offset(f.table, number);
+        raw[at + 26..at + 28].copy_from_slice(&links.to_le_bytes());
+        seal_raw(&mut raw[at..at + 256], number, f.seed);
+    }
+
+    fn first_directory_block(raw: &[u8], f: &Fixture, number: u32) -> u32 {
+        let at = offset(f.table, number);
+        let root = &raw[at + 40..at + 100];
+        assert_eq!(core::bytes::read_le16(root, 6), Some(0));
+        for ordinal in 0..core::bytes::read_le16(root, 2).unwrap() as usize {
+            let extent = core::extent::parse(root, 12 + ordinal * 12, le32(raw, 1028)).unwrap();
+            if extent.logical == 0 {
+                assert!(extent.initialized);
+                return extent.physical;
+            }
+        }
+        panic!("directory has no logical block zero");
+    }
+
+    fn seal_directory(raw: &mut [u8], f: &Fixture, number: u32, physical: u32) {
+        let seed =
+            core::inode::inode_seed(f.seed, number, le32(raw, offset(f.table, number) + 100));
+        let start = physical as usize * 4096;
+        let checksum = core::crc::crc32c(seed, &raw[start..start + 4084]);
+        raw[start + 4092..start + 4096].copy_from_slice(&checksum.to_le_bytes());
+    }
+
+    fn record(raw: &[u8], physical: u32, name: &[u8]) -> usize {
+        let start = physical as usize * 4096;
+        let mut at = 0;
+        while at < 4084 {
+            let length = raw[start + at + 6] as usize;
+            if le32(raw, start + at) != 0 && &raw[start + at + 8..start + at + 8 + length] == name {
+                return at;
+            }
+            let next = core::bytes::read_le16(raw, start + at + 4).unwrap() as usize;
+            assert!(next > 0);
+            at += next;
+        }
+        panic!("directory key missing: {name:?}");
+    }
+
+    fn append_self_loop(raw: &mut [u8], physical: u32, number: u32) {
+        let start = physical as usize * 4096;
+        let mut last = 0;
+        loop {
+            let size = core::bytes::read_le16(raw, start + last + 4).unwrap() as usize;
+            assert!(size > 0 && last + size <= 4084);
+            if last + size == 4084 {
+                break;
+            }
+            last += size;
+        }
+        let minimum = (8 + raw[start + last + 6] as usize + 3) / 4 * 4;
+        let next = last + minimum;
+        assert!(next + 12 <= 4084);
+        raw[start + last + 4..start + last + 6].copy_from_slice(&(minimum as u16).to_le_bytes());
+        raw[start + next..start + 4084].fill(0);
+        raw[start + next..start + next + 4].copy_from_slice(&number.to_le_bytes());
+        raw[start + next + 4..start + next + 6]
+            .copy_from_slice(&((4084 - next) as u16).to_le_bytes());
+        raw[start + next + 6] = 4;
+        raw[start + next + 7] = 2;
+        raw[start + next + 8..start + next + 12].copy_from_slice(b"loop");
+    }
+
+    #[test]
+    fn every_admission_stage_accepts_linux_ea_profiles_and_preserves_actual_recover_bytes() {
+        for wide in [false, true] {
+            for stored in [false, true] {
+                let f = fixture_with_features(
+                    &format!("ea-complete-stages-{wide}-{stored}"),
+                    4096,
+                    wide,
+                    stored,
+                );
+                for dirty in [false, true] {
+                    let mut raw = f.bytes.clone();
+                    if dirty {
+                        let marker = core::ea_super_state::recovery_image(
+                            &raw[..4096],
+                            raw.len() as u64,
+                            true,
+                        )
+                        .unwrap();
+                        raw[..4096].copy_from_slice(marker.as_slice());
+                    }
+                    let source = Snapshot::from_bytes(&raw);
+                    let header = ea_source::parse(&source).expect("complete raw header");
+                    assert_eq!(header.feature_flags().2 & 4 != 0, dirty);
+                    assert_eq!(header.descriptor_width(), if wide { 64 } else { 32 });
+                    assert_eq!(header.source().block(0).unwrap().as_slice(), &raw[..4096],);
+                    let index = ea_index::parse(header).expect("complete allocation index");
+                    assert_eq!(index.group_count(), 1);
+                    for number in [2, 8, 11, 12, 13, 14] {
+                        assert_eq!(index.allocated(number), Some(true));
+                        assert_eq!(
+                            index.node(number).unwrap().raw(),
+                            &raw[offset(f.table, number)..offset(f.table, number) + 256],
+                        );
+                    }
+                    assert!(index.node(0).is_none());
+                    assert!(index.node(f.inodes + 1).is_none());
+                    assert_eq!(index.allocated(0), None);
+                    assert_eq!(index.allocated(f.inodes + 1), None);
+                    let allocation = ea_allocation::inspect(&source, f.inodes, 1, 4096)
+                        .expect("complete physical allocation");
+                    let names = ea_directory_index::build(&allocation).expect("complete names");
+                    let counts = ea_namespace_counts::collect(&names).expect("complete dot counts");
+                    let root = counts.get(2).unwrap();
+                    assert_eq!((root.references, root.dots, root.dotdots), (3, 1, 1));
+                    assert_eq!(counts.get(14).unwrap().references, 0);
+                    let parents =
+                        ea_namespace_parent::build(&names).expect("complete local parents");
+                    assert_eq!(parents.parent(2), Some(2));
+                    assert_eq!(parents.parent(11), Some(2));
+                    let tree = ea_namespace_topology::build_parent_table(parents)
+                        .expect("bounded rooted parent graph");
+                    assert_eq!(tree.depth(2), Some(0));
+                    assert_eq!(tree.depth(11), Some(1));
+                    assert!(tree.depth(14).is_none());
+                    assert!(ea_namespace_topology::build(&names).is_some());
+                    assert!(ea_namespace::inspect_journal(&source, f.inodes, 1, 4096).is_some());
+                    assert_eq!(
+                        ea_namespace::inspect(&source, f.inodes, 1, 4096).is_some(),
+                        !dirty,
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn raw_header_rejects_resealed_unknown_features_and_a_truncated_partition() {
+        let f = fixture("ea-complete-header-reject", 4096);
+        for length in [0, 4095, 4096, 8191, f.bytes.len() - 4096] {
+            let source = Snapshot::from_bytes(&f.bytes[..length]);
+            assert!(ea_source::parse(&source).is_none());
+        }
+        let mut raw = f.bytes.clone();
+        let incompatible = le32(&raw, 1120) | 0x8000_0000;
+        raw[1120..1124].copy_from_slice(&incompatible.to_le_bytes());
+        seal_super(&mut raw);
+        assert_eq!(
+            core::crc::crc32c(0xffff_ffff, &raw[1024..2044]),
+            le32(&raw, 2044),
+        );
+        assert!(!ea_source::validate_header(
+            &raw[1024..2048],
+            raw.len() as u64,
+        ));
+        let source = Snapshot::from_bytes(&raw);
+        assert!(ea_source::parse(&source).is_none());
+    }
+
+    #[test]
+    fn resealed_group_and_primary_counter_disagreement_fails_after_raw_header_admission() {
+        for wide in [false, true] {
+            for stored in [false, true] {
+                let f = fixture_with_features(
+                    &format!("ea-complete-counter-{wide}-{stored}"),
+                    4096,
+                    wide,
+                    stored,
+                );
+                for variant in 0..3 {
+                    let mut raw = f.bytes.clone();
+                    let primary_at = if variant == 2 { 1040 } else { 1036 };
+                    let next = le32(&raw, primary_at) + 1;
+                    raw[primary_at..primary_at + 4].copy_from_slice(&next.to_le_bytes());
+                    if variant != 0 {
+                        let descriptor_at = if variant == 2 { 4110 } else { 4108 };
+                        let next = core::bytes::read_le16(&raw, descriptor_at).unwrap() + 1;
+                        raw[descriptor_at..descriptor_at + 2].copy_from_slice(&next.to_le_bytes());
+                        seal_group(&mut raw, f.seed);
+                    }
+                    seal_super(&mut raw);
+                    let source = Snapshot::from_bytes(&raw);
+                    let header = ea_source::parse(&source).expect("raw geometry is still valid");
+                    let (blocks, _, ipg, seed) = header.parameters();
+                    let descriptor = &raw[4096..4096 + header.descriptor_width()];
+                    assert!(
+                        core::group::parse_with_features(descriptor, 0, blocks, ipg, seed, false,)
+                            .is_some(),
+                        "descriptor checksum and local geometry remain valid",
+                    );
+                    assert!(ea_index::parse(header).is_none());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn checksum_valid_dot_target_and_record_position_errors_fail_at_count_admission() {
+        let f = fixture("ea-complete-count-reject", 4096);
+        let physical = first_directory_block(&f.bytes, &f, 2);
+        let start = physical as usize * 4096;
+        for variant in 0..2 {
+            let mut raw = f.bytes.clone();
+            if variant == 0 {
+                raw[start..start + 4].copy_from_slice(&11u32.to_le_bytes());
+            } else {
+                raw[start + 6] = 2;
+                raw[start + 8..start + 10].copy_from_slice(b"..");
+                raw[start + 18] = 1;
+                raw[start + 20] = b'.';
+            }
+            seal_directory(&mut raw, &f, 2, physical);
+            let source = Snapshot::from_bytes(&raw);
+            let allocation = ea_allocation::inspect(&source, f.inodes, 1, 4096).unwrap();
+            let names = ea_directory_index::build(&allocation)
+                .expect("complete typed names survive the checksum-valid mutation");
+            assert!(ea_namespace_counts::collect(&names).is_none());
+            assert!(ea_namespace_parent::build(&names).is_none());
+            assert!(ea_namespace_topology::build(&names).is_none());
+        }
+    }
+
+    #[test]
+    fn local_parent_admission_rejects_exact_count_link_and_parent_disagreement() {
+        let f = fixture("ea-complete-parent-reject", 4096);
+        for variant in 0..2 {
+            let mut raw = f.bytes.clone();
+            if variant == 0 {
+                set_links(&mut raw, &f, 12, 2);
+            } else {
+                let physical = first_directory_block(&raw, &f, 11);
+                let start = physical as usize * 4096;
+                raw[start + 12..start + 16].copy_from_slice(&11u32.to_le_bytes());
+                set_links(&mut raw, &f, 2, 2);
+                set_links(&mut raw, &f, 11, 3);
+                seal_directory(&mut raw, &f, 11, physical);
+            }
+            let source = Snapshot::from_bytes(&raw);
+            let allocation = ea_allocation::inspect(&source, f.inodes, 1, 4096).unwrap();
+            let names = ea_directory_index::build(&allocation).unwrap();
+            let counts = ea_namespace_counts::collect(&names)
+                .expect("dot positions and all count arithmetic remain valid");
+            if variant == 0 {
+                assert_eq!(counts.get(12).unwrap().references, 1);
+            } else {
+                assert_eq!(counts.get(2).unwrap().references, 2);
+                assert_eq!(counts.get(11).unwrap().references, 3);
+            }
+            assert!(ea_namespace_parent::build(&names).is_none());
+            assert!(ea_namespace_topology::build(&names).is_none());
+        }
+    }
+
+    #[test]
+    fn a_complete_locally_valid_parent_cycle_is_rejected_by_the_rooted_graph_constructor() {
+        let f = fixture("ea-complete-rooted-reject", 4096);
+        let mut raw = f.bytes.clone();
+        let root = first_directory_block(&raw, &f, 2);
+        let lost = record(&raw, root, b"lost+found");
+        let root_start = root as usize * 4096;
+        raw[root_start + lost..root_start + lost + 4].fill(0);
+        let physical = first_directory_block(&raw, &f, 11);
+        let start = physical as usize * 4096;
+        raw[start + 12..start + 16].copy_from_slice(&11u32.to_le_bytes());
+        append_self_loop(&mut raw, physical, 11);
+        set_links(&mut raw, &f, 2, 2);
+        set_links(&mut raw, &f, 11, 3);
+        seal_directory(&mut raw, &f, 2, root);
+        seal_directory(&mut raw, &f, 11, physical);
+        let source = Snapshot::from_bytes(&raw);
+        let allocation = ea_allocation::inspect(&source, f.inodes, 1, 4096).unwrap();
+        let names = ea_directory_index::build(&allocation).unwrap();
+        assert!(names.lookup(2, b"lost+found").is_none());
+        assert_eq!(names.lookup(11, b"loop").unwrap().identity().1, 11);
+        let counts = ea_namespace_counts::collect(&names).expect("locally valid dot/count data");
+        assert_eq!(counts.get(2).unwrap().references, 2);
+        assert_eq!(counts.get(11).unwrap().references, 3);
+        let parents = ea_namespace_parent::build(&names).expect("all local parent checks pass");
+        assert_eq!(parents.parent(2), Some(2));
+        assert_eq!(parents.parent(11), Some(11));
+        assert!(ea_namespace_topology::build_parent_table(parents).is_none());
+        assert!(ea_namespace_topology::build(&names).is_none());
+        assert!(ea_namespace::inspect_journal(&source, f.inodes, 1, 4096).is_none());
+    }
+
+    fn reserved_tail_linux_clean(raw: &[u8], suffix: &str) {
+        let path = format!("build/ea-complete-reserved-tail-oracle-{suffix}.img");
+        std::fs::write(&path, raw).unwrap();
+        let fsck = std::env::var("E2FSCK_BIN").unwrap_or_else(|_| "e2fsck".into());
+        let checked = std::process::Command::new(&fsck)
+            .args(["-fn", &path])
+            .output()
+            .unwrap();
+        let unchanged = std::fs::read(&path).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(
+            unchanged, raw,
+            "the independent oracle must not repair bytes"
+        );
+        assert!(
+            checked.status.success(),
+            "Linux e2fsck rejected {suffix}: {}{}",
+            String::from_utf8_lossy(&checked.stdout),
+            String::from_utf8_lossy(&checked.stderr),
+        );
+    }
+
+    #[test]
+    fn ignored_empty_reserved_inode_tails_do_not_reject_a_complete_linux_ea_namespace() {
+        for wide in [false, true] {
+            for stored in [false, true] {
+                let f = fixture_with_features(
+                    &format!("ea-complete-reserved-tail-{wide}-{stored}"),
+                    4096,
+                    wide,
+                    stored,
+                );
+                let source = Snapshot::from_bytes(&f.bytes);
+                assert!(core::ea_census::inspect(&source, f.inodes).is_some());
+                assert!(ea_namespace::inspect(&source, f.inodes, 1, 4096).is_some());
+                reserved_tail_linux_clean(&f.bytes, &format!("{wide}-{stored}-control"));
+                for extra in [1u16, 2, 3, 124, 125, 128, 129, u16::MAX] {
+                    let mut raw = f.bytes.clone();
+                    let at = offset(f.table, 6);
+                    raw[at..at + 256].fill(0);
+                    raw[at + 128..at + 130].copy_from_slice(&extra.to_le_bytes());
+                    assert!(core::inode_group::reserved_is_empty(&raw[at..at + 256]));
+                    if extra == 1 {
+                        assert!(
+                            core::xattr::parse_body(&raw[at..at + 256], true, f.inodes).is_none()
+                        );
+                        reserved_tail_linux_clean(&raw, &format!("{wide}-{stored}-extra1"));
+                    }
+                    let before = raw.clone();
+                    let source = Snapshot::from_bytes(&raw);
+                    let index = ea_index::parse(ea_source::parse(&source).unwrap()).unwrap();
+                    assert_eq!(index.allocated(6), Some(true));
+                    assert_eq!(index.node(6).unwrap().raw(), &raw[at..at + 256]);
+                    assert!(
+                        core::ea_census::inspect(&source, f.inodes).is_some(),
+                        "unused inode6 extra_isize={extra} is not an active inode body",
+                    );
+                    let namespace = ea_namespace::inspect(&source, f.inodes, 1, 4096)
+                        .expect("the unchanged complete EA namespace remains admitted");
+                    assert_eq!(namespace.lookup(2, b"first").unwrap().identity().1, 12);
+                    assert_eq!(
+                        namespace
+                            .allocation()
+                            .integrity()
+                            .value(0)
+                            .unwrap()
+                            .as_slice(),
+                        f.value,
+                    );
+                    assert_eq!(raw, before, "admission never changes the source bytes");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn reserved_tail_tolerance_never_admits_a_present_body_or_a_malformed_live_journal_inode() {
+        let f = fixture_with_features("ea-complete-reserved-tail-boundary", 4096, true, true);
+        for extra in [1u16, 2, 3, 4, 32, 124] {
+            let mut raw = f.bytes.clone();
+            let at = offset(f.table, 6);
+            raw[at..at + 256].fill(0);
+            raw[at + 128..at + 130].copy_from_slice(&extra.to_le_bytes());
+            // For extra_isize=1, the header starts at the high size byte.
+            // Mark byte 130 so that the size remains 1 and its source header
+            // is nevertheless nonzero. This is rejected even without MAGIC.
+            let header = 128 + extra as usize;
+            raw[at + header.max(130)] = 1;
+            assert_eq!(core::bytes::read_le16(&raw, at + 128), Some(extra));
+            assert_ne!(le32(&raw, at + header), 0);
+            assert!(core::inode_group::reserved_is_empty(&raw[at..at + 256]));
+            let before = raw.clone();
+            let source = Snapshot::from_bytes(&raw);
+            let index = ea_index::parse(ea_source::parse(&source).unwrap()).unwrap();
+            assert!(index.node(6).is_some());
+            assert!(core::ea_census::inspect(&source, f.inodes).is_none());
+            assert!(ea_namespace::inspect(&source, f.inodes, 1, 4096).is_none());
+            assert_eq!(raw, before);
+        }
+
+        let mut raw = f.bytes.clone();
+        let at = offset(f.table, 8);
+        raw[at + 128..at + 130].copy_from_slice(&1u16.to_le_bytes());
+        seal_raw(&mut raw[at..at + 256], 8, f.seed);
+        assert!(core::xattr::parse_body(&raw[at..at + 256], true, f.inodes).is_none());
+        let before = raw.clone();
+        let source = Snapshot::from_bytes(&raw);
+        let index = ea_index::parse(ea_source::parse(&source).unwrap()).unwrap();
+        assert_eq!(index.allocated(8), Some(true));
+        assert!(index.node(8).is_some());
+        assert!(core::ea_census::inspect(&source, f.inodes).is_none());
+        assert!(ea_namespace::inspect(&source, f.inodes, 1, 4096).is_none());
+        assert_eq!(raw, before);
+    }
+}

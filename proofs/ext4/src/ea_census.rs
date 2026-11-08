@@ -319,17 +319,48 @@ fn check_bindings(index: &Index<'_, '_>, logical: &[ParentReference]) -> (r: Opt
     }
     Some(Ghost(checked))
 }
+/// An unused reserved slot has no inode-body attribute when its encoded
+/// header is absent or outside the 256-byte slot. Its inactive tail is not
+/// required to satisfy the geometry of a live inode.
+fn reserved_body_absent(raw: &[u8]) -> (r: bool)
+    requires raw.len() == 256,
+    ensures r == !xattr::body_present(raw@),
+{
+    let extra = bytes::read_le16(raw, 128).unwrap() as usize;
+    if extra == 0 || extra > 124 { return true; }
+    bytes::read_le32(raw, 128 + extra).unwrap() == 0
+}
+
 pub(crate) fn check_reserved(raw: &[u8], number: u32, inodes: u32, seed: u32, huge: bool) -> (r: bool)
     requires raw.len() == 256,
     ensures r ==> (if number == 8 { inode::metadata_accepted_with_features(raw@, number, inodes, seed, huge)
         && bytes::le16(raw@, 0) as u16 & 0xf000 == 0x8000 && xattr::inode_address(raw@) == 0 && !xattr::body_present(raw@) }
         else { inode_group::empty_reserved(raw@) && !xattr::body_present(raw@) }),
+        number != 8 ==> (r == (inode_group::empty_reserved(raw@) && !xattr::body_present(raw@))),
 {
+    if number != 8 {
+        if !inode_group::reserved_is_empty(raw) { return false; }
+        return reserved_body_absent(raw);
+    }
     let body = match xattr::parse_body(raw, true, inodes) { Some(body) => body, None => { return false; } };
     if body.present() { return false; }
-    if number != 8 { return inode_group::reserved_is_empty(raw); }
     let info = match inode::parse_metadata_with_features(raw, number, inodes, seed, huge) { Some(info) => info, None => { return false; } };
     info.mode & 0xf000 == 0x8000 && xattr::inode_pointer(raw).unwrap() == 0 && bytes::read_le32(raw, 160).unwrap() == 0
+}
+
+/// Ignoring inactive tail geometry cannot introduce storage through this
+/// reserved-inode class. Complete physical ownership remains a separate check.
+pub proof fn empty_nonjournal_reserved_inodes_have_no_inode_storage(node: NodeView)
+    requires node.number != 8, reserved_ok(node),
+    ensures bytes::le16(node.raw, 0) == 0, bytes::le32(node.raw, 32) == 0,
+        crate::inode_size::value(node.raw, false) == 0,
+        crate::inode_blocks::sectors(node.raw, 4096, ea_parent::huge(node.header)) == 0,
+        xattr::inode_address(node.raw) == 0, !xattr::body_present(node.raw),
+        forall|i: int| 40 <= i < 100 ==> #[trigger] node.raw[i] == 0,
+{
+    reveal(inode_group::empty_reserved);
+    assert(bytes::le32(node.raw, 28) == 0 && bytes::le16(node.raw, 116) == 0);
+    assert(crate::inode_blocks::raw_count(node.raw, ea_parent::huge(node.header)) == 0);
 }
 
 pub fn inspect<'s, 'a>(source: &'s Snapshot<'a>, inode_budget: u32) -> (r: Option<Census<'s, 'a>>)

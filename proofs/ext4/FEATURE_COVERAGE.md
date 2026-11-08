@@ -108,3 +108,13 @@ checked repaired-shadow recovery. Its explicit atomic-block, flush,
 exclusive-source and restart-quiescence premises require CortenMM/OSTD and
 actual-device refinement. Full EA filesystem, concurrent EA windows, mounted
 operation and hardware durability gates remain open.
+
+[EA admission completeness](EA_ADMISSION_COMPLETENESS.md) strengthens the existing
+bounded EA source/index and complete-index count/parent/topology constructors
+with exact rejection contracts.
+A reserved-slot leaf correction accepts otherwise-empty non-journal reserved
+inodes without imposing live-inode extra-size geometry, retaining exact empty
+fields/body absence and the stricter journal-inode parser.
+Feature masks and unsupported quota/resize/orphan policies remain unchanged.
+Full EA filesystem acceptance, repeated recovery-admission and mount gates
+remain open.

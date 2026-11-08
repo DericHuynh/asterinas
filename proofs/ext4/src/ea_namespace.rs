@@ -114,6 +114,28 @@ pub(crate) proof fn allocation_facts(v: NamespaceView)
     reveal(crate::ea_index::valid);
 }
 
+/// Link the existing full namespace certificate to the independent complete
+/// stage profiles. This implication does not claim raw filesystem acceptance.
+pub proof fn every_valid_namespace_satisfies_the_complete_stage_profiles(v: NamespaceView)
+    requires valid(v),
+    ensures crate::ea_source::source_admissible(v.allocation.integrity.references.index.header.source),
+        crate::ea_index::admissible(v.allocation.integrity.references.index.header),
+        crate::ea_namespace_counts::admissible(v.index),
+        crate::ea_namespace_parent::admissible(v.index),
+        topology::admissible(v.index),
+{
+    allocation_facts(v);
+    crate::ea_index::every_declaratively_valid_index_is_admissible(v.allocation.integrity.references.index);
+    crate::ea_source::every_valid_header_is_the_unique_source_projection(v.allocation.integrity.references.index.header);
+    assert(topology::valid(v.tree) && v.tree.index == v.index) by { reveal(valid); }
+    let table = crate::ea_namespace_parent::TableView { index: v.index, parents: v.tree.parents };
+    assert(crate::ea_namespace_parent::valid(table)) by { reveal(topology::valid); }
+    crate::ea_namespace_parent::parent_table_validity_characterizes_admission(table);
+    topology::every_valid_tree_has_a_bounded_rank_witness(v.tree);
+    reveal(crate::ea_namespace_parent::admissible);
+    reveal(topology::admissible);
+}
+
 pub proof fn every_source_directory_is_rooted(v: NamespaceView, number: u32)
     requires valid(v), nodes::is_directory(v.index.nodes, number),
     ensures topology::walk(v.tree.parents, number, v.tree.depths[number as int] as nat) == 2,

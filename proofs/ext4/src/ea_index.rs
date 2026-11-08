@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Complete group metadata for the isolated clean EA_INODE read profile.
+//! Complete group metadata for the isolated EA_INODE source profile.
 //! This retains actual source features and logical lazy bitmap semantics;
 //! inode-table block ranges are pairwise disjoint. This is not ordinary
 //! filesystem admission or a complete physical ownership census.
@@ -59,6 +59,54 @@ pub open spec fn group_valid(v: GroupView) -> bool {
         crc::fold(h.seed, v.inodes.raw.take(h.ipg as int / 8)) == group_fields::counter(d, 26, 58, true))
 }
 
+/// The unique group metadata projection of the actual source bytes.
+/// Lazy groups use the logical Linux bitmap, independently of stale media.
+pub open spec fn source_group(h: HeaderView, number: u32) -> GroupView {
+    let d = h.source.subrange(4096 + number as int * h.width,
+        4096 + (number as int + 1) * h.width);
+    let blocks = logical_blocks(h, number, d);
+    let inodes = logical_inodes(h, d);
+    GroupView {
+        header: h, number, descriptor: d,
+        block_bitmap: bytes::le32(d, 0) as u32,
+        inode_bitmap: bytes::le32(d, 4) as u32,
+        inode_table: bytes::le32(d, 8) as u32, table_blocks: h.ipg / 16,
+        allocation: BitmapView { raw: blocks, valid: valid_bits(h, number) as u32,
+            meaningful: 32768, free: bytes::le16(d, 12) as u32, seed: h.seed,
+            checksum: if group::block_uninitialized(d) {
+                (crc::fold(h.seed, blocks) & 0xffffu32) as u16
+            } else { bytes::le16(d, 24) as u16 } },
+        inodes: BitmapView { raw: inodes, valid: h.ipg, meaningful: h.ipg,
+            free: bytes::le16(d, 14) as u32, seed: h.seed,
+            checksum: if group::inode_uninitialized(d) {
+                (crc::fold(h.seed, bitmap::empty_inode_bytes(h.ipg as nat).take(h.ipg as int / 8)) & 0xffffu32) as u16
+            } else { bytes::le16(d, 26) as u16 } },
+    }
+}
+
+#[verifier::opaque]
+pub open spec fn group_admissible(h: HeaderView, number: u32) -> bool {
+    group_valid(source_group(h, number))
+}
+
+pub proof fn a_valid_group_is_the_unique_exact_source_projection(v: GroupView)
+    requires group_valid(v),
+    ensures v == source_group(v.header, v.number),
+{
+    hide(crc::fold);
+    reveal(group_valid);
+    assert(v.allocation == source_group(v.header, v.number).allocation);
+    assert(v.inodes == source_group(v.header, v.number).inodes);
+}
+
+pub proof fn every_declaratively_valid_group_is_admissible(v: GroupView)
+    requires group_valid(v),
+    ensures group_admissible(v.header, v.number),
+{
+    a_valid_group_is_the_unique_exact_source_projection(v);
+    reveal(group_admissible);
+}
+
 pub struct Group {
     descriptor: Vec<u8>, fields: group::Group, allocation: Bitmap, inodes: Bitmap,
     checked: Ghost<GroupView>,
@@ -96,10 +144,18 @@ fn copy(raw: &[u8]) -> (r: Vec<u8>) ensures r@ == raw@ {
 }
 fn read_group(header: &Header<'_, '_>, number: u32) -> (r: Option<Group>)
     ensures header.wf(), ea_source::header_valid(header.view()), match r {
-        Some(g) => g.wf() && group_valid(g.view()) && g.view().header == header.view() && g.view().number == number,
-        None => true },
+        Some(g) => g.wf() && group_valid(g.view()) && g.view().header == header.view() && g.view().number == number
+            && g.view() == source_group(header.view(), number) && group_admissible(header.view(), number),
+        None => !group_admissible(header.view(), number) },
 {
     hide(crc::fold);
+    reveal(group_admissible);
+    let ghost expected = source_group(header.view(), number);
+    proof {
+        if group_admissible(header.view(), number) {
+            reveal(group_valid);
+        }
+    }
     let (blocks, _, ipg, seed) = header.parameters();
     let width = header.descriptor_width(); let source = header.source();
     if width != 32 && width != 64 { return None; }
@@ -119,6 +175,7 @@ fn read_group(header: &Header<'_, '_>, number: u32) -> (r: Option<Group>)
     assert(raw@ == source.view().subrange(4096 + offset as int, 4096 + offset as int + width));
     assert(number as int * width as int + width as int == (number as int + 1) * width as int) by (nonlinear_arith);
     assert(raw@ == header.view().source.subrange(4096 + number as int * width, 4096 + (number as int + 1) * width));
+    assert(raw@ == expected.descriptor);
     let fields = match group::parse_with_features(raw, number, blocks, ipg, seed, flex) { Some(fields) => fields, None => { return None; } };
     let block_bytes = match source.block(fields.block_bitmap) { Some(block) => block, None => { return None; } };
     let inode_bytes = match source.block(fields.inode_bitmap) { Some(block) => block, None => { return None; } };
@@ -138,6 +195,12 @@ fn read_group(header: &Header<'_, '_>, number: u32) -> (r: Option<Group>)
         if !lazy_inodes && crc::crc32c(seed, &physical_inodes[..(ipg / 8) as usize]) != inode_checksum { return None; }
     }
     let allocation = if lazy_blocks {
+        proof {
+            if group_admissible(header.view(), number) {
+                reveal(block_bitmap::admitted_with_backup);
+                assert(block_bitmap::admitted_with_backup(raw@, number, blocks, ipg, seed, flex, backup));
+            }
+        }
         match block_bitmap::synthesize_with_backup(raw, number, blocks, ipg, seed, flex, backup) {
             Some(bitmap) => bitmap, None => { return None; }
         }
@@ -159,6 +222,7 @@ fn read_group(header: &Header<'_, '_>, number: u32) -> (r: Option<Group>)
         block_bitmap: fields.block_bitmap, inode_bitmap: fields.inode_bitmap, inode_table: fields.inode_table,
         table_blocks: fields.inode_table_blocks, allocation: allocation.view(), inodes: inodes.view() };
     assert(group_valid(view)) by { reveal(group_valid); }
+    proof { a_valid_group_is_the_unique_exact_source_projection(view); }
     Some(Group { descriptor, fields, allocation, inodes, checked: Ghost(view) })
 }
 
@@ -246,11 +310,56 @@ pub open spec fn valid(v: IndexView) -> bool {
     &&& free_block_count(v.groups) == bytes::le32(v.header.source, 1036)
     &&& free_inode_count(v.groups) == bytes::le32(v.header.source, 1040)
 }
+
+/// Canonical complete index of actual source group descriptors and bitmaps.
+pub open spec fn source_groups(header: HeaderView) -> Seq<GroupView> {
+    Seq::new(header.groups as nat, |i: int| source_group(header, i as u32))
+}
+pub open spec fn source_index(header: HeaderView) -> IndexView {
+    IndexView { header, groups: source_groups(header) }
+}
+#[verifier::opaque]
+pub open spec fn admissible(header: HeaderView) -> bool { valid(source_index(header)) }
+
+pub proof fn a_valid_index_is_the_unique_exact_source_projection(v: IndexView)
+    requires valid(v),
+    ensures v == source_index(v.header),
+{
+    reveal(valid);
+    reveal(ordered);
+    assert(v.groups =~= source_groups(v.header)) by {
+        assert forall|i: int| 0 <= i < v.groups.len()
+            implies #[trigger] v.groups[i] == source_groups(v.header)[i] by {
+            every_index_group_retains_its_exact_source_header_and_order(v, i);
+            assert(v.groups[i].header == v.header && v.groups[i].number as int == i);
+            assert(0 <= i < v.header.groups <= 32);
+            assert(v.groups[i].number == i as u32);
+            assert(source_groups(v.header)[i] == source_group(v.header, i as u32));
+            a_valid_group_is_the_unique_exact_source_projection(v.groups[i]);
+        }
+    }
+}
+
+pub proof fn every_declaratively_valid_index_is_admissible(v: IndexView)
+    requires valid(v),
+    ensures admissible(v.header),
+{
+    a_valid_index_is_the_unique_exact_source_projection(v);
+    reveal(admissible);
+}
+
 pub open spec fn inode_allocated(v: IndexView, number: u32) -> bool {
     0 < number <= v.header.inodes && bitmap::set(
         v.groups[(number as int - 1) / v.header.ipg as int].inodes.raw,
         (number as int - 1) % v.header.ipg as int)
 }
+
+/// Allocation alone does not validate an inode-table slot: the exact source
+/// slot must also pass the initialized-table and bitmap provenance checks.
+pub open spec fn node_admissible(v: IndexView, number: u32) -> bool {
+    inode_allocated(v, number) && ea_source::node_admissible(v.header, number)
+}
+
 proof fn append_ordered(groups: Seq<GroupView>, header: HeaderView, next: GroupView)
     requires ordered(groups, header), group_valid(next), next.header == header && next.number as nat == groups.len(),
     ensures ordered(groups.push(next), header),
@@ -342,8 +451,10 @@ impl<'s, 'a> Index<'s, 'a> {
     pub fn node(&self, number: u32) -> (r: Option<Node<'a>>)
         ensures self.wf(), valid(self.view()), match r {
             Some(node) => node.wf() && ea_source::node_valid(node.view()) && node.view().header == self.view().header
-                && node.view().number == number && inode_allocated(self.view(), number),
-            None => true,
+                && node.view().number == number && inode_allocated(self.view(), number)
+                && node.view() == ea_source::node_projection(self.view().header, number)
+                && node_admissible(self.view(), number),
+            None => !node_admissible(self.view(), number),
         },
     {
         proof { use_type_invariant(self); }
@@ -377,11 +488,14 @@ impl<'s, 'a> Index<'s, 'a> {
 
 pub fn parse<'s, 'a>(header: Header<'s, 'a>) -> (r: Option<Index<'s, 'a>>)
     ensures header.wf(), ea_source::header_valid(header.view()), match r {
-        Some(index) => index.wf() && valid(index.view()) && index.view().header == header.view(),
-        None => true,
+        Some(index) => index.wf() && valid(index.view()) && index.view().header == header.view()
+            && index.view() == source_index(header.view()) && admissible(header.view()),
+        None => !admissible(header.view()),
     },
 {
+    reveal(admissible);
     let (blocks, inodes, ipg, seed) = header.parameters();
+    proof { header_bounds(header.view()); reveal(ea_source::header_valid); }
     let source = header.source(); let primary = match source.block(0) { Some(block) => block, None => { return None; } };
     let boot = primary.range(1024, 1024).unwrap();
     let count = ((blocks as u64 + 32767) / 32768) as u32;
@@ -396,6 +510,7 @@ pub fn parse<'s, 'a>(header: Header<'s, 'a>) -> (r: Option<Index<'s, 'a>>)
     }
     while number < count
         invariant header.wf(), ea_source::header_valid(header.view()),
+            8192 <= header.view().source.len(),
             boot.len() == 1024, boot@ == header.view().source.subrange(1024, 2048),
             blocks == header.view().blocks, inodes == header.view().inodes, ipg == header.view().ipg, seed == header.view().seed,
             2 < header.view().blocks <= 1048576, 11 <= header.view().inodes <= 1048576,
@@ -404,8 +519,16 @@ pub fn parse<'s, 'a>(header: Header<'s, 'a>) -> (r: Option<Index<'s, 'a>>)
             block_free as nat == free_block_count(views(groups@)), inode_free as nat == free_inode_count(views(groups@)),
             block_free as nat <= number as nat * 32768, inode_free as nat <= number as nat * 32768,
             ordered(views(groups@), header.view()),
+            views(groups@) == source_groups(header.view()).take(number as int),
         decreases count - number,
     {
+        proof {
+            if admissible(header.view()) {
+                reveal(admissible);
+                every_index_group_retains_its_exact_source_header_and_order(source_index(header.view()), number as int);
+                assert(group_admissible(header.view(), number)) by { reveal(group_admissible); }
+            }
+        }
         let group = match read_group(&header, number) { Some(group) => group, None => { return None; } };
         let (allocation, inodes) = group.bitmaps();
         block_free += allocation.free_count() as u64; inode_free += inodes.free_count() as u64;
@@ -416,15 +539,24 @@ pub fn parse<'s, 'a>(header: Header<'s, 'a>) -> (r: Option<Index<'s, 'a>>)
             assert(views(groups@) =~= previous.push(next));
             assert(views(groups@).drop_last() =~= previous);
             assert(views(groups@).last() == next);
+            assert(views(groups@) =~= source_groups(header.view()).take(number as int + 1));
             assert(free_block_count(views(groups@)) == free_block_count(previous) + next.allocation.free as nat) by { reveal(free_block_count); }
             assert(free_inode_count(views(groups@)) == free_inode_count(previous) + next.inodes.free as nat) by { reveal(free_inode_count); }
         }
         number += 1;
     }
+    assert(views(groups@) =~= source_groups(header.view()));
+    proof {
+        if admissible(header.view()) {
+            reveal(admissible);
+            reveal(valid);
+        }
+    }
     if block_free != bytes::read_le32(boot, 12).unwrap() as u64 || inode_free != bytes::read_le32(boot, 16).unwrap() as u64 { return None; }
     if !check_inode_tables(&groups) { return None; }
     let ghost view = IndexView { header: header.view(), groups: views(groups@) };
     assert(valid(view)) by { reveal(valid); }
+    assert(view == source_index(header.view()));
     Some(Index { header, groups, checked: Ghost(view) })
 }
 

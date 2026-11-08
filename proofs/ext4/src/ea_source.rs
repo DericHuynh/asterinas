@@ -54,6 +54,45 @@ pub open spec fn header_valid(v: HeaderView) -> bool {
     &&& v.flex == superblock::flex_bg(s)
 }
 
+/// Acceptance of the actual primary superblock, independently of the
+/// remaining filesystem census. No checksum or feature bit is repaired.
+pub open spec fn source_admissible(source: Seq<u8>) -> bool {
+    8192 <= source.len() <= 18446744073709551615
+        && header_accepted(source.subrange(1024, 2048), source.len() as u64)
+}
+
+/// Canonical geometry decoded from the source bytes. This projection carries
+/// no acceptance authority until source_admissible or header_valid is proved.
+pub open spec fn header_projection(source: Seq<u8>) -> HeaderView {
+    let raw = source.subrange(1024, 2048);
+    HeaderView {
+        source,
+        blocks: bytes::le32(raw, 4) as u32,
+        inodes: bytes::le32(raw, 0) as u32,
+        ipg: bytes::le32(raw, 40) as u32,
+        groups: ((bytes::le32(raw, 4) + 32767) / 32768) as u32,
+        seed: superblock::metadata_seed(raw),
+        width: superblock::descriptor_bytes(raw) as usize,
+        flex: superblock::flex_bg(raw),
+    }
+}
+
+pub proof fn every_valid_header_is_the_unique_source_projection(v: HeaderView)
+    requires header_valid(v),
+    ensures source_admissible(v.source), v == header_projection(v.source),
+{
+    hide(crc::fold);
+    reveal(header_valid);
+}
+
+pub proof fn every_admissible_header_has_a_valid_source_projection(source: Seq<u8>)
+    requires source_admissible(source),
+    ensures header_valid(header_projection(source)),
+{
+    hide(crc::fold);
+    reveal(header_valid);
+}
+
 pub struct Header<'s, 'a> {
     source: &'s Snapshot<'a>, blocks: u32, inodes: u32, ipg: u32, groups: u32,
     seed: u32, width: usize, flex: bool, checked: Ghost<HeaderView>,
@@ -96,10 +135,19 @@ impl<'s, 'a> Header<'s, 'a> {
         (bytes::read_le32(raw, 1116).unwrap(), bytes::read_le32(raw, 1124).unwrap(), bytes::read_le32(raw, 1120).unwrap())
     }
     pub fn get(&self, number: u32) -> (r: Option<Node<'a>>)
-        ensures self.wf(), header_valid(self.view()), match r { Some(node) => node.wf() && node_valid(node.view()) && node.view().header == self.view()
-            && node.view().number == number, None => true },
+        ensures self.wf(), header_valid(self.view()), match r {
+            Some(node) => node.wf() && node_valid(node.view()) && node.view().header == self.view()
+                && node.view().number == number
+                && node.view() == node_projection(self.view(), number)
+                && node_admissible(self.view(), number),
+            None => !node_admissible(self.view(), number),
+        },
     {
-        proof { use_type_invariant(self); reveal(header_valid); }
+        proof {
+            use_type_invariant(self);
+            reveal(header_valid);
+            an_admissible_node_supplies_the_read_inputs(self.view(), number);
+        }
         if number == 0 || number > self.inodes { return None; }
         let group_number = (number - 1) / self.ipg;
         let slot = (number - 1) % self.ipg;
@@ -167,6 +215,7 @@ impl<'s, 'a> Header<'s, 'a> {
         assert(view.group as int == (view.number as int - 1) / view.header.ipg as int
             && view.slot as int == (view.number as int - 1) % view.header.ipg as int);
         assert(node_valid(view)) by { reveal(node_valid); }
+        proof { every_valid_node_is_the_unique_source_projection(view); }
         Some(Node { raw, number, position, blocks: self.blocks, inodes: self.inodes,
             ipg: self.ipg, seed: self.seed, checked: Ghost(view) })
     }
@@ -198,6 +247,58 @@ pub open spec fn node_valid(v: NodeView) -> bool {
     &&& v.position % 4096 <= 3840
     &&& v.raw.len() == 256 && v.raw == v.header.source.subrange(v.position as int, v.position as int + 256)
 }
+/// Exact source-derived inode read inputs. In particular, the bitmap and
+/// inode-table slice are selected from the checked descriptor, not a witness
+/// supplied by a caller.
+pub open spec fn node_projection(header: HeaderView, number: u32) -> NodeView {
+    let group = ((number as int - 1) / header.ipg as int) as u32;
+    let slot = ((number as int - 1) % header.ipg as int) as u32;
+    let descriptor = header.source.subrange(4096 + group as int * header.width,
+        4096 + (group as int + 1) * header.width);
+    let bitmap_start = bytes::le32(descriptor, 4) as int * 4096;
+    let position = (bytes::le32(descriptor, 8) * 4096 + slot as nat * 256) as u64;
+    NodeView {
+        header, number, group, slot, position, descriptor,
+        bitmap: header.source.subrange(bitmap_start, bitmap_start + 4096),
+        raw: header.source.subrange(position as int, position as int + 256),
+    }
+}
+
+pub open spec fn node_admissible(header: HeaderView, number: u32) -> bool {
+    node_valid(node_projection(header, number))
+}
+
+pub proof fn every_valid_node_is_the_unique_source_projection(v: NodeView)
+    requires node_valid(v),
+    ensures v == node_projection(v.header, v.number),
+        node_admissible(v.header, v.number),
+{
+    reveal(node_valid);
+}
+
+proof fn an_admissible_node_supplies_the_read_inputs(header: HeaderView, number: u32)
+    ensures node_admissible(header, number) ==> {
+        let v = node_projection(header, number);
+        &&& 0 < number <= header.inodes
+        &&& v.group as int == (number as int - 1) / header.ipg as int
+        &&& v.slot as int == (number as int - 1) % header.ipg as int
+        &&& v.group < header.groups && v.group < 32 && v.slot < header.ipg
+        &&& group::accepted_with_features(v.descriptor, v.group, header.blocks, header.ipg, header.seed, header.flex)
+        &&& !group::inode_uninitialized(v.descriptor)
+        &&& v.slot as nat + bytes::le16(v.descriptor, 28) < header.ipg
+        &&& bitmap::accepted(v.bitmap, header.ipg, header.ipg, bytes::le16(v.descriptor, 14) as u32,
+            bytes::le16(v.descriptor, 26) as u16, header.seed)
+        &&& (header.width == 64 ==> crc::fold(header.seed, v.bitmap.take(header.ipg as int / 8))
+            == group_fields::counter(v.descriptor, 26, 58, true))
+        &&& bitmap::set(v.bitmap, v.slot as int)
+        &&& v.position as nat == bytes::le32(v.descriptor, 8) * 4096 + v.slot as nat * 256
+        &&& v.position as nat + 256 <= header.blocks as nat * 4096 <= header.source.len()
+    },
+{
+    hide(crc::fold);
+    if node_admissible(header, number) { reveal(node_valid); }
+}
+
 pub struct Node<'a> { raw: &'a [u8], number: u32, position: u64,
     blocks: u32, inodes: u32, ipg: u32, seed: u32, checked: Ghost<NodeView> }
 impl<'a> Node<'a> {
@@ -273,7 +374,13 @@ pub open spec fn clean_header_accepted(s: Seq<u8>, partition_bytes: u64) -> bool
 }
 
 pub fn parse<'s, 'a>(source: &'s Snapshot<'a>) -> (r: Option<Header<'s, 'a>>)
-    ensures match r { Some(header) => header.wf() && header_valid(header.view()) && header.view().source == source.view(), None => true },
+    ensures match r {
+        Some(header) => header.wf() && header_valid(header.view())
+            && header.view().source == source.view()
+            && header.view() == header_projection(source.view())
+            && source_admissible(source.view()),
+        None => !source_admissible(source.view()),
+    },
 {
     if source.partition_bytes() < 8192 { return None; }
     let primary = match source.block(0) { Some(block) => block, None => { return None; } };
@@ -288,6 +395,7 @@ pub fn parse<'s, 'a>(source: &'s Snapshot<'a>) -> (r: Option<Header<'s, 'a>>)
     let flex = superblock::flex_enabled(s).unwrap();
     let ghost view = HeaderView { source: source.view(), blocks, inodes, ipg, groups, seed, width, flex };
     assert(header_valid(view)) by { reveal(header_valid); }
+    proof { every_valid_header_is_the_unique_source_projection(view); }
     Some(Header { source, blocks, inodes, ipg, groups, seed, width, flex, checked: Ghost(view) })
 }
 

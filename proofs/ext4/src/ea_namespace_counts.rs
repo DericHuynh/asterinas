@@ -24,6 +24,22 @@ fn check_dotdot(name: &[u8]) -> (r: bool) ensures r == is_dotdot(name@) {
     result
 }
 
+/// The remaining count-stage admission checks over a complete source index.
+/// No parser result or count certificate appears in this input predicate.
+#[verifier::opaque]
+pub open spec fn admissible(v: IndexView) -> bool {
+    &&& 3 <= v.nodes.slots.len() <= block_claims::MAX_BLOCKS as nat + 1
+    &&& dots_valid(v.entries, v.entries.len())
+}
+
+pub proof fn a_malformed_dot_record_excludes_count_admission(v: IndexView, record: int)
+    requires 0 <= record < v.entries.len(), !dot_ok(v.entries[record]),
+    ensures !admissible(v),
+{
+    reveal(admissible);
+    reveal(dots_valid);
+}
+
 pub struct CountsView { pub index: IndexView, pub slots: Seq<SlotView> }
 
 #[verifier::opaque]
@@ -32,6 +48,29 @@ pub open spec fn valid(v: CountsView) -> bool {
     &&& v.slots.len() == v.index.nodes.slots.len() && v.slots.len() <= block_claims::MAX_BLOCKS as nat + 1
     &&& matching(v.slots, v.index.entries, v.index.entries.len())
     &&& dots_valid(v.index.entries, v.index.entries.len())
+}
+
+/// Every slot is the complete source-entry fold for that inode number.
+pub open spec fn count_projection(index: IndexView) -> Seq<SlotView> {
+    Seq::new(index.nodes.slots.len(), |n: int| fold(index.entries, index.entries.len(), n as u32))
+}
+
+pub proof fn valid_counts_have_the_unique_complete_source_projection(v: CountsView)
+    requires valid(v),
+    ensures admissible(v.index), v.slots == count_projection(v.index),
+{
+    reveal(valid);
+    reveal(admissible);
+    reveal(directory_index::valid);
+    reveal(crate::ea_namespace_nodes::valid);
+    reveal(matching);
+    assert(v.slots =~= count_projection(v.index)) by {
+        assert forall|n: int| 0 <= n < v.slots.len() implies
+            v.slots[n] == count_projection(v.index)[n] by {
+            assert(n as u32 as int == n);
+            assert(v.slots[n as u32 as int] == fold(v.index.entries, v.index.entries.len(), n as u32));
+        }
+    }
 }
 
 pub struct Counts { index: Ghost<IndexView>, slots: Vec<Slot> }
@@ -55,10 +94,14 @@ impl Counts {
 }
 
 pub fn collect(index: &DirectoryIndex<'_>) -> (r: Option<Counts>)
-    ensures index.wf(), match r { Some(counts) => counts.wf() && counts.view().index == index.view(), None => true },
+    ensures index.wf(), match r { Some(counts) => counts.wf() && counts.view().index == index.view()
+        && admissible(index.view()), None => !admissible(index.view()) },
 {
     let capacity = index.nodes().len();
-    if capacity < 3 || capacity > block_claims::MAX_BLOCKS as usize + 1 { return None; }
+    if capacity < 3 || capacity > block_claims::MAX_BLOCKS as usize + 1 {
+        assert(!admissible(index.view())) by { reveal(admissible); }
+        return None;
+    }
     let inodes = (capacity - 1) as u32;
     let length = index.len();
     let mut slots = Vec::<Slot>::new();
@@ -103,7 +146,11 @@ pub fn collect(index: &DirectoryIndex<'_>) -> (r: Option<Counts>)
         let dotdot = check_dotdot(name);
         assert(dot == is_dot(current.name) && dotdot == is_dotdot(current.name));
         if (dot && (target != directory || file_type != 2 || logical != 0 || record != 0))
-            || (dotdot && (file_type != 2 || logical != 0 || record != 1)) { return None; }
+            || (dotdot && (file_type != 2 || logical != 0 || record != 1)) {
+            assert(!dot_ok(current));
+            proof { a_malformed_dot_record_excludes_count_admission(index.view(), i as int); }
+            return None;
+        }
         assert(dot_ok(current));
         let named = !dot && !dotdot && file_type == 2;
         assert(directory_index::entry_ok(index.view(), entry.view()));
@@ -146,6 +193,7 @@ pub fn collect(index: &DirectoryIndex<'_>) -> (r: Option<Counts>)
     }
     let ghost assembled = CountsView { index: index.view(), slots: views(slots@) };
     assert(valid(assembled)) by { reveal(valid); }
+    assert(admissible(index.view())) by { reveal(admissible); }
     Some(Counts { index: Ghost(index.view()), slots })
 }
 

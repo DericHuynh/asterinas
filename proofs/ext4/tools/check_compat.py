@@ -542,6 +542,19 @@ def main():
         'mutate_ea_bootstrap_primary': ("pub fn misuse(b: verified_ext4::ea_bootstrap::Bootstrap<'_, '_>) { b.primary()[0] = 0; }\n", 'E0594'),
         'mutate_source_with_live_ea_bootstrap': ('pub fn misuse(mut bytes: Vec<u8>) { let source = verified_ext4::snapshot::Snapshot::from_bytes(&bytes); let boot = verified_ext4::ea_bootstrap::locate(&source).unwrap(); bytes[0] = 0; let _ = boot.primary(); }\n', 'E0502'),
     })
+    # Admission completeness exposes only the sealed, consuming graph boundary.
+    misuse.update({
+        'forge_ea_admission_parent_table': ('pub fn misuse(t: verified_ext4::ea_namespace_parent::ParentTable) { let _ = verified_ext4::ea_namespace_parent::ParentTable { ..t }; }\n', 'E0451'),
+        'change_ea_admission_parent_edges': ('pub fn misuse(mut t: verified_ext4::ea_namespace_parent::ParentTable) { t.parents = Vec::new(); }\n', 'E0616'),
+        'clone_ea_admission_parent_table': ('pub fn misuse(t: verified_ext4::ea_namespace_parent::ParentTable) { let _ = t.clone(); }\n', 'E0599'),
+        'reuse_consumed_ea_admission_parent_table': ('pub fn misuse(t: verified_ext4::ea_namespace_parent::ParentTable) { let _ = verified_ext4::ea_namespace_topology::build_parent_table(t); let _ = verified_ext4::ea_namespace_topology::build_parent_table(t); }\n', 'E0382'),
+        'move_ea_admission_parent_table_from_shared_borrow': ('pub fn misuse(t: &verified_ext4::ea_namespace_parent::ParentTable) { let _ = verified_ext4::ea_namespace_topology::build_parent_table(*t); }\n', 'E0507'),
+        'substitute_raw_parent_edges_for_ea_admission': ('pub fn misuse(t: Vec<u32>) { let _ = verified_ext4::ea_namespace_topology::build_parent_table(t); }\n', 'E0308'),
+        'forge_ea_admission_tree': ('pub fn misuse(t: verified_ext4::ea_namespace_topology::Tree) { let _ = verified_ext4::ea_namespace_topology::Tree { ..t }; }\n', 'E0451'),
+        'change_ea_admission_tree_depths': ('pub fn misuse(mut t: verified_ext4::ea_namespace_topology::Tree) { t.depths = Vec::new(); }\n', 'E0616'),
+        'change_ea_admission_tree_parent_table': ('pub fn misuse(mut t: verified_ext4::ea_namespace_topology::Tree, p: verified_ext4::ea_namespace_parent::ParentTable) { t.table = p; }\n', 'E0616'),
+        'forge_ea_admission_counts': ('pub fn misuse(c: verified_ext4::ea_namespace_counts::Counts) { let _ = verified_ext4::ea_namespace_counts::Counts { ..c }; }\n', 'E0451'),
+    })
     for name, (source, code) in misuse.items():
         path = BUILD / (name + ".rs")
         path.write_text(source)
