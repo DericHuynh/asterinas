@@ -1044,7 +1044,7 @@ impl Ledger {
             && ledger.view().live_blocks == 0 && ledger.view().next_request == 1,
             Err(_) => true },
     {
-        match LedgerState::from_bitmap(geometry, domain, group, raw, free_clusters, first_bit, count) {
+        match LedgerState::state_from_bitmap(geometry, domain, group, raw, free_clusters, first_bit, count) {
             Ok(state) => Ok(Ledger { state }),
             Err(error) => Err(error),
         }
@@ -1068,7 +1068,7 @@ impl Ledger {
     {
         proof { use_type_invariant(&self); }
         let Ledger { mut state } = self;
-        let result = state.reserve(cluster, owner, logical_start);
+        let result = state.state_reserve(cluster, owner, logical_start);
         (Ledger { state }, result)
     }
 
@@ -1084,7 +1084,7 @@ impl Ledger {
     {
         proof { use_type_invariant(&self); }
         let Ledger { mut state } = self;
-        let result = state.commit_reservation(key);
+        let result = state.state_commit_reservation(key);
         (Ledger { state }, result)
     }
 
@@ -1103,7 +1103,7 @@ impl Ledger {
     {
         proof { use_type_invariant(&self); }
         let Ledger { mut state } = self;
-        let result = state.cancel_reservation(key);
+        let result = state.state_cancel_reservation(key);
         (Ledger { state }, result)
     }
 
@@ -1130,7 +1130,7 @@ impl Ledger {
     {
         proof { use_type_invariant(&self); }
         let Ledger { mut state } = self;
-        let result = state.begin_initialization(key, start, length);
+        let result = state.state_begin_initialization(key, start, length);
         (Ledger { state }, result)
     }
 
@@ -1160,7 +1160,7 @@ impl Ledger {
     {
         proof { use_type_invariant(&self); }
         let Ledger { mut state } = self;
-        let result = state.complete_initialization(command, completion);
+        let result = state.state_complete_initialization(command, completion);
         (Ledger { state }, result)
     }
 
@@ -1177,7 +1177,7 @@ impl Ledger {
     {
         proof { use_type_invariant(&self); }
         let Ledger { mut state } = self;
-        let result = state.discard_initialization_after_reset(command, quiescent);
+        let result = state.state_discard_initialization_after_reset(command, quiescent);
         (Ledger { state }, result)
     }
 
@@ -1200,7 +1200,7 @@ impl Ledger {
     {
         proof { use_type_invariant(&self); }
         let Ledger { mut state } = self;
-        let result = state.map_range(key, start, length, written);
+        let result = state.state_map_range(key, start, length, written);
         (Ledger { state }, result)
     }
 
@@ -1222,7 +1222,7 @@ impl Ledger {
     {
         proof { use_type_invariant(&self); }
         let Ledger { mut state } = self;
-        let result = state.convert_written(key, start, length);
+        let result = state.state_convert_written(key, start, length);
         (Ledger { state }, result)
     }
 
@@ -1242,7 +1242,7 @@ impl Ledger {
     {
         proof { use_type_invariant(&self); }
         let Ledger { mut state } = self;
-        let result = state.unmap_range(key, start, length);
+        let result = state.state_unmap_range(key, start, length);
         (Ledger { state }, result)
     }
 
@@ -1264,7 +1264,7 @@ impl Ledger {
         },
     {
         proof { use_type_invariant(&*self); }
-        self.state.read_block(key, logical)
+        self.state.state_read_block(key, logical)
     }
 
     pub fn pin(self, key: &Key) -> (r: (Self, Result<ReadPin, Error>))
@@ -1281,7 +1281,7 @@ impl Ledger {
     {
         proof { use_type_invariant(&self); }
         let Ledger { mut state } = self;
-        let result = state.pin(key);
+        let result = state.state_pin(key);
         (Ledger { state }, result)
     }
 
@@ -1299,7 +1299,7 @@ impl Ledger {
     {
         proof { use_type_invariant(&self); }
         let Ledger { mut state } = self;
-        let result = state.unpin(pin);
+        let result = state.state_unpin(pin);
         (Ledger { state }, result)
     }
 
@@ -1318,7 +1318,7 @@ impl Ledger {
     {
         proof { use_type_invariant(&self); }
         let Ledger { mut state } = self;
-        let result = state.retire(key);
+        let result = state.state_retire(key);
         (Ledger { state }, result)
     }
 
@@ -1341,7 +1341,7 @@ impl Ledger {
     {
         proof { use_type_invariant(&self); }
         let Ledger { mut state } = self;
-        let result = state.reclaim_after_checkpoint(retired, succeeded);
+        let result = state.state_reclaim_after_checkpoint(retired, succeeded);
         (Ledger { state }, result)
     }
 
@@ -1349,7 +1349,7 @@ impl Ledger {
         ensures self.wf(), allocation_bitmap(self.view(), r@),
     {
         proof { use_type_invariant(&*self); }
-        self.state.bitmap_bytes()
+        self.state.state_bitmap_bytes()
     }
 }
 
@@ -1364,7 +1364,7 @@ impl LedgerState {
     /// Import actual cluster bitmap bytes. Already allocated clusters remain
     /// unavailable until a separate source-inode ownership import is supplied.
     /// The domain is a caller-managed allocator generation, not a global lease.
-    fn from_bitmap(geometry: Geometry, domain: u64, group: u32, raw: &[u8],
+    fn state_from_bitmap(geometry: Geometry, domain: u64, group: u32, raw: &[u8],
         free_clusters: u32, first_bit: u32, count: u32) -> (r: Result<Self, Error>)
         ensures match r { Ok(ledger) => ledger.wf() && ledger.view().geometry == geometry
             && ledger.view().domain == domain && ledger.view().bitmap == raw@
@@ -1553,7 +1553,7 @@ impl LedgerState {
         false
     }
 
-    fn reserve(&mut self, cluster: u64, owner: Owner, logical_start: u32)
+    fn state_reserve(&mut self, cluster: u64, owner: Owner, logical_start: u32)
         -> (r: Result<Key, Error>)
         requires self.wf(),
         ensures final(self).wf(), match r {
@@ -1640,7 +1640,7 @@ impl LedgerState {
     }
 
     /// Commit allocator ownership only. JBD2 commit durability is separate.
-    fn commit_reservation(&mut self, key: &Key) -> (r: Result<(), Error>)
+    fn state_commit_reservation(&mut self, key: &Key) -> (r: Result<(), Error>)
         requires self.wf(),
         ensures final(self).wf(), match r {
             Ok(()) => {
@@ -1662,7 +1662,7 @@ impl LedgerState {
         Ok(())
     }
 
-    fn cancel_reservation(&mut self, key: Key) -> (r: Result<(), (Key, Error)>)
+    fn state_cancel_reservation(&mut self, key: Key) -> (r: Result<(), (Key, Error)>)
         requires self.wf(),
         ensures final(self).wf(), match r {
             Ok(()) => {
@@ -1699,7 +1699,7 @@ impl LedgerState {
 
     /// Issue initialization for previously unreadable blocks. Its success
     /// callback must later refine actual CortenMM/OSTD zero/write completion.
-    fn begin_initialization(&mut self, key: &Key, start: u32, length: u32)
+    fn state_begin_initialization(&mut self, key: &Key, start: u32, length: u32)
         -> (r: Result<Initialization, Error>)
         requires self.wf(),
         ensures final(self).wf(), match r {
@@ -1817,7 +1817,7 @@ impl LedgerState {
             request, start, length, physical: base + start as u64 })
     }
 
-    fn complete_initialization(&mut self, command: Initialization, completion: Completion)
+    fn state_complete_initialization(&mut self, command: Initialization, completion: Completion)
         -> (r: Result<(), (Initialization, Error)>)
         requires self.wf(),
         ensures final(self).wf(), match r {
@@ -1975,7 +1975,7 @@ impl LedgerState {
 
     /// A failure callback does not cancel an issued write. The outstanding
     /// range can be discarded only after an adapter-established quiescent reset.
-    fn discard_initialization_after_reset(&mut self, command: Initialization, quiescent: bool)
+    fn state_discard_initialization_after_reset(&mut self, command: Initialization, quiescent: bool)
         -> (r: Result<(), (Initialization, Error)>)
         requires self.wf(),
         ensures final(self).wf(), match r {
@@ -2043,7 +2043,7 @@ impl LedgerState {
         Ok(())
     }
 
-    fn map_range(&mut self, key: &Key, start: u32, length: u32, written: bool)
+    fn state_map_range(&mut self, key: &Key, start: u32, length: u32, written: bool)
         -> (r: Result<(), Error>)
         requires self.wf(),
         ensures final(self).wf(), match r {
@@ -2143,7 +2143,7 @@ impl LedgerState {
         Ok(())
     }
 
-    fn convert_written(&mut self, key: &Key, start: u32, length: u32) -> (r: Result<(), Error>)
+    fn state_convert_written(&mut self, key: &Key, start: u32, length: u32) -> (r: Result<(), Error>)
         requires self.wf(),
         ensures final(self).wf(), match r {
             Ok(()) => {
@@ -2234,7 +2234,7 @@ impl LedgerState {
 
     /// Partial unmapping retains the physical cluster while any other range
     /// in this inode's logical cluster remains mapped.
-    fn unmap_range(&mut self, key: &Key, start: u32, length: u32) -> (r: Result<(), Error>)
+    fn state_unmap_range(&mut self, key: &Key, start: u32, length: u32) -> (r: Result<(), Error>)
         requires self.wf(),
         ensures final(self).wf(), match r {
             Ok(()) => {
@@ -2302,7 +2302,7 @@ impl LedgerState {
         Ok(())
     }
 
-    fn read_block(&self, key: &Key, logical: u32) -> (r: Result<ReadDecision, Error>)
+    fn state_read_block(&self, key: &Key, logical: u32) -> (r: Result<ReadDecision, Error>)
         requires self.wf(),
         ensures self.wf(), match r {
             Ok(decision) => {
@@ -2336,7 +2336,7 @@ impl LedgerState {
         Ok(ReadDecision::Initialized(base + offset as u64))
     }
 
-    fn pin(&mut self, key: &Key) -> (r: Result<ReadPin, Error>)
+    fn state_pin(&mut self, key: &Key) -> (r: Result<ReadPin, Error>)
         requires self.wf(),
         ensures final(self).wf(), match r {
             Ok(pin) => {
@@ -2361,7 +2361,7 @@ impl LedgerState {
         Ok(ReadPin { domain: self.domain, cluster: key.cluster, generation: key.generation })
     }
 
-    fn unpin(&mut self, pin: ReadPin) -> (r: Result<(), (ReadPin, Error)>)
+    fn state_unpin(&mut self, pin: ReadPin) -> (r: Result<(), (ReadPin, Error)>)
         requires self.wf(),
         ensures final(self).wf(), match r {
             Ok(()) => exists|i: int| 0 <= i < old(self).view().slots.len()
@@ -2387,7 +2387,7 @@ impl LedgerState {
         Ok(())
     }
 
-    fn retire(&mut self, key: Key) -> (r: Result<Retirement, (Key, Error)>)
+    fn state_retire(&mut self, key: Key) -> (r: Result<Retirement, (Key, Error)>)
         requires self.wf(),
         ensures final(self).wf(), match r {
             Ok(ticket) => {
@@ -2425,7 +2425,7 @@ impl LedgerState {
 
     /// Reuse waits for the outer journal checkpoint/revoke and I/O-quiescence
     /// contract. A failed acknowledgement leaves the allocated bitmap bit set.
-    fn reclaim_after_checkpoint(&mut self, retired: Retirement, succeeded: bool)
+    fn state_reclaim_after_checkpoint(&mut self, retired: Retirement, succeeded: bool)
         -> (r: Result<(), (Retirement, Error)>)
         requires self.wf(),
         ensures final(self).wf(), match r {
@@ -2469,7 +2469,7 @@ impl LedgerState {
         Ok(())
     }
 
-    fn bitmap_bytes(&self) -> (r: Vec<u8>)
+    fn state_bitmap_bytes(&self) -> (r: Vec<u8>)
         requires self.wf(),
         ensures self.wf(), allocation_bitmap(self.view(), r@),
     {

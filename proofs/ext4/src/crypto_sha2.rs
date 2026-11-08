@@ -614,7 +614,7 @@ impl HashCore256 {
     {
         Self {state:self.state,buffer:self.buffer,used:self.used,length:self.length,message:Ghost(self.message@)}
     }
-    fn new256() -> (r:Self) ensures r.valid256(),r.input256()==Seq::<u8>::empty() {
+    fn core_new256() -> (r:Self) ensures r.valid256(),r.input256()==Seq::<u8>::empty() {
         let result=Self { state:[0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19],buffer:[0;64],used:0,length:0,message:Ghost(Seq::empty()) };
         proof {
             message256_empty();
@@ -623,7 +623,7 @@ impl HashCore256 {
         }
         result
     }
-    fn update256(mut self, input: &[u8]) -> (r:Result<Self,Error>)
+    fn core_update256(mut self, input: &[u8]) -> (r:Result<Self,Error>)
         requires self.valid256(),
         ensures r.is_ok() <==> (self.input256().len()+(input.len() as nat)<=2305843009213693951nat),
             match r {Ok(next)=>next.valid256() && next.input256()==self.input256()+input@,Err(_)=>true},
@@ -695,7 +695,7 @@ impl HashCore256 {
         proof {assert(self.valid256());}
         Ok(self)
     }
-    fn finalize256(mut self) -> (r:Vec<u8>)
+    fn core_finalize256(mut self) -> (r:Vec<u8>)
         requires self.valid256(),
         ensures r.len()==32,r@==digest256_reference(self.input256()),
     {
@@ -813,7 +813,7 @@ impl Sha256 {
     spec fn invariant(self) -> bool {self.valid256()}
     pub fn new256() -> (r:Self)
         ensures r.valid256(),r.input256()==Seq::<u8>::empty(),
-    {Self {core:HashCore256::new256()}}
+    {Self {core:HashCore256::core_new256()}}
     pub fn update256(&mut self,input:&[u8]) -> (r:Result<(),Error>)
         ensures final(self).valid256(),
             r.is_ok() <==> (old(self).input256().len()+(input.len() as nat)<=2305843009213693951nat),
@@ -822,7 +822,7 @@ impl Sha256 {
                 && final(self).input256()==old(self).input256(),
     {
         proof {use_type_invariant(&*self);}
-        let next=match self.core.copy_core256().update256(input) {Ok(v)=>v,Err(e)=>return Err(e)};
+        let next=match self.core.copy_core256().core_update256(input) {Ok(v)=>v,Err(e)=>return Err(e)};
         self.core=next;
         Ok(())
     }
@@ -830,7 +830,7 @@ impl Sha256 {
         ensures r.len()==32,r@==digest256_reference(self.input256()),
     {
         proof {use_type_invariant(&self);}
-        self.core.finalize256()
+        self.core.core_finalize256()
     }
 }
 struct HashCore512 { state: [u64;8], buffer: [u8;128], used: usize, length: u64, message:Ghost<Seq<u8>> }
@@ -851,7 +851,7 @@ impl HashCore512 {
     {
         Self {state:self.state,buffer:self.buffer,used:self.used,length:self.length,message:Ghost(self.message@)}
     }
-    fn new512() -> (r:Self) ensures r.valid512(),r.input512()==Seq::<u8>::empty() {
+    fn core_new512() -> (r:Self) ensures r.valid512(),r.input512()==Seq::<u8>::empty() {
         let result=Self { state:[0x6a09e667f3bcc908,0xbb67ae8584caa73b,0x3c6ef372fe94f82b,0xa54ff53a5f1d36f1,0x510e527fade682d1,0x9b05688c2b3e6c1f,0x1f83d9abfb41bd6b,0x5be0cd19137e2179],buffer:[0;128],used:0,length:0,message:Ghost(Seq::empty()) };
         proof {
             message512_empty();
@@ -860,7 +860,7 @@ impl HashCore512 {
         }
         result
     }
-    fn update512(mut self, input: &[u8]) -> (r:Result<Self,Error>)
+    fn core_update512(mut self, input: &[u8]) -> (r:Result<Self,Error>)
         requires self.valid512(),
         ensures r.is_ok() <==> (self.input512().len()+(input.len() as nat)<=(u64::MAX as nat)),
             match r {Ok(next)=>next.valid512() && next.input512()==self.input512()+input@,Err(_)=>true},
@@ -932,7 +932,7 @@ impl HashCore512 {
         proof {assert(self.valid512());}
         Ok(self)
     }
-    fn finalize512(mut self) -> (r:Vec<u8>)
+    fn core_finalize512(mut self) -> (r:Vec<u8>)
         requires self.valid512(),
         ensures r.len()==64,r@==digest512_reference(self.input512()),
     {
@@ -1075,7 +1075,7 @@ impl Sha512 {
     spec fn invariant(self) -> bool {self.valid512()}
     pub fn new512() -> (r:Self)
         ensures r.valid512(),r.input512()==Seq::<u8>::empty(),
-    {Self {core:HashCore512::new512()}}
+    {Self {core:HashCore512::core_new512()}}
     pub fn update512(&mut self,input:&[u8]) -> (r:Result<(),Error>)
         ensures final(self).valid512(),
             r.is_ok() <==> (old(self).input512().len()+(input.len() as nat)<=(u64::MAX as nat)),
@@ -1084,7 +1084,7 @@ impl Sha512 {
                 && final(self).input512()==old(self).input512(),
     {
         proof {use_type_invariant(&*self);}
-        let next=match self.core.copy_core512().update512(input) {Ok(v)=>v,Err(e)=>return Err(e)};
+        let next=match self.core.copy_core512().core_update512(input) {Ok(v)=>v,Err(e)=>return Err(e)};
         self.core=next;
         Ok(())
     }
@@ -1092,7 +1092,7 @@ impl Sha512 {
         ensures r.len()==64,r@==digest512_reference(self.input512()),
     {
         proof {use_type_invariant(&self);}
-        self.core.finalize512()
+        self.core.core_finalize512()
     }
     fn duplicate_for_hmac(&self) -> (r:Self)
         ensures r.valid512(),r.input512()==self.input512(),r.physical512()==self.physical512(),
@@ -1228,7 +1228,7 @@ impl HmacCore512 {
         Self {inner:self.inner.duplicate_for_hmac(),outer:self.outer.duplicate_for_hmac(),
             key:Ghost(self.key@),message:Ghost(self.message@)}
     }
-    fn new_hmac512(key:&[u8]) -> (r:Result<Self,Error>)
+    fn core_new_hmac512(key:&[u8]) -> (r:Result<Self,Error>)
         ensures match r {Ok(h)=>h.hmac_valid() && h.hmac_key()==key@ && h.hmac_input()==Seq::<u8>::empty(),Err(_)=>true},
     {
         let mut material=Vec::new();
@@ -1258,7 +1258,7 @@ impl HmacCore512 {
         }
         Ok(Self { inner,outer,key:Ghost(key@),message:Ghost(Seq::empty()) })
     }
-    fn update_hmac512(mut self,input:&[u8]) -> (r:Result<Self,Error>)
+    fn core_update_hmac512(mut self,input:&[u8]) -> (r:Result<Self,Error>)
         requires self.hmac_valid(),
         ensures match r {Ok(next)=>next.hmac_valid() && next.hmac_key()==self.hmac_key()
             && next.hmac_input()==self.hmac_input()+input@,Err(_)=>true},
@@ -1273,7 +1273,7 @@ impl HmacCore512 {
         self.message=Ghost(before+input@);
         Ok(self)
     }
-    fn finalize_hmac512(mut self) -> (r:Result<Vec<u8>,Error>)
+    fn core_finalize_hmac512(mut self) -> (r:Result<Vec<u8>,Error>)
         requires self.hmac_valid(),
     ensures match r {Ok(v)=>v.len()==64 && v@==hmac512_reference(self.hmac_key(),self.hmac_input()),Err(_)=>true},
 {
@@ -1290,14 +1290,14 @@ impl HmacSha512 {
     pub fn new_hmac512(key:&[u8]) -> (r:Result<Self,Error>)
         ensures match r {Ok(h)=>h.hmac_valid() && h.hmac_key()==key@ && h.hmac_input()==Seq::<u8>::empty(),Err(_)=>true},
     {
-        match HmacCore512::new_hmac512(key) {Ok(core)=>Ok(Self {core}),Err(e)=>Err(e)}
+        match HmacCore512::core_new_hmac512(key) {Ok(core)=>Ok(Self {core}),Err(e)=>Err(e)}
     }
     pub fn update_hmac512(&mut self,input:&[u8]) -> (r:Result<(),Error>)
         ensures final(self).hmac_valid(),final(self).hmac_key()==old(self).hmac_key(),
             final(self).hmac_input()==if r.is_ok() {old(self).hmac_input()+input@}else{old(self).hmac_input()},
     {
         proof {use_type_invariant(&*self);}
-        let next=match self.core.copy_hmac_core().update_hmac512(input) {Ok(v)=>v,Err(e)=>return Err(e)};
+        let next=match self.core.copy_hmac_core().core_update_hmac512(input) {Ok(v)=>v,Err(e)=>return Err(e)};
         self.core=next;
         Ok(())
     }
@@ -1305,7 +1305,7 @@ impl HmacSha512 {
         ensures match r {Ok(v)=>v.len()==64 && v@==hmac512_reference(self.hmac_key(),self.hmac_input()),Err(_)=>true},
     {
         proof {use_type_invariant(&self);}
-        self.core.finalize_hmac512()
+        self.core.core_finalize_hmac512()
     }
 }
 pub fn hmac_sha512(key:&[u8],input:&[u8]) -> (r:Result<Vec<u8>,Error>)
