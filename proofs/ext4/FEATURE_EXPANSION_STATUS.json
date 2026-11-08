@@ -432,23 +432,24 @@
       "whole_expansion_verified": false
     },
     {
-      "attempt": "proof-htree-edit-08",
+      "attempt": "proof-directory-order-06",
       "modules": [
         "htree_edit"
       ],
       "verification_results": {
         "encountered-error": false,
         "encountered-vir-error": false,
-        "verified": 96,
+        "verified": 101,
         "errors": 0,
         "is-verifying-entire-crate": false
       },
       "source_sha256": {
-        "htree_edit": "8de62f53dab12e14b05703bffabae43d0e881b36fb41763b6d83dba6a12b0ae4"
+        "htree_edit": "9bdf4d2a2c714b16772bc939cf40fa2f5c77f9073a46ed93cb8ec2dae2553f18"
       },
-      "command_sha256": "4e4c0b1bb00aa0eadd6b05bf04a1c762a789500273a631ad93bf722ad3fe6677",
+      "command_sha256": "7f5b254d030806e161b666960632478077b205fb721457a11ecf081061fd0f2e",
       "filtered": true,
-      "whole_expansion_verified": false
+      "whole_expansion_verified": false,
+      "scope": "Exact name/key comparator booleans, sort-index permutation, locate/copy filtering and successful rebuild/insert/delete/rename logical catalogues with full entry metadata, delta/empty-victim equations and NoChange identity cases; sortedness, wire/layout refinement and filesystem authority/integration remain open"
     },
     {
       "attempt": "proof-hctr2-05",
@@ -500,7 +501,7 @@
     "sm4",
     "unicode12_data"
   ],
-  "focused_verified_obligations": 1661,
+  "focused_verified_obligations": 1666,
   "current_source_matches_checked_modules": true,
   "independent_test_harness_fix": {
     "branch": "fix/osdk-test-qemu-exit",
@@ -605,6 +606,25 @@
       "command_sha256": "d560242c32eaab70886e237e07c3a01acc3cc6870e18cbbd8b6c22b0982690aa",
       "filtered": true,
       "whole_expansion_verified": false
+    },
+    {
+      "attempt": "proof-htree-edit-08",
+      "modules": [
+        "htree_edit"
+      ],
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 96,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "source_sha256": {
+        "htree_edit": "8de62f53dab12e14b05703bffabae43d0e881b36fb41763b6d83dba6a12b0ae4"
+      },
+      "command_sha256": "4e4c0b1bb00aa0eadd6b05bf04a1c762a789500273a631ad93bf722ad3fe6677",
+      "filtered": true,
+      "whole_expansion_verified": false
     }
   ],
   "integrated_compile": {
@@ -614,9 +634,10 @@
     "verification_skipped": true,
     "proof_evidence": false,
     "artifact_sha256": "a83568a7c1db833ffc909991d450fa6545f064906ee02b6ef7aa4108a903a3e4",
-    "scope": "Coherent all32-module snapshot based on 4c9a571 plus the exact current28 focused-checked module sources. Ongoing unproved drafts remain separate.",
+    "scope": "Historical coherent all32-module snapshot based on 4c9a571 plus the exact 28 focused-checked module sources recorded in checkpoint-input-04. It predates this branch's HTree logical-refinement contracts; no new integrated compile was performed. Ongoing unproved drafts remain separate.",
     "source_base_commit": "4c9a5717af0dbeb50c85f34c3399ddc3395f06f5",
-    "checked_module_manifest": "checkpoint-input-04/manifest.json"
+    "checked_module_manifest": "checkpoint-input-04/manifest.json",
+    "source_matches_current": false
   },
   "integrated_crypto_native": {
     "attempt": "extra-crypto-native-07",
@@ -939,5 +960,61 @@
     "scope": "Exact byte interoperability; not a full mode-inverse/security theorem or mounted key/nonce authority",
     "attempt": "hctr2-checked-native-01"
   },
-  "htree_focused_scope": "96 obligations: typed Context geometry, buffer/index/arithmetic bounds and observational getters. Full sorting, wire-format, entry preservation and namespace-operation refinement remain open."
+  "htree_focused_scope": "96 obligations: typed Context geometry, buffer/index/arithmetic bounds and observational getters. Full sorting, wire-format, entry preservation and namespace-operation refinement remain open.",
+  "checked_directory_conformance": {
+    "status": "passed",
+    "attempt": "directory-checked-native-06",
+    "formal_verification": false,
+    "library_attempt": "proof-directory-order-06",
+    "library_sha256": "e3782c545891e819f88ada219f4d2fc253b769dfaa473b7511538ba2b72a4c9d",
+    "source_sha256": "9bdf4d2a2c714b16772bc939cf40fa2f5c77f9073a46ed93cb8ec2dae2553f18",
+    "provenance_sha256": "8f44874c7d8cce8d772d72da990dcedab7efdc9cafa9411944ca8f1d1c9eb9e2",
+    "manifest_sha256": "7152afad430683b74e86c13621b807700ca27a840ebd4c4079dd05c0d8b3339c",
+    "native_tests": 10,
+    "substantive_native_tests": 9,
+    "native_assertions": 30568,
+    "block_sizes": [
+      1024,
+      2048,
+      4096,
+      8192,
+      16384,
+      32768,
+      65536
+    ],
+    "format_profiles": 336,
+    "namespace_mutation_profiles": 28,
+    "independent_directory_hash_vectors": 108,
+    "independent_directory_hash_assertions": 110,
+    "independent_filesystem_reconstructions": 5,
+    "all_reconstruction_e2fsck_exit_codes": 0,
+    "debugfs_listing_lookup_pass": true,
+    "fresh_output_files_byte_equal_to_native04": 19,
+    "reconstructed_images_byte_equal_to_native04": 5,
+    "byte_equality_manifest_sha256": "37d6dcfd9a306f23dc59446ccbce0a88c16e918dea88b517c9ab9f8707fcf6aa",
+    "fixture_metadata_correction": {
+      "older_fixture": "/task/ext4-expansion/htree-native-02/linux-collision.json",
+      "issue": "Older metadata major-hash field does not apply to all four names.",
+      "independently_confirmed_legacy_hashes": [
+        61132750,
+        42542844,
+        209098722,
+        209098722
+      ],
+      "production_mismatch": false,
+      "current_native_test_valid": true,
+      "reason": "The two colliding names straddle a leaf boundary after the first two noncolliding names; expected continuation boundary remains 209098723.",
+      "old_evidence_edited": false,
+      "initial_oracle_assertion_failure_preserved": true
+    },
+    "linux_reference_pin": "028ef9c96e96197026887c0f092424679298aae8",
+    "implementation": "Actual focused-checked rlib; no production-source erasure or local directory implementation",
+    "limitations": [
+      "Focused comparator/permutation and exact rebuild/insert/delete/rename catalogue contracts do not constitute full HTree wire-format proof closure.",
+      "Native generation/type/catalogue/delta/empty-victim tests do not confer source completeness, target ownership or victim-emptiness authority.",
+      "e2fsck/debugfs validate exact-pool rebuilds of five preexisting disposable filesystem fixtures; namespace edits are separately tested as unadmitted plans.",
+      "No kernel mounting, crash injection or physical durability is established.",
+      "The 50000-entry depth-two stress case was intentionally excluded; 400-entry depth-one reconstruction is included."
+    ]
+  }
 }
