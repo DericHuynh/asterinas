@@ -274,7 +274,8 @@
     "src/quota_v2.rs",
     "src/resize_plan.rs",
     "src/sm4.rs",
-    "src/unicode12_data.rs"
+    "src/unicode12_data.rs",
+    "src/sector_crash.rs"
   ],
   "required_proofs": [
     "redo::overlay_preserves_domain",
@@ -1261,7 +1262,20 @@
     "hctr2::hctr2_raw_key_bridge",
     "legacy_map::larger_filesystem_bounds_preserve_legacy_root",
     "legacy_map::legacy_pointer_byte_spans_do_not_depend_on_filesystem_width",
-    "legacy_map::filesystem_count_changes_preserve_legacy_pointer_interpretation"
+    "legacy_map::filesystem_count_changes_preserve_legacy_pointer_interpretation",
+    "sector_crash::stable_piece_preserves_every_outside_byte",
+    "sector_crash::stable_piece_uses_only_the_exact_issued_bytes",
+    "sector_crash::stale_or_redirected_reports_enable_neither_transition",
+    "sector_crash::software_completion_changes_no_stable_byte",
+    "sector_crash::an_already_completed_report_cannot_be_consumed_twice",
+    "sector_crash::an_admitted_cut_retains_every_known_stable_byte",
+    "sector_crash::completed_write_can_still_have_no_new_stable_piece",
+    "sector_crash::every_initial_piece_subset_is_an_admitted_candidate_cut",
+    "sector_crash::matching_conditional_fence_has_exact_issued_stable_bytes",
+    "sector_crash::two_changed_distinct_sectors_admit_a_mixed_cut",
+    "sector_crash::separate_1120_and_2044_locations_have_a_mixed_byte_cut",
+    "sector_crash::whole_image_premise_restricts_4096_cut_to_the_old_choice",
+    "sector_crash::whole_image_4096_cut_embeds_one_existing_atomic_media_event"
   ],
   "required_flags": [
     "--no-cheating",
@@ -2518,6 +2532,16 @@
     "sm4::new_sm4_key",
     "sm4::encrypt_sm4_block",
     "sm4::decrypt_sm4_block",
-    "sm4::retire_sm4"
+    "sm4::retire_sm4",
+    "sector_crash::same_request",
+    "sector_crash::candidate",
+    "sector_crash::record_completion",
+    "sector_crash::record_stable_piece",
+    "sector_crash::candidate_cut",
+    "sector_crash::stable_bytes",
+    "sector_crash::issued_bytes",
+    "sector_crash::stable_piece_flags",
+    "sector_crash::request_identity",
+    "sector_crash::software_completed"
   ]
 }
