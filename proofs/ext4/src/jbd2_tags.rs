@@ -152,6 +152,78 @@ fn zeroes(length: usize) -> (r: Option<Vec<u8>>)
     Some(raw)
 }
 
+proof fn address_halves_rejoin(block: u64)
+    ensures (((block >> 32) as u32 as u64) << 32) | (block as u32 as u64) == block,
+        block <= 0xffff_ffffu64 ==> (block >> 32) == 0,
+        (block >> 32) <= 0xffff_ffffu64,
+{
+    assert((((block >> 32) as u32 as u64) << 32) | (block as u32 as u64) == block) by (bit_vector);
+    assert(block <= 0xffff_ffffu64 ==> (block >> 32) == 0) by (bit_vector);
+    assert((block >> 32) <= 0xffff_ffffu64) by (bit_vector);
+}
+proof fn flags_fit_the_legacy_field(flags: u32)
+    requires flags & !15u32 == 0,
+    ensures flags <= 15, flags as u16 as u32 == flags,
+{
+    assert(flags <= 15 && flags as u16 as u32 == flags) by (bit_vector)
+        requires flags & !15u32 == 0;
+}
+proof fn equal_prefix_preserves_byte(before: Seq<u8>, after: Seq<u8>, prefix: int, index: int)
+    requires 0 <= index < prefix <= before.len(), prefix <= after.len(),
+        before.take(prefix) == after.take(prefix),
+    ensures before[index] == after[index],
+{
+    assert(before.take(prefix)[index] == before[index]);
+    assert(after.take(prefix)[index] == after[index]);
+    assert(before.take(prefix)[index] == after.take(prefix)[index]);
+}
+proof fn equal_prefix_preserves_subrange(before: Seq<u8>, after: Seq<u8>, prefix: int, first: int, end: int)
+    requires 0 <= first <= end <= prefix <= before.len(), prefix <= after.len(),
+        before.take(prefix) == after.take(prefix),
+    ensures before.subrange(first, end) == after.subrange(first, end),
+{
+    assert forall|i: int| 0 <= i < end - first implies
+        #[trigger] before.subrange(first, end)[i] == after.subrange(first, end)[i] by {
+        equal_prefix_preserves_byte(before, after, prefix, first + i);
+    }
+    assert(before.subrange(first, end) =~= after.subrange(first, end));
+}
+proof fn equal_prefix_preserves_be32(before: Seq<u8>, after: Seq<u8>, prefix: int, word: int)
+    requires 0 <= word, word + 4 <= prefix <= before.len(), prefix <= after.len(),
+        before.take(prefix) == after.take(prefix),
+    ensures bytes::be32(before, word) == bytes::be32(after, word),
+{
+    equal_prefix_preserves_byte(before, after, prefix, word);
+    equal_prefix_preserves_byte(before, after, prefix, word + 1);
+    equal_prefix_preserves_byte(before, after, prefix, word + 2);
+    equal_prefix_preserves_byte(before, after, prefix, word + 3);
+}
+
+proof fn captured_prefix_is_unchanged(before: Seq<u8>, after: Seq<u8>, offset: int, data: Seq<u8>, prefix: int)
+    requires 0 <= prefix <= offset, offset + data.len() <= before.len(),
+        after == bytes::splice(before, offset, data),
+    ensures after.take(prefix) == before.take(prefix),
+{
+    assert(after.take(prefix) =~= before.take(prefix));
+}
+fn copy_span(raw: &mut [u8], offset: usize, data: &[u8]) -> (r: bool)
+    ensures final(raw).len() == old(raw).len(), r == (offset as int + data.len() <= old(raw).len()),
+        final(raw)@ == if r { bytes::splice(old(raw)@, offset as int, data@) } else { old(raw)@ },
+        r ==> final(raw)@.subrange(offset as int, offset as int + data.len()) == data@,
+        forall|i: int| 0 <= i < old(raw).len() && !(offset <= i < offset as int + data.len())
+            ==> #[trigger] final(raw)@[i] == old(raw)@[i],
+{
+    let ghost before = raw@;
+    let success = bytes::write_bytes(raw, offset, data);
+    proof {
+        if success {
+            local_writer_frames_reads(before, offset as int, data@);
+            assert(raw@.subrange(offset as int, offset as int + data.len()) =~= data@);
+        }
+    }
+    success
+}
+
 /// V2 has a two-byte unused trailer after its conditional high address word;
 /// its sizes are 10/14, not the older 8/12 or V3's fixed 16 bytes.
 pub fn parse_tag(raw: &[u8], offset: usize, f: Features, filesystem_blocks: u64)
@@ -198,29 +270,68 @@ pub fn encode_tag(tag: Tag, f: Features, filesystem_blocks: u64) -> (r: Option<V
         None => !tag_encodable(tag, f.view(), filesystem_blocks),
     },
 {
+    hide(features::feature_valid);
+    hide(crc::fold);
     let _ = f.version();
     if tag.block >= filesystem_blocks || tag.flags & !15u32 != 0
         || (!f.wide_tags() && tag.block > 0xffff_ffffu64) { return None; }
     if matches!(f.checksum(), Checksum::V2) && tag.checksum > 65535 { return None; }
-    let mut raw = zeroes(f.tag_bytes()).unwrap();
+    proof { address_halves_rejoin(tag.block); flags_fit_the_legacy_field(tag.flags); }
+    let width = f.tag_bytes();
+    let mut raw = zeroes(width).unwrap();
     put32(&mut raw, 0, tag.block as u32);
     match f.checksum() {
         Checksum::V3 => {
             put32(&mut raw, 4, tag.flags);
             put32(&mut raw, 8, (tag.block >> 32) as u32);
             put32(&mut raw, 12, tag.checksum);
+            proof {
+                assert(raw.len() == 16);
+                assert(bytes::be32(raw@, 0) == tag.block as u32 as nat);
+                assert(bytes::be32(raw@, 4) == tag.flags);
+                assert(bytes::be32(raw@, 8) == (tag.block >> 32) as u32 as nat);
+                assert(bytes::be32(raw@, 12) == tag.checksum);
+                assert(tag_address(raw@, 0, f.view()) == tag.block);
+                assert(encoded_tag_matches(raw@, tag, f.view()));
+            }
         },
-        _ => {
-            if matches!(f.checksum(), Checksum::V2) { put16(&mut raw, 4, tag.checksum as u16); }
+        Checksum::V2 => {
+            put16(&mut raw, 4, tag.checksum as u16);
             put16(&mut raw, 6, tag.flags as u16);
             if f.wide_tags() { put32(&mut raw, 8, (tag.block >> 32) as u32); }
+            proof {
+                assert(bytes::be32(raw@, 0) == tag.block as u32 as nat);
+                assert(be16_word(raw@, 4) == tag.checksum);
+                assert(be16_word(raw@, 6) == tag.flags);
+                if features::wide(f.view()) {
+                    assert(raw.len() == 14);
+                    assert(bytes::be32(raw@, 8) == (tag.block >> 32) as u32 as nat);
+                    assert(raw@[12] == 0 && raw@[13] == 0);
+                } else {
+                    assert(raw.len() == 10);
+                    assert(raw@[8] == 0 && raw@[9] == 0);
+                }
+                assert(tag_address(raw@, 0, f.view()) == tag.block);
+                assert(encoded_tag_matches(raw@, tag, f.view()));
+            }
+        },
+        _ => {
+            put16(&mut raw, 6, tag.flags as u16);
+            if f.wide_tags() { put32(&mut raw, 8, (tag.block >> 32) as u32); }
+            proof {
+                assert(bytes::be32(raw@, 0) == tag.block as u32 as nat);
+                assert(be16_word(raw@, 6) == tag.flags);
+                if features::wide(f.view()) {
+                    assert(bytes::be32(raw@, 8) == (tag.block >> 32) as u32 as nat);
+                }
+                assert(tag_address(raw@, 0, f.view()) == tag.block);
+                assert(encoded_tag_matches(raw@, tag, f.view()));
+            }
         },
     }
     proof {
-        let block = tag.block;
-        let flags = tag.flags;
-        assert((((block >> 32) as u32 as u64) << 32) | (block as u32 as u64) == block) by (bit_vector);
-        assert(flags & !15u32 == 0 ==> flags as u16 as u32 == flags) by (bit_vector);
+        assert(tag_encodable(tag, f.view(), filesystem_blocks));
+        assert(tag_admitted(raw@, 0, f.view(), filesystem_blocks));
     }
     Some(raw)
 }
@@ -283,6 +394,48 @@ pub open spec fn descriptor_witness(raw: Seq<u8>, f: features::FeatureView, uuid
     &&& forall|i: int| 0 <= i < tags.len() ==>
         #[trigger] descriptor_entry(raw, f, uuid, blocks, positions[i], tags[i])
             && (i > 0 ==> positions[i] == entry_end(positions[i - 1], f, tags[i - 1]))
+}
+
+proof fn tag_readers_translate(source: Seq<u8>, target: Seq<u8>, offset: int, limit: int,
+    f: features::FeatureView)
+    requires features::feature_valid(f), source.len() == features::tag_width(f),
+        0 <= offset, offset + source.len() <= limit <= target.len(),
+        source == target.subrange(offset, offset + source.len()),
+    ensures tag_flags(source, 0, f) == tag_flags(target.take(limit), offset, f),
+        tag_checksum(source, 0, f) == tag_checksum(target.take(limit), offset, f),
+        tag_high(source, 0, f) == tag_high(target.take(limit), offset, f),
+        tag_address(source, 0, f) == tag_address(target.take(limit), offset, f),
+{
+    assert forall|i: int| 0 <= i < source.len() implies
+        #[trigger] target.take(limit)[offset + i] == source[i] by {}
+    if f.checksum is V3 {
+        assert(features::tag_width(f) == 16);
+    } else if f.checksum is V2 {
+        if features::wide(f) { assert(features::tag_width(f) == 14); }
+        else { assert(features::tag_width(f) == 10); }
+    } else if features::wide(f) { assert(features::tag_width(f) == 12); }
+    else { assert(features::tag_width(f) == 8); }
+}
+proof fn descriptor_entry_prefix_frame(before: Seq<u8>, after: Seq<u8>, prefix: nat,
+    f: features::FeatureView, uuid: Seq<u8>, blocks: u64, offset: nat, tag: Tag)
+    requires features::feature_valid(f), before.len() == after.len(), prefix <= before.len(),
+        before.take(prefix as int) == after.take(prefix as int),
+        descriptor_entry(before, f, uuid, blocks, offset, tag), entry_end(offset, f, tag) <= prefix,
+    ensures descriptor_entry(after, f, uuid, blocks, offset, tag),
+{
+    let width = features::tag_width(f);
+    let limit = before.len() - features::tail_width(f);
+    let wire = before.subrange(offset as int, offset as int + width);
+    assert(wire =~= after.subrange(offset as int, offset as int + width));
+    tag_readers_translate(wire, before, offset as int, limit as int, f);
+    tag_readers_translate(wire, after, offset as int, limit as int, f);
+    if tag.flags & SAME_UUID == 0 {
+        assert(entry_end(offset, f, tag) == offset + width + 16);
+        equal_prefix_preserves_subrange(before, after, prefix as int,
+            offset as int + width, offset as int + width + 16);
+        assert(before.subrange(offset as int + width, offset as int + width + 16)
+            =~= after.subrange(offset as int + width, offset as int + width + 16));
+    }
 }
 
 pub fn parse_descriptor(raw: &[u8], f: Features, expected_sequence: u32,
@@ -362,6 +515,23 @@ pub fn parse_descriptor(raw: &[u8], f: Features, expected_sequence: u32,
     None
 }
 
+proof fn canonical_flag_cases(original: u32, same_uuid: bool, last: bool)
+    ensures
+        ((original & 5u32) | (if same_uuid { 2u32 } else { 0u32 }) | (if last { 8u32 } else { 0u32 }))
+            == if last {
+                (if same_uuid { (original & 5u32) | 2u32 } else { original & 5u32 }) | 8u32
+            } else { if same_uuid { (original & 5u32) | 2u32 } else { original & 5u32 } },
+        (((original & 5u32) | (if same_uuid { 2u32 } else { 0u32 }) | (if last { 8u32 } else { 0u32 })) & 2u32)
+            == if same_uuid { 2u32 } else { 0u32 },
+{
+    assert(((original & 5u32) | (if same_uuid { 2u32 } else { 0u32 }) | (if last { 8u32 } else { 0u32 }))
+        == if last {
+            (if same_uuid { (original & 5u32) | 2u32 } else { original & 5u32 }) | 8u32
+        } else { if same_uuid { (original & 5u32) | 2u32 } else { original & 5u32 } }) by (bit_vector);
+    assert((((original & 5u32) | (if same_uuid { 2u32 } else { 0u32 }) | (if last { 8u32 } else { 0u32 })) & 2u32)
+        == if same_uuid { 2u32 } else { 0u32 }) by (bit_vector);
+}
+
 pub open spec fn canonical_tag(tag: Tag, index: int, count: nat, f: features::FeatureView) -> Tag {
     Tag { block: tag.block,
         flags: (tag.flags & (ESCAPE | DELETED)) | (if index == 0 { 0u32 } else { SAME_UUID })
@@ -384,6 +554,8 @@ pub fn encode_descriptor(tags: &[Tag], f: Features, sequence: u32, uuid_seed: u3
         None => true,
     },
 {
+    hide(features::feature_valid);
+    hide(crc::fold);
     let _ = f.version();
     if !crate::block_size::valid(block_bytes) || target_uuid.len() != 16
         || tags.len() == 0 || tags.len() > MAX_TAGS { return None; }
@@ -393,10 +565,12 @@ pub fn encode_descriptor(tags: &[Tag], f: Features, sequence: u32, uuid_seed: u3
     let mut offset = 12usize; let mut i = 0usize;
     let ghost mut positions = Seq::<nat>::empty();
     while i < tags.len()
-        invariant i <= tags.len() <= MAX_TAGS, 12 <= offset <= limit <= raw.len(), raw.len() == block_bytes,
+        invariant f.wf(), i <= tags.len() <= MAX_TAGS, 12 <= offset <= limit <= raw.len(), raw.len() == block_bytes,
             crate::block_size::accepted(block_bytes as nat), target_uuid.len() == 16,
             bytes::be32(raw@, 0) == features::MAGIC, bytes::be32(raw@, 4) == 1, bytes::be32(raw@, 8) == sequence,
-            positions.len() == i,
+            positions.len() == i, limit == raw.len() - features::tail_width(f.view()),
+            forall|j: int| 0 <= j < i ==> #[trigger] entry_end(positions[j], f.view(),
+                canonical_tags(tags@, f.view())[j]) <= offset,
             descriptor_witness(raw@, f.view(), target_uuid@, filesystem_blocks,
                 canonical_tags(tags@, f.view()).take(i as int), positions),
             i > 0 ==> offset == entry_end(positions[i as int - 1], f.view(),
@@ -404,27 +578,80 @@ pub fn encode_descriptor(tags: &[Tag], f: Features, sequence: u32, uuid_seed: u3
         decreases tags.len() - i,
     {
         let ghost beginning = offset as nat;
+        let ghost previous_wire = raw@;
+        let ghost previous_positions = positions;
+        let ghost previous_index = i;
         let mut tag = tags[i];
         if tag.flags & !15u32 != 0 { return None; }
         tag.flags = tag.flags & (ESCAPE | DELETED);
         if i != 0 { tag.flags |= SAME_UUID; }
         if i + 1 == tags.len() { tag.flags |= LAST_TAG; }
+        proof {
+            canonical_flag_cases(tags@[i as int].flags, i != 0, i + 1 == tags.len());
+            assert(canonical_tags(tags@, f.view())[i as int] == canonical_tag(tags@[i as int],
+                i as int, tags.len() as nat, f.view()));
+            assert(tag.block == canonical_tags(tags@, f.view())[i as int].block);
+            assert(tag.flags == canonical_tags(tags@, f.view())[i as int].flags);
+            assert((canonical_tags(tags@, f.view())[i as int].flags & SAME_UUID)
+                == if i == 0 { 0u32 } else { SAME_UUID });
+        }
         let encoded = match encode_tag(tag, f, filesystem_blocks) { Some(raw) => raw, None => { return None; } };
         let uuid_bytes = if i == 0 { 16usize } else { 0usize };
         if offset > limit || encoded.len() > limit - offset { return None; }
         if uuid_bytes > limit - offset - encoded.len() { return None; }
-        let copied = bytes::write_bytes(&mut raw, offset, &encoded);
+        let copied = copy_span(&mut raw, offset, &encoded);
         assert(copied);
         offset += encoded.len();
         if i == 0 {
-            let copied_uuid = bytes::write_bytes(&mut raw, offset, target_uuid);
+            let copied_uuid = copy_span(&mut raw, offset, target_uuid);
             assert(copied_uuid);
             offset += 16;
         }
-        proof { positions = positions.push(beginning); }
+        proof {
+            let wire_tag = canonical_tags(tags@, f.view())[i as int];
+            assert(tag.block == wire_tag.block && tag.flags == wire_tag.flags);
+            assert(encoded.len() == features::tag_width(f.view()));
+            assert(raw@.take(beginning as int) =~= previous_wire.take(beginning as int));
+            assert(encoded@ =~= raw@.subrange(beginning as int, beginning as int + encoded.len()));
+            tag_readers_translate(encoded@, raw@, beginning as int, limit as int, f.view());
+            assert(tag_admitted(raw@.take(limit as int), beginning as int, f.view(), filesystem_blocks));
+            assert(tag_matches(wire_tag, raw@.take(limit as int), beginning as int, f.view()));
+            if i == 0 {
+                assert(wire_tag.flags & SAME_UUID == 0);
+                assert(raw@.subrange(beginning as int + encoded.len(), beginning as int + encoded.len() + 16) == target_uuid@);
+            } else { assert(wire_tag.flags & SAME_UUID != 0); }
+            assert(descriptor_entry(raw@, f.view(), target_uuid@, filesystem_blocks, beginning, wire_tag));
+            assert(entry_end(beginning, f.view(), wire_tag) == offset);
+            positions = positions.push(beginning);
+            assert forall|j: int| 0 <= j < i + 1 implies
+                #[trigger] descriptor_entry(raw@, f.view(), target_uuid@, filesystem_blocks, positions[j],
+                    canonical_tags(tags@, f.view())[j])
+                && (j > 0 ==> positions[j] == entry_end(positions[j - 1], f.view(), canonical_tags(tags@, f.view())[j - 1])) by {
+                if j < previous_index {
+                    descriptor_entry_prefix_frame(previous_wire, raw@, beginning, f.view(), target_uuid@,
+                        filesystem_blocks, previous_positions[j], canonical_tags(tags@, f.view())[j]);
+                }
+            }
+            assert(descriptor_witness(raw@, f.view(), target_uuid@, filesystem_blocks,
+                canonical_tags(tags@, f.view()).take(i as int + 1), positions));
+        }
         i += 1;
     }
+    let ghost before_checksum = raw@;
+    assert(canonical_tags(tags@, f.view()).take(i as int) =~= canonical_tags(tags@, f.view()));
     if !features::stamp_metadata_checksum(f, uuid_seed, &mut raw) { return None; }
+    proof {
+        assert(raw@.take(limit as int) =~= before_checksum.take(limit as int));
+        assert forall|j: int| 0 <= j < positions.len() implies
+            #[trigger] descriptor_entry(raw@, f.view(), target_uuid@, filesystem_blocks, positions[j],
+                canonical_tags(tags@, f.view())[j])
+            && (j > 0 ==> positions[j] == entry_end(positions[j - 1], f.view(), canonical_tags(tags@, f.view())[j - 1])) by {
+            descriptor_entry_prefix_frame(before_checksum, raw@, limit as nat, f.view(), target_uuid@,
+                filesystem_blocks, positions[j], canonical_tags(tags@, f.view())[j]);
+        }
+        assert(descriptor_witness(raw@, f.view(), target_uuid@, filesystem_blocks,
+            canonical_tags(tags@, f.view()), positions));
+    }
     assert(exists|witness: Seq<nat>| descriptor_witness(raw@, f.view(), target_uuid@,
         filesystem_blocks, canonical_tags(tags@, f.view()), witness)) by {
         assert(descriptor_witness(raw@, f.view(), target_uuid@, filesystem_blocks,
@@ -556,6 +783,29 @@ pub open spec fn revoke_admitted(raw: Seq<u8>, f: features::FeatureView,
 pub open spec fn revoke_projection(raw: Seq<u8>, f: features::FeatureView) -> Seq<u64> {
     Seq::new(((bytes::be32(raw, 12) - 16) / (revoke_stride(f) as int)) as nat, |i: int| revoke_address(raw, f, i))
 }
+proof fn revoke_address_prefix_frame(before: Seq<u8>, after: Seq<u8>, prefix: int,
+    f: features::FeatureView, index: int)
+    requires features::feature_valid(f), 0 <= index,
+        16 + (index + 1) * (revoke_stride(f) as int) <= prefix <= before.len(), prefix <= after.len(),
+        before.take(prefix) == after.take(prefix),
+    ensures revoke_address(before, f, index) == revoke_address(after, f, index),
+{
+    let offset = 16 + index * revoke_stride(f) as int;
+    if features::wide(f) {
+        assert(revoke_stride(f) == 8);
+        assert(offset + 8 <= prefix);
+    } else {
+        assert(revoke_stride(f) == 4);
+        assert(offset + 4 <= prefix);
+    }
+    equal_prefix_preserves_be32(before, after, prefix, offset);
+    assert(bytes::be32(before, offset) == bytes::be32(after, offset));
+    if features::wide(f) {
+        equal_prefix_preserves_be32(before, after, prefix, offset + 4);
+        assert(bytes::be32(before, offset + 4) == bytes::be32(after, offset + 4));
+    }
+}
+
 pub struct RevokeView {
     pub sequence: u32, pub blocks: Seq<u64>, pub source: Seq<u8>, pub features: features::FeatureView,
     pub seed: u32, pub filesystem_blocks: u64,
@@ -602,6 +852,8 @@ pub fn parse_revoke(raw: &[u8], f: Features, sequence: u32, uuid_seed: u32,
         None => !revoke_admitted(raw@, f.view(), sequence, uuid_seed, filesystem_blocks),
     },
 {
+    hide(features::feature_valid);
+    hide(crc::fold);
     let _ = f.version();
     if !f.revoke() || !crate::block_size::valid(raw.len()) { return None; }
     if bytes::read_be32(raw, 0).unwrap() != features::MAGIC
@@ -612,23 +864,60 @@ pub fn parse_revoke(raw: &[u8], f: Features, sequence: u32, uuid_seed: u32,
     let limit = raw.len() - f.descriptor_tail_bytes();
     let stride = if f.wide_tags() { 8usize } else { 4usize };
     if count < 16 || count > limit || (count - 16) % stride != 0 { return None; }
-    let mut blocks = Vec::<u64>::new(); let mut offset = 16usize;
-    while offset < count
-        invariant 16 <= offset <= count <= limit <= raw.len(), ((count as int) - (offset as int)) % (stride as int) == 0,
-            stride == 4 || stride == 8, blocks.len() <= MAX_REVOKES,
-            stride == revoke_stride(f.view()), offset == 16 + blocks.len() * stride,
+    let entries = (count - 16) / stride;
+    proof {
+        vstd::arithmetic::div_mod::lemma_fundamental_div_mod(count as int - 16, stride as int);
+        assert(entries as int == (count as int - 16) / (stride as int));
+        assert((count as int - 16) % (stride as int) == 0);
+        assert(count == 16 + entries * stride) by (nonlinear_arith)
+            requires count as int - 16 == (count as int - 16) / (stride as int) * (stride as int)
+                    + (count as int - 16) % (stride as int),
+                (count as int - 16) % (stride as int) == 0,
+                entries as int == (count as int - 16) / (stride as int);
+        assert(entries <= MAX_REVOKES);
+        assert(revoke_header(raw@, f.view(), sequence, uuid_seed));
+        assert(revoke_projection(raw@, f.view()).len() == entries);
+    }
+    let mut blocks = Vec::<u64>::new(); let mut i = 0usize;
+    while i < entries
+        invariant f.wf(), i == blocks.len() <= entries <= MAX_REVOKES,
+            count == 16 + entries * stride, 16 <= count <= limit <= raw.len(),
+            bytes::be32(raw@, 12) == count,
+            entries as int == (bytes::be32(raw@, 12) - 16) / (revoke_stride(f.view()) as int),
+            stride == 4 || stride == 8, stride == revoke_stride(f.view()),
             revoke_header(raw@, f.view(), sequence, uuid_seed),
-            blocks@ == revoke_projection(raw@, f.view()).take(blocks.len() as int),
-            forall|i: int| 0 <= i < blocks.len() ==> #[trigger] blocks@[i] < filesystem_blocks,
-        decreases count - offset,
+            revoke_projection(raw@, f.view()).len() == entries,
+            blocks@ == revoke_projection(raw@, f.view()).take(i as int),
+            forall|j: int| 0 <= j < i ==> #[trigger] blocks@[j] < filesystem_blocks,
+        decreases entries - i,
     {
-        if blocks.len() >= MAX_REVOKES { return None; }
+        let offset = 16 + i * stride;
         let first = bytes::read_be32(raw, offset).unwrap() as u64;
         let block = if f.wide_tags() {
             (first << 32) | bytes::read_be32(raw, offset + 4).unwrap() as u64
         } else { first };
-        if block >= filesystem_blocks { return None; }
-        blocks.push(block); offset += stride;
+        assert(block == revoke_address(raw@, f.view(), i as int));
+        if block >= filesystem_blocks {
+            proof { assert(!revoke_admitted(raw@, f.view(), sequence, uuid_seed, filesystem_blocks)); }
+            return None;
+        }
+        blocks.push(block);
+        proof {
+            assert(revoke_projection(raw@, f.view()).take(i as int + 1)
+                =~= revoke_projection(raw@, f.view()).take(i as int).push(block));
+        }
+        i += 1;
+    }
+    proof {
+        assert(blocks@ =~= revoke_projection(raw@, f.view()));
+        assert forall|j: int| 0 <= j < (bytes::be32(raw@, 12) - 16) / (revoke_stride(f.view()) as int)
+            implies #[trigger] revoke_address(raw@, f.view(), j) < filesystem_blocks by {
+            assert(j < entries);
+            assert(revoke_projection(raw@, f.view())[j] == revoke_address(raw@, f.view(), j));
+            assert(blocks@[j] == revoke_projection(raw@, f.view())[j]);
+            assert(blocks@[j] < filesystem_blocks);
+        }
+        assert(revoke_admitted(raw@, f.view(), sequence, uuid_seed, filesystem_blocks));
     }
     Some(Revokes { sequence, blocks, source: Ghost(raw@), features: Ghost(f.view()),
         seed: Ghost(uuid_seed), limit: Ghost(filesystem_blocks) })
@@ -642,6 +931,8 @@ pub fn encode_revoke(blocks: &[u64], f: Features, sequence: u32, uuid_seed: u32,
         None => true,
     },
 {
+    hide(features::feature_valid);
+    hide(crc::fold);
     let _ = f.version();
     if !f.revoke() || !crate::block_size::valid(block_bytes) || blocks.len() > MAX_REVOKES { return None; }
     let stride = if f.wide_tags() { 8usize } else { 4usize };
@@ -653,9 +944,11 @@ pub fn encode_revoke(blocks: &[u64], f: Features, sequence: u32, uuid_seed: u32,
     put32(&mut raw, 12, count as u32);
     let mut i = 0usize;
     while i < blocks.len()
-        invariant i <= blocks.len() <= MAX_REVOKES, raw.len() == block_bytes,
+        invariant f.wf(), i <= blocks.len() <= MAX_REVOKES, raw.len() == block_bytes,
             16 + blocks.len() * stride <= limit <= block_bytes, stride == 4 || stride == 8,
-            stride == revoke_stride(f.view()),
+            stride == revoke_stride(f.view()), limit == raw.len() - features::tail_width(f.view()),
+            count == 16 + blocks.len() * stride,
+            crate::block_size::accepted(block_bytes as nat), f.view().incompat & features::INCOMPAT_REVOKE != 0,
             bytes::be32(raw@, 0) == features::MAGIC && bytes::be32(raw@, 4) == 5
                 && bytes::be32(raw@, 8) == sequence && bytes::be32(raw@, 12) == count,
             forall|j: int| 0 <= j < i ==> #[trigger] revoke_address(raw@, f.view(), j) == blocks@[j],
@@ -664,14 +957,36 @@ pub fn encode_revoke(blocks: &[u64], f: Features, sequence: u32, uuid_seed: u32,
         decreases blocks.len() - i,
     {
         let block = blocks[i];
+        let ghost previous_wire = raw@;
         if block >= filesystem_blocks || (!f.wide_tags() && block > 0xffff_ffffu64) { return None; }
         if f.wide_tags() {
             put32(&mut raw, 16 + i * stride, (block >> 32) as u32);
             put32(&mut raw, 20 + i * stride, block as u32);
         } else { put32(&mut raw, 16 + i * stride, block as u32); }
+        proof {
+            address_halves_rejoin(block);
+            assert(revoke_address(raw@, f.view(), i as int) == block);
+            assert(raw@.take(16 + i as int * stride as int) =~= previous_wire.take(16 + i as int * stride as int));
+            assert forall|j: int| 0 <= j < i implies
+                #[trigger] revoke_address(raw@, f.view(), j) == blocks@[j] by {
+                revoke_address_prefix_frame(previous_wire, raw@, 16 + i as int * stride as int, f.view(), j);
+            }
+        }
         i += 1;
     }
+    let ghost before_checksum = raw@;
     if !features::stamp_metadata_checksum(f, uuid_seed, &mut raw) { return None; }
+    proof {
+        assert(raw@.take(count as int) =~= before_checksum.take(count as int));
+        assert forall|j: int| 0 <= j < blocks.len() implies
+            #[trigger] revoke_address(raw@, f.view(), j) == blocks@[j] by {
+            revoke_address_prefix_frame(before_checksum, raw@, count as int, f.view(), j);
+        }
+        assert(revoke_header(raw@, f.view(), sequence, uuid_seed));
+        assert(revoke_projection(raw@, f.view()).len() == blocks.len());
+        assert(revoke_projection(raw@, f.view()) =~= blocks@);
+        assert(revoke_admitted(raw@, f.view(), sequence, uuid_seed, filesystem_blocks));
+    }
     Some(raw)
 }
 

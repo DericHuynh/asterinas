@@ -72,6 +72,10 @@ pub fn path(block_bytes: u32, logical: u64) -> (r: Result<Path, Error>)
     proof { geometry_bounds(block_bytes); }
     let n = block_bytes as u64 / 4;
     let square = n * n;
+    proof {
+        assert(square > 0) by (nonlinear_arith)
+            requires n >= 256, square as nat == n as nat*n as nat;
+    }
     if logical < 12 {
         return Ok(Path { root: logical as usize, depth: 0, offsets: [0, 0, 0],
             boundary: (11 - logical) as u32 });
@@ -113,6 +117,13 @@ pub open spec fn valid_root(v: RootView) -> bool {
     &&& v.size as nat == bytes::le32(v.raw, 4) + if v.mode == 0x8000 || v.mode == 0x4000 && v.large_directory {
         4294967296*bytes::le32(v.raw, 108) } else { 0nat }
     &&& forall|i: int| 0 <= i < 15 ==> #[trigger] bytes::le32(v.raw, 40+4*i) == 0 || bytes::le32(v.raw, 40+4*i) < v.blocks
+}
+proof fn root_pointer_range(v: RootView, index: int)
+    requires valid_root(v), 0 <= index < 15,
+    ensures bytes::le32(v.raw, 40+index*4) == 0 || bytes::le32(v.raw, 40+index*4) < v.blocks,
+{
+    assert(bytes::le32(v.raw, 40+4*index) == 0 || bytes::le32(v.raw, 40+4*index) < v.blocks);
+    vstd::arithmetic::mul::lemma_mul_is_commutative(index, 4);
 }
 pub open spec fn next_address(source: Seq<u8>, root: u32, p: Path, metadata: Seq<u32>, block_bytes: u32) -> u32 {
     if metadata.len() == 0 { root } else {
@@ -204,6 +215,10 @@ proof fn same_block(current: u64, block_bytes: u32, extra: usize)
         (current as int+extra as int)%block_bytes as int == current as int%block_bytes as int+extra as int,
 {
     vstd::arithmetic::div_mod::lemma_fundamental_div_mod(current as int, block_bytes as int);
+    vstd::arithmetic::mul::lemma_mul_is_commutative(current as int/block_bytes as int, block_bytes as int);
+    assert(current as int == (current as int/block_bytes as int)*block_bytes as int+current as int%block_bytes as int);
+    assert(current as int+extra as int == (current as int/block_bytes as int)*block_bytes as int
+        +(current as int%block_bytes as int+extra as int));
     division_from_remainder(current as int+extra as int, block_bytes as int,
         current as int/block_bytes as int, current as int%block_bytes as int+extra as int);
 }
@@ -466,7 +481,8 @@ impl<'a> Root<'a> {
     pub fn collect(&self, source: &Snapshot<'_>, node_budget: usize, data_budget: usize)
         -> (r: Result<Collection, Error>)
         ensures match r { Ok(collection) => collection.view().data.len() <= data_budget && collection.view().metadata.len() <= node_budget
-            && unique(collection.view().claims) && collection.view().claims.len() == collection.view().data.len()+collection.view().metadata.len(),
+            && unique(collection.view().claims) && collection.view().claims.len() == collection.view().data.len()+collection.view().metadata.len()
+            && collection_valid(collection.view(), self.view().blocks),
             Err(_) => true },
     {
         proof { use_type_invariant(self); geometry_bounds(self.block_bytes); }
@@ -477,19 +493,29 @@ impl<'a> Root<'a> {
         let n = self.block_bytes as u64 / 4;
         let square = n * n;
         let mut result = Collection { data: Vec::new(), metadata: Vec::new(), claims: Vec::new() };
+        proof {
+            assert(collection_valid(result.view(), self.blocks)) by { reveal(collection_valid); }
+        }
         let mut i = 0usize;
         while i < 12
             invariant self.wf(), i <= 12, data_budget <= 65536, node_budget <= 65536,
                 n == self.block_bytes as u64/4, 256 <= n <= 16384, square == n*n <= 268435456,
                 result.data.len() <= data_budget, result.metadata.len() == 0,
                 result.claims.len() == result.data.len(), unique(result.claims@),
+                collection_valid(result.view(), self.blocks),
             decreases 12-i,
         {
             let number = bytes::read_le32(self.raw, 40 + i * 4).unwrap();
             if number != 0 {
+                let ghost previous = result.view();
+                proof { root_pointer_range(self.view(), i as int); }
                 if result.data.len() >= data_budget { return Err(Error::Budget); }
                 if !claim(&mut result.claims, number) { return Err(Error::Alias); }
                 result.data.push(DataBlock { logical: i as u64, physical: number });
+                proof {
+                    collection_data_append(previous, DataBlock { logical: i as u64, physical: number }, self.blocks);
+                    assert(result.view() =~= data_added(previous, DataBlock { logical: i as u64, physical: number }));
+                }
             }
             i += 1;
         }
@@ -500,22 +526,31 @@ impl<'a> Root<'a> {
                 256 <= n <= 16384, n == self.block_bytes as u64/4, square == n*n <= 268435456,
                 result.data.len() <= data_budget, result.metadata.len() <= node_budget,
                 result.claims.len() == result.data.len()+result.metadata.len(), unique(result.claims@),
+                collection_valid(result.view(), self.blocks),
                 stack.len() == result.metadata.len(),
                 forall|j: int| 0 <= j < stack.len() ==> valid_frame(#[trigger] stack@[j], self.blocks),
             decreases 15-root,
         {
             let number = bytes::read_le32(self.raw, 40 + root * 4).unwrap();
             if number != 0 {
+                let ghost previous = result.view();
+                proof { root_pointer_range(self.view(), root as int); }
                 if result.metadata.len() >= node_budget { return Err(Error::Budget); }
                 if !claim(&mut result.claims, number) { return Err(Error::Alias); }
                 result.metadata.push(number);
+                proof {
+                    collection_metadata_append(previous, number, self.blocks);
+                    assert(result.view() =~= metadata_added(previous, number));
+                }
                 let (depth, start, stride) = if root == 12 { (1u8, 12u64, 1u64) }
                     else if root == 13 { (2u8, 12 + n, n) }
                     else { (3u8, 12 + n + square, square) };
                 let ghost prior_stack = stack@;
                 proof {
+                    root_pointer_range(self.view(), root as int);
                     assert(number as nat == bytes::le32(self.raw@, 40+root as int*4));
-                    assert(0 < number < self.blocks);
+                    assert(number > 0);
+                    assert(number < self.blocks);
                     assert(valid_frame(Frame { number, depth, start, stride }, self.blocks));
                 }
                 stack.push(Frame { number, depth, start, stride });
@@ -533,6 +568,7 @@ impl<'a> Root<'a> {
                 256 <= n <= 16384, n == self.block_bytes as u64/4, square == n*n <= 268435456,
                 result.data.len() <= data_budget, result.metadata.len() <= node_budget,
                 result.claims.len() == result.data.len()+result.metadata.len(), unique(result.claims@),
+                collection_valid(result.view(), self.blocks),
                 stack.len() <= result.metadata.len(),
                 forall|j: int| 0 <= j < stack.len() ==> valid_frame(#[trigger] stack@[j], self.blocks),
             decreases node_budget as int-result.metadata.len() as int+stack.len() as int,
@@ -548,6 +584,7 @@ impl<'a> Root<'a> {
                     256 <= n <= 16384, n == self.block_bytes as u64/4, square == n*n <= 268435456,
                     result.data.len() <= data_budget, result.metadata.len() <= node_budget,
                     result.claims.len() == result.data.len()+result.metadata.len(), unique(result.claims@),
+                    collection_valid(result.view(), self.blocks),
                     stack.len() < result.metadata.len(), valid_frame(frame, self.blocks),
                     forall|j: int| 0 <= j < stack.len() ==> valid_frame(#[trigger] stack@[j], self.blocks),
                     block.wf(), block.view().size == self.block_bytes,
@@ -564,13 +601,22 @@ impl<'a> Root<'a> {
                     }
                     let logical = frame.start + at as u64 * frame.stride;
                     if logical > 4294967295 { return Err(Error::OutOfRange); }
+                    let ghost previous = result.view();
                     if !claim(&mut result.claims, number) { return Err(Error::Alias); }
                     if frame.depth == 1 {
                         if result.data.len() >= data_budget { return Err(Error::Budget); }
                         result.data.push(DataBlock { logical, physical: number });
+                        proof {
+                            collection_data_append(previous, DataBlock { logical, physical: number }, self.blocks);
+                            assert(result.view() =~= data_added(previous, DataBlock { logical, physical: number }));
+                        }
                     } else {
                         if result.metadata.len() >= node_budget { return Err(Error::Budget); }
                         result.metadata.push(number);
+                        proof {
+                            collection_metadata_append(previous, number, self.blocks);
+                            assert(result.view() =~= metadata_added(previous, number));
+                        }
                         stack.push(Frame { number, depth: frame.depth - 1, start: logical,
                             stride: frame.stride / n });
                     }
@@ -585,6 +631,201 @@ impl<'a> Root<'a> {
 pub struct DataBlock { pub logical: u64, pub physical: u32 }
 pub struct Collection { pub data: Vec<DataBlock>, pub metadata: Vec<u32>, claims: Vec<u32> }
 pub struct CollectionView { pub data: Seq<DataBlock>, pub metadata: Seq<u32>, pub claims: Seq<u32> }
+pub open spec fn emitted(v: CollectionView, number: u32) -> bool {
+    v.metadata.contains(number) || exists|i: int| 0 <= i < v.data.len() && (#[trigger] v.data[i]).physical == number
+}
+
+#[verifier::opaque]
+pub open spec fn collection_valid(v: CollectionView, blocks: u64) -> bool {
+    &&& unique(v.claims) && v.claims.len() == v.data.len()+v.metadata.len()
+    &&& forall|i: int| 0 <= i < v.data.len() ==> 0 < (#[trigger] v.data[i]).physical < blocks
+        && v.data[i].logical <= 4294967295 && v.claims.contains(v.data[i].physical)
+    &&& forall|i: int| 0 <= i < v.metadata.len() ==> 0 < #[trigger] v.metadata[i] < blocks
+        && v.claims.contains(v.metadata[i])
+    &&& forall|i: int,j: int| 0 <= i < j < v.data.len() ==>
+        (#[trigger] v.data[i]).physical != (#[trigger] v.data[j]).physical
+    &&& unique(v.metadata)
+    &&& forall|i: int,j: int| 0 <= i < v.data.len() && 0 <= j < v.metadata.len() ==>
+        (#[trigger] v.data[i]).physical != #[trigger] v.metadata[j]
+    &&& forall|number: u32| #[trigger] v.claims.contains(number) == emitted(v, number)
+}
+
+spec fn data_added(v: CollectionView, data: DataBlock) -> CollectionView {
+    CollectionView { data: v.data.push(data), metadata: v.metadata, claims: v.claims.push(data.physical) }
+}
+spec fn metadata_added(v: CollectionView, number: u32) -> CollectionView {
+    CollectionView { data: v.data, metadata: v.metadata.push(number), claims: v.claims.push(number) }
+}
+
+proof fn push_membership(numbers: Seq<u32>, value: u32, query: u32)
+    ensures numbers.push(value).contains(query) == (numbers.contains(query) || query == value),
+{
+    let next = numbers.push(value);
+    if next.contains(query) {
+        let i = choose|i: int| 0 <= i < next.len() && next[i] == query;
+        if i < numbers.len() {
+            assert(numbers[i] == query);
+            assert(exists|j: int| 0 <= j < numbers.len() && numbers[j] == query);
+            assert(numbers.contains(query));
+        } else { assert(i == numbers.len()); assert(query == value); }
+    }
+    if numbers.contains(query) {
+        let i = choose|i: int| 0 <= i < numbers.len() && numbers[i] == query;
+        assert(next[i] == query);
+        assert(exists|j: int| 0 <= j < next.len() && next[j] == query);
+        assert(next.contains(query));
+    }
+    if query == value {
+        assert(next[numbers.len() as int] == query);
+        assert(exists|j: int| 0 <= j < next.len() && next[j] == query);
+        assert(next.contains(query));
+    }
+}
+
+proof fn unique_push(numbers: Seq<u32>, number: u32)
+    requires unique(numbers), !numbers.contains(number),
+    ensures unique(numbers.push(number)),
+{
+    assert forall|i: int,j: int| 0 <= i < j < numbers.len()+1 implies
+        #[trigger] numbers.push(number)[i] != #[trigger] numbers.push(number)[j] by {
+        if j < numbers.len() { assert(numbers[i] != numbers[j]); }
+        else { assert(j == numbers.len()); assert(numbers.contains(numbers[i])); }
+    }
+}
+
+proof fn emitted_data_append(v: CollectionView, data: DataBlock, number: u32)
+    ensures emitted(data_added(v,data), number) == (emitted(v,number) || number == data.physical),
+{
+    let next = data_added(v,data);
+    if emitted(next,number) && !emitted(v,number) {
+        assert(!next.metadata.contains(number));
+        let i = choose|i: int| 0 <= i < next.data.len() && next.data[i].physical == number;
+        if i < v.data.len() {
+            assert(exists|j: int| 0 <= j < v.data.len() && v.data[j].physical == number);
+            assert(emitted(v,number));
+        } else { assert(i == v.data.len()); }
+    }
+    if emitted(v,number) && !v.metadata.contains(number) {
+        let i = choose|i: int| 0 <= i < v.data.len() && v.data[i].physical == number;
+        assert(next.data[i].physical == number);
+        assert(exists|j: int| 0 <= j < next.data.len() && next.data[j].physical == number);
+    }
+    if number == data.physical {
+        assert(next.data[v.data.len() as int].physical == number);
+        assert(exists|j: int| 0 <= j < next.data.len() && next.data[j].physical == number);
+    }
+}
+
+proof fn emitted_metadata_append(v: CollectionView, number: u32, query: u32)
+    ensures emitted(metadata_added(v,number),query) == (emitted(v,query) || query == number),
+{
+    let next = metadata_added(v,number);
+    push_membership(v.metadata,number,query);
+    assert(next.data == v.data);
+    assert(next.metadata == v.metadata.push(number));
+}
+
+proof fn collection_data_append(v: CollectionView, data: DataBlock, blocks: u64)
+    requires collection_valid(v,blocks), !v.claims.contains(data.physical),
+        0 < data.physical < blocks, data.logical <= 4294967295,
+    ensures collection_valid(data_added(v,data),blocks),
+{
+    reveal(collection_valid);
+    let next = data_added(v,data);
+    unique_push(v.claims,data.physical);
+    assert forall|i: int| 0 <= i < next.data.len() implies
+        0 < (#[trigger] next.data[i]).physical < blocks
+        && next.data[i].logical <= 4294967295 && next.claims.contains(next.data[i].physical) by {
+        if i < v.data.len() {
+            assert(next.data[i] == v.data[i]);
+            assert(0 < v.data[i].physical < blocks && v.data[i].logical <= 4294967295);
+            assert(v.claims.contains(v.data[i].physical));
+            push_membership(v.claims,data.physical,v.data[i].physical);
+        } else {
+            assert(i == v.data.len()); assert(next.data[i] == data);
+            push_membership(v.claims,data.physical,data.physical);
+        }
+    }
+    assert forall|i: int| 0 <= i < next.metadata.len() implies 0 < #[trigger] next.metadata[i] < blocks
+        && next.claims.contains(next.metadata[i]) by {
+        assert(next.metadata[i] == v.metadata[i]);
+        assert(v.claims.contains(v.metadata[i]));
+        push_membership(v.claims,data.physical,v.metadata[i]);
+    }
+    assert forall|i: int,j: int| 0 <= i < j < next.data.len() implies
+        (#[trigger] next.data[i]).physical != (#[trigger] next.data[j]).physical by {
+        if j < v.data.len() { assert(v.data[i].physical != v.data[j].physical); }
+        else { assert(j == v.data.len()); assert(v.claims.contains(v.data[i].physical)); }
+    }
+    assert forall|i: int,j: int| 0 <= i < next.data.len() && 0 <= j < next.metadata.len() implies
+        (#[trigger] next.data[i]).physical != #[trigger] next.metadata[j] by {
+        if i < v.data.len() { assert(v.data[i].physical != v.metadata[j]); }
+        else { assert(i == v.data.len()); assert(v.claims.contains(v.metadata[j])); }
+    }
+    assert forall|query: u32| #[trigger] next.claims.contains(query) == emitted(next,query) by {
+        push_membership(v.claims,data.physical,query);
+        assert(v.claims.contains(query) == emitted(v,query));
+        emitted_data_append(v,data,query);
+    }
+}
+
+proof fn collection_metadata_append(v: CollectionView, number: u32, blocks: u64)
+    requires collection_valid(v,blocks), !v.claims.contains(number), 0 < number < blocks,
+    ensures collection_valid(metadata_added(v,number),blocks),
+{
+    reveal(collection_valid);
+    let next = metadata_added(v,number);
+    unique_push(v.claims,number);
+    assert forall|i: int| 0 <= i < next.metadata.len() implies 0 < #[trigger] next.metadata[i] < blocks
+        && next.claims.contains(next.metadata[i]) by {
+        if i < v.metadata.len() {
+            assert(next.metadata[i] == v.metadata[i]);
+            assert(v.claims.contains(v.metadata[i]));
+            push_membership(v.claims,number,v.metadata[i]);
+        } else {
+            assert(i == v.metadata.len()); assert(next.metadata[i] == number);
+            push_membership(v.claims,number,number);
+        }
+    }
+    assert forall|i: int| 0 <= i < next.data.len() implies
+        0 < (#[trigger] next.data[i]).physical < blocks && next.data[i].logical <= 4294967295
+        && next.claims.contains(next.data[i].physical) by {
+        assert(next.data[i] == v.data[i]);
+        assert(v.claims.contains(v.data[i].physical));
+        push_membership(v.claims,number,v.data[i].physical);
+    }
+    assert forall|i: int,j: int| 0 <= i < j < next.metadata.len() implies
+        #[trigger] next.metadata[i] != #[trigger] next.metadata[j] by {
+        if j < v.metadata.len() { assert(v.metadata[i] != v.metadata[j]); }
+        else { assert(j == v.metadata.len()); assert(v.claims.contains(v.metadata[i])); }
+    }
+    assert forall|i: int,j: int| 0 <= i < next.data.len() && 0 <= j < next.metadata.len() implies
+        (#[trigger] next.data[i]).physical != #[trigger] next.metadata[j] by {
+        if j < v.metadata.len() { assert(v.data[i].physical != v.metadata[j]); }
+        else { assert(j == v.metadata.len()); assert(v.claims.contains(v.data[i].physical)); }
+    }
+    assert forall|query: u32| #[trigger] next.claims.contains(query) == emitted(next,query) by {
+        push_membership(v.claims,number,query);
+        assert(v.claims.contains(query) == emitted(v,query));
+        emitted_metadata_append(v,number,query);
+    }
+}
+
+pub proof fn successful_collection_data_and_metadata_are_disjoint(v: CollectionView, blocks: u64, data: int, metadata: int)
+    requires collection_valid(v,blocks), 0 <= data < v.data.len(), 0 <= metadata < v.metadata.len(),
+    ensures 0 < v.data[data].physical < blocks, v.data[data].logical <= 4294967295,
+        0 < v.metadata[metadata] < blocks, v.data[data].physical != v.metadata[metadata],
+{
+    reveal(collection_valid);
+}
+
+pub proof fn successful_collection_claims_are_exactly_emitted_addresses(v: CollectionView, blocks: u64, number: u32)
+    requires collection_valid(v,blocks),
+    ensures v.claims.contains(number) == emitted(v,number),
+{
+    reveal(collection_valid);
+}
+
 impl Collection {
     pub closed spec fn view(&self) -> CollectionView {
         CollectionView { data: self.data@, metadata: self.metadata@, claims: self.claims@ }

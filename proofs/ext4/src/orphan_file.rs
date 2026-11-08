@@ -80,6 +80,14 @@ pub fn calculate_checksum(raw: &[u8], physical: u64, seed: u32) -> (r: Option<u3
     Some(value)
 }
 
+/// Exact byte-envelope admission. This binds the supplied profile and
+/// physical checksum coordinate, not filesystem allocation or write authority.
+pub open spec fn parse_admissible(raw: Seq<u8>, physical: u64, fs_blocks: u64,
+    seed: u32, metadata: bool, inodes: u32) -> bool
+{
+    valid_raw(raw, physical, seed, metadata, inodes) && physical < fs_blocks
+}
+
 pub struct BlockView {
     pub raw: Seq<u8>, pub physical: u64, pub seed: u32, pub metadata: bool, pub inodes: u32,
 }
@@ -92,10 +100,49 @@ pub open spec fn slot(v: BlockView, i: nat) -> u32 { bytes::le32(v.raw, (i * 4) 
 pub open spec fn slot_frame(before: BlockView, after: BlockView, i: nat, value: u32) -> bool {
     &&& same_profile(before, after) && i < capacity_for(before.raw)
     &&& slot(after, i) == value
+    &&& !before.metadata ==> after.raw.subrange(after.raw.len() as int - 4, after.raw.len() as int)
+        == before.raw.subrange(before.raw.len() as int - 4, before.raw.len() as int)
     &&& forall|j: nat| j < capacity_for(before.raw) && j != i ==> #[trigger] slot(before, j) == slot(after, j)
 }
 pub open spec fn unique(v: BlockView) -> bool {
-    forall|i: nat, j: nat| i < j < capacity_for(v.raw) && slot(v, i) != 0 ==> #[trigger] slot(v, i) != slot(v, j)
+    forall|i: nat, j: nat| i < j < capacity_for(v.raw) && slot(v, i) != 0 ==> #[trigger] slot(v, i) != #[trigger] slot(v, j)
+}
+
+#[verifier::opaque]
+pub open spec fn empty_prefix(v: BlockView, count: nat) -> nat
+    recommends count <= capacity_for(v.raw),
+    decreases count,
+{
+    if count == 0 { 0nat } else {
+        (empty_prefix(v, (count - 1) as nat) + if slot(v, (count - 1) as nat) == 0 { 1nat } else { 0nat }) as nat
+    }
+}
+proof fn empty_prefix_facts(v: BlockView, count: nat)
+    requires count <= capacity_for(v.raw),
+    ensures empty_prefix(v, count) <= count,
+        empty_prefix(v, count) == 0 <==> forall|i: nat| i < count ==> #[trigger] slot(v, i) != 0,
+    decreases count,
+{
+    reveal(empty_prefix);
+    if count > 0 {
+        empty_prefix_facts(v, (count - 1) as nat);
+        if slot(v, (count - 1) as nat) == 0 {
+            assert(!(forall|i: nat| i < count ==> #[trigger] slot(v, i) != 0)) by {
+                if forall|i: nat| i < count ==> #[trigger] slot(v, i) != 0 {
+                    assert(slot(v, (count - 1) as nat) != 0);
+                }
+            }
+        } else {
+            assert((forall|i: nat| i < count ==> #[trigger] slot(v, i) != 0)
+                <==> (forall|i: nat| i < count - 1 ==> #[trigger] slot(v, i) != 0)) by {
+                if forall|i: nat| i < count - 1 ==> #[trigger] slot(v, i) != 0 {
+                    assert forall|i: nat| i < count implies #[trigger] slot(v, i) != 0 by {
+                        if i >= count - 1 { assert(i == count - 1); }
+                    }
+                }
+            }
+        }
+    }
 }
 
 proof fn prefix_retains_word(before: Seq<u8>, after: Seq<u8>, at: nat)
@@ -137,6 +184,8 @@ fn seal_raw(raw: &mut Vec<u8>, physical: u64, seed: u32, metadata: bool)
         final(raw)@.take(old(raw).len() as int - 8) == old(raw)@.take(old(raw).len() as int - 8),
         bytes::le32(final(raw)@, final(raw).len() as int - 8) == MAGIC,
         metadata ==> bytes::le32(final(raw)@, final(raw).len() as int - 4) == checksum_value(final(raw)@, physical, seed),
+        !metadata ==> final(raw)@.subrange(final(raw).len() as int - 4, final(raw).len() as int)
+            == old(raw)@.subrange(old(raw).len() as int - 4, old(raw).len() as int),
 {
     let length = raw.len();
     write32(raw, length - 8, MAGIC);
@@ -174,16 +223,25 @@ impl Block {
         if slot >= self.capacity() { return None; }
         bytes::read_le32(&self.raw, slot * 4)
     }
-    pub fn free_entries(&self) -> usize {
+    pub fn free_entries(&self) -> (r: usize)
+        ensures self.wf(), r == empty_prefix(self.view(), capacity_for(self.view().raw)),
+            r <= capacity_for(self.view().raw),
+            r == 0 <==> forall|i: nat| i < capacity_for(self.view().raw) ==> #[trigger] slot(self.view(), i) != 0,
+    {
+        proof { use_type_invariant(self); }
         let count = self.capacity();
+        proof { reveal(empty_prefix); }
         let mut i = 0usize; let mut free = 0usize;
         while i < count
-            invariant i <= count, free <= i,
+            invariant self.wf(), i <= count, free <= i, count == capacity_for(self.view().raw),
+                free as nat == empty_prefix(self.view(), i as nat),
             decreases count - i,
         {
             if self.at(i) == Some(0) { free += 1; }
+            proof { reveal(empty_prefix); }
             i += 1;
         }
+        proof { empty_prefix_facts(self.view(), count as nat); }
         free
     }
     pub fn find(&self, number: u32) -> (r: Option<usize>)
@@ -218,6 +276,8 @@ impl Block {
         write32(&mut raw, at * 4, number);
         let ghost edited = raw@;
         proof {
+            assert(edited.subrange(edited.len() as int - 4, edited.len() as int)
+                =~= before.raw.subrange(before.raw.len() as int - 4, before.raw.len() as int));
             assert forall|j: nat| j < capacity_for(before.raw) && j != at implies
                 bytes::le32(edited, (j * 4) as int) == bytes::le32(before.raw, (j * 4) as int) by {
                 spliced_word_retains_other_slot(before.raw, at as nat, j, number);
@@ -246,6 +306,7 @@ impl Block {
         ensures self.wf(), match r {
             Ok((after, i)) => after.wf() && 0 < number <= self.view().inodes
                 && slot_frame(self.view(), after.view(), i as nat, number)
+                && (slot(self.view(), i as nat) == 0 || slot(self.view(), i as nat) == number)
                 && (unique(self.view()) ==> unique(after.view())),
             Err((after, _)) => after.wf() && after.view() == self.view(),
         },
@@ -296,6 +357,8 @@ impl Block {
         ensures self.wf(), match r {
             Ok(after) => after.wf() && 0 < number <= self.view().inodes
                 && slot_frame(self.view(), after.view(), slot as nat, number)
+                && (crate::orphan_file::slot(self.view(), slot as nat) == 0
+                    || crate::orphan_file::slot(self.view(), slot as nat) == number)
                 && (unique(self.view()) ==> unique(after.view())),
             Err((after, _)) => after.wf() && after.view() == self.view(),
         },
@@ -318,7 +381,8 @@ impl Block {
 
 pub fn parse(raw: &[u8], physical: u64, fs_blocks: u64, seed: u32,
     metadata: bool, inodes: u32) -> (r: Result<Block, Error>)
-    ensures match r {
+    ensures (r is Ok) <==> parse_admissible(raw@, physical, fs_blocks, seed, metadata, inodes),
+        match r {
         Ok(block) => block.wf() && block.view() == (BlockView { raw: raw@, physical, seed, metadata, inodes })
             && physical < fs_blocks,
         Err(_) => true,
@@ -354,10 +418,12 @@ pub fn parse(raw: &[u8], physical: u64, fs_blocks: u64, seed: u32,
 
 pub fn empty(block_bytes: usize, physical: u64, fs_blocks: u64, seed: u32,
     metadata: bool, inodes: u32) -> (r: Result<Block, Error>)
-    ensures match r {
+    ensures (r is Ok) <==> block_size::accepted(block_bytes as nat) && inodes > 0 && physical < fs_blocks,
+        match r {
         Ok(block) => block.wf() && block.view().raw.len() == block_bytes && block.view().physical == physical
             && block.view().seed == seed && block.view().metadata == metadata && block.view().inodes == inodes
             && physical < fs_blocks && unique(block.view())
+            && (!metadata ==> bytes::le32(block.view().raw, block_bytes as int - 4) == 0)
             && forall|i: nat| i < capacity_for(block.view().raw) ==> #[trigger] slot(block.view(), i) == 0,
         Err(_) => true,
     },
@@ -720,7 +786,7 @@ pub open spec fn ordered_window(values: Seq<u32>, first: nat, end: nat) -> bool 
         && forall|i: int, j: int| first <= i < j < end ==> #[trigger] values[i] <= #[trigger] values[j]
 }
 pub open spec fn ordered_runs(values: Seq<u32>, width: nat) -> bool {
-    width > 0 && forall|run: nat| run * width < values.len() ==> ordered_window(values,
+    width > 0 && forall|run: nat| run * width < values.len() ==> #[trigger] ordered_window(values,
         run * width, if (run + 1) * width < values.len() { (run + 1) * width } else { values.len() })
 }
 proof fn an_ordered_window_can_append_a_larger_word(before: Seq<u32>, after: Seq<u32>, first: nat, end: nat, number: u32)
@@ -1007,7 +1073,8 @@ fn distinct_file_entries(blocks: &[Block]) -> (r: bool)
 
 pub fn file_from_blocks(blocks: Vec<Block>, inodes: u32, seed: u32, metadata: bool)
     -> (r: Result<File, (Vec<Block>, Error)>)
-    ensures match r {
+    ensures (r is Ok) <==> file_valid(FileView { blocks: views(blocks@), inodes, seed, metadata }),
+        match r {
         Ok(file) => file.wf() && file.view() == (FileView { blocks: views(blocks@), inodes, seed, metadata }),
         Err((after, _)) => views(after@) == views(blocks@),
     },

@@ -107,20 +107,120 @@
       "filtered": true,
       "whole_expansion_verified": false,
       "scope": "exact storage/read/write and non-target attribute header/value preservation; cached non-overlap guard"
+    },
+    {
+      "attempt": "proof-jbd2-features-04",
+      "modules": [
+        "jbd2_features"
+      ],
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 40,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "source_sha256": {
+        "jbd2_features": "74b7a1ebd16b995d4fb0437d789e89e9e3936a74af859144f6b82e857fdb9302"
+      },
+      "command_sha256": "ca12b604091dd92ceabf3a9afb5a0677279831d8b87148421c2b98e4c5763d22",
+      "filtered": true,
+      "whole_expansion_verified": false
+    },
+    {
+      "attempt": "proof-project-01",
+      "modules": [
+        "project_id"
+      ],
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 11,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "source_sha256": {
+        "project_id": "c3ab62b57e8f6e4242f1b9bb7d450c4d84a1475edb27b538bfdfe509ef8ba93b"
+      },
+      "command_sha256": "155ac9746167f0ba1e5d73cafbd139ebe7b038f1a1d7d7c91c3d84e6dec37b92",
+      "filtered": true,
+      "whole_expansion_verified": false
+    },
+    {
+      "attempt": "proof-sm4-02",
+      "modules": [
+        "sm4"
+      ],
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 28,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "source_sha256": {
+        "sm4": "1dcabe32d5c38ea26963a173201601f720cd9de2d9d9cd608481c500a06bb1a1"
+      },
+      "command_sha256": "d6247c899fde33f003a29e0118dc25f5cf2db216a8b48ef60e036a108cbe6ba3",
+      "filtered": true,
+      "whole_expansion_verified": false
+    },
+    {
+      "attempt": "proof-aes-04",
+      "modules": [
+        "aes"
+      ],
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 62,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "source_sha256": {
+        "aes": "2a1451c1bbab12b1c94a683830d3b4c79de4ab1fb9da124b98e571b45333b04d"
+      },
+      "command_sha256": "aa4c46c81b32ff4ad3c1b8eeb8d78fb0de79b39fb4df097e0cd63311adaffda2",
+      "filtered": true,
+      "whole_expansion_verified": false
+    },
+    {
+      "attempt": "proof-legacy-06",
+      "modules": [
+        "legacy_map"
+      ],
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 44,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "source_sha256": {
+        "legacy_map": "5b4a3a38f80325fdb2c3bb11964a35358975f501cfea238163724cda8d24baea"
+      },
+      "command_sha256": "1a040f6ff6eee2e35f16eb79b0516b73b10c68afbcb7f2dd044b030077fabe80",
+      "filtered": true,
+      "whole_expansion_verified": false
     }
   ],
   "unique_checked_modules": [
+    "aes",
     "ea_repeated_recovery",
     "ea_restart",
     "group_legacy",
     "inline_data",
     "inode_payload",
+    "jbd2_features",
+    "legacy_map",
     "meta_bg",
     "orphan_lifecycle",
+    "project_id",
     "resize_plan",
+    "sm4",
     "unicode12_data"
   ],
-  "focused_verified_obligations": 351,
+  "focused_verified_obligations": 536,
   "current_source_matches_checked_modules": true,
   "independent_test_harness_fix": {
     "branch": "fix/osdk-test-qemu-exit",
@@ -152,11 +252,13 @@
     }
   ],
   "integrated_compile": {
-    "attempt": "typecheck-12",
+    "attempt": "typecheck-13",
     "new_modules": 32,
     "returncode": 0,
     "verification_skipped": true,
-    "proof_evidence": false
+    "proof_evidence": false,
+    "artifact_sha256": "39bf02b3446e2c5fea46aceae84c8aa955a3d05df1f2130bda1951b047be313e",
+    "scope": "Immutable32-module source snapshot; later live-source changes require rechecking."
   },
   "integrated_crypto_native": {
     "attempt": "extra-crypto-native-07",
@@ -165,12 +267,49 @@
   },
   "registry": {
     "sources": 258,
-    "named_proofs": 969,
+    "named_proofs": 972,
     "public_executable_functions": 1249,
     "baseline_inventory_prefixes_preserved": true,
     "expanded_entrypoint_declared": true
   },
   "canceled_experiments": {
     "branchless_binary_search": "Canceled at user request; no production search changes or integrations."
+  },
+  "focused_artifact_cipher_vectors": {
+    "attempt": "checked-cipher-vectors-02",
+    "status": "passed",
+    "known_answer_vectors": 3,
+    "retired_key_rejection": true,
+    "unsupported_aes192_rejection": true,
+    "formal_verification": false,
+    "earlier_expectation_error_retained": "checked-cipher-vectors-01"
+  },
+  "expansion_api_boundaries": {
+    "staged_negative_cases": 17,
+    "checked_negative_cases": 17,
+    "checked_positive_controls": 3,
+    "attempt": "feature-boundaries-native-02",
+    "pending_cluster_negative_cases": 0,
+    "formal_verification": false,
+    "official_compatibility_suite_rerun": false,
+    "artifact_scope": "typecheck-13 actual Verus compile-only artifact"
+  },
+  "superseded_integrated_compiles": [
+    {
+      "attempt": "typecheck-12",
+      "new_modules": 32,
+      "returncode": 0,
+      "verification_skipped": true,
+      "proof_evidence": false,
+      "source_matches_current": false,
+      "scope": "Historical32-module source snapshot; later proof/API changes require a new integrated compile."
+    }
+  ],
+  "cluster_initialization_runtime": {
+    "attempt": "cluster-init-native-06",
+    "status": "passed",
+    "mechanical_erasure": false,
+    "formal_verification": false,
+    "artifact_scope": "typecheck-13 actual Verus compile-only artifact"
   }
 }

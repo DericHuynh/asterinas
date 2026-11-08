@@ -51,6 +51,7 @@ spec fn word(raw:Seq<u8>,at:int) -> u32 {
     ((raw[at] as u32)<<24)|((raw[at+1] as u32)<<16)|((raw[at+2] as u32)<<8)|raw[at+3] as u32
 }
 struct Registers {a:u32,b:u32,c:u32,d:u32}
+#[verifier::opaque]
 spec fn key_registers(raw:Seq<u8>,n:nat) -> Registers
     decreases n
 {
@@ -63,6 +64,7 @@ spec fn key_registers(raw:Seq<u8>,n:nat) -> Registers
 pub closed spec fn sm4_schedule_reference(raw:Seq<u8>) -> Seq<u32> {
     Seq::new(32,|i:int| key_registers(raw,(i+1) as nat).d)
 }
+#[verifier::opaque]
 spec fn data_registers(raw:Seq<u8>,keys:Seq<u32>,decrypt:bool,n:nat) -> Registers
     decreases n
 {
@@ -95,7 +97,35 @@ fn substitute_byte(a:u8) -> (r:u8) ensures r==byte_substituted(a) {
     {
         let delta=(a as u16)^(i as u16);
         let mask=(delta.wrapping_sub(1)>>8) as u8;
-        result|=SBOX[i]&mask;i+=1;
+        let entry=SBOX[i];
+        let selected=entry&mask;
+        proof {
+            let index=i as u16;
+            assert(delta==(a as u16)^index);
+            assert(mask==if a as u16==index {255u8}else{0u8}) by(bit_vector)
+                requires index<256,delta==(a as u16)^index,
+                    mask==(delta.wrapping_sub(1)>>8) as u8;
+            if a as usize==i {
+                assert(selected==entry) by(bit_vector)
+                    requires mask==255,selected==entry&mask;
+            } else {
+                assert(selected==0) by(bit_vector)
+                    requires mask==0,selected==entry&mask;
+            }
+        }
+        let ghost prior=result;
+        result|=selected;
+        proof {
+            if a as usize==i {
+                assert(prior==0);
+                assert(result==entry) by(bit_vector)
+                    requires prior==0,selected==entry,result==prior|selected;
+            } else {
+                assert(result==prior) by(bit_vector)
+                    requires selected==0,result==prior|selected;
+            }
+        }
+        i+=1;
     }
     result
 }
@@ -119,7 +149,18 @@ fn put32(out:&mut [u8;16],at:usize,v:u32)
     ensures forall|i:int| 0<=i<16 ==> final(out)@[i]==
         if at<=i<at+4 {(v>>(((3-(i-at))*8) as u32)) as u8}else{old(out)@[i]},
 {
+    let ghost before=out@;
     out[at]=(v>>24) as u8;out[at+1]=(v>>16) as u8;out[at+2]=(v>>8) as u8;out[at+3]=v as u8;
+    assert forall|i:int| 0<=i<16 implies out@[i]==
+        if at<=i<at+4 {(v>>(((3-(i-at))*8) as u32)) as u8}else{before[i]} by {
+        if i==at {assert(3-(i-at)==3);}
+        else if i==at+1 {assert(3-(i-at)==2);}
+        else if i==at+2 {assert(3-(i-at)==1);}
+        else if i==at+3 {
+            assert(3-(i-at)==0);
+            assert((v>>0) as u8==v as u8) by(bit_vector);
+        }
+    }
 }
 struct State {words:[u32;32],retired:bool}
 pub struct Sm4Key {state:State}
@@ -142,11 +183,17 @@ impl Sm4Key {
         let mut a=be32(raw,0)^FK[0];let mut b=be32(raw,4)^FK[1];
         let mut c=be32(raw,8)^FK[2];let mut d=be32(raw,12)^FK[3];
         let mut words=[0u32;32];let mut i=0usize;
+        proof {reveal(key_registers);}
         while i<32
             invariant i<=32,raw.len()==16,(Registers {a,b,c,d})==key_registers(raw@,i as nat),
                 forall|j:int| 0<=j<i ==> words@[j]==sm4_schedule_reference(raw@)[j],
             decreases 32-i,
         {
+            proof {
+                reveal(key_registers);
+                assert(key_registers(raw@,(i+1) as nat)==
+                    (Registers {a:b,b:c,c:d,d:a^key_changed(b^c^d^round_constant(i as nat))}));
+            }
             let next=a^key_transform(b^c^d^constant(i));words[i]=next;
             a=b;b=c;c=d;d=next;i+=1;
         }
@@ -159,11 +206,13 @@ impl Sm4Key {
         if self.state.retired {return Err(Error::Retired);}
         let mut a=be32(&input,0);let mut b=be32(&input,4);let mut c=be32(&input,8);let mut d=be32(&input,12);
         let mut i=0usize;
+        proof {reveal(data_registers);}
         while i<32
             invariant i<=32,(Registers {a,b,c,d})==data_registers(input@,self.state.words@,decrypt,i as nat),
             decreases 32-i,
         {
             let selected=if decrypt {31-i}else{i};
+            proof {reveal(data_registers);}
             let next=a^data_transform(b^c^d^self.state.words[selected]);
             a=b;b=c;c=d;d=next;i+=1;
         }
@@ -182,7 +231,7 @@ impl Sm4Key {
             forall|i:int| 0<=i<32 ==> final(self).sm4_schedule()[i]==0,
         opens_invariants none
         no_unwind
-    {self.state=State {words:[0u32;32],retired:true};}
+    {self.state=State {words:[0u32,0u32,0u32,0u32,0u32,0u32,0u32,0u32,0u32,0u32,0u32,0u32,0u32,0u32,0u32,0u32,0u32,0u32,0u32,0u32,0u32,0u32,0u32,0u32,0u32,0u32,0u32,0u32,0u32,0u32,0u32,0u32],retired:true};}
 }
 impl Drop for Sm4Key {
     fn drop(&mut self)

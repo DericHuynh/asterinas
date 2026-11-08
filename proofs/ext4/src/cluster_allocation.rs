@@ -115,8 +115,43 @@ impl Slot {
         SlotView { phase: self.phase, generation: self.generation, owner: self.owner,
             logical_start: self.logical_start, pins: self.pins, mapped: self.mapped@,
             initialized: self.initialized@,
-            pending: Seq::new(self.pending.len() as nat, |i: int| self.pending@[i].view()) }
+            pending: pending_views(self.pending@) }
     }
+}
+
+spec fn pending_views(pending: Seq<PendingRange>) -> Seq<PendingView> {
+    Seq::new(pending.len(), |i: int| pending[i].view())
+}
+
+spec fn slot_views(slots: Seq<Slot>) -> Seq<SlotView> {
+    Seq::new(slots.len(), |i: int| slots[i].view())
+}
+
+proof fn slot_views_update(slots: Seq<Slot>, index: int, slot: Slot)
+    requires 0 <= index < slots.len(),
+    ensures slot_views(slots.update(index, slot)) == slot_views(slots).update(index, slot.view()),
+{
+    assert(slot_views(slots.update(index, slot)) =~= slot_views(slots).update(index, slot.view()));
+}
+
+proof fn pending_views_update(pending: Seq<PendingRange>, index: int, item: PendingRange)
+    requires 0 <= index < pending.len(),
+    ensures pending_views(pending.update(index, item)) == pending_views(pending).update(index, item.view()),
+{
+    assert(pending_views(pending.update(index, item)) =~= pending_views(pending).update(index, item.view()));
+}
+
+proof fn pending_views_push(pending: Seq<PendingRange>, item: PendingRange)
+    ensures pending_views(pending.push(item)) == pending_views(pending).push(item.view()),
+{
+    assert(pending_views(pending.push(item)) =~= pending_views(pending).push(item.view()));
+}
+
+proof fn pending_views_remove(pending: Seq<PendingRange>, index: int)
+    requires 0 <= index < pending.len(),
+    ensures pending_views(pending.remove(index)) == pending_views(pending).remove(index),
+{
+    assert(pending_views(pending.remove(index)) =~= pending_views(pending).remove(index));
 }
 
 pub open spec fn active(slot: SlotView) -> bool { 2 <= slot.phase <= 4 }
@@ -192,8 +227,8 @@ pub open spec fn slot_valid(slot: SlotView, ratio: u32, next_request: u64) -> bo
             &&& 0 < p.id < next_request && p.length > 0
             &&& p.start < ratio && p.length as nat <= ratio as nat - p.start
             &&& slot.logical_start as nat + p.start + p.length <= 4294967295
-            &&& forall|j: int| p.start <= j < p.start as nat + p.length ==> (#[trigger] slot.mapped[j]) != 2
-                && (#[trigger] slot.initialized[j]) == false
+            &&& (forall|j: int| p.start <= j < p.start as nat + p.length ==> (#[trigger] slot.mapped[j]) != 2)
+            &&& (forall|j: int| p.start <= j < p.start as nat + p.length ==> (#[trigger] slot.initialized[j]) == false)
         })
         &&& (forall|i: int, j: int| 0 <= i < j < slot.pending.len() ==>
             (#[trigger] slot.pending[i]).id != (#[trigger] slot.pending[j]).id
@@ -206,6 +241,478 @@ pub open spec fn slot_valid(slot: SlotView, ratio: u32, next_request: u64) -> bo
         slot.owner.inode == 0 && slot.owner.generation == 0 && slot.logical_start == 0
             && slot.pins == 0 && slot.mapped.len() == 0 && slot.initialized.len() == 0 && slot.pending.len() == 0
     }
+}
+
+proof fn slot_init_false_valid(slot: SlotView, ratio: u32, next_request: u64, index: int)
+    requires
+        slot_valid(slot, ratio, next_request),
+        active(slot),
+        0 <= index < ratio,
+        slot.mapped[index] != 2,
+    ensures
+        slot_valid(SlotView {
+            initialized: slot.initialized.update(index, false), ..slot
+        }, ratio, next_request),
+{
+    let next = SlotView { initialized: slot.initialized.update(index, false), ..slot };
+    assert(next.mapped == slot.mapped);
+    assert(next.pending == slot.pending);
+    assert(next.initialized.len() == ratio);
+    assert forall|j: int| 0 <= j < ratio implies
+        (#[trigger] next.mapped[j]) <= 2
+            && (next.mapped[j] == 2 ==> next.initialized[j])
+            && (next.mapped[j] != 0 ==> next.logical_start as nat + j < 4294967295) by {
+        assert(slot.mapped[j] <= 2);
+        assert(slot.mapped[j] == 2 ==> slot.initialized[j]);
+        assert(slot.mapped[j] != 0 ==> slot.logical_start as nat + j < 4294967295);
+        if j == index {
+            assert(slot.mapped[j] != 2);
+        } else {
+            assert(next.initialized[j] == slot.initialized[j]);
+        }
+    }
+    assert forall|k: int| 0 <= k < next.pending.len() implies {
+        let p = #[trigger] next.pending[k];
+        &&& 0 < p.id < next_request && p.length > 0
+        &&& p.start < ratio && p.length as nat <= ratio as nat - p.start
+        &&& next.logical_start as nat + p.start + p.length <= 4294967295
+        &&& (forall|j: int| p.start <= j < p.start as nat + p.length ==>
+            (#[trigger] next.mapped[j]) != 2)
+        &&& (forall|j: int| p.start <= j < p.start as nat + p.length ==>
+            (#[trigger] next.initialized[j]) == false)
+    } by {
+        let p = next.pending[k];
+        assert(p == slot.pending[k]);
+        assert(0 < p.id < next_request && p.length > 0);
+        assert(p.start < ratio && p.length as nat <= ratio as nat - p.start);
+        assert(slot.logical_start as nat + p.start + p.length <= 4294967295);
+        assert forall|j: int| p.start <= j < p.start as nat + p.length implies
+            (#[trigger] next.mapped[j]) != 2 by {
+            assert(0 <= j < ratio);
+            assert(slot.mapped[j] != 2);
+        }
+        assert forall|j: int| p.start <= j < p.start as nat + p.length implies
+            (#[trigger] next.initialized[j]) == false by {
+            assert(0 <= j < ratio);
+            if j == index {
+                assert(next.initialized[j] == false);
+            } else {
+                assert(slot.initialized[j] == false);
+                assert(next.initialized[j] == slot.initialized[j]);
+            }
+        }
+    }
+    assert(slot_valid(next, ratio, next_request));
+}
+
+proof fn slot_init_true_valid(slot: SlotView, ratio: u32, next_request: u64, index: int)
+    requires
+        slot_valid(slot, ratio, next_request),
+        active(slot),
+        0 <= index < ratio,
+        forall|k: int| 0 <= k < slot.pending.len() ==>
+            !((#[trigger] slot.pending[k]).start <= index
+                < slot.pending[k].start as nat + slot.pending[k].length),
+    ensures
+        slot_valid(SlotView {
+            initialized: slot.initialized.update(index, true), ..slot
+        }, ratio, next_request),
+{
+    let next = SlotView { initialized: slot.initialized.update(index, true), ..slot };
+    assert(next.mapped == slot.mapped);
+    assert(next.pending == slot.pending);
+    assert(next.initialized.len() == ratio);
+    assert forall|j: int| 0 <= j < ratio implies
+        (#[trigger] next.mapped[j]) <= 2
+            && (next.mapped[j] == 2 ==> next.initialized[j])
+            && (next.mapped[j] != 0 ==> next.logical_start as nat + j < 4294967295) by {
+        assert(slot.mapped[j] <= 2);
+        assert(slot.mapped[j] == 2 ==> slot.initialized[j]);
+        assert(slot.mapped[j] != 0 ==> slot.logical_start as nat + j < 4294967295);
+        if j == index {
+            assert(next.initialized[j] == true);
+        } else {
+            assert(next.initialized[j] == slot.initialized[j]);
+        }
+    }
+    assert forall|k: int| 0 <= k < next.pending.len() implies {
+        let p = #[trigger] next.pending[k];
+        &&& 0 < p.id < next_request && p.length > 0
+        &&& p.start < ratio && p.length as nat <= ratio as nat - p.start
+        &&& next.logical_start as nat + p.start + p.length <= 4294967295
+        &&& (forall|j: int| p.start <= j < p.start as nat + p.length ==>
+            (#[trigger] next.mapped[j]) != 2)
+        &&& (forall|j: int| p.start <= j < p.start as nat + p.length ==>
+            (#[trigger] next.initialized[j]) == false)
+    } by {
+        let p = next.pending[k];
+        assert(p == slot.pending[k]);
+        assert(0 < p.id < next_request && p.length > 0);
+        assert(p.start < ratio && p.length as nat <= ratio as nat - p.start);
+        assert(slot.logical_start as nat + p.start + p.length <= 4294967295);
+        assert(!(slot.pending[k].start <= index
+            < slot.pending[k].start as nat + slot.pending[k].length));
+        assert forall|j: int| p.start <= j < p.start as nat + p.length implies
+            (#[trigger] next.mapped[j]) != 2 by {
+            assert(0 <= j < ratio);
+            assert(slot.mapped[j] != 2);
+        }
+        assert forall|j: int| p.start <= j < p.start as nat + p.length implies
+            (#[trigger] next.initialized[j]) == false by {
+            assert(0 <= j < ratio);
+            assert(j != index);
+            assert(slot.initialized[j] == false);
+            assert(next.initialized[j] == slot.initialized[j]);
+        }
+    }
+    assert(slot_valid(next, ratio, next_request));
+}
+
+proof fn slot_mapped_valid(
+    slot: SlotView, ratio: u32, next_request: u64, index: int, value: u8,
+)
+    requires
+        slot_valid(slot, ratio, next_request),
+        slot.phase == 3,
+        0 <= index < ratio,
+        value <= 2,
+        value == 2 ==> slot.initialized[index],
+        value != 0 ==> slot.logical_start as nat + index < 4294967295,
+        value == 2 ==> (forall|k: int| 0 <= k < slot.pending.len() ==>
+            !((#[trigger] slot.pending[k]).start <= index
+                < slot.pending[k].start as nat + slot.pending[k].length)),
+    ensures
+        slot_valid(SlotView { mapped: slot.mapped.update(index, value), ..slot },
+            ratio, next_request),
+{
+    let next = SlotView { mapped: slot.mapped.update(index, value), ..slot };
+    assert(active(slot));
+    assert(next.initialized == slot.initialized);
+    assert(next.pending == slot.pending);
+    assert(next.mapped.len() == ratio);
+    assert forall|j: int| 0 <= j < ratio implies
+        (#[trigger] next.mapped[j]) <= 2
+            && (next.mapped[j] == 2 ==> next.initialized[j])
+            && (next.mapped[j] != 0 ==> next.logical_start as nat + j < 4294967295) by {
+        if j == index {
+            assert(next.mapped[j] == value);
+        } else {
+            assert(next.mapped[j] == slot.mapped[j]);
+            assert(slot.mapped[j] <= 2);
+            assert(slot.mapped[j] == 2 ==> slot.initialized[j]);
+            assert(slot.mapped[j] != 0 ==> slot.logical_start as nat + j < 4294967295);
+        }
+    }
+    assert forall|k: int| 0 <= k < next.pending.len() implies {
+        let p = #[trigger] next.pending[k];
+        &&& 0 < p.id < next_request && p.length > 0
+        &&& p.start < ratio && p.length as nat <= ratio as nat - p.start
+        &&& next.logical_start as nat + p.start + p.length <= 4294967295
+        &&& (forall|j: int| p.start <= j < p.start as nat + p.length ==>
+            (#[trigger] next.mapped[j]) != 2)
+        &&& (forall|j: int| p.start <= j < p.start as nat + p.length ==>
+            (#[trigger] next.initialized[j]) == false)
+    } by {
+        let p = next.pending[k];
+        assert(p == slot.pending[k]);
+        assert(0 < p.id < next_request && p.length > 0);
+        assert(p.start < ratio && p.length as nat <= ratio as nat - p.start);
+        assert(slot.logical_start as nat + p.start + p.length <= 4294967295);
+        assert forall|j: int| p.start <= j < p.start as nat + p.length implies
+            (#[trigger] next.mapped[j]) != 2 by {
+            assert(0 <= j < ratio);
+            if j == index {
+                if value == 2 {
+                    assert(!(slot.pending[k].start <= index
+                        < slot.pending[k].start as nat + slot.pending[k].length));
+                    assert(false);
+                }
+                assert(next.mapped[j] == value);
+            } else {
+                assert(slot.mapped[j] != 2);
+                assert(next.mapped[j] == slot.mapped[j]);
+            }
+        }
+        assert forall|j: int| p.start <= j < p.start as nat + p.length implies
+            (#[trigger] next.initialized[j]) == false by {
+            assert(0 <= j < ratio);
+            assert(slot.initialized[j] == false);
+        }
+    }
+    assert(slot_valid(next, ratio, next_request));
+}
+
+proof fn slot_pending_fault_valid(
+    slot: SlotView, ratio: u32, next_request: u64, at: int, faulted: bool,
+)
+    requires
+        slot_valid(slot, ratio, next_request),
+        0 <= at < slot.pending.len(),
+    ensures
+        slot_valid(SlotView {
+            pending: slot.pending.update(at, PendingView { faulted, ..slot.pending[at] }),
+            ..slot
+        }, ratio, next_request),
+{
+    let next = SlotView {
+        pending: slot.pending.update(at, PendingView { faulted, ..slot.pending[at] }),
+        ..slot
+    };
+    assert(slot.pending.len() > 0);
+    assert(active(slot));
+    assert(slot.pins == 0);
+    assert(slot.phase != 4);
+    assert(next.pending.len() == slot.pending.len());
+    assert forall|k: int| 0 <= k < next.pending.len() implies
+        (#[trigger] next.pending[k]).id == slot.pending[k].id
+            && next.pending[k].start == slot.pending[k].start
+            && next.pending[k].length == slot.pending[k].length by {
+        if k == at {
+            assert(next.pending[k] == (PendingView { faulted, ..slot.pending[k] }));
+        } else {
+            assert(next.pending[k] == slot.pending[k]);
+        }
+    }
+    assert forall|k: int| 0 <= k < next.pending.len() implies {
+        let p = #[trigger] next.pending[k];
+        &&& 0 < p.id < next_request && p.length > 0
+        &&& p.start < ratio && p.length as nat <= ratio as nat - p.start
+        &&& next.logical_start as nat + p.start + p.length <= 4294967295
+        &&& (forall|j: int| p.start <= j < p.start as nat + p.length ==>
+            (#[trigger] next.mapped[j]) != 2)
+        &&& (forall|j: int| p.start <= j < p.start as nat + p.length ==>
+            (#[trigger] next.initialized[j]) == false)
+    } by {
+        let p = next.pending[k];
+        let old = slot.pending[k];
+        assert(p.id == old.id && p.start == old.start && p.length == old.length);
+        assert(0 < old.id < next_request && old.length > 0);
+        assert(old.start < ratio && old.length as nat <= ratio as nat - old.start);
+        assert(slot.logical_start as nat + old.start + old.length <= 4294967295);
+        assert forall|j: int| p.start <= j < p.start as nat + p.length implies
+            (#[trigger] next.mapped[j]) != 2 by {
+            assert(old.start <= j < old.start as nat + old.length);
+            assert(slot.mapped[j] != 2);
+        }
+        assert forall|j: int| p.start <= j < p.start as nat + p.length implies
+            (#[trigger] next.initialized[j]) == false by {
+            assert(old.start <= j < old.start as nat + old.length);
+            assert(slot.initialized[j] == false);
+        }
+    }
+    assert forall|i: int, j: int| 0 <= i < j < next.pending.len() implies
+        (#[trigger] next.pending[i]).id != (#[trigger] next.pending[j]).id
+            && !ranges_overlap(next.pending[i].start, next.pending[i].length,
+                next.pending[j].start, next.pending[j].length) by {
+        assert(0 <= i < j < slot.pending.len());
+        assert(slot.pending[i].id != slot.pending[j].id
+            && !ranges_overlap(slot.pending[i].start, slot.pending[i].length,
+                slot.pending[j].start, slot.pending[j].length));
+        assert(next.pending[i].id == slot.pending[i].id
+            && next.pending[i].start == slot.pending[i].start
+            && next.pending[i].length == slot.pending[i].length);
+        assert(next.pending[j].id == slot.pending[j].id
+            && next.pending[j].start == slot.pending[j].start
+            && next.pending[j].length == slot.pending[j].length);
+    }
+    assert(slot_valid(next, ratio, next_request));
+}
+
+proof fn slot_pending_remove_valid(slot: SlotView, ratio: u32, next_request: u64, at: int)
+    requires
+        slot_valid(slot, ratio, next_request),
+        0 <= at < slot.pending.len(),
+    ensures
+        slot_valid(SlotView { pending: slot.pending.remove(at), ..slot }, ratio, next_request),
+        forall|k: int| 0 <= k < slot.pending.remove(at).len() ==>
+            !ranges_overlap(slot.pending[at].start, slot.pending[at].length,
+                (#[trigger] slot.pending.remove(at)[k]).start,
+                slot.pending.remove(at)[k].length),
+{
+    let next = SlotView { pending: slot.pending.remove(at), ..slot };
+    let removed = slot.pending[at];
+    assert(slot.pending.len() > 0);
+    assert(active(slot));
+    assert(slot.pins == 0);
+    assert(slot.phase != 4);
+    assert(next.pending.len() == slot.pending.len() - 1);
+    assert forall|k: int| 0 <= k < next.pending.len() implies
+        (#[trigger] next.pending[k]) == slot.pending[if k < at { k } else { k + 1 }] by {
+        if k < at {
+            assert(next.pending[k] == slot.pending[k]);
+        } else {
+            assert(next.pending[k] == slot.pending[k + 1]);
+        }
+    }
+    assert forall|k: int| 0 <= k < next.pending.len() implies {
+        let p = #[trigger] next.pending[k];
+        &&& 0 < p.id < next_request && p.length > 0
+        &&& p.start < ratio && p.length as nat <= ratio as nat - p.start
+        &&& next.logical_start as nat + p.start + p.length <= 4294967295
+        &&& (forall|j: int| p.start <= j < p.start as nat + p.length ==>
+            (#[trigger] next.mapped[j]) != 2)
+        &&& (forall|j: int| p.start <= j < p.start as nat + p.length ==>
+            (#[trigger] next.initialized[j]) == false)
+    } by {
+        let source = if k < at { k } else { k + 1 };
+        assert(0 <= source < slot.pending.len());
+        let p = next.pending[k];
+        assert(p == slot.pending[source]);
+        assert(0 < slot.pending[source].id < next_request && slot.pending[source].length > 0);
+        assert(slot.pending[source].start < ratio
+            && slot.pending[source].length as nat <= ratio as nat - slot.pending[source].start);
+        assert(slot.logical_start as nat + slot.pending[source].start
+            + slot.pending[source].length <= 4294967295);
+        assert forall|j: int| p.start <= j < p.start as nat + p.length implies
+            (#[trigger] next.mapped[j]) != 2 by {
+            assert(slot.pending[source].start <= j
+                < slot.pending[source].start as nat + slot.pending[source].length);
+            assert(slot.mapped[j] != 2);
+        }
+        assert forall|j: int| p.start <= j < p.start as nat + p.length implies
+            (#[trigger] next.initialized[j]) == false by {
+            assert(slot.pending[source].start <= j
+                < slot.pending[source].start as nat + slot.pending[source].length);
+            assert(slot.initialized[j] == false);
+        }
+    }
+    assert forall|i: int, j: int| 0 <= i < j < next.pending.len() implies
+        (#[trigger] next.pending[i]).id != (#[trigger] next.pending[j]).id
+            && !ranges_overlap(next.pending[i].start, next.pending[i].length,
+                next.pending[j].start, next.pending[j].length) by {
+        let old_i = if i < at { i } else { i + 1 };
+        let old_j = if j < at { j } else { j + 1 };
+        assert(0 <= old_i < old_j < slot.pending.len());
+        assert(next.pending[i] == slot.pending[old_i]);
+        assert(next.pending[j] == slot.pending[old_j]);
+        assert(slot.pending[old_i].id != slot.pending[old_j].id
+            && !ranges_overlap(slot.pending[old_i].start, slot.pending[old_i].length,
+                slot.pending[old_j].start, slot.pending[old_j].length));
+    }
+    assert forall|k: int| 0 <= k < next.pending.len() implies
+        !ranges_overlap(removed.start, removed.length,
+            (#[trigger] next.pending[k]).start, next.pending[k].length) by {
+        let source = if k < at { k } else { k + 1 };
+        assert(0 <= source < slot.pending.len() && source != at);
+        assert(next.pending[k] == slot.pending[source]);
+        if source < at {
+            assert(!ranges_overlap(slot.pending[source].start, slot.pending[source].length,
+                slot.pending[at].start, slot.pending[at].length));
+            assert(ranges_overlap(removed.start, removed.length,
+                slot.pending[source].start, slot.pending[source].length)
+                == ranges_overlap(slot.pending[source].start, slot.pending[source].length,
+                    removed.start, removed.length));
+        } else {
+            assert(at < source);
+            assert(!ranges_overlap(slot.pending[at].start, slot.pending[at].length,
+                slot.pending[source].start, slot.pending[source].length));
+        }
+    }
+    assert(slot_valid(next, ratio, next_request));
+}
+
+proof fn slot_pending_push_valid(
+    slot: SlotView, ratio: u32, old_next: u64, new_next: u64, start: u32, length: u32,
+)
+    requires
+        slot_valid(slot, ratio, old_next),
+        2 <= slot.phase <= 3,
+        slot.pins == 0,
+        slot.pending.len() < MAX_PENDING,
+        old_next > 0,
+        new_next as nat == old_next as nat + 1,
+        length > 0,
+        start < ratio,
+        length as nat <= ratio as nat - start,
+        slot.logical_start as nat + start + length <= 4294967295,
+        forall|k: int| 0 <= k < slot.pending.len() ==>
+            !ranges_overlap(start, length,
+                (#[trigger] slot.pending[k]).start, slot.pending[k].length),
+        forall|j: int| start <= j < start as nat + length ==>
+            (#[trigger] slot.mapped[j]) != 2,
+        forall|j: int| start <= j < start as nat + length ==>
+            (#[trigger] slot.initialized[j]) == false,
+    ensures
+        slot_valid(SlotView {
+            pending: slot.pending.push(PendingView { id: old_next, start, length, faulted: false }),
+            ..slot
+        }, ratio, new_next),
+{
+    let fresh = PendingView { id: old_next, start, length, faulted: false };
+    let next = SlotView { pending: slot.pending.push(fresh), ..slot };
+    assert(active(slot));
+    assert(new_next > old_next);
+    assert(next.pending.len() == slot.pending.len() + 1);
+    assert(next.pending.len() <= MAX_PENDING);
+    assert forall|k: int| 0 <= k < next.pending.len() implies {
+        let p = #[trigger] next.pending[k];
+        &&& 0 < p.id < new_next && p.length > 0
+        &&& p.start < ratio && p.length as nat <= ratio as nat - p.start
+        &&& next.logical_start as nat + p.start + p.length <= 4294967295
+        &&& (forall|j: int| p.start <= j < p.start as nat + p.length ==>
+            (#[trigger] next.mapped[j]) != 2)
+        &&& (forall|j: int| p.start <= j < p.start as nat + p.length ==>
+            (#[trigger] next.initialized[j]) == false)
+    } by {
+        let p = next.pending[k];
+        if k < slot.pending.len() {
+            assert(p == slot.pending[k]);
+            assert(0 < slot.pending[k].id < old_next && slot.pending[k].length > 0);
+            assert(slot.pending[k].start < ratio
+                && slot.pending[k].length as nat <= ratio as nat - slot.pending[k].start);
+            assert(slot.logical_start as nat + slot.pending[k].start
+                + slot.pending[k].length <= 4294967295);
+            assert forall|j: int| p.start <= j < p.start as nat + p.length implies
+                (#[trigger] next.mapped[j]) != 2 by {
+                assert(slot.pending[k].start <= j
+                    < slot.pending[k].start as nat + slot.pending[k].length);
+                assert(slot.mapped[j] != 2);
+            }
+            assert forall|j: int| p.start <= j < p.start as nat + p.length implies
+                (#[trigger] next.initialized[j]) == false by {
+                assert(slot.pending[k].start <= j
+                    < slot.pending[k].start as nat + slot.pending[k].length);
+                assert(slot.initialized[j] == false);
+            }
+        } else {
+            assert(k == slot.pending.len());
+            assert(p == fresh);
+            assert(0 < p.id < new_next && p.length > 0);
+            assert(p.start < ratio && p.length as nat <= ratio as nat - p.start);
+            assert(next.logical_start as nat + p.start + p.length <= 4294967295);
+            assert forall|j: int| p.start <= j < p.start as nat + p.length implies
+                (#[trigger] next.mapped[j]) != 2 by {
+                assert(start <= j < start as nat + length);
+                assert(slot.mapped[j] != 2);
+            }
+            assert forall|j: int| p.start <= j < p.start as nat + p.length implies
+                (#[trigger] next.initialized[j]) == false by {
+                assert(start <= j < start as nat + length);
+                assert(slot.initialized[j] == false);
+            }
+        }
+    }
+    assert forall|i: int, j: int| 0 <= i < j < next.pending.len() implies
+        (#[trigger] next.pending[i]).id != (#[trigger] next.pending[j]).id
+            && !ranges_overlap(next.pending[i].start, next.pending[i].length,
+                next.pending[j].start, next.pending[j].length) by {
+        assert(0 <= i < slot.pending.len());
+        assert(next.pending[i] == slot.pending[i]);
+        if j < slot.pending.len() {
+            assert(next.pending[j] == slot.pending[j]);
+            assert(slot.pending[i].id != slot.pending[j].id
+                && !ranges_overlap(slot.pending[i].start, slot.pending[i].length,
+                    slot.pending[j].start, slot.pending[j].length));
+        } else {
+            assert(j == slot.pending.len());
+            assert(next.pending[j] == fresh);
+            assert(0 < slot.pending[i].id < old_next);
+            assert(!ranges_overlap(start, length, slot.pending[i].start, slot.pending[i].length));
+            assert(ranges_overlap(slot.pending[i].start, slot.pending[i].length, start, length)
+                == ranges_overlap(start, length, slot.pending[i].start, slot.pending[i].length));
+        }
+    }
+    assert(slot_valid(next, ratio, new_next));
 }
 
 pub open spec fn valid(v: LedgerView) -> bool {
@@ -227,6 +734,106 @@ pub open spec fn valid(v: LedgerView) -> bool {
         && active(v.slots[i]) && active(v.slots[j]) ==>
         (#[trigger] v.slots[i]).owner != (#[trigger] v.slots[j]).owner
             || v.slots[i].logical_start != v.slots[j].logical_start)
+}
+
+proof fn same_ownership_update_valid(v: LedgerView, index: int, slot: SlotView)
+    requires valid(v), 0 <= index < v.slots.len(),
+        slot_valid(slot, v.geometry.cluster_ratio, v.next_request),
+        slot.phase == v.slots[index].phase, slot.generation == v.slots[index].generation,
+        slot.owner == v.slots[index].owner, slot.logical_start == v.slots[index].logical_start,
+    ensures valid(LedgerView { slots: v.slots.update(index, slot), ..v }),
+{
+    occupied_count_update(v.slots, index, slot);
+    let next = LedgerView { slots: v.slots.update(index, slot), ..v };
+    assert forall|i: int| 0 <= i < next.slots.len() implies {
+        let item = #[trigger] next.slots[i];
+        &&& slot_valid(item, next.geometry.cluster_ratio, next.next_request)
+        &&& (item.phase == 0) == bitmap_bit(next.bitmap, (next.first_bit as int + i) as u32)
+        &&& (item.phase != 0 ==> next.geometry.first_data <= (next.first_cluster as nat + i) * next.geometry.cluster_ratio
+            && (next.first_cluster as nat + i + 1) * next.geometry.cluster_ratio <= next.geometry.blocks)
+    } by {
+        if i == index { assert(next.slots[i].phase == v.slots[i].phase); }
+        else { assert(next.slots[i] == v.slots[i]); }
+    }
+    assert forall|i: int, j: int| 0 <= i < j < next.slots.len()
+        && active(next.slots[i]) && active(next.slots[j]) implies
+        (#[trigger] next.slots[i]).owner != (#[trigger] next.slots[j]).owner
+            || next.slots[i].logical_start != next.slots[j].logical_start by {
+        assert(next.slots[i].phase == v.slots[i].phase);
+        assert(next.slots[j].phase == v.slots[j].phase);
+        assert(next.slots[i].owner == v.slots[i].owner);
+        assert(next.slots[j].owner == v.slots[j].owner);
+        assert(next.slots[i].logical_start == v.slots[i].logical_start);
+        assert(next.slots[j].logical_start == v.slots[j].logical_start);
+    }
+}
+
+proof fn next_request_monotone_valid(v: LedgerView, next_request: u64)
+    requires valid(v), next_request >= v.next_request,
+    ensures valid(LedgerView { next_request, ..v }),
+{
+    assert forall|i: int| 0 <= i < v.slots.len() implies slot_valid(#[trigger] v.slots[i], v.geometry.cluster_ratio, next_request) by {
+        assert(slot_valid(v.slots[i], v.geometry.cluster_ratio, v.next_request));
+    }
+}
+
+proof fn reserve_update_valid(v: LedgerView, index: int, slot: SlotView)
+    requires valid(v), 0 <= index < v.slots.len(), v.slots[index].phase == 1,
+        slot.phase == 2, slot_valid(slot, v.geometry.cluster_ratio, v.next_request),
+        v.live_blocks as nat + v.geometry.cluster_ratio <= MAX_LIVE_BLOCKS,
+        forall|i: int| 0 <= i < v.slots.len() && active(v.slots[i]) ==>
+            (#[trigger] v.slots[i]).owner != slot.owner || v.slots[i].logical_start != slot.logical_start,
+    ensures valid(LedgerView { slots: v.slots.update(index, slot),
+        live_blocks: (v.live_blocks + v.geometry.cluster_ratio) as u64, ..v }),
+{
+    let next = LedgerView { slots: v.slots.update(index, slot),
+        live_blocks: (v.live_blocks + v.geometry.cluster_ratio) as u64, ..v };
+    occupied_count_update(v.slots, index, slot);
+    vstd::arithmetic::mul::lemma_mul_is_distributive_add_other_way(v.geometry.cluster_ratio as int,
+        occupied_count(v.slots) as int, 1);
+    assert(next.live_blocks as nat == occupied_count(next.slots) * next.geometry.cluster_ratio);
+    assert forall|i: int| 0 <= i < next.slots.len() implies {
+        let item = #[trigger] next.slots[i];
+        &&& slot_valid(item, next.geometry.cluster_ratio, next.next_request)
+        &&& (item.phase == 0) == bitmap_bit(next.bitmap, (next.first_bit as int + i) as u32)
+        &&& (item.phase != 0 ==> next.geometry.first_data <= (next.first_cluster as nat + i) * next.geometry.cluster_ratio
+            && (next.first_cluster as nat + i + 1) * next.geometry.cluster_ratio <= next.geometry.blocks)
+    } by { if i != index { assert(next.slots[i] == v.slots[i]); } }
+    assert forall|i: int, j: int| 0 <= i < j < next.slots.len()
+        && active(next.slots[i]) && active(next.slots[j]) implies
+        (#[trigger] next.slots[i]).owner != (#[trigger] next.slots[j]).owner
+            || next.slots[i].logical_start != next.slots[j].logical_start by {
+        if i == index { assert(v.slots[j].owner != slot.owner || v.slots[j].logical_start != slot.logical_start); }
+        else if j == index { assert(v.slots[i].owner != slot.owner || v.slots[i].logical_start != slot.logical_start); }
+    }
+}
+
+proof fn release_update_valid(v: LedgerView, index: int, slot: SlotView)
+    requires valid(v), 0 <= index < v.slots.len(), active(v.slots[index]),
+        slot.phase == 1, slot_valid(slot, v.geometry.cluster_ratio, v.next_request),
+        v.live_blocks >= v.geometry.cluster_ratio,
+    ensures valid(LedgerView { slots: v.slots.update(index, slot),
+        live_blocks: (v.live_blocks - v.geometry.cluster_ratio) as u64, ..v }),
+{
+    let next = LedgerView { slots: v.slots.update(index, slot),
+        live_blocks: (v.live_blocks - v.geometry.cluster_ratio) as u64, ..v };
+    occupied_count_update(v.slots, index, slot);
+    vstd::arithmetic::mul::lemma_mul_is_distributive_add_other_way(v.geometry.cluster_ratio as int,
+        occupied_count(next.slots) as int, 1);
+    assert(next.live_blocks as nat == occupied_count(next.slots) * next.geometry.cluster_ratio);
+    assert forall|i: int| 0 <= i < next.slots.len() implies {
+        let item = #[trigger] next.slots[i];
+        &&& slot_valid(item, next.geometry.cluster_ratio, next.next_request)
+        &&& (item.phase == 0) == bitmap_bit(next.bitmap, (next.first_bit as int + i) as u32)
+        &&& (item.phase != 0 ==> next.geometry.first_data <= (next.first_cluster as nat + i) * next.geometry.cluster_ratio
+            && (next.first_cluster as nat + i + 1) * next.geometry.cluster_ratio <= next.geometry.blocks)
+    } by { if i != index { assert(next.slots[i] == v.slots[i]); } }
+    assert forall|i: int, j: int| 0 <= i < j < next.slots.len()
+        && active(next.slots[i]) && active(next.slots[j]) implies
+        (#[trigger] next.slots[i]).owner != (#[trigger] next.slots[j]).owner
+            || next.slots[i].logical_start != next.slots[j].logical_start by {
+        assert(i != index && j != index);
+    }
 }
 
 pub open spec fn key_matches(v: LedgerView, key: KeyView, index: int) -> bool {
@@ -253,6 +860,14 @@ pub proof fn failed_pending_range_remains_unexposed(v: LedgerView, command: Comm
         forall|j: int| command.start <= j < command.start as nat + command.length ==>
             (#[trigger] v.slots[index].mapped[j]) != 2 && (#[trigger] v.slots[index].initialized[j]) == false,
 {
+    assert(slot_valid(v.slots[index], v.geometry.cluster_ratio, v.next_request));
+    let item = v.slots[index].pending[pending];
+    assert(item.start == command.start && item.length == command.length);
+    assert forall|j: int| command.start <= j < command.start as nat + command.length implies
+        (#[trigger] v.slots[index].mapped[j]) != 2 && (#[trigger] v.slots[index].initialized[j]) == false by {
+        assert(item.start <= j < item.start as nat + item.length);
+        assert(0 <= j < v.geometry.cluster_ratio);
+    }
 }
 
 pub proof fn a_retired_partial_cluster_is_unmapped_and_unpinned(v: LedgerView, index: int)
@@ -269,6 +884,25 @@ pub proof fn changing_a_slot_without_changing_its_phase_preserves_accounting(a: 
 {
     assert(b.slots =~= a.slots.update(index, b.slots[index]));
     occupied_count_update(a.slots, index, b.slots[index]);
+}
+
+proof fn pending_range_excludes_point(v: LedgerView, index: int, start: u32, length: u32, point: int)
+    requires 0 <= index < v.slots.len(), !pending_overlap(v, index, start, length),
+        start <= point < start as nat + length,
+    ensures forall|k: int| 0 <= k < v.slots[index].pending.len() ==>
+        !((#[trigger] v.slots[index].pending[k]).start <= point
+            < v.slots[index].pending[k].start as nat + v.slots[index].pending[k].length),
+{
+    assert forall|k: int| 0 <= k < v.slots[index].pending.len() implies
+        !((#[trigger] v.slots[index].pending[k]).start <= point
+            < v.slots[index].pending[k].start as nat + v.slots[index].pending[k].length) by {
+        let item = v.slots[index].pending[k];
+        if item.start <= point < item.start as nat + item.length {
+            assert(ranges_overlap(start, length, item.start, item.length));
+            assert(pending_overlap(v, index, start, length));
+            assert(false);
+        }
+    }
 }
 
 pub open spec fn key_index(v: LedgerView, key: KeyView) -> int { key.cluster as int - v.first_cluster as int }
@@ -307,7 +941,6 @@ pub open spec fn allocation_bitmap(v: LedgerView, raw: Seq<u8>) -> bool {
 
 fn bit(raw: &[u8], index: u32) -> (r: bool)
     ensures r == bitmap_bit(raw@, index),
-    no_unwind
 {
     let byte = (index / 8) as usize;
     if byte >= raw.len() { return true; }
@@ -318,7 +951,6 @@ pub open spec fn byte_bit(byte: u8, bit: u8) -> bool { (byte >> bit) & 1u8 != 0 
 
 fn put_bit(byte: u8, bit: u8, set: bool) -> (r: u8)
     ensures forall|j: u8| j < 8 ==> (#[trigger] byte_bit(r, j)) == if j == bit { set } else { byte_bit(byte, j) },
-    no_unwind
 {
     if bit >= 8 { return byte; }
     let mask = 1u8 << bit;
@@ -335,7 +967,6 @@ fn put_bit(byte: u8, bit: u8, set: bool) -> (r: u8)
 
 fn same_owner(a: Owner, b: Owner) -> (r: bool)
     ensures r == (a == b),
-    no_unwind
 { a.inode == b.inode && a.generation == b.generation }
 
 proof fn product_below_limit(a: u64, b: u64)
@@ -351,7 +982,6 @@ proof fn product_below_limit(a: u64, b: u64)
 
 fn overlaps(a: u32, alen: u32, b: u32, blen: u32) -> (r: bool)
     ensures r == ranges_overlap(a, alen, b, blen),
-    no_unwind
 {
     (a as u64) < b as u64 + blen as u64 && (b as u64) < a as u64 + alen as u64
 }
@@ -362,16 +992,12 @@ impl Key {
             owner: self.owner, logical_start: self.logical_start }
     }
     pub fn owner(&self) -> (r: Owner) ensures r == self.view().owner,
-        no_unwind
     { self.owner }
     pub fn cluster(&self) -> (r: u64) ensures r == self.view().cluster,
-        no_unwind
     { self.cluster }
     pub fn generation(&self) -> (r: u64) ensures r == self.view().generation,
-        no_unwind
     { self.generation }
     pub fn logical_start(&self) -> (r: u32) ensures r == self.view().logical_start,
-        no_unwind
     { self.logical_start }
 }
 
@@ -381,13 +1007,10 @@ impl Initialization {
             request: self.request, start: self.start, length: self.length, physical: self.physical }
     }
     pub fn physical_start(&self) -> (r: u64) ensures r == self.view().physical,
-        no_unwind
     { self.physical }
     pub fn blocks(&self) -> (r: u32) ensures r == self.view().length,
-        no_unwind
     { self.length }
     pub fn request_id(&self) -> (r: u64) ensures r == self.view().request,
-        no_unwind
     { self.request }
 }
 
@@ -420,7 +1043,6 @@ impl Ledger {
             && ledger.view().first_bit == first_bit && ledger.view().slots.len() == count
             && ledger.view().live_blocks == 0 && ledger.view().next_request == 1,
             Err(_) => true },
-        no_unwind
     {
         match LedgerState::from_bitmap(geometry, domain, group, raw, free_clusters, first_bit, count) {
             Ok(state) => Ok(Ledger { state }),
@@ -428,190 +1050,200 @@ impl Ledger {
         }
     }
 
-    pub fn reserve(&mut self, cluster: u64, owner: Owner, logical_start: u32)
-        -> (r: Result<Key, Error>)
-        ensures final(self).wf(), match r {
+    pub fn reserve(self, cluster: u64, owner: Owner, logical_start: u32)
+        -> (r: (Self, Result<Key, Error>))
+        ensures r.0.wf(), match r.1 {
             Ok(key) => {
-                let i = key_index(old(self).view(), key.view());
+                let i = key_index(self.view(), key.view());
                 &&& key.view().cluster == cluster && key.view().owner == owner && key.view().logical_start == logical_start
-                &&& key_matches(final(self).view(), key.view(), i)
-                &&& old(self).view().slots[i].phase == 1 && final(self).view().slots[i].phase == 2
-                &&& key.view().generation as nat == old(self).view().slots[i].generation as nat + 1
-                &&& only_slot_changed(old(self).view(), final(self).view(), i)
-                &&& final(self).view().next_request == old(self).view().next_request
-                &&& final(self).view().live_blocks as nat == old(self).view().live_blocks as nat + old(self).view().geometry.cluster_ratio
+                &&& key_matches(r.0.view(), key.view(), i)
+                &&& self.view().slots[i].phase == 1 && r.0.view().slots[i].phase == 2
+                &&& key.view().generation as nat == self.view().slots[i].generation as nat + 1
+                &&& only_slot_changed(self.view(), r.0.view(), i)
+                &&& r.0.view().next_request == self.view().next_request
+                &&& r.0.view().live_blocks as nat == self.view().live_blocks as nat + self.view().geometry.cluster_ratio
             },
-            Err(_) => final(self).view() == old(self).view(),
+            Err(_) => r.0.view() == self.view(),
         },
-        no_unwind
     {
-        proof { use_type_invariant(&*self); }
-        self.state.reserve(cluster, owner, logical_start)
+        proof { use_type_invariant(&self); }
+        let Ledger { mut state } = self;
+        let result = state.reserve(cluster, owner, logical_start);
+        (Ledger { state }, result)
     }
 
-    pub fn commit_reservation(&mut self, key: &Key) -> (r: Result<(), Error>)
-        ensures final(self).wf(), match r {
+    pub fn commit_reservation(self, key: &Key) -> (r: (Self, Result<(), Error>))
+        ensures r.0.wf(), match r.1 {
             Ok(()) => {
-                let i = key_index(old(self).view(), key.view());
-                &&& key_matches(old(self).view(), key.view(), i) && old(self).view().slots[i].phase == 2
-                &&& unchanged_allocation(old(self).view(), final(self).view(), i)
-                &&& final(self).view().slots[i] == (SlotView { phase: 3, ..old(self).view().slots[i] })
-            }, Err(_) => final(self).view() == old(self).view(),
+                let i = key_index(self.view(), key.view());
+                &&& key_matches(self.view(), key.view(), i) && self.view().slots[i].phase == 2
+                &&& unchanged_allocation(self.view(), r.0.view(), i)
+                &&& r.0.view().slots[i] == (SlotView { phase: 3, ..self.view().slots[i] })
+            }, Err(_) => r.0.view() == self.view(),
         },
-        no_unwind
     {
-        proof { use_type_invariant(&*self); }
-        self.state.commit_reservation(key)
+        proof { use_type_invariant(&self); }
+        let Ledger { mut state } = self;
+        let result = state.commit_reservation(key);
+        (Ledger { state }, result)
     }
 
-    pub fn cancel_reservation(&mut self, key: Key) -> (r: Result<(), (Key, Error)>)
-        ensures final(self).wf(), match r {
+    pub fn cancel_reservation(self, key: Key) -> (r: (Self, Result<(), (Key, Error)>))
+        ensures r.0.wf(), match r.1 {
             Ok(()) => {
-                let i = key_index(old(self).view(), key.view());
-                &&& key_matches(old(self).view(), key.view(), i) && old(self).view().slots[i].phase == 2
-                &&& old(self).view().slots[i].pins == 0 && old(self).view().slots[i].pending.len() == 0
-                &&& only_slot_changed(old(self).view(), final(self).view(), i)
-                &&& final(self).view().slots[i].phase == 1 && final(self).view().next_request == old(self).view().next_request
-                &&& final(self).view().live_blocks as nat + old(self).view().geometry.cluster_ratio == old(self).view().live_blocks
-            }, Err((returned, _)) => returned.view() == key.view() && final(self).view() == old(self).view(),
+                let i = key_index(self.view(), key.view());
+                &&& key_matches(self.view(), key.view(), i) && self.view().slots[i].phase == 2
+                &&& self.view().slots[i].pins == 0 && self.view().slots[i].pending.len() == 0
+                &&& only_slot_changed(self.view(), r.0.view(), i)
+                &&& r.0.view().slots[i].phase == 1
+                && r.0.view().slots[i].generation == self.view().slots[i].generation && r.0.view().next_request == self.view().next_request
+                &&& r.0.view().live_blocks as nat + self.view().geometry.cluster_ratio == self.view().live_blocks
+            }, Err((returned, _)) => returned.view() == key.view() && r.0.view() == self.view(),
         },
-        no_unwind
     {
-        proof { use_type_invariant(&*self); }
-        self.state.cancel_reservation(key)
+        proof { use_type_invariant(&self); }
+        let Ledger { mut state } = self;
+        let result = state.cancel_reservation(key);
+        (Ledger { state }, result)
     }
 
-    pub fn begin_initialization(&mut self, key: &Key, start: u32, length: u32)
-        -> (r: Result<Initialization, Error>)
-        ensures final(self).wf(), match r {
+    pub fn begin_initialization(self, key: &Key, start: u32, length: u32)
+        -> (r: (Self, Result<Initialization, Error>))
+        ensures r.0.wf(), match r.1 {
             Ok(command) => {
-                let i = key_index(old(self).view(), key.view());
-                let slot = old(self).view().slots[i];
-                &&& key_matches(old(self).view(), key.view(), i) && range_valid(old(self).view(), i, start, length)
-                &&& slot.pins == 0 && !pending_overlap(old(self).view(), i, start, length)
-                &&& command.view() == (CommandView { domain: old(self).view().domain, cluster: key.view().cluster,
-                    generation: key.view().generation, request: old(self).view().next_request, start, length,
-                    physical: (key.view().cluster as nat * old(self).view().geometry.cluster_ratio + start) as u64 })
-                &&& only_slot_changed(old(self).view(), final(self).view(), i)
-                &&& final(self).view().live_blocks == old(self).view().live_blocks
-                &&& final(self).view().next_request as nat == old(self).view().next_request as nat + 1
-                &&& final(self).view().slots[i] == (SlotView { pending: slot.pending.push(PendingView {
+                let i = key_index(self.view(), key.view());
+                let slot = self.view().slots[i];
+                &&& key_matches(self.view(), key.view(), i) && range_valid(self.view(), i, start, length)
+                &&& slot.pins == 0 && !pending_overlap(self.view(), i, start, length)
+                &&& command.view() == (CommandView { domain: self.view().domain, cluster: key.view().cluster,
+                    generation: key.view().generation, request: self.view().next_request, start, length,
+                    physical: (key.view().cluster as nat * self.view().geometry.cluster_ratio + start) as u64 })
+                &&& only_slot_changed(self.view(), r.0.view(), i)
+                &&& r.0.view().live_blocks == self.view().live_blocks
+                &&& r.0.view().next_request as nat == self.view().next_request as nat + 1
+                &&& r.0.view().slots[i] == (SlotView { pending: slot.pending.push(PendingView {
                     id: command.view().request, start, length, faulted: false }),
-                    initialized: final(self).view().slots[i].initialized, ..slot })
-                &&& init_set(slot.initialized, final(self).view().slots[i].initialized, start, length, false)
-            }, Err(_) => final(self).view() == old(self).view(),
+                    initialized: r.0.view().slots[i].initialized, ..slot })
+                &&& init_set(slot.initialized, r.0.view().slots[i].initialized, start, length, false)
+            }, Err(_) => r.0.view() == self.view(),
         },
-        no_unwind
     {
-        proof { use_type_invariant(&*self); }
-        self.state.begin_initialization(key, start, length)
+        proof { use_type_invariant(&self); }
+        let Ledger { mut state } = self;
+        let result = state.begin_initialization(key, start, length);
+        (Ledger { state }, result)
     }
 
-    pub fn complete_initialization(&mut self, command: Initialization, completion: Completion)
-        -> (r: Result<(), (Initialization, Error)>)
-        ensures final(self).wf(), match r {
-            Ok(()) => exists|i: int, at: int| (#[trigger] command_matches(old(self).view(), command.view(), i, at))
-                && !old(self).view().slots[i].pending[at].faulted
+    pub fn complete_initialization(self, command: Initialization, completion: Completion)
+        -> (r: (Self, Result<(), (Initialization, Error)>))
+        ensures r.0.wf(), match r.1 {
+            Ok(()) => exists|i: int, at: int| (#[trigger] command_matches(self.view(), command.view(), i, at))
+                && !self.view().slots[i].pending[at].faulted
                 && completion is Succeeded
-                && unchanged_allocation(old(self).view(), final(self).view(), i)
-                && final(self).view().slots[i].pending == old(self).view().slots[i].pending.remove(at)
-                && final(self).view().slots[i].mapped == old(self).view().slots[i].mapped
-                && init_set(old(self).view().slots[i].initialized, final(self).view().slots[i].initialized,
+                && unchanged_allocation(self.view(), r.0.view(), i)
+                && r.0.view().slots[i].pending == self.view().slots[i].pending.remove(at)
+                && r.0.view().slots[i].mapped == self.view().slots[i].mapped
+                && init_set(self.view().slots[i].initialized, r.0.view().slots[i].initialized,
                     command.view().start, command.view().length, true),
             Err((returned, error)) => returned.view() == command.view()
                 && if error is InitializationFailed {
                     completion is Failed
-                    && exists|i: int, at: int| (#[trigger] command_matches(old(self).view(), command.view(), i, at))
-                        && !old(self).view().slots[i].pending[at].faulted
-                        && unchanged_allocation(old(self).view(), final(self).view(), i)
-                        && final(self).view().slots[i] == (SlotView {
-                            pending: old(self).view().slots[i].pending.update(at,
-                                PendingView { faulted: true, ..old(self).view().slots[i].pending[at] }),
-                            ..old(self).view().slots[i] })
-                } else { final(self).view() == old(self).view() },
+                    && exists|i: int, at: int| (#[trigger] command_matches(self.view(), command.view(), i, at))
+                        && !self.view().slots[i].pending[at].faulted
+                        && unchanged_allocation(self.view(), r.0.view(), i)
+                        && r.0.view().slots[i] == (SlotView {
+                            pending: self.view().slots[i].pending.update(at,
+                                PendingView { faulted: true, ..self.view().slots[i].pending[at] }),
+                            ..self.view().slots[i] })
+                } else { r.0.view() == self.view() },
         },
-        no_unwind
     {
-        proof { use_type_invariant(&*self); }
-        self.state.complete_initialization(command, completion)
+        proof { use_type_invariant(&self); }
+        let Ledger { mut state } = self;
+        let result = state.complete_initialization(command, completion);
+        (Ledger { state }, result)
     }
 
-    pub fn discard_initialization_after_reset(&mut self, command: Initialization, quiescent: bool)
-        -> (r: Result<(), (Initialization, Error)>)
-        ensures final(self).wf(), match r {
-            Ok(()) => quiescent && exists|i: int, at: int| (#[trigger] command_matches(old(self).view(), command.view(), i, at))
-                && unchanged_allocation(old(self).view(), final(self).view(), i)
-                && final(self).view().slots[i] == (SlotView {
-                    pending: old(self).view().slots[i].pending.remove(at),
-                    ..old(self).view().slots[i] }),
-            Err((returned, _)) => returned.view() == command.view() && final(self).view() == old(self).view(),
+    pub fn discard_initialization_after_reset(self, command: Initialization, quiescent: bool)
+        -> (r: (Self, Result<(), (Initialization, Error)>))
+        ensures r.0.wf(), match r.1 {
+            Ok(()) => quiescent && exists|i: int, at: int| (#[trigger] command_matches(self.view(), command.view(), i, at))
+                && unchanged_allocation(self.view(), r.0.view(), i)
+                && r.0.view().slots[i] == (SlotView {
+                    pending: self.view().slots[i].pending.remove(at),
+                    ..self.view().slots[i] }),
+            Err((returned, _)) => returned.view() == command.view() && r.0.view() == self.view(),
         },
-        no_unwind
     {
-        proof { use_type_invariant(&*self); }
-        self.state.discard_initialization_after_reset(command, quiescent)
+        proof { use_type_invariant(&self); }
+        let Ledger { mut state } = self;
+        let result = state.discard_initialization_after_reset(command, quiescent);
+        (Ledger { state }, result)
     }
 
-    pub fn map_range(&mut self, key: &Key, start: u32, length: u32, written: bool)
-        -> (r: Result<(), Error>)
-        ensures final(self).wf(), match r {
+    pub fn map_range(self, key: &Key, start: u32, length: u32, written: bool)
+        -> (r: (Self, Result<(), Error>))
+        ensures r.0.wf(), match r.1 {
             Ok(()) => {
-                let i = key_index(old(self).view(), key.view());
-                &&& key_matches(old(self).view(), key.view(), i) && old(self).view().slots[i].phase == 3
-                &&& old(self).view().slots[i].pins == 0 && !pending_overlap(old(self).view(), i, start, length)
-                &&& range_valid(old(self).view(), i, start, length)
+                let i = key_index(self.view(), key.view());
+                &&& key_matches(self.view(), key.view(), i) && self.view().slots[i].phase == 3
+                &&& self.view().slots[i].pins == 0 && !pending_overlap(self.view(), i, start, length)
+                &&& range_valid(self.view(), i, start, length)
                 &&& (forall|j: int| start <= j < start as nat + length ==>
-                    (#[trigger] old(self).view().slots[i].mapped[j]) == 0 && (!written || old(self).view().slots[i].initialized[j]))
-                &&& unchanged_allocation(old(self).view(), final(self).view(), i)
-                &&& range_set(old(self).view().slots[i].mapped, final(self).view().slots[i].mapped, start, length, if written { 2 } else { 1 })
-                &&& final(self).view().slots[i].initialized == old(self).view().slots[i].initialized
-                &&& final(self).view().slots[i].pending == old(self).view().slots[i].pending
-            }, Err(_) => final(self).view() == old(self).view(),
+                    (#[trigger] self.view().slots[i].mapped[j]) == 0 && (!written || self.view().slots[i].initialized[j]))
+                &&& unchanged_allocation(self.view(), r.0.view(), i)
+                &&& range_set(self.view().slots[i].mapped, r.0.view().slots[i].mapped, start, length, if written { 2 } else { 1 })
+                &&& r.0.view().slots[i].initialized == self.view().slots[i].initialized
+                &&& r.0.view().slots[i].pending == self.view().slots[i].pending
+            }, Err(_) => r.0.view() == self.view(),
         },
-        no_unwind
     {
-        proof { use_type_invariant(&*self); }
-        self.state.map_range(key, start, length, written)
+        proof { use_type_invariant(&self); }
+        let Ledger { mut state } = self;
+        let result = state.map_range(key, start, length, written);
+        (Ledger { state }, result)
     }
 
-    pub fn convert_written(&mut self, key: &Key, start: u32, length: u32) -> (r: Result<(), Error>)
-        ensures final(self).wf(), match r {
+    pub fn convert_written(self, key: &Key, start: u32, length: u32) -> (r: (Self, Result<(), Error>))
+        ensures r.0.wf(), match r.1 {
             Ok(()) => {
-                let i = key_index(old(self).view(), key.view());
-                &&& key_matches(old(self).view(), key.view(), i) && old(self).view().slots[i].phase == 3
-                &&& old(self).view().slots[i].pins == 0 && !pending_overlap(old(self).view(), i, start, length)
-                &&& range_valid(old(self).view(), i, start, length)
+                let i = key_index(self.view(), key.view());
+                &&& key_matches(self.view(), key.view(), i) && self.view().slots[i].phase == 3
+                &&& self.view().slots[i].pins == 0 && !pending_overlap(self.view(), i, start, length)
+                &&& range_valid(self.view(), i, start, length)
                 &&& (forall|j: int| start <= j < start as nat + length ==>
-                    (#[trigger] old(self).view().slots[i].mapped[j]) == 1 && old(self).view().slots[i].initialized[j])
-                &&& unchanged_allocation(old(self).view(), final(self).view(), i)
-                &&& range_set(old(self).view().slots[i].mapped, final(self).view().slots[i].mapped, start, length, 2)
-                &&& final(self).view().slots[i].initialized == old(self).view().slots[i].initialized
-                &&& final(self).view().slots[i].pending == old(self).view().slots[i].pending
-            }, Err(_) => final(self).view() == old(self).view(),
+                    (#[trigger] self.view().slots[i].mapped[j]) == 1 && self.view().slots[i].initialized[j])
+                &&& unchanged_allocation(self.view(), r.0.view(), i)
+                &&& range_set(self.view().slots[i].mapped, r.0.view().slots[i].mapped, start, length, 2)
+                &&& r.0.view().slots[i].initialized == self.view().slots[i].initialized
+                &&& r.0.view().slots[i].pending == self.view().slots[i].pending
+            }, Err(_) => r.0.view() == self.view(),
         },
-        no_unwind
     {
-        proof { use_type_invariant(&*self); }
-        self.state.convert_written(key, start, length)
+        proof { use_type_invariant(&self); }
+        let Ledger { mut state } = self;
+        let result = state.convert_written(key, start, length);
+        (Ledger { state }, result)
     }
 
-    pub fn unmap_range(&mut self, key: &Key, start: u32, length: u32) -> (r: Result<(), Error>)
-        ensures final(self).wf(), match r {
+    pub fn unmap_range(self, key: &Key, start: u32, length: u32) -> (r: (Self, Result<(), Error>))
+        ensures r.0.wf(), match r.1 {
             Ok(()) => {
-                let i = key_index(old(self).view(), key.view());
-                &&& key_matches(old(self).view(), key.view(), i) && old(self).view().slots[i].phase == 3
-                &&& old(self).view().slots[i].pins == 0 && !pending_overlap(old(self).view(), i, start, length)
-                &&& range_valid(old(self).view(), i, start, length)
-                &&& unchanged_allocation(old(self).view(), final(self).view(), i)
-                &&& range_set(old(self).view().slots[i].mapped, final(self).view().slots[i].mapped, start, length, 0)
-                &&& init_set(old(self).view().slots[i].initialized, final(self).view().slots[i].initialized, start, length, false)
-                &&& final(self).view().slots[i].pending == old(self).view().slots[i].pending
-            }, Err(_) => final(self).view() == old(self).view(),
+                let i = key_index(self.view(), key.view());
+                &&& key_matches(self.view(), key.view(), i) && self.view().slots[i].phase == 3
+                &&& self.view().slots[i].pins == 0 && !pending_overlap(self.view(), i, start, length)
+                &&& range_valid(self.view(), i, start, length)
+                &&& unchanged_allocation(self.view(), r.0.view(), i)
+                &&& range_set(self.view().slots[i].mapped, r.0.view().slots[i].mapped, start, length, 0)
+                &&& init_set(self.view().slots[i].initialized, r.0.view().slots[i].initialized, start, length, false)
+                &&& r.0.view().slots[i].pending == self.view().slots[i].pending
+            }, Err(_) => r.0.view() == self.view(),
         },
-        no_unwind
     {
-        proof { use_type_invariant(&*self); }
-        self.state.unmap_range(key, start, length)
+        proof { use_type_invariant(&self); }
+        let Ledger { mut state } = self;
+        let result = state.unmap_range(key, start, length);
+        (Ledger { state }, result)
     }
 
     pub fn read_block(&self, key: &Key, logical: u32) -> (r: Result<ReadDecision, Error>)
@@ -630,88 +1262,91 @@ impl Ledger {
                 }
             }, Err(_) => true,
         },
-        no_unwind
     {
         proof { use_type_invariant(&*self); }
         self.state.read_block(key, logical)
     }
 
-    pub fn pin(&mut self, key: &Key) -> (r: Result<ReadPin, Error>)
-        ensures final(self).wf(), match r {
+    pub fn pin(self, key: &Key) -> (r: (Self, Result<ReadPin, Error>))
+        ensures r.0.wf(), match r.1 {
             Ok(pin) => {
-                let i = key_index(old(self).view(), key.view());
-                &&& key_matches(old(self).view(), key.view(), i) && old(self).view().slots[i].phase == 3
-                &&& old(self).view().slots[i].pending.len() == 0
+                let i = key_index(self.view(), key.view());
+                &&& key_matches(self.view(), key.view(), i) && self.view().slots[i].phase == 3
+                &&& self.view().slots[i].pending.len() == 0
                 &&& pin.view() == (TicketView { domain: key.view().domain, cluster: key.view().cluster, generation: key.view().generation })
-                &&& unchanged_allocation(old(self).view(), final(self).view(), i)
-                &&& final(self).view().slots[i] == (SlotView { pins: (old(self).view().slots[i].pins + 1) as u32, ..old(self).view().slots[i] })
-            }, Err(_) => final(self).view() == old(self).view(),
+                &&& unchanged_allocation(self.view(), r.0.view(), i)
+                &&& r.0.view().slots[i] == (SlotView { pins: (self.view().slots[i].pins + 1) as u32, ..self.view().slots[i] })
+            }, Err(_) => r.0.view() == self.view(),
         },
-        no_unwind
     {
-        proof { use_type_invariant(&*self); }
-        self.state.pin(key)
+        proof { use_type_invariant(&self); }
+        let Ledger { mut state } = self;
+        let result = state.pin(key);
+        (Ledger { state }, result)
     }
 
-    pub fn unpin(&mut self, pin: ReadPin) -> (r: Result<(), (ReadPin, Error)>)
-        ensures final(self).wf(), match r {
-            Ok(()) => exists|i: int| 0 <= i < old(self).view().slots.len()
-                && pin.view().domain == old(self).view().domain
-                && pin.view().cluster as int == old(self).view().first_cluster as int + i
-                && pin.view().generation == (#[trigger] old(self).view().slots[i]).generation
-                && old(self).view().slots[i].pins > 0
-                && unchanged_allocation(old(self).view(), final(self).view(), i)
-                && final(self).view().slots[i] == (SlotView { pins: (old(self).view().slots[i].pins - 1) as u32, ..old(self).view().slots[i] }),
-            Err((returned, _)) => returned.view() == pin.view() && final(self).view() == old(self).view(),
+    pub fn unpin(self, pin: ReadPin) -> (r: (Self, Result<(), (ReadPin, Error)>))
+        ensures r.0.wf(), match r.1 {
+            Ok(()) => exists|i: int| 0 <= i < self.view().slots.len()
+                && pin.view().domain == self.view().domain
+                && pin.view().cluster as int == self.view().first_cluster as int + i
+                && pin.view().generation == (#[trigger] self.view().slots[i]).generation
+                && self.view().slots[i].pins > 0
+                && unchanged_allocation(self.view(), r.0.view(), i)
+                && r.0.view().slots[i] == (SlotView { pins: (self.view().slots[i].pins - 1) as u32, ..self.view().slots[i] }),
+            Err((returned, _)) => returned.view() == pin.view() && r.0.view() == self.view(),
         },
-        no_unwind
     {
-        proof { use_type_invariant(&*self); }
-        self.state.unpin(pin)
+        proof { use_type_invariant(&self); }
+        let Ledger { mut state } = self;
+        let result = state.unpin(pin);
+        (Ledger { state }, result)
     }
 
-    pub fn retire(&mut self, key: Key) -> (r: Result<Retirement, (Key, Error)>)
-        ensures final(self).wf(), match r {
+    pub fn retire(self, key: Key) -> (r: (Self, Result<Retirement, (Key, Error)>))
+        ensures r.0.wf(), match r.1 {
             Ok(ticket) => {
-                let i = key_index(old(self).view(), key.view());
-                &&& key_matches(old(self).view(), key.view(), i) && old(self).view().slots[i].phase == 3
-                &&& old(self).view().slots[i].pins == 0 && old(self).view().slots[i].pending.len() == 0
-                &&& (forall|j: int| 0 <= j < old(self).view().geometry.cluster_ratio ==> (#[trigger] old(self).view().slots[i].mapped[j]) == 0)
+                let i = key_index(self.view(), key.view());
+                &&& key_matches(self.view(), key.view(), i) && self.view().slots[i].phase == 3
+                &&& self.view().slots[i].pins == 0 && self.view().slots[i].pending.len() == 0
+                &&& (forall|j: int| 0 <= j < self.view().geometry.cluster_ratio ==> (#[trigger] self.view().slots[i].mapped[j]) == 0)
                 &&& ticket.view() == (TicketView { domain: key.view().domain, cluster: key.view().cluster, generation: key.view().generation })
-                &&& unchanged_allocation(old(self).view(), final(self).view(), i)
-                &&& final(self).view().slots[i] == (SlotView { phase: 4, ..old(self).view().slots[i] })
-            }, Err((returned, _)) => returned.view() == key.view() && final(self).view() == old(self).view(),
+                &&& unchanged_allocation(self.view(), r.0.view(), i)
+                &&& r.0.view().slots[i] == (SlotView { phase: 4, ..self.view().slots[i] })
+            }, Err((returned, _)) => returned.view() == key.view() && r.0.view() == self.view(),
         },
-        no_unwind
     {
-        proof { use_type_invariant(&*self); }
-        self.state.retire(key)
+        proof { use_type_invariant(&self); }
+        let Ledger { mut state } = self;
+        let result = state.retire(key);
+        (Ledger { state }, result)
     }
 
-    pub fn reclaim_after_checkpoint(&mut self, retired: Retirement, succeeded: bool)
-        -> (r: Result<(), (Retirement, Error)>)
-        ensures final(self).wf(), match r {
-            Ok(()) => succeeded && exists|i: int| 0 <= i < old(self).view().slots.len()
-                && retired.view().domain == old(self).view().domain
-                && retired.view().cluster as int == old(self).view().first_cluster as int + i
-                && retired.view().generation == (#[trigger] old(self).view().slots[i]).generation
-                && old(self).view().slots[i].phase == 4
-                && old(self).view().slots[i].pins == 0 && old(self).view().slots[i].pending.len() == 0
-                && only_slot_changed(old(self).view(), final(self).view(), i)
-                && final(self).view().slots[i].phase == 1
-                && final(self).view().next_request == old(self).view().next_request
-                && final(self).view().live_blocks as nat + old(self).view().geometry.cluster_ratio == old(self).view().live_blocks,
-            Err((returned, _)) => returned.view() == retired.view() && final(self).view() == old(self).view(),
+    pub fn reclaim_after_checkpoint(self, retired: Retirement, succeeded: bool)
+        -> (r: (Self, Result<(), (Retirement, Error)>))
+        ensures r.0.wf(), match r.1 {
+            Ok(()) => succeeded && exists|i: int| 0 <= i < self.view().slots.len()
+                && retired.view().domain == self.view().domain
+                && retired.view().cluster as int == self.view().first_cluster as int + i
+                && retired.view().generation == (#[trigger] self.view().slots[i]).generation
+                && self.view().slots[i].phase == 4
+                && self.view().slots[i].pins == 0 && self.view().slots[i].pending.len() == 0
+                && only_slot_changed(self.view(), r.0.view(), i)
+                && r.0.view().slots[i].phase == 1
+                && r.0.view().slots[i].generation == self.view().slots[i].generation
+                && r.0.view().next_request == self.view().next_request
+                && r.0.view().live_blocks as nat + self.view().geometry.cluster_ratio == self.view().live_blocks,
+            Err((returned, _)) => returned.view() == retired.view() && r.0.view() == self.view(),
         },
-        no_unwind
     {
-        proof { use_type_invariant(&*self); }
-        self.state.reclaim_after_checkpoint(retired, succeeded)
+        proof { use_type_invariant(&self); }
+        let Ledger { mut state } = self;
+        let result = state.reclaim_after_checkpoint(retired, succeeded);
+        (Ledger { state }, result)
     }
 
     pub fn bitmap_bytes(&self) -> (r: Vec<u8>)
         ensures self.wf(), allocation_bitmap(self.view(), r@),
-        no_unwind
     {
         proof { use_type_invariant(&*self); }
         self.state.bitmap_bytes()
@@ -721,7 +1356,7 @@ impl Ledger {
 impl LedgerState {
     spec fn view(&self) -> LedgerView {
         LedgerView { geometry: self.geometry, domain: self.domain, first_cluster: self.first_cluster,
-            first_bit: self.first_bit, slots: Seq::new(self.slots.len() as nat, |i: int| self.slots@[i].view()),
+            first_bit: self.first_bit, slots: slot_views(self.slots@),
             bitmap: self.bitmap@, live_blocks: self.live_blocks, next_request: self.next_request }
     }
     spec fn wf(&self) -> bool { valid(self.view()) }
@@ -740,7 +1375,6 @@ impl LedgerState {
             && ledger.view().first_bit == first_bit && ledger.view().slots.len() == count
             && ledger.view().live_blocks == 0 && ledger.view().next_request == 1,
             Err(_) => true },
-        no_unwind
     {
         if !meta_bg::is_valid(geometry) || domain == 0 || raw.len() != geometry.block_bytes as usize {
             return Err(Error::Geometry);
@@ -846,7 +1480,6 @@ impl LedgerState {
             && self.slots@[index as int].mapped.len() == self.geometry.cluster_ratio
             && self.slots@[index as int].initialized.len() == self.geometry.cluster_ratio,
             Err(_) => true },
-        no_unwind
     {
         if key.domain != self.domain || key.cluster < self.first_cluster { return Err(Error::Owner); }
         let index = key.cluster - self.first_cluster;
@@ -864,7 +1497,6 @@ impl LedgerState {
     fn range(&self, index: usize, start: u32, length: u32) -> (r: bool)
         requires self.wf(),
         ensures r == range_valid(self.view(), index as int, start, length),
-        no_unwind
     {
         index < self.slots.len() && length > 0
             && start < self.geometry.cluster_ratio && length <= self.geometry.cluster_ratio - start
@@ -874,7 +1506,6 @@ impl LedgerState {
     fn pending_overlap(&self, index: usize, start: u32, length: u32) -> (r: bool)
         requires self.wf(),
         ensures r == pending_overlap(self.view(), index as int, start, length),
-        no_unwind
     {
         if index >= self.slots.len() { return true; }
         let pending = &self.slots[index].pending;
@@ -913,7 +1544,6 @@ impl LedgerState {
             },
             Err(_) => final(self).view() == old(self).view(),
         },
-        no_unwind
     {
         let ghost before = self.view();
         if !meta_bg::is_valid(self.geometry) || owner.inode == 0
@@ -956,18 +1586,18 @@ impl LedgerState {
         while i < self.geometry.cluster_ratio
             invariant i <= self.geometry.cluster_ratio, mapped.len() == i, initialized.len() == i,
                 self.view() == before, self.wf(),
-                forall|j: int| 0 <= j < i ==> (#[trigger] mapped@[j]) == 0 && (#[trigger] initialized@[j]) == false,
+                forall|j: int| 0 <= j < i ==> (#[trigger] mapped@[j]) == 0,
+                forall|j: int| 0 <= j < i ==> (#[trigger] initialized@[j]) == false,
             decreases self.geometry.cluster_ratio - i,
         {
             let ghost prior_mapped = mapped@;
             let ghost prior_initialized = initialized@;
             mapped.push(0u8); initialized.push(false);
-            assert forall|j: int| 0 <= j < i as int + 1 implies
-                (#[trigger] mapped@[j]) == 0 && (#[trigger] initialized@[j]) == false by {
-                if j < i {
-                    assert(prior_mapped[j] == 0);
-                    assert(prior_initialized[j] == false);
-                }
+            assert forall|j: int| 0 <= j < i as int + 1 implies (#[trigger] mapped@[j]) == 0 by {
+                if j < i { assert(prior_mapped[j] == 0); }
+            }
+            assert forall|j: int| 0 <= j < i as int + 1 implies (#[trigger] initialized@[j]) == false by {
+                if j < i { assert(prior_initialized[j] == false); }
             }
             i += 1;
         }
@@ -978,6 +1608,8 @@ impl LedgerState {
         proof {
             assert(self.view().slots =~= before.slots.update(index as int, self.view().slots[index as int]));
             occupied_count_update(before.slots, index as int, self.view().slots[index as int]);
+            assert(slot_valid(self.view().slots[index as int], self.geometry.cluster_ratio, self.next_request));
+            reserve_update_valid(before, index as int, self.view().slots[index as int]);
         }
         Ok(Key { domain: self.domain, cluster, generation, owner, logical_start })
     }
@@ -993,7 +1625,6 @@ impl LedgerState {
                 &&& final(self).view().slots[i] == (SlotView { phase: 3, ..old(self).view().slots[i] })
             }, Err(_) => final(self).view() == old(self).view(),
         },
-        no_unwind
     {
         let ghost before = self.view();
         let index = match self.index(key) { Ok(index) => index, Err(error) => { return Err(error); } };
@@ -1014,11 +1645,11 @@ impl LedgerState {
                 &&& key_matches(old(self).view(), key.view(), i) && old(self).view().slots[i].phase == 2
                 &&& old(self).view().slots[i].pins == 0 && old(self).view().slots[i].pending.len() == 0
                 &&& only_slot_changed(old(self).view(), final(self).view(), i)
-                &&& final(self).view().slots[i].phase == 1 && final(self).view().next_request == old(self).view().next_request
+                &&& final(self).view().slots[i].phase == 1
+                && final(self).view().slots[i].generation == old(self).view().slots[i].generation && final(self).view().next_request == old(self).view().next_request
                 &&& final(self).view().live_blocks as nat + old(self).view().geometry.cluster_ratio == old(self).view().live_blocks
             }, Err((returned, _)) => returned.view() == key.view() && final(self).view() == old(self).view(),
         },
-        no_unwind
     {
         let ghost before = self.view();
         let index = match self.index(&key) { Ok(index) => index, Err(error) => { return Err((key, error)); } };
@@ -1035,6 +1666,8 @@ impl LedgerState {
         proof {
             assert(self.view().slots =~= before.slots.update(index as int, self.view().slots[index as int]));
             occupied_count_update(before.slots, index as int, self.view().slots[index as int]);
+            assert(slot_valid(self.view().slots[index as int], self.geometry.cluster_ratio, self.next_request));
+            release_update_valid(before, index as int, self.view().slots[index as int]);
         }
         Ok(())
     }
@@ -1062,7 +1695,6 @@ impl LedgerState {
                 &&& init_set(slot.initialized, final(self).view().slots[i].initialized, start, length, false)
             }, Err(_) => final(self).view() == old(self).view(),
         },
-        no_unwind
     {
         let ghost before = self.view();
         let index = match self.index(key) { Ok(index) => index, Err(error) => { return Err(error); } };
@@ -1104,6 +1736,10 @@ impl LedgerState {
                 self.slots@[index as int].initialized.len() == self.geometry.cluster_ratio,
                 before.slots[index as int].mapped.len() == self.geometry.cluster_ratio,
                 before.slots[index as int].initialized.len() == self.geometry.cluster_ratio,
+                key_matches(before, key.view(), index as int), range_valid(before, index as int, start, length),
+                before.slots[index as int].pins == 0, before.slots[index as int].pending.len() < MAX_PENDING,
+                before.next_request < 18446744073709551615,
+                !pending_overlap(before, index as int, start, length),
                 self.wf(), unchanged_allocation(before, self.view(), index as int),
                 self.view().slots[index as int].phase == before.slots[index as int].phase,
                 self.view().slots[index as int].generation == before.slots[index as int].generation,
@@ -1117,13 +1753,38 @@ impl LedgerState {
                     start, (i - start) as u32, false),
             decreases start + length - i,
         {
+            let ghost step_before = self.view();
+            let ghost native_before = self.slots@;
             self.slots[index].initialized.set(i as usize, false);
-            proof { changing_a_slot_without_changing_its_phase_preserves_accounting(before, self.view(), index as int); }
+            proof {
+                assert(self.slots@ =~= native_before.update(index as int, self.slots@[index as int]));
+                slot_views_update(native_before, index as int, self.slots@[index as int]);
+                slot_init_false_valid(step_before.slots[index as int], self.geometry.cluster_ratio, self.next_request, i as int);
+                assert(slot_valid(self.view().slots[index as int], self.geometry.cluster_ratio, self.next_request));
+                same_ownership_update_valid(step_before, index as int, self.view().slots[index as int]);
+                assert(only_slot_changed(step_before, self.view(), index as int));
+                assert(only_slot_changed(before, self.view(), index as int));
+                changing_a_slot_without_changing_its_phase_preserves_accounting(before, self.view(), index as int);
+            }
             i += 1;
         }
+        let ghost before_request = self.view();
+        let ghost prior_pending = self.slots@[index as int].pending@;
+        let ghost native_before = self.slots@;
         self.next_request += 1;
+        proof { next_request_monotone_valid(before_request, self.next_request); }
+        let ghost after_request = self.view();
         self.slots[index].pending.push(PendingRange { id: request, start, length, faulted: false });
         proof {
+            pending_views_push(prior_pending, PendingRange { id: request, start, length, faulted: false });
+            slot_pending_push_valid(before_request.slots[index as int], self.geometry.cluster_ratio,
+                request, self.next_request, start, length);
+            assert(self.view().slots[index as int] == (SlotView {
+                pending: before_request.slots[index as int].pending.push(PendingView { id: request, start, length, faulted: false }),
+                ..before_request.slots[index as int] }));
+            assert(self.slots@ =~= native_before.update(index as int, self.slots@[index as int]));
+            slot_views_update(native_before, index as int, self.slots@[index as int]);
+            same_ownership_update_valid(after_request, index as int, self.view().slots[index as int]);
             assert(self.view().slots =~= before.slots.update(index as int, self.view().slots[index as int]));
             occupied_count_update(before.slots, index as int, self.view().slots[index as int]);
         }
@@ -1155,7 +1816,6 @@ impl LedgerState {
                             ..old(self).view().slots[i] })
                 } else { final(self).view() == old(self).view() },
         },
-        no_unwind
     {
         let ghost before = self.view();
         if command.domain != self.domain || command.cluster < self.first_cluster
@@ -1171,10 +1831,16 @@ impl LedgerState {
         if command.physical / ratio != command.cluster || command.physical % ratio != command.start as u64 {
             return Err((command, Error::Stale));
         }
+        proof {
+            vstd::arithmetic::div_mod::lemma_fundamental_div_mod(command.physical as int, ratio as int);
+            vstd::arithmetic::mul::lemma_mul_is_commutative(ratio as int, command.cluster as int);
+            assert(command.physical as nat == command.cluster as nat * self.geometry.cluster_ratio + command.start);
+        }
         let mut at = 0usize;
         while at < self.slots[index].pending.len()
             invariant index < self.slots.len(), index < before.slots.len(),
                 at <= self.slots[index as int].pending.len(), self.view() == before, self.wf(),
+                command.physical as nat == command.cluster as nat * self.geometry.cluster_ratio + command.start,
                 forall|j: int| 0 <= j < at ==> (#[trigger] before.slots[index as int].pending[j]).id != command.request,
             decreases self.slots[index as int].pending.len() - at,
         {
@@ -1184,6 +1850,9 @@ impl LedgerState {
         if at == self.slots[index].pending.len()
             || self.slots[index].pending[at].start != command.start
             || self.slots[index].pending[at].length != command.length { return Err((command, Error::Stale)); }
+        assert(2 <= self.slots@[index as int].phase <= 3);
+        assert(command_matches(before, command.view(), index as int, at as int));
+
         // A failed callback does not establish completion or cancellation.
         // The consumed command must survive until an adapter proves quiescence.
         if self.slots[index].pending[at].faulted {
@@ -1194,15 +1863,34 @@ impl LedgerState {
             Completion::Failed => false,
         };
         if !succeeded {
+            let ghost prior_pending = self.slots@[index as int].pending@;
             self.slots[index].pending[at].faulted = true;
             proof {
+                assert(self.slots@[index as int].pending@ =~= prior_pending.update(at as int,
+                    self.slots@[index as int].pending@[at as int]));
+                pending_views_update(prior_pending, at as int, self.slots@[index as int].pending@[at as int]);
+                assert(self.view().slots[index as int] == (SlotView {
+                    pending: before.slots[index as int].pending.update(at as int,
+                        PendingView { faulted: true, ..before.slots[index as int].pending[at as int] }),
+                    ..before.slots[index as int] }));
+                slot_pending_fault_valid(before.slots[index as int], self.geometry.cluster_ratio, self.next_request, at as int, true);
+                assert(slot_valid(self.view().slots[index as int], self.geometry.cluster_ratio, self.next_request));
+                same_ownership_update_valid(before, index as int, self.view().slots[index as int]);
                 assert(self.view().slots =~= before.slots.update(index as int, self.view().slots[index as int]));
                 occupied_count_update(before.slots, index as int, self.view().slots[index as int]);
             }
             return Err((command, Error::InitializationFailed));
         }
+        let ghost prior_pending = self.slots@[index as int].pending@;
         self.slots[index].pending.remove(at);
         proof {
+            pending_views_remove(prior_pending, at as int);
+            slot_pending_remove_valid(before.slots[index as int], self.geometry.cluster_ratio, self.next_request, at as int);
+            assert(self.view().slots[index as int] == (SlotView {
+                pending: before.slots[index as int].pending.remove(at as int), ..before.slots[index as int] }));
+            assert(slot_valid(self.view().slots[index as int], self.geometry.cluster_ratio, self.next_request));
+            same_ownership_update_valid(before, index as int, self.view().slots[index as int]);
+            assert(!pending_overlap(self.view(), index as int, command.start, command.length));
             assert(self.view().slots =~= before.slots.update(index as int, self.view().slots[index as int]));
             occupied_count_update(before.slots, index as int, self.view().slots[index as int]);
         }
@@ -1218,6 +1906,7 @@ impl LedgerState {
                     before.slots[index as int].initialized.len() == self.geometry.cluster_ratio,
                     self.wf(), unchanged_allocation(before, self.view(), index as int),
                     command_matches(before, command.view(), index as int, at as int),
+                    !pending_overlap(self.view(), index as int, command.start, command.length),
                     !before.slots[index as int].pending[at as int].faulted,
                     self.view().slots[index as int].phase == before.slots[index as int].phase,
                     self.view().slots[index as int].generation == before.slots[index as int].generation,
@@ -1230,8 +1919,20 @@ impl LedgerState {
                         command.start, (i - command.start) as u32, true),
                 decreases command.start + command.length - i,
             {
+                let ghost step_before = self.view();
+                let ghost native_before = self.slots@;
                 self.slots[index].initialized.set(i as usize, true);
-                proof { changing_a_slot_without_changing_its_phase_preserves_accounting(before, self.view(), index as int); }
+                proof {
+                assert(self.slots@ =~= native_before.update(index as int, self.slots@[index as int]));
+                slot_views_update(native_before, index as int, self.slots@[index as int]);
+                pending_range_excludes_point(step_before, index as int, command.start, command.length, i as int);
+                slot_init_true_valid(step_before.slots[index as int], self.geometry.cluster_ratio, self.next_request, i as int);
+                assert(slot_valid(self.view().slots[index as int], self.geometry.cluster_ratio, self.next_request));
+                same_ownership_update_valid(step_before, index as int, self.view().slots[index as int]);
+                assert(only_slot_changed(step_before, self.view(), index as int));
+                assert(only_slot_changed(before, self.view(), index as int));
+                changing_a_slot_without_changing_its_phase_preserves_accounting(before, self.view(), index as int);
+            }
                 i += 1;
             }
         }
@@ -1255,7 +1956,6 @@ impl LedgerState {
                     ..old(self).view().slots[i] }),
             Err((returned, _)) => returned.view() == command.view() && final(self).view() == old(self).view(),
         },
-        no_unwind
     {
         let ghost before = self.view();
         if !quiescent { return Err((command, Error::Quiescence)); }
@@ -1269,10 +1969,16 @@ impl LedgerState {
         if command.physical / ratio != command.cluster || command.physical % ratio != command.start as u64 {
             return Err((command, Error::Stale));
         }
+        proof {
+            vstd::arithmetic::div_mod::lemma_fundamental_div_mod(command.physical as int, ratio as int);
+            vstd::arithmetic::mul::lemma_mul_is_commutative(ratio as int, command.cluster as int);
+            assert(command.physical as nat == command.cluster as nat * self.geometry.cluster_ratio + command.start);
+        }
         let mut at = 0usize;
         while at < self.slots[index].pending.len()
             invariant index < self.slots.len(), index < before.slots.len(),
                 at <= self.slots[index as int].pending.len(), self.view() == before, self.wf(),
+                command.physical as nat == command.cluster as nat * self.geometry.cluster_ratio + command.start,
                 forall|j: int| 0 <= j < at ==> (#[trigger] before.slots[index as int].pending[j]).id != command.request,
             decreases self.slots[index as int].pending.len() - at,
         {
@@ -1284,8 +1990,18 @@ impl LedgerState {
             || self.slots[index].pending[at].length != command.length {
             return Err((command, Error::Stale));
         }
+        assert(2 <= self.slots@[index as int].phase <= 3);
+        assert(command_matches(before, command.view(), index as int, at as int));
+
+        let ghost prior_pending = self.slots@[index as int].pending@;
         self.slots[index].pending.remove(at);
         proof {
+            pending_views_remove(prior_pending, at as int);
+            slot_pending_remove_valid(before.slots[index as int], self.geometry.cluster_ratio, self.next_request, at as int);
+            assert(self.view().slots[index as int] == (SlotView {
+                pending: before.slots[index as int].pending.remove(at as int), ..before.slots[index as int] }));
+            assert(slot_valid(self.view().slots[index as int], self.geometry.cluster_ratio, self.next_request));
+            same_ownership_update_valid(before, index as int, self.view().slots[index as int]);
             assert(self.view().slots =~= before.slots.update(index as int, self.view().slots[index as int]));
             occupied_count_update(before.slots, index as int, self.view().slots[index as int]);
         }
@@ -1309,7 +2025,6 @@ impl LedgerState {
                 &&& final(self).view().slots[i].pending == old(self).view().slots[i].pending
             }, Err(_) => final(self).view() == old(self).view(),
         },
-        no_unwind
     {
         let ghost before = self.view();
         let index = match self.index(key) { Ok(index) => index, Err(error) => { return Err(error); } };
@@ -1340,6 +2055,11 @@ impl LedgerState {
                 self.slots@[index as int].initialized.len() == self.geometry.cluster_ratio,
                 before.slots[index as int].mapped.len() == self.geometry.cluster_ratio,
                 before.slots[index as int].initialized.len() == self.geometry.cluster_ratio,
+                key_matches(before, key.view(), index as int), range_valid(before, index as int, start, length),
+                !pending_overlap(before, index as int, start, length),
+                before.slots[index as int].phase == 3,
+                forall|j: int| start <= j < start as nat + length ==> (#[trigger] before.slots[index as int].mapped[j]) == 0
+                    && (!written || before.slots[index as int].initialized[j]),
                 self.wf(), unchanged_allocation(before, self.view(), index as int),
                 self.view().slots[index as int].phase == before.slots[index as int].phase,
                 self.view().slots[index as int].generation == before.slots[index as int].generation,
@@ -1352,8 +2072,21 @@ impl LedgerState {
                 self.view().slots[index as int].initialized == before.slots[index as int].initialized,
             decreases start + length - i,
         {
+            let ghost step_before = self.view();
+            let ghost native_before = self.slots@;
             self.slots[index].mapped.set(i as usize, if written { 2u8 } else { 1u8 });
-            proof { changing_a_slot_without_changing_its_phase_preserves_accounting(before, self.view(), index as int); }
+            proof {
+                assert(self.slots@ =~= native_before.update(index as int, self.slots@[index as int]));
+                slot_views_update(native_before, index as int, self.slots@[index as int]);
+                pending_range_excludes_point(before, index as int, start, length, i as int);
+                slot_mapped_valid(step_before.slots[index as int], self.geometry.cluster_ratio, self.next_request,
+                    i as int, if written { 2u8 } else { 1u8 });
+                assert(slot_valid(self.view().slots[index as int], self.geometry.cluster_ratio, self.next_request));
+                same_ownership_update_valid(step_before, index as int, self.view().slots[index as int]);
+                assert(only_slot_changed(step_before, self.view(), index as int));
+                assert(only_slot_changed(before, self.view(), index as int));
+                changing_a_slot_without_changing_its_phase_preserves_accounting(before, self.view(), index as int);
+            }
             i += 1;
         }
         proof {
@@ -1379,7 +2112,6 @@ impl LedgerState {
                 &&& final(self).view().slots[i].pending == old(self).view().slots[i].pending
             }, Err(_) => final(self).view() == old(self).view(),
         },
-        no_unwind
     {
         let ghost before = self.view();
         let index = match self.index(key) { Ok(index) => index, Err(error) => { return Err(error); } };
@@ -1410,6 +2142,11 @@ impl LedgerState {
                 self.slots@[index as int].initialized.len() == self.geometry.cluster_ratio,
                 before.slots[index as int].mapped.len() == self.geometry.cluster_ratio,
                 before.slots[index as int].initialized.len() == self.geometry.cluster_ratio,
+                key_matches(before, key.view(), index as int), range_valid(before, index as int, start, length),
+                !pending_overlap(before, index as int, start, length),
+                before.slots[index as int].phase == 3,
+                forall|j: int| start <= j < start as nat + length ==> (#[trigger] before.slots[index as int].mapped[j]) == 1
+                    && before.slots[index as int].initialized[j],
                 self.wf(), unchanged_allocation(before, self.view(), index as int),
                 self.view().slots[index as int].phase == before.slots[index as int].phase,
                 self.view().slots[index as int].generation == before.slots[index as int].generation,
@@ -1422,8 +2159,21 @@ impl LedgerState {
                 self.view().slots[index as int].initialized == before.slots[index as int].initialized,
             decreases start + length - i,
         {
+            let ghost step_before = self.view();
+            let ghost native_before = self.slots@;
             self.slots[index].mapped.set(i as usize, 2u8);
-            proof { changing_a_slot_without_changing_its_phase_preserves_accounting(before, self.view(), index as int); }
+            proof {
+                assert(self.slots@ =~= native_before.update(index as int, self.slots@[index as int]));
+                slot_views_update(native_before, index as int, self.slots@[index as int]);
+                pending_range_excludes_point(before, index as int, start, length, i as int);
+                slot_mapped_valid(step_before.slots[index as int], self.geometry.cluster_ratio, self.next_request,
+                    i as int, 2u8);
+                assert(slot_valid(self.view().slots[index as int], self.geometry.cluster_ratio, self.next_request));
+                same_ownership_update_valid(step_before, index as int, self.view().slots[index as int]);
+                assert(only_slot_changed(step_before, self.view(), index as int));
+                assert(only_slot_changed(before, self.view(), index as int));
+                changing_a_slot_without_changing_its_phase_preserves_accounting(before, self.view(), index as int);
+            }
             i += 1;
         }
         proof {
@@ -1449,7 +2199,6 @@ impl LedgerState {
                 &&& final(self).view().slots[i].pending == old(self).view().slots[i].pending
             }, Err(_) => final(self).view() == old(self).view(),
         },
-        no_unwind
     {
         let ghost before = self.view();
         let index = match self.index(key) { Ok(index) => index, Err(error) => { return Err(error); } };
@@ -1463,6 +2212,9 @@ impl LedgerState {
                 self.slots@[index as int].initialized.len() == self.geometry.cluster_ratio,
                 before.slots[index as int].mapped.len() == self.geometry.cluster_ratio,
                 before.slots[index as int].initialized.len() == self.geometry.cluster_ratio,
+                key_matches(before, key.view(), index as int), range_valid(before, index as int, start, length),
+                !pending_overlap(before, index as int, start, length),
+                before.slots[index as int].phase == 3,
                 self.wf(), unchanged_allocation(before, self.view(), index as int),
                 self.view().slots[index as int].phase == before.slots[index as int].phase,
                 self.view().slots[index as int].generation == before.slots[index as int].generation,
@@ -1476,9 +2228,22 @@ impl LedgerState {
                     start, (i - start) as u32, false),
             decreases start + length - i,
         {
+            let ghost step_before = self.view();
+            let ghost native_before = self.slots@;
             self.slots[index].mapped.set(i as usize, 0u8);
             self.slots[index].initialized.set(i as usize, false);
-            proof { changing_a_slot_without_changing_its_phase_preserves_accounting(before, self.view(), index as int); }
+            proof {
+                assert(self.slots@ =~= native_before.update(index as int, self.slots@[index as int]));
+                slot_views_update(native_before, index as int, self.slots@[index as int]);
+                slot_mapped_valid(step_before.slots[index as int], self.geometry.cluster_ratio, self.next_request, i as int, 0);
+                let cleared = SlotView { mapped: step_before.slots[index as int].mapped.update(i as int, 0), ..step_before.slots[index as int] };
+                slot_init_false_valid(cleared, self.geometry.cluster_ratio, self.next_request, i as int);
+                assert(slot_valid(self.view().slots[index as int], self.geometry.cluster_ratio, self.next_request));
+                same_ownership_update_valid(step_before, index as int, self.view().slots[index as int]);
+                assert(only_slot_changed(step_before, self.view(), index as int));
+                assert(only_slot_changed(before, self.view(), index as int));
+                changing_a_slot_without_changing_its_phase_preserves_accounting(before, self.view(), index as int);
+            }
             i += 1;
         }
         proof {
@@ -1505,7 +2270,6 @@ impl LedgerState {
                 }
             }, Err(_) => true,
         },
-        no_unwind
     {
         let ghost before = self.view();
         let index = match self.index(key) { Ok(index) => index, Err(error) => { return Err(error); } };
@@ -1535,7 +2299,6 @@ impl LedgerState {
                 &&& final(self).view().slots[i] == (SlotView { pins: (old(self).view().slots[i].pins + 1) as u32, ..old(self).view().slots[i] })
             }, Err(_) => final(self).view() == old(self).view(),
         },
-        no_unwind
     {
         let ghost before = self.view();
         let index = match self.index(key) { Ok(index) => index, Err(error) => { return Err(error); } };
@@ -1561,7 +2324,6 @@ impl LedgerState {
                 && final(self).view().slots[i] == (SlotView { pins: (old(self).view().slots[i].pins - 1) as u32, ..old(self).view().slots[i] }),
             Err((returned, _)) => returned.view() == pin.view() && final(self).view() == old(self).view(),
         },
-        no_unwind
     {
         let ghost before = self.view();
         if pin.domain != self.domain || pin.cluster < self.first_cluster
@@ -1589,7 +2351,6 @@ impl LedgerState {
                 &&& final(self).view().slots[i] == (SlotView { phase: 4, ..old(self).view().slots[i] })
             }, Err((returned, _)) => returned.view() == key.view() && final(self).view() == old(self).view(),
         },
-        no_unwind
     {
         let ghost before = self.view();
         let index = match self.index(&key) { Ok(index) => index, Err(error) => { return Err((key, error)); } };
@@ -1627,11 +2388,11 @@ impl LedgerState {
                 && old(self).view().slots[i].pins == 0 && old(self).view().slots[i].pending.len() == 0
                 && only_slot_changed(old(self).view(), final(self).view(), i)
                 && final(self).view().slots[i].phase == 1
+                && final(self).view().slots[i].generation == old(self).view().slots[i].generation
                 && final(self).view().next_request == old(self).view().next_request
                 && final(self).view().live_blocks as nat + old(self).view().geometry.cluster_ratio == old(self).view().live_blocks,
             Err((returned, _)) => returned.view() == retired.view() && final(self).view() == old(self).view(),
         },
-        no_unwind
     {
         let ghost before = self.view();
         if retired.domain != self.domain || retired.cluster < self.first_cluster
@@ -1653,6 +2414,8 @@ impl LedgerState {
         proof {
             assert(self.view().slots =~= before.slots.update(index as int, self.view().slots[index as int]));
             occupied_count_update(before.slots, index as int, self.view().slots[index as int]);
+            assert(slot_valid(self.view().slots[index as int], self.geometry.cluster_ratio, self.next_request));
+            release_update_valid(before, index as int, self.view().slots[index as int]);
         }
         Ok(())
     }
@@ -1660,7 +2423,6 @@ impl LedgerState {
     fn bitmap_bytes(&self) -> (r: Vec<u8>)
         requires self.wf(),
         ensures self.wf(), allocation_bitmap(self.view(), r@),
-        no_unwind
     {
         let ghost before = self.view();
         let mut raw = Vec::new();

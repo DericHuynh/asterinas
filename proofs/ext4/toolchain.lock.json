@@ -1245,7 +1245,10 @@
     "resize_plan::abort_preserves_the_durable_geometry_choice",
     "unicode12_data::unicode12_table_dimensions_are_pinned",
     "unicode12_data::pinned_proof_views_are_exact",
-    "unicode12_data::unicode12_static_tables_are_well_formed"
+    "unicode12_data::unicode12_static_tables_are_well_formed",
+    "aes::aes_reference_roundtrips",
+    "legacy_map::successful_collection_data_and_metadata_are_disjoint",
+    "legacy_map::successful_collection_claims_are_exactly_emitted_addresses"
   ],
   "required_flags": [
     "--no-cheating",

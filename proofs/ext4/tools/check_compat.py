@@ -555,6 +555,27 @@ def main():
         'change_ea_admission_tree_parent_table': ('pub fn misuse(mut t: verified_ext4::ea_namespace_topology::Tree, p: verified_ext4::ea_namespace_parent::ParentTable) { t.table = p; }\n', 'E0616'),
         'forge_ea_admission_counts': ('pub fn misuse(c: verified_ext4::ea_namespace_counts::Counts) { let _ = verified_ext4::ea_namespace_counts::Counts { ..c }; }\n', 'E0451'),
     })
+    # Feature expansion keeps owners, completion tokens and key schedules sealed.
+    feature_misuse = {
+        'expansion_forge_cluster_ledger': ('pub fn misuse(l: verified_ext4::cluster_allocation::Ledger) { let _ = verified_ext4::cluster_allocation::Ledger { ..l }; }\n', 'E0451'),
+        'expansion_clone_cluster_ledger': ('pub fn misuse(l: verified_ext4::cluster_allocation::Ledger) { let _ = l.clone(); }\n', 'E0599'),
+        'expansion_replace_cluster_state': ('pub fn misuse(l: verified_ext4::cluster_allocation::Ledger) { let _ = l.state; }\n', 'E0616'),
+        'expansion_reuse_consumed_cluster_ledger': ('pub fn misuse(l: verified_ext4::cluster_allocation::Ledger) { let _ = l.reserve(0, verified_ext4::cluster_allocation::Owner { inode: 1, generation: 0 }, 0); let _ = l.bitmap_bytes(); }\n', 'E0382'),
+        'expansion_forge_cluster_key': ('pub fn misuse(k: verified_ext4::cluster_allocation::Key) { let _ = verified_ext4::cluster_allocation::Key { ..k }; }\n', 'E0451'),
+        'expansion_clone_cluster_key': ('pub fn misuse(k: verified_ext4::cluster_allocation::Key) { let _ = k.clone(); }\n', 'E0599'),
+        'expansion_reuse_canceled_cluster_key': ('pub fn misuse(l: verified_ext4::cluster_allocation::Ledger, k: verified_ext4::cluster_allocation::Key) { let (l, _) = l.cancel_reservation(k); let _ = l.cancel_reservation(k); }\n', 'E0382'),
+        'expansion_forge_cluster_initialization': ('pub fn misuse(c: verified_ext4::cluster_allocation::Initialization) { let _ = verified_ext4::cluster_allocation::Initialization { ..c }; }\n', 'E0451'),
+        'expansion_reuse_cluster_completion': ('pub fn misuse(l: verified_ext4::cluster_allocation::Ledger, c: verified_ext4::cluster_allocation::Initialization) { let (l, _) = l.complete_initialization(c, verified_ext4::recovery_request::Completion::Succeeded); let _ = l.complete_initialization(c, verified_ext4::recovery_request::Completion::Succeeded); }\n', 'E0382'),
+        'expansion_forge_cluster_read_pin': ('pub fn misuse(p: verified_ext4::cluster_allocation::ReadPin) { let _ = verified_ext4::cluster_allocation::ReadPin { ..p }; }\n', 'E0451'),
+        'expansion_clone_cluster_read_pin': ('pub fn misuse(p: verified_ext4::cluster_allocation::ReadPin) { let _ = p.clone(); }\n', 'E0599'),
+        'expansion_forge_cluster_retirement': ('pub fn misuse(r: verified_ext4::cluster_allocation::Retirement) { let _ = verified_ext4::cluster_allocation::Retirement { ..r }; }\n', 'E0451'),
+        'expansion_clone_cluster_retirement': ('pub fn misuse(r: verified_ext4::cluster_allocation::Retirement) { let _ = r.clone(); }\n', 'E0599'),
+        'expansion_clone_aes_key': ('pub fn misuse(k: verified_ext4::aes::AesKey) { let _ = k.clone(); }\n', 'E0599'),
+        'expansion_extract_aes_state': ('pub fn misuse(k: verified_ext4::aes::AesKey) { let _ = k.state; }\n', 'E0616'),
+        'expansion_clone_sm4_key': ('pub fn misuse(k: verified_ext4::sm4::Sm4Key) { let _ = k.clone(); }\n', 'E0599'),
+        'expansion_extract_sm4_state': ('pub fn misuse(k: verified_ext4::sm4::Sm4Key) { let _ = k.state; }\n', 'E0616'),
+    }
+    misuse.update(feature_misuse)
     for name, (source, code) in misuse.items():
         path = BUILD / (name + ".rs")
         path.write_text(source)

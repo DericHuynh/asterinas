@@ -320,28 +320,32 @@ proof fn extend512_concat(seed:HashState512,before:Seq<u8>,after:Seq<u8>)
     }
 }
 
-pub struct Sha256 { state: [u32;8], buffer: [u8;64], used: usize, length: u64, message:Ghost<Seq<u8>> }
-impl Sha256 {
-    pub closed spec fn valid256(&self) -> bool {
+struct HashCore256 { state: [u32;8], buffer: [u8;64], used: usize, length: u64, message:Ghost<Seq<u8>> }
+impl HashCore256 {
+    spec fn valid256(&self) -> bool {
         self.used<64 && self.length<=0x1fff_ffff_ffff_ffff && self.used==self.length%64
             && self.message@.len()==self.length
             && self.state@==message256(self.message@).words
             && self.buffer@.take(self.used as int)==message256(self.message@).tail
     }
-    pub closed spec fn input256(&self) -> Seq<u8> {self.message@}
-    pub closed spec fn physical256(&self) -> (Seq<u32>,Seq<u8>,usize,u64) {
+    spec fn input256(&self) -> Seq<u8> {self.message@}
+    spec fn physical256(&self) -> (Seq<u32>,Seq<u8>,usize,u64) {
         (self.state@,self.buffer@,self.used,self.length)
     }
-    #[verifier::type_invariant]
-    spec fn invariant(self) -> bool {self.valid256()}
-    pub fn new256() -> (r:Self) ensures r.valid256(),r.input256()==Seq::<u8>::empty() { Self { state:[0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19],buffer:[0;64],used:0,length:0,message:Ghost(Seq::empty()) } }
-    pub fn update256(&mut self, input: &[u8]) -> (r:Result<(),Error>)
-        ensures final(self).valid256(),r.is_ok() ==> final(self).input256()==old(self).input256()+input@,
-            r.is_err() ==> final(self).physical256()==old(self).physical256()
-                && final(self).input256()==old(self).input256(),
+    fn copy_core256(&self) -> (r:Self)
+        requires self.valid256(),
+        ensures r.valid256(),r.input256()==self.input256(),r.physical256()==self.physical256(),
     {
-        proof {use_type_invariant(&*self);}
+        Self {state:self.state,buffer:self.buffer,used:self.used,length:self.length,message:Ghost(self.message@)}
+    }
+    fn new256() -> (r:Self) ensures r.valid256(),r.input256()==Seq::<u8>::empty() { Self { state:[0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19],buffer:[0;64],used:0,length:0,message:Ghost(Seq::empty()) } }
+    fn update256(mut self, input: &[u8]) -> (r:Result<Self,Error>)
+        requires self.valid256(),
+        ensures match r {Ok(next)=>next.valid256() && next.input256()==self.input256()+input@,Err(_)=>true},
+    {
         let ghost initial_used=self.used;
+        let ghost initial_length=self.length;
+        let ghost initial_message=self.message@;
         let ghost initial_state=message256(self.message@);
 
         let n=input.len() as u64;
@@ -350,8 +354,8 @@ impl Sha256 {
         while i<input.len()
             invariant i<=input.len(),self.used<64,
                 self.used==(initial_used+i)%64,
-                self.length==old(self).length+input.len(),self.length<=0x1fff_ffff_ffff_ffff,
-                self.message@==old(self).message@,
+                self.length==initial_length+input.len(),self.length<=0x1fff_ffff_ffff_ffff,
+                self.message@==initial_message,
                 self.state@==extend256(initial_state,input@.take(i as int)).words,
                 self.buffer@.take(self.used as int)==extend256(initial_state,input@.take(i as int)).tail,
             decreases input.len()-i,
@@ -365,12 +369,12 @@ impl Sha256 {
         }
         proof {extend256_concat(initial256(),self.message@,input@);}
         self.message=Ghost(self.message@+input@);
-        Ok(())
+        Ok(self)
     }
-    pub fn finalize256(mut self) -> (r:Vec<u8>)
+    fn finalize256(mut self) -> (r:Vec<u8>)
+        requires self.valid256(),
         ensures r.len()==32,r@==digest256_reference(self.input256()),
     {
-        proof {use_type_invariant(&self);}
         let ghost initial_words=self.state@;
         let ghost padded=padding256(self.buffer@.take(self.used as int),self.length as nat);
 
@@ -403,28 +407,59 @@ impl Sha256 {
         out
     }
 }
-pub struct Sha512 { state: [u64;8], buffer: [u8;128], used: usize, length: u64, message:Ghost<Seq<u8>> }
-impl Sha512 {
-    pub closed spec fn valid512(&self) -> bool {
+pub struct Sha256 {core:HashCore256}
+impl Sha256 {
+    pub closed spec fn valid256(&self) -> bool {self.core.valid256()}
+    pub closed spec fn input256(&self) -> Seq<u8> {self.core.input256()}
+    pub closed spec fn physical256(&self) -> (Seq<u32>,Seq<u8>,usize,u64) {self.core.physical256()}
+    #[verifier::type_invariant]
+    spec fn invariant(self) -> bool {self.valid256()}
+    pub fn new256() -> (r:Self)
+        ensures r.valid256(),r.input256()==Seq::<u8>::empty(),
+    {Self {core:HashCore256::new256()}}
+    pub fn update256(&mut self,input:&[u8]) -> (r:Result<(),Error>)
+        ensures final(self).valid256(),r.is_ok() ==> final(self).input256()==old(self).input256()+input@,
+            r.is_err() ==> final(self).physical256()==old(self).physical256()
+                && final(self).input256()==old(self).input256(),
+    {
+        proof {use_type_invariant(&*self);}
+        let next=match self.core.copy_core256().update256(input) {Ok(v)=>v,Err(e)=>return Err(e)};
+        self.core=next;
+        Ok(())
+    }
+    pub fn finalize256(self) -> (r:Vec<u8>)
+        ensures r.len()==32,r@==digest256_reference(self.input256()),
+    {
+        proof {use_type_invariant(&self);}
+        self.core.finalize256()
+    }
+}
+struct HashCore512 { state: [u64;8], buffer: [u8;128], used: usize, length: u64, message:Ghost<Seq<u8>> }
+impl HashCore512 {
+    spec fn valid512(&self) -> bool {
         self.used<128 && self.length<=u64::MAX && self.used==self.length%128
             && self.message@.len()==self.length
             && self.state@==message512(self.message@).words
             && self.buffer@.take(self.used as int)==message512(self.message@).tail
     }
-    pub closed spec fn input512(&self) -> Seq<u8> {self.message@}
-    pub closed spec fn physical512(&self) -> (Seq<u64>,Seq<u8>,usize,u64) {
+    spec fn input512(&self) -> Seq<u8> {self.message@}
+    spec fn physical512(&self) -> (Seq<u64>,Seq<u8>,usize,u64) {
         (self.state@,self.buffer@,self.used,self.length)
     }
-    #[verifier::type_invariant]
-    spec fn invariant(self) -> bool {self.valid512()}
-    pub fn new512() -> (r:Self) ensures r.valid512(),r.input512()==Seq::<u8>::empty() { Self { state:[0x6a09e667f3bcc908,0xbb67ae8584caa73b,0x3c6ef372fe94f82b,0xa54ff53a5f1d36f1,0x510e527fade682d1,0x9b05688c2b3e6c1f,0x1f83d9abfb41bd6b,0x5be0cd19137e2179],buffer:[0;128],used:0,length:0,message:Ghost(Seq::empty()) } }
-    pub fn update512(&mut self, input: &[u8]) -> (r:Result<(),Error>)
-        ensures final(self).valid512(),r.is_ok() ==> final(self).input512()==old(self).input512()+input@,
-            r.is_err() ==> final(self).physical512()==old(self).physical512()
-                && final(self).input512()==old(self).input512(),
+    fn copy_core512(&self) -> (r:Self)
+        requires self.valid512(),
+        ensures r.valid512(),r.input512()==self.input512(),r.physical512()==self.physical512(),
     {
-        proof {use_type_invariant(&*self);}
+        Self {state:self.state,buffer:self.buffer,used:self.used,length:self.length,message:Ghost(self.message@)}
+    }
+    fn new512() -> (r:Self) ensures r.valid512(),r.input512()==Seq::<u8>::empty() { Self { state:[0x6a09e667f3bcc908,0xbb67ae8584caa73b,0x3c6ef372fe94f82b,0xa54ff53a5f1d36f1,0x510e527fade682d1,0x9b05688c2b3e6c1f,0x1f83d9abfb41bd6b,0x5be0cd19137e2179],buffer:[0;128],used:0,length:0,message:Ghost(Seq::empty()) } }
+    fn update512(mut self, input: &[u8]) -> (r:Result<Self,Error>)
+        requires self.valid512(),
+        ensures match r {Ok(next)=>next.valid512() && next.input512()==self.input512()+input@,Err(_)=>true},
+    {
         let ghost initial_used=self.used;
+        let ghost initial_length=self.length;
+        let ghost initial_message=self.message@;
         let ghost initial_state=message512(self.message@);
 
         let n=input.len() as u64;
@@ -433,8 +468,8 @@ impl Sha512 {
         while i<input.len()
             invariant i<=input.len(),self.used<128,
                 self.used==(initial_used+i)%128,
-                self.length==old(self).length+input.len(),self.length<=u64::MAX,
-                self.message@==old(self).message@,
+                self.length==initial_length+input.len(),self.length<=u64::MAX,
+                self.message@==initial_message,
                 self.state@==extend512(initial_state,input@.take(i as int)).words,
                 self.buffer@.take(self.used as int)==extend512(initial_state,input@.take(i as int)).tail,
             decreases input.len()-i,
@@ -448,12 +483,12 @@ impl Sha512 {
         }
         proof {extend512_concat(initial512(),self.message@,input@);}
         self.message=Ghost(self.message@+input@);
-        Ok(())
+        Ok(self)
     }
-    pub fn finalize512(mut self) -> (r:Vec<u8>)
+    fn finalize512(mut self) -> (r:Vec<u8>)
+        requires self.valid512(),
         ensures r.len()==64,r@==digest512_reference(self.input512()),
     {
-        proof {use_type_invariant(&self);}
         let ghost initial_words=self.state@;
         let ghost padded=padding512(self.buffer@.take(self.used as int),self.length as nat);
 
@@ -493,6 +528,39 @@ impl Sha512 {
         out
     }
 }
+pub struct Sha512 {core:HashCore512}
+impl Sha512 {
+    pub closed spec fn valid512(&self) -> bool {self.core.valid512()}
+    pub closed spec fn input512(&self) -> Seq<u8> {self.core.input512()}
+    pub closed spec fn physical512(&self) -> (Seq<u64>,Seq<u8>,usize,u64) {self.core.physical512()}
+    #[verifier::type_invariant]
+    spec fn invariant(self) -> bool {self.valid512()}
+    pub fn new512() -> (r:Self)
+        ensures r.valid512(),r.input512()==Seq::<u8>::empty(),
+    {Self {core:HashCore512::new512()}}
+    pub fn update512(&mut self,input:&[u8]) -> (r:Result<(),Error>)
+        ensures final(self).valid512(),r.is_ok() ==> final(self).input512()==old(self).input512()+input@,
+            r.is_err() ==> final(self).physical512()==old(self).physical512()
+                && final(self).input512()==old(self).input512(),
+    {
+        proof {use_type_invariant(&*self);}
+        let next=match self.core.copy_core512().update512(input) {Ok(v)=>v,Err(e)=>return Err(e)};
+        self.core=next;
+        Ok(())
+    }
+    pub fn finalize512(self) -> (r:Vec<u8>)
+        ensures r.len()==64,r@==digest512_reference(self.input512()),
+    {
+        proof {use_type_invariant(&self);}
+        self.core.finalize512()
+    }
+    fn duplicate_for_hmac(&self) -> (r:Self)
+        ensures r.valid512(),r.input512()==self.input512(),r.physical512()==self.physical512(),
+    {
+        proof {use_type_invariant(self);}
+        Self {core:self.core.copy_core512()}
+    }
+}
 pub fn sha256(input:&[u8]) -> (r:Result<Vec<u8>,Error>)
     ensures match r {Ok(v)=>v.len()==32 && v@==digest256_reference(input@),Err(_)=>true},
 {
@@ -530,18 +598,23 @@ pub closed spec fn hkdf512_expand_reference(prk:Seq<u8>,info:Seq<u8>,length:nat)
     hkdf_blocks(prk,info,(length+63)/64).take(length as int)
 }
 
-pub struct HmacSha512 { inner: Sha512, outer: Sha512, key:Ghost<Seq<u8>>, message:Ghost<Seq<u8>> }
-impl HmacSha512 {
-    pub closed spec fn hmac_valid(&self) -> bool {
+struct HmacCore512 { inner: Sha512, outer: Sha512, key:Ghost<Seq<u8>>, message:Ghost<Seq<u8>> }
+impl HmacCore512 {
+    spec fn hmac_valid(&self) -> bool {
         self.inner.valid512() && self.outer.valid512()
             && self.inner.input512()==hmac_pad(self.key@,0x36)+self.message@
             && self.outer.input512()==hmac_pad(self.key@,0x5c)
     }
-    pub closed spec fn hmac_key(&self) -> Seq<u8> {self.key@}
-    pub closed spec fn hmac_input(&self) -> Seq<u8> {self.message@}
-    #[verifier::type_invariant]
-    spec fn invariant(self) -> bool {self.hmac_valid()}
-    pub fn new_hmac512(key:&[u8]) -> (r:Result<Self,Error>)
+    spec fn hmac_key(&self) -> Seq<u8> {self.key@}
+    spec fn hmac_input(&self) -> Seq<u8> {self.message@}
+    fn copy_hmac_core(&self) -> (r:Self)
+        requires self.hmac_valid(),
+        ensures r.hmac_valid(),r.hmac_key()==self.hmac_key(),r.hmac_input()==self.hmac_input(),
+    {
+        Self {inner:self.inner.duplicate_for_hmac(),outer:self.outer.duplicate_for_hmac(),
+            key:Ghost(self.key@),message:Ghost(self.message@)}
+    }
+    fn new_hmac512(key:&[u8]) -> (r:Result<Self,Error>)
         ensures match r {Ok(h)=>h.hmac_valid() && h.hmac_key()==key@ && h.hmac_input()==Seq::<u8>::empty(),Err(_)=>true},
     {
         let mut material=Vec::new();
@@ -556,20 +629,48 @@ impl HmacSha512 {
         let mut inner=Sha512::new512(); let mut outer=Sha512::new512(); inner.update512(&ipad)?; outer.update512(&opad)?;
         Ok(Self { inner,outer,key:Ghost(key@),message:Ghost(Seq::empty()) })
     }
+    fn update_hmac512(mut self,input:&[u8]) -> (r:Result<Self,Error>)
+        requires self.hmac_valid(),
+        ensures match r {Ok(next)=>next.hmac_valid() && next.hmac_key()==self.hmac_key()
+            && next.hmac_input()==self.hmac_input()+input@,Err(_)=>true},
+    {
+        self.inner.update512(input)?;
+        self.message=Ghost(self.message@+input@);
+        Ok(self)
+    }
+    fn finalize_hmac512(mut self) -> (r:Result<Vec<u8>,Error>)
+        requires self.hmac_valid(),
+    ensures match r {Ok(v)=>v.len()==64 && v@==hmac512_reference(self.hmac_key(),self.hmac_input()),Err(_)=>true},
+{
+        let digest=self.inner.finalize512(); self.outer.update512(digest.as_slice())?; Ok(self.outer.finalize512())
+    }
+}
+pub struct HmacSha512 {core:HmacCore512}
+impl HmacSha512 {
+    pub closed spec fn hmac_valid(&self) -> bool {self.core.hmac_valid()}
+    pub closed spec fn hmac_key(&self) -> Seq<u8> {self.core.hmac_key()}
+    pub closed spec fn hmac_input(&self) -> Seq<u8> {self.core.hmac_input()}
+    #[verifier::type_invariant]
+    spec fn invariant(self) -> bool {self.hmac_valid()}
+    pub fn new_hmac512(key:&[u8]) -> (r:Result<Self,Error>)
+        ensures match r {Ok(h)=>h.hmac_valid() && h.hmac_key()==key@ && h.hmac_input()==Seq::<u8>::empty(),Err(_)=>true},
+    {
+        match HmacCore512::new_hmac512(key) {Ok(core)=>Ok(Self {core}),Err(e)=>Err(e)}
+    }
     pub fn update_hmac512(&mut self,input:&[u8]) -> (r:Result<(),Error>)
         ensures final(self).hmac_valid(),final(self).hmac_key()==old(self).hmac_key(),
             final(self).hmac_input()==if r.is_ok() {old(self).hmac_input()+input@}else{old(self).hmac_input()},
     {
         proof {use_type_invariant(&*self);}
-        self.inner.update512(input)?;
-        self.message=Ghost(self.message@+input@);
+        let next=match self.core.copy_hmac_core().update_hmac512(input) {Ok(v)=>v,Err(e)=>return Err(e)};
+        self.core=next;
         Ok(())
     }
-    pub fn finalize_hmac512(mut self) -> (r:Result<Vec<u8>,Error>)
-    ensures match r {Ok(v)=>v.len()==64 && v@==hmac512_reference(self.hmac_key(),self.hmac_input()),Err(_)=>true},
-{
+    pub fn finalize_hmac512(self) -> (r:Result<Vec<u8>,Error>)
+        ensures match r {Ok(v)=>v.len()==64 && v@==hmac512_reference(self.hmac_key(),self.hmac_input()),Err(_)=>true},
+    {
         proof {use_type_invariant(&self);}
-        let digest=self.inner.finalize512(); self.outer.update512(digest.as_slice())?; Ok(self.outer.finalize512())
+        self.core.finalize_hmac512()
     }
 }
 pub fn hmac_sha512(key:&[u8],input:&[u8]) -> (r:Result<Vec<u8>,Error>)

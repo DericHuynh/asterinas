@@ -224,6 +224,194 @@ proof fn pre_round_inverse(state:Seq<u8>)
     state_shift_inverse(state);
 }
 
+// A six-coefficient linear polynomial form of the FIPS 197 column matrices.
+// The connection to the actual eight-step field multiply is checked over
+// every byte, rather than introduced as an algebraic premise.
+spec fn coefficient_product(a:u8,c:u8) -> u8 {
+    let a2=field_double(a);let a4=field_double(a2);let a8=field_double(a4);
+    if c==2 {a2}else if c==3 {a2^a}else if c==9 {a8^a}
+    else if c==11 {a8^a2^a}else if c==13 {a8^a4^a}else if c==14 {a8^a4^a2}else{0u8}
+}
+spec fn coefficient_row(i:nat) -> bool {
+    let a=i as u8;
+    field_mul(a,2)==coefficient_product(a,2) && field_mul(a,3)==coefficient_product(a,3)
+        && field_mul(a,9)==coefficient_product(a,9) && field_mul(a,11)==coefficient_product(a,11)
+        && field_mul(a,13)==coefficient_product(a,13) && field_mul(a,14)==coefficient_product(a,14)
+}
+spec fn coefficients_checked(first:nat,end:nat) -> bool
+    decreases end-first
+{
+    if first>=end {true}else{coefficient_row(first) && coefficients_checked(first+1,end)}
+}
+proof fn checked_coefficients_contain(first:nat,end:nat,i:nat)
+    requires first<=i<end<=256,coefficients_checked(first,end),
+    ensures coefficient_row(i),
+    decreases i-first,
+{
+    if first<i {checked_coefficients_contain(first+1,end,i);}
+}
+proof fn byte_mix_coefficients(a:u8)
+    ensures field_mul(a,2)==coefficient_product(a,2),field_mul(a,3)==coefficient_product(a,3),
+        field_mul(a,9)==coefficient_product(a,9),field_mul(a,11)==coefficient_product(a,11),
+        field_mul(a,13)==coefficient_product(a,13),field_mul(a,14)==coefficient_product(a,14),
+{
+    reveal(field_mul);reveal(field_steps);
+    if a<64 {
+        assert(coefficients_checked(0,64)) by(compute);
+        checked_coefficients_contain(0,64,a as nat);
+    }else if a<128 {
+        assert(coefficients_checked(64,128)) by(compute);
+        checked_coefficients_contain(64,128,a as nat);
+    }else if a<192 {
+        assert(coefficients_checked(128,192)) by(compute);
+        checked_coefficients_contain(128,192,a as nat);
+    }else {
+        assert(coefficients_checked(192,256)) by(compute);
+        checked_coefficients_contain(192,256,a as nat);
+    }
+}
+spec fn polynomial_column(a:u8,b:u8,c:u8,d:u8,row:u8,backward:bool) -> u8 {
+    if backward {
+        if row==0 {coefficient_product(a,14)^coefficient_product(b,11)^coefficient_product(c,13)^coefficient_product(d,9)}
+        else if row==1 {coefficient_product(a,9)^coefficient_product(b,14)^coefficient_product(c,11)^coefficient_product(d,13)}
+        else if row==2 {coefficient_product(a,13)^coefficient_product(b,9)^coefficient_product(c,14)^coefficient_product(d,11)}
+        else {coefficient_product(a,11)^coefficient_product(b,13)^coefficient_product(c,9)^coefficient_product(d,14)}
+    }else {
+        if row==0 {coefficient_product(a,2)^coefficient_product(b,3)^c^d}
+        else if row==1 {a^coefficient_product(b,2)^coefficient_product(c,3)^d}
+        else if row==2 {a^b^coefficient_product(c,2)^coefficient_product(d,3)}
+        else {coefficient_product(a,3)^b^c^coefficient_product(d,2)}
+    }
+}
+proof fn polynomial_columns_inverse(a:u8,b:u8,c:u8,d:u8,row:u8)
+    ensures polynomial_column(
+        polynomial_column(a,b,c,d,0,false),polynomial_column(a,b,c,d,1,false),
+        polynomial_column(a,b,c,d,2,false),polynomial_column(a,b,c,d,3,false),row,true)
+            ==if row==0 {a}else if row==1 {b}else if row==2 {c}else{d},
+        polynomial_column(
+        polynomial_column(a,b,c,d,0,true),polynomial_column(a,b,c,d,1,true),
+        polynomial_column(a,b,c,d,2,true),polynomial_column(a,b,c,d,3,true),row,false)
+            ==if row==0 {a}else if row==1 {b}else if row==2 {c}else{d},
+{
+    assert(polynomial_column(
+        polynomial_column(a,b,c,d,0,false),polynomial_column(a,b,c,d,1,false),
+        polynomial_column(a,b,c,d,2,false),polynomial_column(a,b,c,d,3,false),row,true)
+            ==if row==0 {a}else if row==1 {b}else if row==2 {c}else{d}) by(bit_vector);
+    assert(polynomial_column(
+        polynomial_column(a,b,c,d,0,true),polynomial_column(a,b,c,d,1,true),
+        polynomial_column(a,b,c,d,2,true),polynomial_column(a,b,c,d,3,true),row,false)
+            ==if row==0 {a}else if row==1 {b}else if row==2 {c}else{d}) by(bit_vector);
+}
+proof fn mixed_byte_is_polynomial(state:Seq<u8>,i:int,backward:bool)
+    requires state.len()==16,0<=i<16,
+    ensures mixed_byte(state,i,backward)==polynomial_column(
+        state[(i/4)*4],state[(i/4)*4+1],state[(i/4)*4+2],state[(i/4)*4+3],(i%4) as u8,backward),
+{
+    let base=(i/4)*4;
+    byte_mix_coefficients(state[base]);byte_mix_coefficients(state[base+1]);
+    byte_mix_coefficients(state[base+2]);byte_mix_coefficients(state[base+3]);
+}
+proof fn state_mix_inverse(state:Seq<u8>)
+    requires state.len()==16,
+    ensures mixed(mixed(state,false),true)==state,mixed(mixed(state,true),false)==state,
+{
+    assert forall|i:int| 0<=i<16 implies
+        mixed(mixed(state,false),true)[i]==state[i]
+        && mixed(mixed(state,true),false)[i]==state[i] by {
+        let base=(i/4)*4;let row=(i%4) as u8;
+        assert(0<=base<=12 && base%4==0 && 0<=i%4<4 && i==base+i%4);
+        mixed_byte_is_polynomial(state,base,false);mixed_byte_is_polynomial(state,base+1,false);
+        mixed_byte_is_polynomial(state,base+2,false);mixed_byte_is_polynomial(state,base+3,false);
+        mixed_byte_is_polynomial(state,base,true);mixed_byte_is_polynomial(state,base+1,true);
+        mixed_byte_is_polynomial(state,base+2,true);mixed_byte_is_polynomial(state,base+3,true);
+        mixed_byte_is_polynomial(mixed(state,false),i,true);
+        mixed_byte_is_polynomial(mixed(state,true),i,false);
+        polynomial_columns_inverse(state[base],state[base+1],state[base+2],state[base+3],row);
+    }
+    assert(mixed(mixed(state,false),true) =~= state);
+    assert(mixed(mixed(state,true),false) =~= state);
+}
+
+proof fn round_reference_lengths(input:Seq<u8>,key:Seq<u8>,rounds:nat,n:nat)
+    ensures encrypted(input,key,rounds,n).len()==16,decrypted(input,key,rounds,n).len()==16,
+{}
+
+// State cancellation is proved in the coordinates just before SubBytes.
+// This matches the executable decryption order, including its final no-mix
+// round and the special final encryption round.
+proof fn undo_regular_encrypt_round(state:Seq<u8>,key:Seq<u8>,round:nat,rounds:nat)
+    requires state.len()==16,0<round<rounds,(round+1)*16<=key.len(),
+    ensures decrypt_round(pre_round(encrypt_round(state,key,round,rounds)),key,round)==pre_round(state),
+{
+    pre_round_inverse(encrypt_round(state,key,round,rounds));
+    state_key_inverse(mixed(pre_round(state),false),key,round);
+    state_mix_inverse(pre_round(state));
+}
+proof fn undo_initial_key_round(state:Seq<u8>,key:Seq<u8>)
+    requires state.len()==16,16<=key.len(),
+    ensures decrypt_round(pre_round(keyed(state,key,0)),key,0)==state,
+{
+    pre_round_inverse(keyed(state,key,0));
+    state_key_inverse(state,key,0);
+}
+proof fn redo_regular_decrypt_round(state:Seq<u8>,key:Seq<u8>,round:nat,rounds:nat)
+    requires state.len()==16,0<round<rounds,(round+1)*16<=key.len(),
+    ensures encrypt_round(inverse_pre_round(decrypt_round(state,key,round)),key,round,rounds)
+        ==inverse_pre_round(state),
+{
+    pre_round_inverse(decrypt_round(state,key,round));
+    state_mix_inverse(keyed(inverse_pre_round(state),key,round));
+    state_key_inverse(inverse_pre_round(state),key,round);
+}
+proof fn decrypt_encrypted_prefix(input:Seq<u8>,key:Seq<u8>,rounds:nat,n:nat)
+    requires input.len()==16,0<rounds,n<rounds,(rounds+1)*16<=key.len(),
+    ensures decrypted(encrypted(input,key,rounds,rounds),key,rounds,n)
+        ==pre_round(encrypted(input,key,rounds,(rounds-1-n) as nat)),
+    decreases n,
+{
+    if n==0 {
+        round_reference_lengths(input,key,rounds,(rounds-1) as nat);
+        state_key_inverse(pre_round(encrypted(input,key,rounds,(rounds-1) as nat)),key,rounds);
+    }else{
+        decrypt_encrypted_prefix(input,key,rounds,(n-1) as nat);
+        let round=(rounds-n) as nat;
+        assert(0<round<rounds && (round-1) as nat==(rounds-1-n) as nat);
+        round_reference_lengths(input,key,rounds,(round-1) as nat);
+        undo_regular_encrypt_round(encrypted(input,key,rounds,(round-1) as nat),key,round,rounds);
+    }
+}
+proof fn encrypt_decrypted_prefix(input:Seq<u8>,key:Seq<u8>,rounds:nat,n:nat)
+    requires input.len()==16,0<rounds,n<rounds,(rounds+1)*16<=key.len(),
+    ensures encrypted(decrypted(input,key,rounds,rounds),key,rounds,n)
+        ==inverse_pre_round(decrypted(input,key,rounds,(rounds-1-n) as nat)),
+    decreases n,
+{
+    if n==0 {
+        round_reference_lengths(input,key,rounds,(rounds-1) as nat);
+        state_key_inverse(inverse_pre_round(decrypted(input,key,rounds,(rounds-1) as nat)),key,0);
+    }else{
+        encrypt_decrypted_prefix(input,key,rounds,(n-1) as nat);
+        let prior=(rounds-n-1) as nat;
+        round_reference_lengths(input,key,rounds,prior);
+        redo_regular_decrypt_round(decrypted(input,key,rounds,prior),key,n,rounds);
+    }
+}
+proof fn decrypt_encrypt_reference(input:Seq<u8>,key:Seq<u8>,rounds:nat)
+    requires input.len()==16,0<rounds,(rounds+1)*16<=key.len(),
+    ensures decrypted(encrypted(input,key,rounds,rounds),key,rounds,rounds)==input,
+{
+    decrypt_encrypted_prefix(input,key,rounds,(rounds-1) as nat);
+    undo_initial_key_round(input,key);
+}
+proof fn encrypt_decrypt_reference(input:Seq<u8>,key:Seq<u8>,rounds:nat)
+    requires input.len()==16,0<rounds,(rounds+1)*16<=key.len(),
+    ensures encrypted(decrypted(input,key,rounds,rounds),key,rounds,rounds)==input,
+{
+    encrypt_decrypted_prefix(input,key,rounds,(rounds-1) as nat);
+    pre_round_inverse(decrypted(input,key,rounds,0));
+    state_key_inverse(input,key,rounds);
+}
+
 fn mul(mut a:u8,mut b:u8) -> (r:u8)
     ensures r==field_mul(a,b),
 {
@@ -353,6 +541,14 @@ impl AesKey {
     pub closed spec fn aes_decrypt_reference(&self,input:Seq<u8>) -> Seq<u8> {
         decrypted(input,self.state.expanded@,self.state.rounds as nat,self.state.rounds as nat)
     }
+    pub proof fn aes_reference_roundtrips(&self,input:Seq<u8>)
+        requires self.valid_aes(),!self.aes_retired(),input.len()==16,
+        ensures self.aes_decrypt_reference(self.aes_encrypt_reference(input))==input,
+            self.aes_encrypt_reference(self.aes_decrypt_reference(input))==input,
+    {
+        decrypt_encrypt_reference(input,self.state.expanded@,self.state.rounds as nat);
+        encrypt_decrypt_reference(input,self.state.expanded@,self.state.rounds as nat);
+    }
     #[verifier::type_invariant]
     spec fn invariant(self) -> bool {self.valid_aes()}
     pub fn new_aes_key(key:&[u8]) -> (r:Result<Self,Error>)
@@ -472,7 +668,23 @@ impl AesKey {
         opens_invariants none
         no_unwind
     {
-        self.state=AesState {expanded:[0u8;240],rounds:0,retired:true};
+        self.state=AesState {expanded:[
+            0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,
+            0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,
+            0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,
+            0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,
+            0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,
+            0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,
+            0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,
+            0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,
+            0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,
+            0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,
+            0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,
+            0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,
+            0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,
+            0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,
+            0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,0u8,
+        ],rounds:0,retired:true};
     }
 }
 impl Drop for AesKey {

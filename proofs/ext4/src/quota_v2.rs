@@ -93,6 +93,7 @@ pub open spec fn representable(record: Record, version: u32) -> bool {
     version <= 1 && (version != 0 || (record.inode_hard <= 0xffff_ffff && record.inode_soft <= 0xffff_ffff
         && record.current_inodes <= 0xffff_ffff && record.block_hard <= 0xffff_ffff && record.block_soft <= 0xffff_ffff))
 }
+#[verifier::opaque]
 pub open spec fn record_image(record: Record, version: u32) -> Seq<u8> {
     if version == 0 {
         bytes::encoded_le(record.id) + bytes::encoded_le(record.inode_hard as u32)
@@ -106,9 +107,11 @@ pub open spec fn record_image(record: Record, version: u32) -> Seq<u8> {
             + encoded64(record.current_space) + encoded64(record.block_time) + encoded64(record.inode_time)
     }
 }
+#[verifier::opaque]
 pub open spec fn canonical_image(record: Record, version: u32) -> Seq<u8> {
     record_image(if zero_record(record) { Record { inode_time: 1, ..record } } else { record }, version)
 }
+#[verifier::opaque]
 pub open spec fn fields(raw: Seq<u8>, version: u32) -> Record {
     if version == 0 { Record {
         id: bytes::le32(raw, 0) as u32, inode_hard: bytes::le32(raw, 4) as u64,
@@ -122,6 +125,7 @@ pub open spec fn fields(raw: Seq<u8>, version: u32) -> Record {
         current_space: le64(raw, 48) as u64, block_time: le64(raw, 56) as u64, inode_time: le64(raw, 64) as u64,
     } }
 }
+#[verifier::opaque]
 pub open spec fn parsed_record(raw: Seq<u8>, version: u32) -> Option<Record> {
     if width(version).is_none() || raw.len() != width(version).unwrap()
         || (forall|i: int| 0 <= i < raw.len() ==> raw[i] == 0) { None }
@@ -227,6 +231,33 @@ proof fn radix_append(raw: Seq<u8>, levels: Map<u32, nat>, data: Set<u32>, numbe
     let after = raw + Seq::<u8>::new(BLOCK_BYTES as nat, |i: int| 0u8);
     let new_levels = if level.is_some() { levels.insert(number, level.unwrap()) } else { levels };
     let new_data = if level.is_some() { data } else { data.insert(number) };
+    assert(ROOT_BLOCK < number);
+    assert(!levels.dom().contains(number));
+    assert(!data.contains(number));
+    assert(after.len() == (number as nat + 1) * BLOCK_BYTES);
+    assert forall|node: u32| #[trigger] new_levels.dom().contains(node)
+        implies node > 0 && (node as nat + 1) * BLOCK_BYTES <= after.len()
+            && new_levels[node] < 4 && !new_data.contains(node) by {
+        if node == number { assert(level.is_some()); }
+        else { assert(levels.dom().contains(node)); }
+    }
+    assert forall|block: u32| #[trigger] new_data.contains(block)
+        implies ROOT_BLOCK < block && (block as nat + 1) * BLOCK_BYTES <= after.len()
+            && !new_levels.dom().contains(block) by {
+        if block == number { assert(level.is_none()); }
+        else { assert(data.contains(block)); }
+    }
+    assert forall|block: u32| 0 < block < after.len() / (BLOCK_BYTES as nat)
+        implies #[trigger] new_levels.dom().contains(block) || new_data.contains(block) by {
+        if block == number {
+            if level.is_some() { assert(new_levels.dom().contains(block)); }
+            else { assert(new_data.contains(block)); }
+        } else {
+            assert(block < number);
+            assert(block < raw.len() / (BLOCK_BYTES as nat));
+            assert(levels.dom().contains(block) || data.contains(block));
+        }
+    }
     assert forall|node: u32, index: int| new_levels.dom().contains(node) && 0 <= index < 256
         implies #[trigger] radix_link(after, new_levels, new_data, node, index) by {
         if node == number {
@@ -319,21 +350,101 @@ pub proof fn encoded64_recovers(value: u64)
     vstd::arithmetic::div_mod::lemma_fundamental_div_mod(value as int, 4294967296);
     assert((value as u32) as nat == value as nat % 4294967296) by (bit_vector);
 }
-pub proof fn canonical_encoding_has_documented_alias(record: Record, version: u32)
-    requires representable(record, version),
-    ensures parsed_record(canonical_image(record, version), version) == Some(normalized_record(record)),
+/// Each format's recovery proof unfolds only its own fixed wire layout.
+proof fn record_image_v0_recovers(record: Record)
+    requires representable(record, 0),
+    ensures record_image(record, 0).len() == 48,
+        fields(record_image(record, 0), 0) == record,
 {
-    encoded64_recovers(record.inode_hard); encoded64_recovers(record.inode_soft);
-    encoded64_recovers(record.current_inodes); encoded64_recovers(record.block_hard);
-    encoded64_recovers(record.block_soft); encoded64_recovers(record.current_space);
-    encoded64_recovers(record.block_time); encoded64_recovers(record.inode_time);
+    reveal(record_image);
+    reveal(fields);
     bytes::little_endian_encoding_recovers_every_word(record.id);
     bytes::little_endian_encoding_recovers_every_word(record.inode_hard as u32);
     bytes::little_endian_encoding_recovers_every_word(record.inode_soft as u32);
     bytes::little_endian_encoding_recovers_every_word(record.current_inodes as u32);
     bytes::little_endian_encoding_recovers_every_word(record.block_hard as u32);
     bytes::little_endian_encoding_recovers_every_word(record.block_soft as u32);
-    if zero_record(record) { encoded64_recovers(1); }
+    encoded64_recovers(record.current_space);
+    encoded64_recovers(record.block_time);
+    encoded64_recovers(record.inode_time);
+}
+
+proof fn record_image_v1_recovers(record: Record)
+    ensures record_image(record, 1).len() == 72,
+        fields(record_image(record, 1), 1) == record,
+        bytes::le32(record_image(record, 1), 4) == 0,
+{
+    reveal(record_image);
+    reveal(fields);
+    bytes::little_endian_encoding_recovers_every_word(record.id);
+    encoded64_recovers(record.inode_hard);
+    encoded64_recovers(record.inode_soft);
+    encoded64_recovers(record.current_inodes);
+    encoded64_recovers(record.block_hard);
+    encoded64_recovers(record.block_soft);
+    encoded64_recovers(record.current_space);
+    encoded64_recovers(record.block_time);
+    encoded64_recovers(record.inode_time);
+}
+
+proof fn record_image_recovers(record: Record, version: u32)
+    requires representable(record, version),
+    ensures record_image(record, version).len() == width(version).unwrap(),
+        fields(record_image(record, version), version) == record,
+        version == 1 ==> bytes::le32(record_image(record, version), 4) == 0,
+{
+    if version == 0 { record_image_v0_recovers(record); }
+    else { record_image_v1_recovers(record); }
+}
+
+proof fn zero_bytes_have_zero_fields(raw: Seq<u8>, version: u32)
+    requires version <= 1, raw.len() == width(version).unwrap(),
+        forall|i: int| 0 <= i < raw.len() ==> #[trigger] raw[i] == 0,
+    ensures zero_record(fields(raw, version)),
+{
+    reveal(fields);
+}
+
+proof fn record_image_zero_iff(record: Record, version: u32)
+    requires representable(record, version),
+    ensures (forall|i: int| 0 <= i < record_image(record, version).len()
+        ==> #[trigger] record_image(record, version)[i] == 0) == zero_record(record),
+{
+    record_image_recovers(record, version);
+    let image = record_image(record, version);
+    if forall|i: int| 0 <= i < image.len() ==> #[trigger] image[i] == 0 {
+        zero_bytes_have_zero_fields(image, version);
+    }
+    if zero_record(record) {
+        assert(image =~= Seq::<u8>::new(width(version).unwrap(), |i: int| 0u8)) by {
+            reveal(record_image);
+        }
+    }
+}
+
+/// The Linux ID-zero escape changes only the final inode-time word pair.
+proof fn zero_image_escape(record: Record, version: u32)
+    requires representable(record, version), zero_record(record),
+    ensures bytes::splice(record_image(record, version),
+        if version == 0 { 40int } else { 64int }, encoded64(1)) == canonical_image(record, version),
+{
+    reveal(record_image);
+    reveal(canonical_image);
+    assert(bytes::splice(record_image(record, version),
+        if version == 0 { 40int } else { 64int }, encoded64(1)) =~= canonical_image(record, version));
+}
+
+pub proof fn canonical_encoding_has_documented_alias(record: Record, version: u32)
+    requires representable(record, version),
+    ensures parsed_record(canonical_image(record, version), version) == Some(normalized_record(record)),
+{
+    let escaped = if zero_record(record) { Record { inode_time: 1, ..record } } else { record };
+    record_image_recovers(escaped, version);
+    record_image_zero_iff(escaped, version);
+    assert(!zero_record(escaped));
+    assert(normalized_record(escaped) == normalized_record(record));
+    reveal(canonical_image);
+    reveal(parsed_record);
 }
 
 pub fn record_bytes(version: u32) -> (r: Option<usize>)
@@ -501,6 +612,7 @@ fn all_zero(raw: &[u8]) -> (r: bool)
 pub fn parse_record(raw: &[u8], version: u32) -> (r: Option<Record>)
     ensures r == parsed_record(raw@, version),
 {
+    proof { reveal(parsed_record); reveal(fields); }
     let width = match record_bytes(version) { Some(v) => v, None => { return None; } };
     if raw.len() != width || all_zero(raw) { return None; }
     let id = bytes::read_le32(raw, 0).unwrap();
@@ -559,10 +671,16 @@ pub fn encode_record(record: Record, version: u32) -> (r: Option<Vec<u8>>)
             || !put_u64(raw.as_mut_slice(), 56, record.block_time)
             || !put_u64(raw.as_mut_slice(), 64, record.inode_time) { return None; }
     }
-    proof { assert(raw@ == record_image(record, version)); }
+    proof {
+        assert(raw@ == record_image(record, version)) by { reveal(record_image); }
+        record_image_zero_iff(record, version);
+    }
     if all_zero(raw.as_slice()) {
+        proof { zero_image_escape(record, version); }
         let offset = if version == 0 { 40usize } else { 64usize };
         if !put_u64(raw.as_mut_slice(), offset, 1) { return None; }
+    } else {
+        proof { reveal(canonical_image); }
     }
     proof { canonical_encoding_has_documented_alias(record, version); }
     Some(raw)
@@ -817,8 +935,9 @@ pub fn build(kind: QuotaType, version: u32, block_grace: u32, inode_grace: u32,
                 ROOT_BLOCK < data, (data as nat + 1) * BLOCK_BYTES <= raw.len(),
             decreases 4 - depth,
         {
-            proof { assert(((record.id >> ((3 - depth) * 8)) & 255) <= 255) by (bit_vector); }
-            let index = ((record.id >> ((3 - depth) * 8)) & 255) as usize;
+            let identifier = record.id;
+            proof { assert(((identifier >> ((3 - depth) * 8)) & 255) <= 255) by (bit_vector); }
+            let index = ((identifier >> ((3 - depth) * 8)) & 255) as usize;
             proof { radix_node_properties(raw@, levels, data_set, node, index as int); }
             let at = node as usize * BLOCK_BYTES + index * 4;
             let next = bytes::read_le32(raw.as_slice(), at).unwrap();

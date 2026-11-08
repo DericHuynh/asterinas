@@ -124,6 +124,13 @@ fn word64(raw: &[u8], low: usize, high: usize) -> Option<u64> {
     }
 }
 
+pub struct ContextView {
+    pub source_inode: Seq<u8>, pub number: u32, pub parent: u32, pub generation: u32, pub inodes: u32,
+    pub fs_blocks: u64, pub block_bytes: usize, pub fs_seed: u32, pub inode_seed: u32,
+    pub hash_seed: dir_hash::State, pub hash_version: u8, pub indexed: bool,
+    pub metadata: bool, pub filetype: bool, pub large: bool, pub dir_nlink: bool, pub huge_file: bool,
+    pub retained_sectors: u64, pub old_tree_blocks: u64,
+}
 pub struct Context {
     source_inode: Vec<u8>, number: u32, parent: u32, generation: u32, inodes: u32,
     fs_blocks: u64, block_bytes: usize, fs_seed: u32, inode_seed: u32,
@@ -132,11 +139,20 @@ pub struct Context {
     retained_sectors: u64, old_tree_blocks: u64,
 }
 impl Context {
-    pub fn context_identity(&self) -> (u32, u32, u32) { (self.number, self.generation, self.parent) }
-    pub fn context_format(&self) -> (usize, bool, bool, bool) {
+    pub closed spec fn view(&self) -> ContextView {
+        ContextView { source_inode: self.source_inode@, number: self.number, parent: self.parent,
+            generation: self.generation, inodes: self.inodes, fs_blocks: self.fs_blocks,
+            block_bytes: self.block_bytes, fs_seed: self.fs_seed, inode_seed: self.inode_seed,
+            hash_seed: self.hash_seed, hash_version: self.hash_version, indexed: self.indexed,
+            metadata: self.metadata, filetype: self.filetype, large: self.large,
+            dir_nlink: self.dir_nlink, huge_file: self.huge_file,
+            retained_sectors: self.retained_sectors, old_tree_blocks: self.old_tree_blocks }
+    }
+    pub fn context_identity(&self) -> (r: (u32, u32, u32)) ensures r == (self.view().number, self.view().generation, self.view().parent) { (self.number, self.generation, self.parent) }
+    pub fn context_format(&self) -> (r: (usize, bool, bool, bool)) ensures r == (self.view().block_bytes, self.view().indexed, self.view().metadata, self.view().filetype) {
         (self.block_bytes, self.indexed, self.metadata, self.filetype)
     }
-    pub fn context_hash_version(&self) -> u8 { self.hash_version }
+    pub fn context_hash_version(&self) -> (r: u8) ensures r == self.view().hash_version { self.hash_version }
 }
 
 /// Source envelope for the current 256-byte inode implementation. The old
@@ -271,12 +287,23 @@ fn sorted(entries: &[Entry], hashes: &[dir_hash::Hash], order: u8) -> Vec<usize>
     src
 }
 
+pub struct ImageView { pub logical: u32, pub physical: u64, pub kind: BlockKind, pub raw: Seq<u8> }
 pub struct Image { logical: u32, physical: u64, kind: BlockKind, raw: Vec<u8> }
 impl Image {
-    pub fn image_logical(&self) -> u32 { self.logical }
-    pub fn image_physical(&self) -> u64 { self.physical }
-    pub fn image_kind(&self) -> BlockKind { self.kind }
-    pub fn image_bytes(&self) -> &[u8] { &self.raw }
+    pub closed spec fn view(&self) -> ImageView {
+        ImageView { logical: self.logical, physical: self.physical, kind: self.kind, raw: self.raw@ }
+    }
+    pub fn image_logical(&self) -> (r: u32) ensures r == self.view().logical { self.logical }
+    pub fn image_physical(&self) -> (r: u64) ensures r == self.view().physical { self.physical }
+    pub fn image_kind(&self) -> (r: BlockKind) ensures r == self.view().kind { self.kind }
+    pub fn image_bytes(&self) -> (r: &[u8]) ensures r@ == self.view().raw { &self.raw }
+}
+/// Observational output only. This view describes emitted images/edges;
+/// it does not assert allocation, journal or namespace admission authority.
+pub struct PlanView {
+    pub images: Seq<ImageView>, pub mappings: Seq<Mapping>, pub inode: Seq<u8>, pub extent_root: Seq<u8>,
+    pub entries: Seq<EntryView>, pub deltas: Seq<LinkDelta>, pub indexed: bool, pub levels: u8,
+    pub old_tree_blocks: u64, pub empty_victim: Option<(u32, u32)>,
 }
 pub struct Plan {
     images: Vec<Image>, mappings: Vec<Mapping>, inode_image: Vec<u8>, extent_root: Vec<u8>,
@@ -284,26 +311,53 @@ pub struct Plan {
     old_tree_blocks: u64, empty_victim_required: Option<(u32, u32)>,
 }
 impl Plan {
-    pub fn plan_len(&self) -> usize { self.images.len() }
-    pub fn plan_image(&self, ordinal: usize) -> Option<&Image> {
+    pub closed spec fn view(&self) -> PlanView {
+        PlanView { images: self.images@.map_values(|image: Image| image.view()), mappings: self.mappings@,
+            inode: self.inode_image@, extent_root: self.extent_root@,
+            entries: self.entries@.map_values(|entry: Entry| entry.view()), deltas: self.deltas@,
+            indexed: self.indexed, levels: self.levels, old_tree_blocks: self.old_tree_blocks,
+            empty_victim: self.empty_victim_required }
+    }
+    pub fn plan_len(&self) -> (r: usize) ensures r == self.view().images.len() { self.images.len() }
+    pub fn plan_image(&self, ordinal: usize) -> (r: Option<&Image>)
+        ensures match r {
+            Some(image) => ordinal < self.view().images.len() && image.view() == self.view().images[ordinal as int],
+            None => ordinal >= self.view().images.len(),
+        },
+    {
         if ordinal >= self.images.len() { None } else { Some(&self.images[ordinal]) }
     }
-    pub fn plan_mapping(&self, ordinal: usize) -> Option<Mapping> {
+    pub fn plan_mapping(&self, ordinal: usize) -> (r: Option<Mapping>)
+        ensures match r {
+            Some(mapping) => ordinal < self.view().mappings.len() && mapping == self.view().mappings[ordinal as int],
+            None => ordinal >= self.view().mappings.len(),
+        },
+    {
         if ordinal >= self.mappings.len() { None } else { Some(self.mappings[ordinal]) }
     }
-    pub fn plan_inode(&self) -> &[u8] { &self.inode_image }
-    pub fn plan_root(&self) -> &[u8] { &self.extent_root }
-    pub fn plan_index(&self) -> (bool, u8) { (self.indexed, self.levels) }
-    pub fn plan_entry_count(&self) -> usize { self.entries.len() }
-    pub fn plan_entry(&self, ordinal: usize) -> Option<&Entry> {
+    pub fn plan_inode(&self) -> (r: &[u8]) ensures r@ == self.view().inode { &self.inode_image }
+    pub fn plan_root(&self) -> (r: &[u8]) ensures r@ == self.view().extent_root { &self.extent_root }
+    pub fn plan_index(&self) -> (r: (bool, u8)) ensures r == (self.view().indexed, self.view().levels) { (self.indexed, self.levels) }
+    pub fn plan_entry_count(&self) -> (r: usize) ensures r == self.view().entries.len() { self.entries.len() }
+    pub fn plan_entry(&self, ordinal: usize) -> (r: Option<&Entry>)
+        ensures match r {
+            Some(entry) => ordinal < self.view().entries.len() && entry.view() == self.view().entries[ordinal as int],
+            None => ordinal >= self.view().entries.len(),
+        },
+    {
         if ordinal >= self.entries.len() { None } else { Some(&self.entries[ordinal]) }
     }
-    pub fn plan_delta_count(&self) -> usize { self.deltas.len() }
-    pub fn plan_delta(&self, ordinal: usize) -> Option<LinkDelta> {
+    pub fn plan_delta_count(&self) -> (r: usize) ensures r == self.view().deltas.len() { self.deltas.len() }
+    pub fn plan_delta(&self, ordinal: usize) -> (r: Option<LinkDelta>)
+        ensures match r {
+            Some(delta) => ordinal < self.view().deltas.len() && delta == self.view().deltas[ordinal as int],
+            None => ordinal >= self.view().deltas.len(),
+        },
+    {
         if ordinal >= self.deltas.len() { None } else { Some(self.deltas[ordinal]) }
     }
-    pub fn plan_retired_tree_blocks(&self) -> u64 { self.old_tree_blocks }
-    pub fn plan_requires_empty_victim(&self) -> Option<(u32, u32)> { self.empty_victim_required }
+    pub fn plan_retired_tree_blocks(&self) -> (r: u64) ensures r == self.view().old_tree_blocks { self.old_tree_blocks }
+    pub fn plan_requires_empty_victim(&self) -> (r: Option<(u32, u32)>) ensures r == self.view().empty_victim { self.empty_victim_required }
 }
 pub enum Mutation { NoChange, Rebuild(Plan) }
 

@@ -49,6 +49,38 @@ pub open spec fn remove_valid(v: RemoveView) -> bool {
     }
 }
 
+proof fn a_structural_node_has_a_positive_identity(v: NodeView)
+    requires node_valid(v),
+    ensures v.number > 0,
+{ reveal(node_valid); }
+proof fn observe_chain_node(v: ChainView, i: int)
+    requires valid(v), 0 <= i < v.nodes.len(),
+    ensures node_valid(v.nodes[i]), 0 < v.nodes[i].number <= v.inodes,
+        v.nodes[i].next <= v.inodes, i == 0 ==> v.nodes[i].number == v.head,
+{
+    reveal(valid);
+    assert(node_valid(v.nodes[i]));
+    a_structural_node_has_a_positive_identity(v.nodes[i]);
+}
+proof fn distinct_chain_indices_have_distinct_identities(v: ChainView, i: int, j: int)
+    requires valid(v), 0 <= i < v.nodes.len(), 0 <= j < v.nodes.len(), i != j,
+    ensures v.nodes[i].number != v.nodes[j].number,
+{
+    reveal(valid);
+    if i < j { assert(v.nodes[i].number != v.nodes[j].number); }
+    else { assert(v.nodes[j].number != v.nodes[i].number); }
+}
+
+/// Structural legacy-link envelope only. Allocation truth, variable-inode
+/// checksum validation and volume/source ownership must be bound by admission.
+pub open spec fn node_admissible(raw: Seq<u8>, number: u32, inodes: u32, allocated: bool, block_bytes: usize) -> bool {
+    &&& block_size::accepted(block_bytes as nat) && 128 <= raw.len() <= block_bytes
+    &&& (raw.len() as usize & ((raw.len() - 1) as usize)) == 0
+    &&& allocated && 0 < number <= inodes && bytes::le32(raw, 20) <= inodes
+    &&& bytes::le16(raw, 26) != 0 ==> (bytes::le16(raw, 0) as u16 & 0xf000) == 0x8000
+        || (bytes::le16(raw, 0) as u16 & 0xf000) == 0x4000 || (bytes::le16(raw, 0) as u16 & 0xf000) == 0xa000
+}
+
 #[derive(Clone, Copy)]
 pub struct Node<'a> {
     raw: &'a [u8], number: u32, next: u32, generation: u32, mode: u16, links: u16,
@@ -70,7 +102,8 @@ impl<'a> Node<'a> {
 
 pub fn decode<'a>(raw: &'a [u8], number: u32, inodes: u32, allocated: bool,
     block_bytes: usize) -> (r: Result<Node<'a>, Error>)
-    ensures match r {
+    ensures (r is Ok) <==> node_admissible(raw@, number, inodes, allocated, block_bytes),
+        match r {
         Ok(node) => node.wf() && allocated && 0 < number <= inodes && node.view().number == number
             && node.view().raw == raw@ && node.view().next <= inodes && raw.len() <= block_bytes
             && block_size::accepted(block_bytes as nat),
@@ -149,8 +182,19 @@ impl<'a> Chain<'a> {
     spec fn invariant(self) -> bool { self.wf() }
     pub fn head(&self) -> (r: u32) ensures r == self.view().head { self.head }
     pub fn len(&self) -> (r: usize) ensures r == self.view().nodes.len() { self.nodes.len() }
-    pub fn get(&self, ordinal: usize) -> Option<Node<'a>> {
-        if ordinal >= self.nodes.len() { None } else { Some(self.nodes[ordinal]) }
+    pub fn get(&self, ordinal: usize) -> (r: Option<Node<'a>>)
+        ensures self.wf(), match r {
+            Some(node) => ordinal < self.view().nodes.len() && node.wf()
+                && node.view() == self.view().nodes[ordinal as int],
+            None => ordinal >= self.view().nodes.len(),
+        },
+    {
+        proof { use_type_invariant(self); }
+        if ordinal >= self.nodes.len() { None } else {
+            let node = self.nodes[ordinal];
+            proof { use_type_invariant(&node); }
+            Some(node)
+        }
     }
     pub fn find(&self, number: u32) -> (r: Option<usize>)
         ensures self.wf(), match r {
@@ -158,14 +202,23 @@ impl<'a> Chain<'a> {
                 && forall|j: int| 0 <= j < self.view().nodes.len() && j != i ==> (#[trigger] self.view().nodes[j]).number != number,
             None => forall|j: int| 0 <= j < self.view().nodes.len() ==> (#[trigger] self.view().nodes[j]).number != number,
         },
-    { proof { use_type_invariant(self); reveal(valid); }
+    { proof { use_type_invariant(self); }
         let mut i = 0usize;
         while i < self.nodes.len()
             invariant self.wf(), i <= self.nodes.len(),
                 forall|j: int| 0 <= j < i ==> (#[trigger] self.view().nodes[j]).number != number,
             decreases self.nodes.len() - i,
         {
-            if self.nodes[i].number == number { return Some(i); }
+            if self.nodes[i].number == number {
+                proof {
+                    assert(self.view().nodes[i as int].number == number);
+                    assert forall|j: int| 0 <= j < self.view().nodes.len() && j != i
+                        implies (#[trigger] self.view().nodes[j]).number != number by {
+                        distinct_chain_indices_have_distinct_identities(self.view(), i as int, j);
+                    }
+                }
+                return Some(i);
+            }
             i += 1;
         }
         None
@@ -191,10 +244,19 @@ impl<'a> Chain<'a> {
                     && plan.view().previous == if i == 0 { None } else { Some(self.view().nodes[i - 1].number) },
             Err(_) => true,
         },
-    { proof { use_type_invariant(self); reveal(valid); }
+    { proof { use_type_invariant(self); }
         let ordinal = match self.find(number) { Some(value) => value, None => { return Err(Error::Absent); } };
         let node = &self.nodes[ordinal];
         if node.generation != generation { return Err(Error::Inode); }
+        proof {
+            observe_chain_node(self.view(), ordinal as int);
+            assert(node.number == number);
+            assert(self.view().nodes[ordinal as int].generation == generation);
+            if ordinal > 0 {
+                observe_chain_node(self.view(), ordinal as int - 1);
+                distinct_chain_indices_have_distinct_identities(self.view(), ordinal as int - 1, ordinal as int);
+            }
+        }
         let previous = if ordinal == 0 { None } else { Some(self.nodes[ordinal - 1].number) };
         Ok(Remove { head_before: self.head, head_after: if ordinal == 0 { node.next } else { self.head },
             inode: node.number, generation: node.generation, previous, next: node.next })
