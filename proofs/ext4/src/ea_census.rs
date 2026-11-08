@@ -4,6 +4,8 @@
 //! This is not physical block ownership, namespace/journal admission, an
 //! orphan protocol, quota enforcement, or CortenMM/device/VFS authority.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{bytes, ea_billing, ea_hash, ea_index::{self, Index, IndexView}, ea_inode::{self, Info, Status},
     ea_parent::{self, Parent, ParentView}, ea_ref_projection::{self as projection, Graph, GraphView, Input},

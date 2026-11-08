@@ -2,6 +2,8 @@
 
 //! Owned immutable checkout for independent namespace preparation.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{ea_namespace::NamespaceView, ns_mutation_model as model, ns_prepared::Prepared, ns_edit_prepared::EditPrepared, ns_file_rename_prepared::FileRenamePrepared, ns_exchange_prepared::ExchangePrepared, ns_namespace_edit, ns_file_rename, ns_exchange, ns_rename, snapshot::Snapshot};
 

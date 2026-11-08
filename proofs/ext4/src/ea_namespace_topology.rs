@@ -4,6 +4,8 @@
 //! Each new path is marked, assigned depths, then resolved. Ghost path
 //! certificates prove coverage; no runtime path stack is allocated.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{block_claims, ea_namespace_parent::{self as parent_table, ParentTable, TableView}, ea_directory_index::{DirectoryIndex, IndexView}, tree_model::{self as model, MAX_DEPTH}};
 

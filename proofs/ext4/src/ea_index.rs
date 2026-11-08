@@ -5,6 +5,8 @@
 //! inode-table block ranges are pairwise disjoint. This is not ordinary
 //! filesystem admission or a complete physical ownership census.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{backup_layout, bitmap::{self, Bitmap, BitmapView}, block_bitmap, bytes, crc,
     ea_source::{self, Header, HeaderView, Node, NodeView}, group, group_fields, snapshot::Snapshot};

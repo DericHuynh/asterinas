@@ -4,7 +4,7 @@
 //! separate obligations; this module never grants an allocation capability.
 
 use vstd::prelude::*;
-use crate::bytes::{le16, le32, read_le16, read_le32, encode_le16, encode_le32};
+use crate::bytes::*;
 
 verus! {
 

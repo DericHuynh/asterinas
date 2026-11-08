@@ -4,6 +4,8 @@
 //! Full keys, never hashes, establish name identity. Parsing grants no access
 //! permission and no authority to follow a returned value-inode descriptor.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{bytes, xattr_entry::{self as entry, Entry}};
 

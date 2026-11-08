@@ -5,6 +5,8 @@
 //! consumed here. This bounded locator conveys no write or mount authority.
 //! See Linux ext4_get_journal_inode and __ext4_get_inode_loc at sources.json.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{block_claims, bytes, crc, group, layout::{self, JournalLayout, LayoutView}, recovery_io::{self, Recovery},
     scan_trace::Source, snapshot::Snapshot, superblock};

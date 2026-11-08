@@ -6,6 +6,8 @@
 //! drop; physical erasure, side channels, provisioning and VFS authority remain
 //! refinement boundaries. These implementation-first paths await proof.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{aes::AesKey,bytes,fscrypt_context::{Context,Geometry,MasterKeyV2}};
 

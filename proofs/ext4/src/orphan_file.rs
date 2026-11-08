@@ -4,6 +4,8 @@
 //! binds the supplied inode checksum seed and physical address to its source.
 //! No block allocation, journal submission or mount capability is returned.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{block_size, bytes, crc, inode};
 

@@ -5,10 +5,12 @@
 //! consumed here. This bounded locator conveys no write or mount authority.
 //! See Linux ext4_get_journal_inode and __ext4_get_inode_loc at sources.json.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
-pub use crate::bootstrap::{BootstrapView, journal_inode, journal_bytes, journal_identity, scan_source, projection};
-pub use crate::bootstrap_frame::same_locator_geometry;
-use crate::{block_claims, bootstrap_identity::{self, primary_fixed, addresses_fixed, preserved}, bytes, crc, ea_source, group, layout::{self, JournalLayout, LayoutView}, recovery_io::{self, Recovery},
+pub use crate::bootstrap::*;
+pub use crate::bootstrap_frame::*;
+use crate::{block_claims, bootstrap_identity::{self, *}, bytes, crc, ea_source, group, layout::{self, JournalLayout, LayoutView}, recovery_io::{self, Recovery},
     scan_trace::Source, snapshot::Snapshot, super_state, superblock};
 
 verus! {

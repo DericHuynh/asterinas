@@ -4,6 +4,8 @@
 //! xattr copy-on-write. Complete filesystem admission checks the combined
 //! inode/block/bitmap/descriptor/superblock transaction before dispatch.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{allocation::Allocation, bytes, crc, patch_set::PatchSet, snapshot::Snapshot, xattr};
 

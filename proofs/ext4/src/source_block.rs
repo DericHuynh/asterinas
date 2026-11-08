@@ -4,6 +4,8 @@
 //! host snapshot. Filesystem blocks may be smaller/larger than a 4 KiB shadow
 //! page. This is byte provenance, not CortenMM, allocation or device authority.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{block_size, extent_node::{self, BlockChecksum, Node}, snapshot::Snapshot};
 

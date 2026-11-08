@@ -2,6 +2,8 @@
 
 //! Bounded allocation-free typed name exchange over certified images.
 //! Complete result admission validates directory topology after all byte edits.
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{bytes, ea_directory::{self, DirectoryView}, ea_namespace::{self, NamespaceView},
     ea_source, feature_policy, inode, ns_dir_edit, ns_inode_links, ns_record_target,

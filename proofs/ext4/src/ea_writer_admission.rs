@@ -4,6 +4,8 @@
 //! Actual dirty before/after homes and the final logged image are fully checked
 //! before dispatch. Proposal epochs are provenance, not Store or device leases.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{bootstrap::BootstrapView, bootstrap_identity, bytes, ea_bootstrap,
     ea_namespace::{self, NamespaceView}, ea_write_io::{self, Writer},

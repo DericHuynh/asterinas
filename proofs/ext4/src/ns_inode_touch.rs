@@ -4,6 +4,8 @@
 //! This checked byte codec preserves namespace identity, storage and EA billing;
 //! it grants no source freshness, credential, lock, publication or I/O authority.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{bytes, inode, inode_time, inode_time_fields::{self as time, Field}, xattr_replace};
 

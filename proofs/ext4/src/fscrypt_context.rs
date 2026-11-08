@@ -5,6 +5,8 @@
 //! keys in a VFS keyring, generate nonces, or establish key-memory erasure.
 //! The v2 HKDF and inode-hash bytes are computed, not supplied by a digest stub.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{bytes, crypto_sha2};
 

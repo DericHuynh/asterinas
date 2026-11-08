@@ -1,0 +1,2032 @@
+{
+  "schema": 1,
+  "kind": "no_std packaging source and import map",
+  "base_commit": "a11d5ecc9217d2fd5d78109796cba776f2bfd6dd",
+  "branch": "feat/verus-ext4-no-std",
+  "formal_certificate": false,
+  "package": {
+    "cargo_toml_sha256": "9bad63d14ca1739d46b11bd20d4af71a14a80affeddc2bf637d1d79f2ce3ed13",
+    "cargo_lock_sha256": "5b4c2fc5beabb9d0974fb7347041205a302d712e181b3a2076e9a4b3058b6e49",
+    "vstd_revision": "8bf68ee741df833ea5d0fe6a2255126fdea87e47",
+    "vstd_default_features": false,
+    "vstd_features": [
+      "alloc"
+    ],
+    "cargo_lock_retained_without_manual_edit": true
+  },
+  "pinned_inventory": {
+    "files": 258,
+    "required_proof_names": 972,
+    "required_executable_names": 1249,
+    "required_flags": [
+      "--no-cheating",
+      "--no-external-by-default",
+      "--output-json",
+      "--compile"
+    ],
+    "metadata": {
+      "toolchain.lock.json": {
+        "sha256": "e24d163bdbcdf9dee1214ba5cd93319ab4df7915dd4f1ffd1add302ac3c5810d",
+        "byte_identical_to_base": true
+      },
+      "proof-status.json": {
+        "sha256": "9d0f87e2d0f06d128538b5580e96467c6891f3c73289b13e69047711ed8a92df",
+        "byte_identical_to_base": true
+      },
+      "verification-evidence.json": {
+        "sha256": "5013731dc6e1df05e636ff727b5f3a189a3aefc0433a5e0abbb5d454ba8ddfa7",
+        "byte_identical_to_base": true
+      }
+    }
+  },
+  "source_counts": {
+    "files": 258,
+    "modified_files": 127,
+    "vec_import_files": 109,
+    "import_repair_files": 21,
+    "qualified_spec_proof_references": 6
+  },
+  "body_equivalence": "All macro bodies equal base after reversing only six fully qualified group::encoded_le spellings in inode.rs; executable statements unchanged.",
+  "runtime_public_surface": "Unchanged. ea_bootstrap still exports BootstrapView, Bootstrap, locate and check_identity; its local EA definitions shadow ordinary bootstrap exports.",
+  "additional_existing_proof_aliases": [
+    "a_bootstrap_preserving_allocation_image_has_an_admissible_journal_locator",
+    "independently_admitted_bootstrap_blocks_keep_the_same_locator"
+  ],
+  "no_new_cfg_exclusions_stubs_assumptions_or_external_bodies": true,
+  "source_files": {
+    "src/access.rs": {
+      "base_sha256": "8a0ea5ca2f807438c80740e56359006f52e032c1c4fcdbdbb8039fe3c2220e1f",
+      "package_sha256": "8a0ea5ca2f807438c80740e56359006f52e032c1c4fcdbdbb8039fe3c2220e1f",
+      "changes": []
+    },
+    "src/acl.rs": {
+      "base_sha256": "4c7edc6b71a5b793b15bccee5254235c3f19bd8f35419a39b37fa7ecc7f025c2",
+      "package_sha256": "b0a612c5f8873260a5ec83536caaf1de1d184d02f1ef7cc102cec175335de17e",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/acl_access.rs": {
+      "base_sha256": "62de30f1ffc47a54cf8b9700abfabec1c69f4bc68face5725d3ee1d1f85de35d",
+      "package_sha256": "62de30f1ffc47a54cf8b9700abfabec1c69f4bc68face5725d3ee1d1f85de35d",
+      "changes": []
+    },
+    "src/acl_chmod.rs": {
+      "base_sha256": "8641c4d14bf08bb77a72d37ddd50650abda4a3748b0d1025a5d0f50bc8e39444",
+      "package_sha256": "8641c4d14bf08bb77a72d37ddd50650abda4a3748b0d1025a5d0f50bc8e39444",
+      "changes": []
+    },
+    "src/acl_inherit.rs": {
+      "base_sha256": "1c9bcf1bbe7979c137a6f0751c6c7d1a48933335baeef98736745cd74bec495a",
+      "package_sha256": "4a372f5b745d9017d1dac1c880d9cf7a9ed7ea6719806b3ea80e63b8144e1e9d",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/acl_transform.rs": {
+      "base_sha256": "ab34ad198586c51aa23b79200f992217400340a30c7ee9302d93d7d91e1a6472",
+      "package_sha256": "dba27d37b12a4cda75bc39f6d3f35283ca347c7d2eeceb53b04be42d28b958b7",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/acl_update.rs": {
+      "base_sha256": "735e7b0d26d9966c97b5fe31f27f3c4105a69aaa94fff408e94613d9743d27ab",
+      "package_sha256": "735e7b0d26d9966c97b5fe31f27f3c4105a69aaa94fff408e94613d9743d27ab",
+      "changes": []
+    },
+    "src/acl_xattr.rs": {
+      "base_sha256": "b3240266127fea8d065107784a5f992f84444869f6504ed1948330637e69ef16",
+      "package_sha256": "fb29e2f246a0f211ed3ae20bb384d312ac8408b42645ce71b7c199840b9c59f3",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/adiantum.rs": {
+      "base_sha256": "1684910d19d3916b58530bdee65cec9668bd9f28bb1c69a898af80457c99b82b",
+      "package_sha256": "c8c03398a3e2d8f15d9ba3e05891ada457fe4e96397756e25e378246b3f29484",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/aes.rs": {
+      "base_sha256": "2a1451c1bbab12b1c94a683830d3b4c79de4ab1fb9da124b98e571b45333b04d",
+      "package_sha256": "2a1451c1bbab12b1c94a683830d3b4c79de4ab1fb9da124b98e571b45333b04d",
+      "changes": []
+    },
+    "src/allocated_inode.rs": {
+      "base_sha256": "0eaa104eb97caefb9900054a62fbef177e0cde2f2e1f4291c816497b27a73d9b",
+      "package_sha256": "0eaa104eb97caefb9900054a62fbef177e0cde2f2e1f4291c816497b27a73d9b",
+      "changes": []
+    },
+    "src/allocation.rs": {
+      "base_sha256": "bf18187fa0d14b53f86ce6165e02ab81dca8bd779e030c1ae6c2313580a3d677",
+      "package_sha256": "bf18187fa0d14b53f86ce6165e02ab81dca8bd779e030c1ae6c2313580a3d677",
+      "changes": []
+    },
+    "src/allocation_budget.rs": {
+      "base_sha256": "9f5d8484950dbdcfb84fc4b11099ee7c6989fac1bce3d561a797239391f14508",
+      "package_sha256": "9f5d8484950dbdcfb84fc4b11099ee7c6989fac1bce3d561a797239391f14508",
+      "changes": []
+    },
+    "src/allocation_counts.rs": {
+      "base_sha256": "dd7e5748966dec324fd174a96a3a35d6bb70929be3817e455e27fb162c0b896d",
+      "package_sha256": "dd7e5748966dec324fd174a96a3a35d6bb70929be3817e455e27fb162c0b896d",
+      "changes": []
+    },
+    "src/backup_layout.rs": {
+      "base_sha256": "c4a8df2e03c2b78f42ea7bde6ffb12f72bcdc20c9d4ecd385d62295461fc226b",
+      "package_sha256": "c4a8df2e03c2b78f42ea7bde6ffb12f72bcdc20c9d4ecd385d62295461fc226b",
+      "changes": []
+    },
+    "src/bitmap.rs": {
+      "base_sha256": "80e03a217d7807f19f4516bcfdbca6c6e58269185355f32498cfc9cb319e329e",
+      "package_sha256": "80e03a217d7807f19f4516bcfdbca6c6e58269185355f32498cfc9cb319e329e",
+      "changes": []
+    },
+    "src/block_bitmap.rs": {
+      "base_sha256": "198193f0dd30fc5126a48e70388b9fa60399be971b89a9cd9008309470ba85bd",
+      "package_sha256": "2c43a2e3eb8c0bbccb623d734619855990e702f265841c6d440c95c879a82118",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/block_claims.rs": {
+      "base_sha256": "1d9e3f5fccb4f9700c5ff3badf01dd8cc73862749be76ab5ef863debbc81b392",
+      "package_sha256": "069a87edd0027c396d9fb896db7148201d5bd575d40ffdb11dfd024f395bbeed",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/block_lifetime.rs": {
+      "base_sha256": "c6c9dbee3dbc2ee81867f0906704d2ee799c7a56db157df5b60b54b800cb1a15",
+      "package_sha256": "c6c9dbee3dbc2ee81867f0906704d2ee799c7a56db157df5b60b54b800cb1a15",
+      "changes": []
+    },
+    "src/block_range.rs": {
+      "base_sha256": "a6e3533805cb938ffd1b2677a7bfa975560f85fb9bb5429497e255ba440e1b0c",
+      "package_sha256": "a6e3533805cb938ffd1b2677a7bfa975560f85fb9bb5429497e255ba440e1b0c",
+      "changes": []
+    },
+    "src/block_size.rs": {
+      "base_sha256": "83f09fc12aeca41e19756e35e2fe4893acdd63a5d3fef297ae90fb066b200cb6",
+      "package_sha256": "83f09fc12aeca41e19756e35e2fe4893acdd63a5d3fef297ae90fb066b200cb6",
+      "changes": []
+    },
+    "src/bootstrap.rs": {
+      "base_sha256": "70f5f1cddbc71cdf89f31b9bb99e4789d3e773476d77e4c8e4d9545cd867bbb7",
+      "package_sha256": "f240229e9d2cafe8131426b4170345bef602b72060d8fd2ddb5bed32ad369ce0",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/bootstrap_frame.rs": {
+      "base_sha256": "157b8b36cf66063a0bc710429ebe2ccedec5d68393a9fe7746ab970c3b8d4135",
+      "package_sha256": "157b8b36cf66063a0bc710429ebe2ccedec5d68393a9fe7746ab970c3b8d4135",
+      "changes": []
+    },
+    "src/bootstrap_identity.rs": {
+      "base_sha256": "a19137f44fd5d7cb02e47483548eaa211d1db2dc221d8ebf9609f0c83b787d9d",
+      "package_sha256": "a19137f44fd5d7cb02e47483548eaa211d1db2dc221d8ebf9609f0c83b787d9d",
+      "changes": []
+    },
+    "src/bytes.rs": {
+      "base_sha256": "e0355cdf9ad341d1235c76980e2973f5d3484368808ce0abb0caedd6d34f5ffc",
+      "package_sha256": "d405b89f070ef9cefc379af6018699042c085537f451c44e410fd24a262ac6eb",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/casefold.rs": {
+      "base_sha256": "3b840a586b7d071f0074400299f3eea8389887c65188223d0ce7c78d99ecf05d",
+      "package_sha256": "6206efe90e571968a7b36c918bfbc4f5592cebd3d7658abbc64338faf639192a",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/claim_admission.rs": {
+      "base_sha256": "86d85b7e7b68c6c78b34f821b441ac99dbc4769710a0a7c767dc9b9a4b4dbd69",
+      "package_sha256": "86d85b7e7b68c6c78b34f821b441ac99dbc4769710a0a7c767dc9b9a4b4dbd69",
+      "changes": []
+    },
+    "src/claim_budget.rs": {
+      "base_sha256": "14f5ceca58e6b3f9d1836399f5a006580845124b731ec58e911b65647a228d12",
+      "package_sha256": "14f5ceca58e6b3f9d1836399f5a006580845124b731ec58e911b65647a228d12",
+      "changes": []
+    },
+    "src/cluster_allocation.rs": {
+      "base_sha256": "27c4045231a3e616b76192609bba1d567af824df670a7377c86fbcc90ebcaefd",
+      "package_sha256": "ece97c29a3aa337864e8ba6a471858cf3c859168fa6e966b562f3223a70890bd",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/content_write.rs": {
+      "base_sha256": "96719d17bd50ed7cd2bb88ddf76e4cb38690054968c0eec176743149de8880b7",
+      "package_sha256": "a26f608ac903f2b3129dcf67f751b9a1595e0583c5f9774a7bbbc4be28b30071",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/crc.rs": {
+      "base_sha256": "9ded90d409199506eb74450009e72e7dc94e07fb9438fa9439f15ecb7edd1891",
+      "package_sha256": "9ded90d409199506eb74450009e72e7dc94e07fb9438fa9439f15ecb7edd1891",
+      "changes": []
+    },
+    "src/crypto_sha2.rs": {
+      "base_sha256": "9d4b40abed6a1d495dc21d9d69e9a3da7a0a9e414826384880178745580a6ffd",
+      "package_sha256": "646ec5e9ac4c15f6c23ce38b1e224b0f9c864e030046feb94a19bf972d14dc65",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/descriptor.rs": {
+      "base_sha256": "334aa73df2e0a9e9ecc9e0e8561f9157615fa9bcc99ac2bfd5cf4e5846568f06",
+      "package_sha256": "9f4b3333b74d90875278107005f4c6c1313b9c38172f2e6f60e4448719ba8c20",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/dir_hash.rs": {
+      "base_sha256": "d39d5a32335771576758ac69fe1d945894f2bbb134e6db46c9fbe4858458610e",
+      "package_sha256": "d39d5a32335771576758ac69fe1d945894f2bbb134e6db46c9fbe4858458610e",
+      "changes": []
+    },
+    "src/directory.rs": {
+      "base_sha256": "98e6ac96baa158c583a866e862df998ce0ce3d4ea86caa50fa0bedcbef97b980",
+      "package_sha256": "5fe49976d1cb63e7fa2e07826f2ac7f7764d951d4abf175e06600b316c9bc176",
+      "changes": [
+        "import groups changed to source-module globs"
+      ]
+    },
+    "src/directory_block.rs": {
+      "base_sha256": "c082a12e593753c649f129f69de540a852cfda191bf481d440d90a81e7ce9339",
+      "package_sha256": "620b2284f1872f12c8fb51c5b46a17455994c7dafc0a0bf7880e8999c1688f83",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/directory_file.rs": {
+      "base_sha256": "5407ff2fe91006e7d7521b23b5178a69c128ab810981c4930427a3894078b29e",
+      "package_sha256": "5407ff2fe91006e7d7521b23b5178a69c128ab810981c4930427a3894078b29e",
+      "changes": []
+    },
+    "src/directory_htree.rs": {
+      "base_sha256": "4ddc4afa2e04121d8b7a74204f987da91ad48b073051bf765a4318224e7b5644",
+      "package_sha256": "c3fd510e4048fceae109c379bf536ba3d9209cb085ea335fe27d4dbb994e9ee1",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/directory_index.rs": {
+      "base_sha256": "123bd1e6d65ec53aba9a7662e1dc08317208ecb632282920179eb218fbb933ae",
+      "package_sha256": "7c19b3b9f28a083255a141cbc8f85a30247306812fb7f9239982a8d7b7089924",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/directory_piece.rs": {
+      "base_sha256": "336860ab7f3be6fda33136f5982054e6351180f8c9981c2df920cd56de4f51f6",
+      "package_sha256": "694db950826788c0255c3b9455d0cc6c9d67710f927a3306ea284f7f823b9e38",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/directory_source.rs": {
+      "base_sha256": "2b34a52b949df0442cc7daed61c9c349de5bffcf2039d7d6501c09530ba4f81a",
+      "package_sha256": "2b34a52b949df0442cc7daed61c9c349de5bffcf2039d7d6501c09530ba4f81a",
+      "changes": []
+    },
+    "src/disk_image.rs": {
+      "base_sha256": "3dd42cfc02890bde628ee4632534aab963ae80135bd057e3d659be16adfc5409",
+      "package_sha256": "3dd42cfc02890bde628ee4632534aab963ae80135bd057e3d659be16adfc5409",
+      "changes": []
+    },
+    "src/ea_allocation.rs": {
+      "base_sha256": "df1e7eef42f4f3018fc742cd14f7d71d63086820e2db88dcbb62006a214a7d1f",
+      "package_sha256": "915b40fb343e04086b6d9d9ffb69f77d14414885d18fec1181ed09b89bcfc637",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/ea_allocation_counts.rs": {
+      "base_sha256": "a80f474ede3c84382afb0b6ef677158424389dc95c15dc66e057e5e069408a77",
+      "package_sha256": "a80f474ede3c84382afb0b6ef677158424389dc95c15dc66e057e5e069408a77",
+      "changes": []
+    },
+    "src/ea_billing.rs": {
+      "base_sha256": "1ce0da5b89b694b23cc149e56eaddbfcb10cf447f0c4e794d5d9a8c24ed58316",
+      "package_sha256": "1ce0da5b89b694b23cc149e56eaddbfcb10cf447f0c4e794d5d9a8c24ed58316",
+      "changes": []
+    },
+    "src/ea_block_policy.rs": {
+      "base_sha256": "d7a36fd2a86b91d3bb6136f8f27359aa35a73b95023493e7068b70ac3d11e585",
+      "package_sha256": "d7a36fd2a86b91d3bb6136f8f27359aa35a73b95023493e7068b70ac3d11e585",
+      "changes": []
+    },
+    "src/ea_bootstrap.rs": {
+      "base_sha256": "3cb3c533b46b2bfbd4770a2041678297c5c2e93eb23c364d395ab647e52e87c9",
+      "package_sha256": "636951b12ed051f09e20bdc56df28161c038c7effcab448438f41b8546583093",
+      "changes": [
+        "explicit alloc::vec::Vec import",
+        "import groups changed to source-module globs"
+      ]
+    },
+    "src/ea_census.rs": {
+      "base_sha256": "9b3c8c5e66c7098c1b700ea54d97746901e2c55761ef92151e416ce7019685a1",
+      "package_sha256": "2e84b79eb0ca8eb3cda1b6c2f7768f6d5c8bf5acf0844bf12fed1fad0db74843",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/ea_directory.rs": {
+      "base_sha256": "d80e15cf57375b3ce40b07e15f2a41ee3c6ebd53066e1ab3006cd2f5fddae01f",
+      "package_sha256": "010a1971339b07c30f0f904216b041997fd85aa831c0d8decd4213b285f493e1",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/ea_directory_index.rs": {
+      "base_sha256": "524aacac5b3570611dcc39976361b19bc06627bf19faa323f6a384e14127f10f",
+      "package_sha256": "ec2e55f7aa0db397261d2463f15e07a1177c94c2c76504e674f96252f89bb41d",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/ea_hash.rs": {
+      "base_sha256": "6bbbc1e2aac2f5147e1e2f49fe4a5bb436b523c79d0c9ee015decb91965c51d8",
+      "package_sha256": "6bbbc1e2aac2f5147e1e2f49fe4a5bb436b523c79d0c9ee015decb91965c51d8",
+      "changes": []
+    },
+    "src/ea_index.rs": {
+      "base_sha256": "c93b7ae83876fd1b61630bb431ac171e7ccba3a507c0baa09d5f8e27ea6fc240",
+      "package_sha256": "95cac0502a3c639f7840c3254b0abd515060cf255afd0962b0847d874db38874",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/ea_inode.rs": {
+      "base_sha256": "dc543d86973090292bb4b4b6519699a78fddfa19a3a4eb4c80ddaf1fb13ad9e4",
+      "package_sha256": "bf17c56dc305fcc6ef2fbb05a992a53d4964e8e0e6a03710c3df357273886112",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/ea_integrity.rs": {
+      "base_sha256": "87a621eaa2ce9a67e21b0722c2558e5a51be76ac3239ffd7ddd6f1f7affdca4b",
+      "package_sha256": "a02c5d1e07a90647e061a0ddf94c8137f914a81fc894d333b819c29fdfdfeaed",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/ea_journal.rs": {
+      "base_sha256": "85cdfbb60a57ff8c440e878edd45388342f65e4e26c869bc22e639b8a963b959",
+      "package_sha256": "85cdfbb60a57ff8c440e878edd45388342f65e4e26c869bc22e639b8a963b959",
+      "changes": []
+    },
+    "src/ea_namespace.rs": {
+      "base_sha256": "e2e956c99a956229a78e2c0c2a6c711dba86a65bf9335903c89ba209340a6a54",
+      "package_sha256": "e2e956c99a956229a78e2c0c2a6c711dba86a65bf9335903c89ba209340a6a54",
+      "changes": []
+    },
+    "src/ea_namespace_counts.rs": {
+      "base_sha256": "25e8d5a20a5b9e943492f031976a0aa1e5b2b08919338808c432a295f1df6e72",
+      "package_sha256": "334c044664b0726bbe17b0cead5cf6a17f9f6b1c8a7f015a015dec9a58a1de86",
+      "changes": [
+        "explicit alloc::vec::Vec import",
+        "import groups changed to source-module globs"
+      ]
+    },
+    "src/ea_namespace_nodes.rs": {
+      "base_sha256": "240be37091a0ca54a92c0ce12d505f4299c8a701eb87a25c3438f7b19942989a",
+      "package_sha256": "8634d55d50b0b988f0ecdba2321cee8194dd7f34c237556fd923eb90b4b8c2eb",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/ea_namespace_parent.rs": {
+      "base_sha256": "867bb7fb6b2a4704c6cb52adb195eed6bc5269ac0c5e996c945e9371c32f8d42",
+      "package_sha256": "86c682e925e6bcae966b55e8b272eb46cba32bac06a7f6ec698ee324005090aa",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/ea_namespace_topology.rs": {
+      "base_sha256": "8225fa8a6a01fc1ea8cb948f7cd5bed46fc4f5e5a7f9a75ebc2e8512f1244ae1",
+      "package_sha256": "a161fc754cd54a5e51c5f69639a5f2736c139b9201d817112477f75a99632d00",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/ea_ordinary.rs": {
+      "base_sha256": "955c45a91f906b9ec17f9ac1a60ea6a7353af6aa8f94f52c05003e8f8792690b",
+      "package_sha256": "1b752bde2677c08950ecc8305f6cf9412888321c17dda490c30e37054f3aab1b",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/ea_parent.rs": {
+      "base_sha256": "6120ca680e15a326d9f42aa6e55a94be6b086459c2407827f3e7ff5cda574233",
+      "package_sha256": "2f1e10e0067a38eb53d3a740fb59d410be12682c8baa86e2b528aef34a0b44db",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/ea_recovery_admission.rs": {
+      "base_sha256": "f2287fa11d17fbc6286d1f8398fad38147aecec64c66c12c46cdbf8c8903b7d6",
+      "package_sha256": "f2287fa11d17fbc6286d1f8398fad38147aecec64c66c12c46cdbf8c8903b7d6",
+      "changes": []
+    },
+    "src/ea_recovery_image.rs": {
+      "base_sha256": "3230a0b0b16acaceea9834e6c0e73235d1ba0e977e24e61292de22083a25acee",
+      "package_sha256": "3230a0b0b16acaceea9834e6c0e73235d1ba0e977e24e61292de22083a25acee",
+      "changes": []
+    },
+    "src/ea_ref_projection.rs": {
+      "base_sha256": "e3e178fc23a91e54ba5987993ea7f7345e2b98fbb413506dc87937dd31754658",
+      "package_sha256": "2cefff6942c01b43e427d0cf51d3139beec0cb5f077f45664c8a5900361f0bbd",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/ea_reference.rs": {
+      "base_sha256": "ede44f73fde067c416839121c116be72a8dcad72af5b96eb773a68361751830d",
+      "package_sha256": "3189819b033475463bf32b357747535ed83dfb4f9cc469f3ea0f29bccb86a40e",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/ea_refs.rs": {
+      "base_sha256": "c4961a50b3406324a1824d91b29c7face1aff6a9a7daf635472023b08054a9e8",
+      "package_sha256": "6a997cfacb4686b223239f386b89630e90b2ade72615783f9395754bb443bcbe",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/ea_repeated_recovery.rs": {
+      "base_sha256": "73673d0a976efa48a5e9c63df00cda4187a344a487d981bf537b2df48392d903",
+      "package_sha256": "73673d0a976efa48a5e9c63df00cda4187a344a487d981bf537b2df48392d903",
+      "changes": []
+    },
+    "src/ea_reservations.rs": {
+      "base_sha256": "a4a5511684ec72d9875e075e170c27857ff0ca66c227ddec5f2d15c339bd9a37",
+      "package_sha256": "a4a5511684ec72d9875e075e170c27857ff0ca66c227ddec5f2d15c339bd9a37",
+      "changes": []
+    },
+    "src/ea_restart.rs": {
+      "base_sha256": "41ba8fbee8f192d09d4baadb7318c199fa5c25deae31c2a4fd14ed07fbf1ad3c",
+      "package_sha256": "e2345a326bf61d5e20f139fd1ca2beb130950ff48315777a89b858f2288c1d96",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/ea_source.rs": {
+      "base_sha256": "20135b3d0f667473ebe12e7bcbea69bdd37d5097cf3a469066be25bd9aeaf2c3",
+      "package_sha256": "20135b3d0f667473ebe12e7bcbea69bdd37d5097cf3a469066be25bd9aeaf2c3",
+      "changes": []
+    },
+    "src/ea_storage.rs": {
+      "base_sha256": "26db1d1d38816d9881059f7b6a70a8954919528f506a737bc8b3f270f786262e",
+      "package_sha256": "87ea745d29fdfe12770ad83cdf5089f61221e114174e6368d7beed3bfd05f654",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/ea_super_state.rs": {
+      "base_sha256": "9087434f068b8c2599e2fa3535c216b3ff3f39b9fbaa73c5648f5e7c48236964",
+      "package_sha256": "9087434f068b8c2599e2fa3535c216b3ff3f39b9fbaa73c5648f5e7c48236964",
+      "changes": []
+    },
+    "src/ea_value.rs": {
+      "base_sha256": "f66be6416e5446680bae3053988897e0e607ca781c3775c1216813d578b3bac2",
+      "package_sha256": "f6f2fed49b60f4c0881a1e684b19fbc969735346c46999bf36bab28de68946d8",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/ea_write_bootstrap.rs": {
+      "base_sha256": "8a9c35becf4903a9b196a2a8496af80f51466775b8b4685544e275eeda43cce7",
+      "package_sha256": "8a9c35becf4903a9b196a2a8496af80f51466775b8b4685544e275eeda43cce7",
+      "changes": []
+    },
+    "src/ea_write_io.rs": {
+      "base_sha256": "3756232b4f65f6b8908d4643f195742a09b3283e15025673776e4df3ce31ef3e",
+      "package_sha256": "70f0e6b393e24cc02a3fd0e509934e4c60134888bcb5e0db9c8c90d311b6738f",
+      "changes": [
+        "explicit alloc::vec::Vec import",
+        "import groups changed to source-module globs"
+      ]
+    },
+    "src/ea_writer_admission.rs": {
+      "base_sha256": "acd7e6a12a2e8cab9580ea14bc6bce2f5feb7c25884d6016108987b7aa21394f",
+      "package_sha256": "e4657cd5d68a16c28307f29d52df704830e0bd121ac00ae50ea02282adde40f1",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/edit_handles.rs": {
+      "base_sha256": "179402198457438184ea35f67a2fa0d6c1d5a55df8955a97f6f3b50b7f9118e4",
+      "package_sha256": "8c3efddc92eae5a797f9a9b51b5b9d8d402ce48bdc1b217920e391cfa4e0e2b5",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/edit_schedule.rs": {
+      "base_sha256": "8cbb424b5c5a0627b69c48b641ac5d4f7fbdcb3e06452f9469226ba75f75b122",
+      "package_sha256": "8cbb424b5c5a0627b69c48b641ac5d4f7fbdcb3e06452f9469226ba75f75b122",
+      "changes": []
+    },
+    "src/epoch.rs": {
+      "base_sha256": "83f06fa2aa45477c8e7983778a652fd453fe8cd7008a5ab92719c08c15589a30",
+      "package_sha256": "83f06fa2aa45477c8e7983778a652fd453fe8cd7008a5ab92719c08c15589a30",
+      "changes": []
+    },
+    "src/extent.rs": {
+      "base_sha256": "cb7f7560d12ed42a08e66cc218ad0540227f639f4cb213ded6cc95b23ad4de85",
+      "package_sha256": "a1666323d700b86de71fe89df8fd9266830cfd11267be961101b3ac3686a1d2e",
+      "changes": [
+        "import groups changed to source-module globs"
+      ]
+    },
+    "src/extent_claims.rs": {
+      "base_sha256": "23d66eaf13c7bd446b3d0651a1a5960c1186087788423920982ac6339a515529",
+      "package_sha256": "23d66eaf13c7bd446b3d0651a1a5960c1186087788423920982ac6339a515529",
+      "changes": []
+    },
+    "src/extent_edit.rs": {
+      "base_sha256": "7a207845ecb63b7a035720cdc3217c9f0a578df0245b1ca17a4c4bb999e455c4",
+      "package_sha256": "74f6ded5131522d24f6b08398407902ace78e68d32f6087728dec507c8b4cee8",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/extent_frame.rs": {
+      "base_sha256": "515d5001afd352d2fa5abbb4725346637ef43bc30f27e49cf2ef1e8a6b27977d",
+      "package_sha256": "515d5001afd352d2fa5abbb4725346637ef43bc30f27e49cf2ef1e8a6b27977d",
+      "changes": []
+    },
+    "src/extent_node.rs": {
+      "base_sha256": "69a242a2582831911155c16ec6b540d3f03f1c8c12db079778cab5894dcfaea1",
+      "package_sha256": "69a242a2582831911155c16ec6b540d3f03f1c8c12db079778cab5894dcfaea1",
+      "changes": []
+    },
+    "src/extent_ownership.rs": {
+      "base_sha256": "c0d636390b2d2c62e84ee378143742881f18e215a4179aa31da78165a9ae82e4",
+      "package_sha256": "c0d636390b2d2c62e84ee378143742881f18e215a4179aa31da78165a9ae82e4",
+      "changes": []
+    },
+    "src/extent_span.rs": {
+      "base_sha256": "c5be075b23c101c6566e74f8fa6d277fb50ab7e1ff4d6a1cf6c169b2b4b5dadf",
+      "package_sha256": "c5be075b23c101c6566e74f8fa6d277fb50ab7e1ff4d6a1cf6c169b2b4b5dadf",
+      "changes": []
+    },
+    "src/extent_tree.rs": {
+      "base_sha256": "c18079ac6b75c80092cdb5d7168ca8b52f73a13fb6a938ad60f02c325828463e",
+      "package_sha256": "c18079ac6b75c80092cdb5d7168ca8b52f73a13fb6a938ad60f02c325828463e",
+      "changes": []
+    },
+    "src/extent_tree_model.rs": {
+      "base_sha256": "b87b5afcec7fb42ed2b1dbc3da1365b8d64a14c55dc8fa0f902dab317ebe9c25",
+      "package_sha256": "d10984a1c78ec3eb2c77879fba93a399066dd14fbcd9aa22558744f239d89222",
+      "changes": [
+        "import groups changed to source-module globs"
+      ]
+    },
+    "src/fast_commit.rs": {
+      "base_sha256": "376cc9097a8f9f4f74f4fcfe0702a6154fa02c7273d8cecc802bffb20ff6031a",
+      "package_sha256": "015d911490ea778f7b1be8fcf2c0a5b3063e089e195b7801f184602c7b76ade9",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/feature_policy.rs": {
+      "base_sha256": "d14acc183753a2a78901ca2761909cbb1b0dfeec08f32e94698fef9b66e2b9b5",
+      "package_sha256": "d14acc183753a2a78901ca2761909cbb1b0dfeec08f32e94698fef9b66e2b9b5",
+      "changes": []
+    },
+    "src/file_read.rs": {
+      "base_sha256": "eddee7ccfd55eeb40a0281d2ce78552a08990840121cccf3759de4c312037829",
+      "package_sha256": "eddee7ccfd55eeb40a0281d2ce78552a08990840121cccf3759de4c312037829",
+      "changes": []
+    },
+    "src/freshness.rs": {
+      "base_sha256": "cfe68375a0123c8ac7a48a4d272fbed7be64a565bd437138503a3cf7b1bafee0",
+      "package_sha256": "cfe68375a0123c8ac7a48a4d272fbed7be64a565bd437138503a3cf7b1bafee0",
+      "changes": []
+    },
+    "src/frozen.rs": {
+      "base_sha256": "fc77ac2be5cf12adef82a5062f3ac479ce5ed1dc3a70905b2377c26f5a35d271",
+      "package_sha256": "5513939e043c0985169c5b01e6d01aebbfddc64c794921baf2707db6026609b2",
+      "changes": [
+        "explicit alloc::vec::Vec import",
+        "import groups changed to source-module globs"
+      ]
+    },
+    "src/fscrypt_cipher.rs": {
+      "base_sha256": "542697eb110666641b01d309672ed035fd6d44164835f46ef83aa11c20b018d3",
+      "package_sha256": "960739246f36170443010ed9d3eb9156df066c77b40ab80d8776deea7d0526c9",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/fscrypt_context.rs": {
+      "base_sha256": "620bd1bcd64adb1bfad09d33673501154226a9de90f04bfc76fd453423678266",
+      "package_sha256": "7a1422a7991e0df6b13924bf2ed6b3ce864ab16d69347f638ef80fd9a64e3939",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/fscrypt_extra_modes.rs": {
+      "base_sha256": "145e2ba375b83b68279487a49cbd96711b9bb40e0008c5c92a9782118f850516",
+      "package_sha256": "ab2dac6136b9e9072e8a99b6bd7a68efff0b8ff508474293a36349886ab2919d",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/fsverity.rs": {
+      "base_sha256": "89f8a676315421641089d8e3fd5ad5b34c45f2634cf4d31b0d5c95a263fedfe4",
+      "package_sha256": "e1ae6dd135a9c21d833926d128556ffb9b09088b61dd93817c7b890b3b9fe868",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/gate.rs": {
+      "base_sha256": "f7f3953c75ce248efa45cea3a5d5c0f36c128ed29650c831524934a934b140aa",
+      "package_sha256": "f7f3953c75ce248efa45cea3a5d5c0f36c128ed29650c831524934a934b140aa",
+      "changes": []
+    },
+    "src/group.rs": {
+      "base_sha256": "a88c9b1eb5f6f6cc783f291d4fb457bd620451cd18ea26aad1558334dff2bc21",
+      "package_sha256": "5ba902ca24251f55f6f4204d65db358685635f86baa69927981f43370007d37b",
+      "changes": [
+        "import groups changed to source-module globs"
+      ]
+    },
+    "src/group_claims.rs": {
+      "base_sha256": "64f424cdf14cda2d06892a069297104b4a88da73d41e26f790c5d31c166f2732",
+      "package_sha256": "6b748683a759c7407392b4f14138189a42a38c43aa8f46dabaa5dbdf68bbabd1",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/group_fields.rs": {
+      "base_sha256": "cd4cc565a798e62ed42a7271ac3d5c4999cfb8ab44a1b00544a819e81dbf66ea",
+      "package_sha256": "cd4cc565a798e62ed42a7271ac3d5c4999cfb8ab44a1b00544a819e81dbf66ea",
+      "changes": []
+    },
+    "src/group_index.rs": {
+      "base_sha256": "b9a5f4b9a0d38d7b8447e15a00c4ddfc12b4cf7bb4a7f1e5470ef9fd12b62ee3",
+      "package_sha256": "7cd15817cc120bd27355bc3a37e1d6c770d89fde35dc7c8dc6885906f252ac0e",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/group_legacy.rs": {
+      "base_sha256": "59e4eb4578096f09a5bea1745b13481228e7c8691555a44cc700a6d4ed445b27",
+      "package_sha256": "fa7312b8bfe662dfebdabc0f161dc91dca5331b8b639276e0af6f08dd15af9af",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/group_metadata.rs": {
+      "base_sha256": "c6bab4ae40523e0a10a5072914d6c64f79eb55dd359c417876859d63c7da7bff",
+      "package_sha256": "732cfb151049582d274d1caaefff870f39a050397262c4920d2fc2cff7cfb26b",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/hctr2.rs": {
+      "base_sha256": "f0dbbb28231d8a455352d86573ffc966250a1428919e707b5818323ceb1d304c",
+      "package_sha256": "a466dc4237a54a2133dd62aa299bbcd2f4a1b0561e351c7a3ce1f0994a31f227",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/history.rs": {
+      "base_sha256": "33624bfc10d13c37b73af6d52446b38208ed869c31d7f9195ad239151b7a019e",
+      "package_sha256": "06984abd3c011506eb6bc81f7fca2afb5fa00a361351d9564a89bf18c9e1003d",
+      "changes": [
+        "import groups changed to source-module globs"
+      ]
+    },
+    "src/htree.rs": {
+      "base_sha256": "91550ab667d6319c580917f1bde180c69dc5be7a891b33910f7f5a49c4654e15",
+      "package_sha256": "91550ab667d6319c580917f1bde180c69dc5be7a891b33910f7f5a49c4654e15",
+      "changes": []
+    },
+    "src/htree_edit.rs": {
+      "base_sha256": "e7fb3d5d849f55ee67bfc8edc849c18c825779d43892f73fcd59bae3a24e3df4",
+      "package_sha256": "18f3b1e1eacb887cfb38fd2920353a6c401a427183c484e12ccb3e735fe92ceb",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/htree_names.rs": {
+      "base_sha256": "97418e2c800bd44d49e96ae05709445602ad9e8fbe024e31fbe5abee87ea61f4",
+      "package_sha256": "6d101ed1545c08c3c4a0bfcbd27d4487ca2806834609ca71c6950a24ffb45ffb",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/htree_range.rs": {
+      "base_sha256": "9c22d35aeff157b0b20991b28c5c0b556549169ca16c3c1382fe43480233b268",
+      "package_sha256": "9c22d35aeff157b0b20991b28c5c0b556549169ca16c3c1382fe43480233b268",
+      "changes": []
+    },
+    "src/htree_topology.rs": {
+      "base_sha256": "80b98402971d4691e8e4e89d4a3b6335c52df69679059c1a9a0ff0ff70ec057f",
+      "package_sha256": "80b98402971d4691e8e4e89d4a3b6335c52df69679059c1a9a0ff0ff70ec057f",
+      "changes": []
+    },
+    "src/image_validation.rs": {
+      "base_sha256": "7323aac144673f43906b9fc26cd8759bcbd99456e347d1467056f3266eb8d8fe",
+      "package_sha256": "7323aac144673f43906b9fc26cd8759bcbd99456e347d1467056f3266eb8d8fe",
+      "changes": []
+    },
+    "src/inline_data.rs": {
+      "base_sha256": "3f8ade9b5ed137b2f887930428c16dc5e27992614f0119781c99a97e744f4a35",
+      "package_sha256": "30d55df88f51e0d7c6245bdeff8af7ba9d04f08b5e3d59b94e16dad45e7c9afe",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/inode.rs": {
+      "base_sha256": "14216820e2807b9a2bcca1b02aaff8970f6214124fff6f5525172947818481e6",
+      "package_sha256": "d1b80e7efb771cc6ba1669953432e8fc01628fca071ec2447cd31f5ef1a7272d",
+      "changes": [
+        "import groups changed to source-module globs",
+        "six spec/proof references qualified to original crate::group::encoded_le"
+      ]
+    },
+    "src/inode_blocks.rs": {
+      "base_sha256": "f79664689eef5fb9e82bfbabbffd5a0ae654d09dbda2839517144c5727d01185",
+      "package_sha256": "f79664689eef5fb9e82bfbabbffd5a0ae654d09dbda2839517144c5727d01185",
+      "changes": []
+    },
+    "src/inode_claims.rs": {
+      "base_sha256": "575a5e7a9d4f99d36e0ae95284e6839329b5f2013c74eda3f9433114c1063902",
+      "package_sha256": "575a5e7a9d4f99d36e0ae95284e6839329b5f2013c74eda3f9433114c1063902",
+      "changes": []
+    },
+    "src/inode_group.rs": {
+      "base_sha256": "985f8cfe46668522c77a445074050d7316f02a3a9fa2b8ef9293902ca612be1b",
+      "package_sha256": "985f8cfe46668522c77a445074050d7316f02a3a9fa2b8ef9293902ca612be1b",
+      "changes": []
+    },
+    "src/inode_mode.rs": {
+      "base_sha256": "3eacd11f45087b49dd1fb3ed1320408030da84979ca27efdfbada95fbe081499",
+      "package_sha256": "ca517dcd157d074050fe9b324a39a69b22e6f7cf9204e3170fa0f3e3cbf45229",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/inode_payload.rs": {
+      "base_sha256": "75e812efa5f8273fff4d2d9e26245a54ec747535bc61b81f25b6c68ecbebac66",
+      "package_sha256": "4519a9fd9da63bf49992c7cf71203430edb0566fc9976d9aa7b834624114c3c0",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/inode_projection.rs": {
+      "base_sha256": "bc06204632edd11f2a92a5a7c52719dffc326e3400e3e752004c0406ebea1465",
+      "package_sha256": "bc06204632edd11f2a92a5a7c52719dffc326e3400e3e752004c0406ebea1465",
+      "changes": []
+    },
+    "src/inode_size.rs": {
+      "base_sha256": "b6dd7611df74db2850884c9150b1aaaf45f95b3612b462087b3ebf14b803ea6c",
+      "package_sha256": "b6dd7611df74db2850884c9150b1aaaf45f95b3612b462087b3ebf14b803ea6c",
+      "changes": []
+    },
+    "src/inode_table.rs": {
+      "base_sha256": "3022392f4f194bef0aaa04756bbc66926fe8aae401475c9c6cd588548072c2bb",
+      "package_sha256": "3022392f4f194bef0aaa04756bbc66926fe8aae401475c9c6cd588548072c2bb",
+      "changes": []
+    },
+    "src/inode_time.rs": {
+      "base_sha256": "ef8bdfd91b40c3949662436190f8d45f13b35996413ac432fa26b698b3c0f7bb",
+      "package_sha256": "ef8bdfd91b40c3949662436190f8d45f13b35996413ac432fa26b698b3c0f7bb",
+      "changes": []
+    },
+    "src/inode_time_fields.rs": {
+      "base_sha256": "a631c1847322c706764eecef999698f9deb4b76ba35c8132e3acacdb863d45e9",
+      "package_sha256": "a631c1847322c706764eecef999698f9deb4b76ba35c8132e3acacdb863d45e9",
+      "changes": []
+    },
+    "src/inode_touch.rs": {
+      "base_sha256": "5b8d4b918868b29b38cc84a5b46f745fd16190b40c00ab7b1000c6480eb83499",
+      "package_sha256": "5b8d4b918868b29b38cc84a5b46f745fd16190b40c00ab7b1000c6480eb83499",
+      "changes": []
+    },
+    "src/jbd2.rs": {
+      "base_sha256": "41e608615520ad8a753de29706f2f50935c01ccdf3d9d1f074013ddcf275d313",
+      "package_sha256": "e50ac68f0bbb1bd73377ee6739725718bfc8bb020158969b88d5d2d47135c830",
+      "changes": [
+        "import groups changed to source-module globs"
+      ]
+    },
+    "src/jbd2_features.rs": {
+      "base_sha256": "74b7a1ebd16b995d4fb0437d789e89e9e3936a74af859144f6b82e857fdb9302",
+      "package_sha256": "5f1d766bbd6c972b1ad9eceb1699cd6a354261a42c6b204ca5b61df42b3a524a",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/jbd2_tags.rs": {
+      "base_sha256": "04c67cebbdb496995caabfff3db5b77bf6b20150f5a5eb00dc8d4745f4e3cf10",
+      "package_sha256": "93a37feb6e0b10ea6714abb855c2a396f45bd3943ce71b753d00e8493ac8c155",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/journal.rs": {
+      "base_sha256": "eef5dcc269f81cbc1c7e8c6a4daf0a58cf7015423657a9cfe1f0fff186b91834",
+      "package_sha256": "27cb77e92c593e433c1e35828d1ffb8cf89784c4a21ac9e86a2bd45279a7fde1",
+      "changes": [
+        "import groups changed to source-module globs"
+      ]
+    },
+    "src/journal_program.rs": {
+      "base_sha256": "149cd0fc0ef59b7571e036112a3a7e0ef2b10f23309d94d9a043392968f4d988",
+      "package_sha256": "149cd0fc0ef59b7571e036112a3a7e0ef2b10f23309d94d9a043392968f4d988",
+      "changes": []
+    },
+    "src/journal_queue.rs": {
+      "base_sha256": "0151362bc8156cbcc47c436a81fbcfc00e84fef6ec751386ceed5f324b8e01f3",
+      "package_sha256": "d572f0dac2e04c867b3efbe89a0fb166cdc85b1126b0d228be72a8c80546d46e",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/journal_queue_trace.rs": {
+      "base_sha256": "a1b19d5bf0532fe5a296ed34f21b052cca5c883be128268ccb2e7d28bbb410e2",
+      "package_sha256": "a1b19d5bf0532fe5a296ed34f21b052cca5c883be128268ccb2e7d28bbb410e2",
+      "changes": []
+    },
+    "src/journal_state.rs": {
+      "base_sha256": "b030d166cd4cc76d3c0198268127ad1cbde45ea2ba2bbbf949d30ca8c8051382",
+      "package_sha256": "b030d166cd4cc76d3c0198268127ad1cbde45ea2ba2bbbf949d30ca8c8051382",
+      "changes": []
+    },
+    "src/journal_superblock.rs": {
+      "base_sha256": "76cb697a2384a534f34dd7f8b2f40b625c067a356cdd45b212025e887727558c",
+      "package_sha256": "03f56e0b28ec76df3e6e199c67e672f017ed2bc25cb9103d5f3f4b095c7e9ff3",
+      "changes": [
+        "import groups changed to source-module globs"
+      ]
+    },
+    "src/journal_view.rs": {
+      "base_sha256": "7502a6d107cf006b28dd84ba2614c2b81d3241e9d245b4c9c1b17f943f20b163",
+      "package_sha256": "7502a6d107cf006b28dd84ba2614c2b81d3241e9d245b4c9c1b17f943f20b163",
+      "changes": []
+    },
+    "src/journal_window.rs": {
+      "base_sha256": "9ff9c9ff0b9452cc88a97bfe192bb5fe5da2eca4ca042703c2e17644c3b881e8",
+      "package_sha256": "65b4a922678f6b656fc15fa2ed5bb817f60d9417189dc6fb85f066ccf28f4ac0",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/journal_window_device.rs": {
+      "base_sha256": "bc7428cba08f3b5fea8dd635f27e587962a5674512467e25101795ae5ba17597",
+      "package_sha256": "bc7428cba08f3b5fea8dd635f27e587962a5674512467e25101795ae5ba17597",
+      "changes": []
+    },
+    "src/journal_window_media.rs": {
+      "base_sha256": "24d61512665085544ccb18eceb206af27a6246294ff023ff9892be25c3a569ef",
+      "package_sha256": "24d61512665085544ccb18eceb206af27a6246294ff023ff9892be25c3a569ef",
+      "changes": []
+    },
+    "src/journal_window_progress.rs": {
+      "base_sha256": "b3febaa616f34b968464e99819b30c350f17271f9377a76616507acb8a349b7e",
+      "package_sha256": "b3febaa616f34b968464e99819b30c350f17271f9377a76616507acb8a349b7e",
+      "changes": []
+    },
+    "src/layout.rs": {
+      "base_sha256": "83bb5976ad74a791fa1904b30db8ad7346b8fe8afee0cdc8c9adf769f9acca30",
+      "package_sha256": "83bb5976ad74a791fa1904b30db8ad7346b8fe8afee0cdc8c9adf769f9acca30",
+      "changes": []
+    },
+    "src/lease.rs": {
+      "base_sha256": "37358276a3719454ddeaf16177a2ce058b5e382c57b0609cea97031da084b1aa",
+      "package_sha256": "37358276a3719454ddeaf16177a2ce058b5e382c57b0609cea97031da084b1aa",
+      "changes": []
+    },
+    "src/legacy_map.rs": {
+      "base_sha256": "5b4a3a38f80325fdb2c3bb11964a35358975f501cfea238163724cda8d24baea",
+      "package_sha256": "a8396b50effa396a26f3fb4f324f39ca709ee6865b59ba9f09fe69487d47ece4",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/link_count.rs": {
+      "base_sha256": "ef97ee414a627a93514de4d0c6e2b0d39f265a73a826a1f4c28a8a9221815011",
+      "package_sha256": "ef97ee414a627a93514de4d0c6e2b0d39f265a73a826a1f4c28a8a9221815011",
+      "changes": []
+    },
+    "src/meta_bg.rs": {
+      "base_sha256": "13cf1fef9c654cc6e1491b6da37ad88acb5575a42402bcc882b68164200099a3",
+      "package_sha256": "611619127318e054974c6d57bd11ba6c091702a74c0453dd770a7e3dacfb8977",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/mmp.rs": {
+      "base_sha256": "ccd1ec4594878548f7c50392a3e491de4ee96df73a718f1b98320b11a5f57dd3",
+      "package_sha256": "30da27eb9d644a273851454b8de8c7039c6cfc0d2d7e94998f0dfce42ec4c60f",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/model.rs": {
+      "base_sha256": "50f7a753da55c0eea9728e0422d55521f901b7aca83245e99f9fdf7ef1ba34d9",
+      "package_sha256": "3111591f8c422c72982ac1f83287b141ebea8415e2f27532a3d1db23ea6c4b47",
+      "changes": [
+        "unconditional no_std and extern crate alloc"
+      ]
+    },
+    "src/name_set.rs": {
+      "base_sha256": "258cb5c328c7e73270a0d03895cbbad2376ab871fa88b5ed8e0c3b447263cada",
+      "package_sha256": "06d7d6bd26cc3a69915e5b3717d0f67bea18b214cc3d1c7f88a7fdefafae8030",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/namespace.rs": {
+      "base_sha256": "5efc10614982088277e12eceb150b87b7e4e367b2fab2fc2b93ae29bff9b55ce",
+      "package_sha256": "5efc10614982088277e12eceb150b87b7e4e367b2fab2fc2b93ae29bff9b55ce",
+      "changes": []
+    },
+    "src/namespace_counts.rs": {
+      "base_sha256": "1ec50f29f08bc375ba5100752970d1e5924fe4e0ba093bb5685914bf5bd0714a",
+      "package_sha256": "f9b3af5afb2a73348349dec6930349a7b6857e4265056c4e6a5d3dae61f7763c",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/namespace_model.rs": {
+      "base_sha256": "3b163127c0f5c2b0f495a21a61dadd9cfa95c2ae3fcb06a5f3e7f3b217420ae6",
+      "package_sha256": "3b163127c0f5c2b0f495a21a61dadd9cfa95c2ae3fcb06a5f3e7f3b217420ae6",
+      "changes": []
+    },
+    "src/namespace_tree.rs": {
+      "base_sha256": "c0783345cd7e71bc17a397f20dbe76d9ce62d6576662dc6e0ab786bc1598666b",
+      "package_sha256": "8a3efbac6a4b7b5586407df0e4e6aae0f1eb8bf719ab46d7b8ba7f13370fb469",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/ns_checkout.rs": {
+      "base_sha256": "b1b849ca0000d80f291f308cae8aef7de31f7b5b48f47e8fa0a55f15b1fa8f89",
+      "package_sha256": "f0a69b0e317adf0ca1c09e69984517d998ac0aceb2bd982451326de04fec43e9",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/ns_dir_edit.rs": {
+      "base_sha256": "d8bb62370ef4527491fabb2dc80fb950b443dcf43aef555edffc93f2df2fbe28",
+      "package_sha256": "401ea1439d8e0343567513ef618ff9b2f31e28d1487d7b9d869cdff8b30330cb",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/ns_edit_prepared.rs": {
+      "base_sha256": "1a887d3b0d14e26c9b8e4036b89778b70ee24277ade568ae756eaf10feea7145",
+      "package_sha256": "5e69882b5ba68c1049b3b5493bf38de9e05341429939d61f146fe0b6e2ff56cf",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/ns_exchange.rs": {
+      "base_sha256": "0698debec5902f905f9d38be5ddad14e957ea35b2c786bf2af60860c164557fd",
+      "package_sha256": "e3c24dd2758620e5e36dfbf7236d2fcb128304af50fb32bf563a5841a055a048",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/ns_exchange_prepared.rs": {
+      "base_sha256": "f3fa9d78aed42b0956e61a35e5397fee9447d753f9de7a7e745fb477754668c8",
+      "package_sha256": "e143a846dd7feaa503bda71bc1698c054945a9ac89d1b9f2300f78959dc34789",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/ns_exchange_relation.rs": {
+      "base_sha256": "2ed3be75a32b19c7bd46b41452c38fc4159ec668d72c19ffe0635350f353d1e7",
+      "package_sha256": "2ed3be75a32b19c7bd46b41452c38fc4159ec668d72c19ffe0635350f353d1e7",
+      "changes": []
+    },
+    "src/ns_file_rename.rs": {
+      "base_sha256": "90c131c96cf2900e8492bc2e7cb8fd877ea818b0e7b1b1034d5b260b5a4c6de5",
+      "package_sha256": "54e4907943629465e46f129b25922df3639a1e04513d4158413caa55679b9c74",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/ns_file_rename_prepared.rs": {
+      "base_sha256": "45dda288d9506992e0cf769253d80e62b193c4f30115594384fd2f23a0dd0f2d",
+      "package_sha256": "8028d0cd226e943eff9805a9d89b058d19646e132f7df2a813b44b76d0ae2aff",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/ns_file_rename_relation.rs": {
+      "base_sha256": "3565ac1d3307d5dd11b89f0e7b8bf1be052b693414d8ed05457b0be50a7b572a",
+      "package_sha256": "3565ac1d3307d5dd11b89f0e7b8bf1be052b693414d8ed05457b0be50a7b572a",
+      "changes": []
+    },
+    "src/ns_inode_links.rs": {
+      "base_sha256": "c1ef7c1ad1bd6a0b0476652ef6c681b7a4a8f1b1f6b3aaca7a22471a7a7ba6c7",
+      "package_sha256": "311d6a4d498f69e98fd021086203d70c94bf55eea1ee8a1fba7f373753c4185f",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/ns_inode_touch.rs": {
+      "base_sha256": "9f3f093682125537b5eb187ed0d144e8da11203f7904319e5f8d8cf8af413441",
+      "package_sha256": "ac9128d0c72f3eec0e82948bc3f906b394f89560d7233838de1ff52131d54253",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/ns_journal_prepared.rs": {
+      "base_sha256": "460d5003bff31210ddc9ef039be5b1cf7c8614c7c8c6fe94cc78466fcae7e5ce",
+      "package_sha256": "460d5003bff31210ddc9ef039be5b1cf7c8614c7c8c6fe94cc78466fcae7e5ce",
+      "changes": []
+    },
+    "src/ns_mutation.rs": {
+      "base_sha256": "ffc1e84c444890d59d2c11fdd6eccdeb4343f52a14cbd39c6778db1dcfd6b8c1",
+      "package_sha256": "c87f50e9814c62e92262e2903d7693f0bf4b5708dba233dd8a8faac8d8338351",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/ns_mutation_model.rs": {
+      "base_sha256": "19c83d3487f526fe922948a7dc52d71a4407cbd5e8771f1cabf97a12b917fc6a",
+      "package_sha256": "19c83d3487f526fe922948a7dc52d71a4407cbd5e8771f1cabf97a12b917fc6a",
+      "changes": []
+    },
+    "src/ns_namespace_edit.rs": {
+      "base_sha256": "0360467d39fe6bc5fb795a7bb22f7bdf2e847e7d60ef64ebfd5907313ea4b040",
+      "package_sha256": "32beeb65847d8bb8491c77ad4824026e9d2eacf9bcabf54b6788b143d9a4e29c",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/ns_namespace_relation.rs": {
+      "base_sha256": "bba399f4d49d42e1b75581ab0a0a7ac110c2a3c43ea090a2dcce4c4965ea4947",
+      "package_sha256": "bba399f4d49d42e1b75581ab0a0a7ac110c2a3c43ea090a2dcce4c4965ea4947",
+      "changes": []
+    },
+    "src/ns_prepared.rs": {
+      "base_sha256": "79432887d4e9ae81b8d5a17065fe1b149c8b92b7a9b39b0823e739bee09c4bab",
+      "package_sha256": "79beaf8d14b2bf13a659620ea988cb2875d2a09afb7a814eb72b97ad81efc41a",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/ns_record_target.rs": {
+      "base_sha256": "ac3a32b271c4e1c8c03c8ada52047aed978d4cedad70994f4853b663185745e6",
+      "package_sha256": "09f27fd07e11352cf05f765fb1d3acf194f16d4841f010eb830870bd61fe77e4",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/ns_rename.rs": {
+      "base_sha256": "5094c305f3684ba3cbef1df73642b67154ce1ad5df192a1b42dfe2b1c7d9411b",
+      "package_sha256": "6606b6ce5df3350530b069b3b7b75450ce40528a1e5a4c6f6278e1c708e7b6ac",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/ns_rename_block.rs": {
+      "base_sha256": "66bad1cd6f923989bb6eff62b759c302a4e18ff949f21fe8c3d43ec90c80482d",
+      "package_sha256": "aa18770295031619a14cc06e9bc3cea27debbf0c3e1aae4556fe53e94969bf09",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/orphan_chain.rs": {
+      "base_sha256": "f66291b6976970cf732b68934092b958e3d737d84f2c933db13206fcd78b9e48",
+      "package_sha256": "d9cc0d3e6df82c43ebb0566bf616704d0df45a4e1bf33f05cd62c74de7c79c52",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/orphan_file.rs": {
+      "base_sha256": "dfb7d5fb0bf2ad09afdf71224c5b2ff0f5a068b4a49023884dfceef8068020de",
+      "package_sha256": "f14e808028485171e08786d0bc5676c4b2b3d0b87e4b89fc7ede458c2aa2619e",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/orphan_lifecycle.rs": {
+      "base_sha256": "794d1944bd9cc4e7904a2c984d4b7f6b4d56bb2d3030d6360f74e8b03cb97960",
+      "package_sha256": "794d1944bd9cc4e7904a2c984d4b7f6b4d56bb2d3030d6360f74e8b03cb97960",
+      "changes": []
+    },
+    "src/ownership.rs": {
+      "base_sha256": "cf06a497d7d84d590b117264fcea396d433169b3a8554de8962365308d4aaebd",
+      "package_sha256": "cf06a497d7d84d590b117264fcea396d433169b3a8554de8962365308d4aaebd",
+      "changes": []
+    },
+    "src/parent_table.rs": {
+      "base_sha256": "3ae7448b459935023568abb471fa56512663eb238f0a73e39bf8b2b7f4267a95",
+      "package_sha256": "a0249e2f8515f545b30b44ea65f83187c9d3fbd298c5d29811fe21e79b008fc1",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/patch_set.rs": {
+      "base_sha256": "81c935da1b5db8d127911fbbd0b8f9a0ba89f5a4f499c300d6b0b4079c82f6ce",
+      "package_sha256": "17c7e6bffe7eacfd2828eef00c5a7bdb16da4bdf043c150bc5e4dde6e1894bd0",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/persistence.rs": {
+      "base_sha256": "1563573ed0392b9228dbb8aa3997f162cf756d38f047115e849bdcbe00cb6ed4",
+      "package_sha256": "1563573ed0392b9228dbb8aa3997f162cf756d38f047115e849bdcbe00cb6ed4",
+      "changes": []
+    },
+    "src/project_id.rs": {
+      "base_sha256": "c3ab62b57e8f6e4242f1b9bb7d450c4d84a1475edb27b538bfdfe509ef8ba93b",
+      "package_sha256": "cf1d8230c7df197e620cc713a5e4a149eb72b20893e9f40096c96797d35d3e0b",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/quota_reservation.rs": {
+      "base_sha256": "bb6e64f01466db3f95b00bbc8331b8cde4d6563f21ed7ff67a6092819846bff6",
+      "package_sha256": "554f34c95114b4279df0a3e5bc493374c114a42f5badc9648122b44b98d12f15",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/quota_v2.rs": {
+      "base_sha256": "405ef2d3f10fa14e6a3a89d038a756a3bf4d8d75f26e163ae9517b4f43ad7e87",
+      "package_sha256": "a2ecaac421a1ca00d8de3ad10a5d6402e0d821f12e995eb7199250e488029aed",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/recovery_admission.rs": {
+      "base_sha256": "02999edfc1761994b65c549cfc96763bf4ada0cfda9c6188e6ee017046263392",
+      "package_sha256": "02999edfc1761994b65c549cfc96763bf4ada0cfda9c6188e6ee017046263392",
+      "changes": []
+    },
+    "src/recovery_bootstrap.rs": {
+      "base_sha256": "f823f569779ebc2666f28661e307d28aecba9c764babb519335ce1122eb73c53",
+      "package_sha256": "f823f569779ebc2666f28661e307d28aecba9c764babb519335ce1122eb73c53",
+      "changes": []
+    },
+    "src/recovery_closure.rs": {
+      "base_sha256": "4805c1b54c9bc9b6f67ca613de2f1bce383a9b3a6bd1df1baad9e65f837637b9",
+      "package_sha256": "4805c1b54c9bc9b6f67ca613de2f1bce383a9b3a6bd1df1baad9e65f837637b9",
+      "changes": []
+    },
+    "src/recovery_crash_image.rs": {
+      "base_sha256": "165035cdea2508b0b1de331d85de593fdf6a19c1798dfd6e1b972bfc982d5c14",
+      "package_sha256": "165035cdea2508b0b1de331d85de593fdf6a19c1798dfd6e1b972bfc982d5c14",
+      "changes": []
+    },
+    "src/recovery_device.rs": {
+      "base_sha256": "23563b40691572cd4afd843360100a098e3d0359e21e9f1b1ade8225ea60b56e",
+      "package_sha256": "23563b40691572cd4afd843360100a098e3d0359e21e9f1b1ade8225ea60b56e",
+      "changes": []
+    },
+    "src/recovery_image.rs": {
+      "base_sha256": "a0bed69d6da4318434c7fc7c16404be420e869433a30de5b79fd9a78e5182334",
+      "package_sha256": "a0bed69d6da4318434c7fc7c16404be420e869433a30de5b79fd9a78e5182334",
+      "changes": []
+    },
+    "src/recovery_io.rs": {
+      "base_sha256": "5728395f442f00833c9ef1b112881312a7302692514559954b498f7092d2b48e",
+      "package_sha256": "5728395f442f00833c9ef1b112881312a7302692514559954b498f7092d2b48e",
+      "changes": []
+    },
+    "src/recovery_patch.rs": {
+      "base_sha256": "340313f189ef3ade684fdc91b6adec4e0bff09b2cb347d316c68bb009229024e",
+      "package_sha256": "340313f189ef3ade684fdc91b6adec4e0bff09b2cb347d316c68bb009229024e",
+      "changes": []
+    },
+    "src/recovery_profile.rs": {
+      "base_sha256": "d6cf678af18ffb7667fa4a87afad5bf419df1c9bcff2f1bc4c55e15c653e9d8c",
+      "package_sha256": "d6cf678af18ffb7667fa4a87afad5bf419df1c9bcff2f1bc4c55e15c653e9d8c",
+      "changes": []
+    },
+    "src/recovery_request.rs": {
+      "base_sha256": "43d7382d4d80862503be7295bc8fb7bdb80a3b1cae9c24cdde6e1dec6b65dea6",
+      "package_sha256": "43d7382d4d80862503be7295bc8fb7bdb80a3b1cae9c24cdde6e1dec6b65dea6",
+      "changes": []
+    },
+    "src/redo.rs": {
+      "base_sha256": "e964baa83ca170c3cc60dbc8df4bfc470a81549ac23a5cfe4526a9cb0edb7e7f",
+      "package_sha256": "e964baa83ca170c3cc60dbc8df4bfc470a81549ac23a5cfe4526a9cb0edb7e7f",
+      "changes": []
+    },
+    "src/replay.rs": {
+      "base_sha256": "a4e3f86b58629ac2c1eab242ff0e8ea0e6882eb35c13f19ef47475630cbaab09",
+      "package_sha256": "5b2e4a4203d470beabf41a2196183c97c16aa8f7b6ba89f3e8f958322d722c36",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/replay_refinement.rs": {
+      "base_sha256": "ce5d691099276600446de7dc6d0002281e6d85a1499a7c34513d51b568c1bc7d",
+      "package_sha256": "ce5d691099276600446de7dc6d0002281e6d85a1499a7c34513d51b568c1bc7d",
+      "changes": []
+    },
+    "src/resize_plan.rs": {
+      "base_sha256": "db1f6bfe393c6d6cd95b615150d0b743191bf050a7730edca2ba7534b172bc33",
+      "package_sha256": "5d67ae28573899699b50a6e42784357f612174a52d6018b2dbf7e6d6380f2a0b",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/revoke.rs": {
+      "base_sha256": "affe750a3c54dc7194eccf122a95ee37385e759f1228ad97af8971c405cc7a1c",
+      "package_sha256": "3cf058fc74e88315b6d0f2f215d494be820e37db46187bdb3bded6cbcc404cfb",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/ring.rs": {
+      "base_sha256": "0f00e800f3a9cce656ca8c66c831e6ea40495cc8a0890ec65933554f2b50d097",
+      "package_sha256": "0f00e800f3a9cce656ca8c66c831e6ea40495cc8a0890ec65933554f2b50d097",
+      "changes": []
+    },
+    "src/scan.rs": {
+      "base_sha256": "405ddc4893f7e7b3fed4d3f0902324183601b5a6219a010e560822c44ac04b87",
+      "package_sha256": "a241eb534d8ba1350159564fb1d21a4247def76474a8fe11088120cf2f1271f3",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/scan_budget.rs": {
+      "base_sha256": "5c58f0fdf483d8382fc49610da2752722f26016d785fa4a3a05c509de521dc4e",
+      "package_sha256": "5c58f0fdf483d8382fc49610da2752722f26016d785fa4a3a05c509de521dc4e",
+      "changes": []
+    },
+    "src/scan_stop.rs": {
+      "base_sha256": "0b5e30855ff8657b12cb28134f6cb4d94d95296891784428f566ef41a9055793",
+      "package_sha256": "0b5e30855ff8657b12cb28134f6cb4d94d95296891784428f566ef41a9055793",
+      "changes": []
+    },
+    "src/scan_trace.rs": {
+      "base_sha256": "2090e06fdf14b27ce61baa7d502d2fe3a2135dfbf0ff43f19d87d95e6424d6c7",
+      "package_sha256": "2090e06fdf14b27ce61baa7d502d2fe3a2135dfbf0ff43f19d87d95e6424d6c7",
+      "changes": []
+    },
+    "src/shadow_model.rs": {
+      "base_sha256": "b92a3a25ff4dfb03a92843d22d1b5db983eeb396ef35cbf8aff9c8e6c8abb171",
+      "package_sha256": "b92a3a25ff4dfb03a92843d22d1b5db983eeb396ef35cbf8aff9c8e6c8abb171",
+      "changes": []
+    },
+    "src/sm4.rs": {
+      "base_sha256": "1dcabe32d5c38ea26963a173201601f720cd9de2d9d9cd608481c500a06bb1a1",
+      "package_sha256": "1dcabe32d5c38ea26963a173201601f720cd9de2d9d9cd608481c500a06bb1a1",
+      "changes": []
+    },
+    "src/snapshot.rs": {
+      "base_sha256": "f98b3147751845846894da9c7fabe178c1957b071bddd99549ce8c25e95a80f9",
+      "package_sha256": "965ae5398d43f67f622d42ae89526ac6c006e4df98bad40de163cf381dcc4224",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/source_block.rs": {
+      "base_sha256": "9edb498e7806a76f266bf6fecdda553ff002a5c83419fac445a7ba26f07b5cfa",
+      "package_sha256": "67fe80171f8ddbbdb8b2cd367921e3426aedd2db7eac9fe2818b86593c150cba",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/super_state.rs": {
+      "base_sha256": "5fe59a5f26f76214ab5eab2c18ac7f95cc19aa66535a98945a1807f8221fb4ab",
+      "package_sha256": "5fe59a5f26f76214ab5eab2c18ac7f95cc19aa66535a98945a1807f8221fb4ab",
+      "changes": []
+    },
+    "src/superblock.rs": {
+      "base_sha256": "2281dde1333f1054c604e3944bec159e173f6d4fbbab60e7eb26c88cc04ab4f5",
+      "package_sha256": "71107060347eeeb0049c3565709ffe78ec41914da8863838101d537deb164491",
+      "changes": [
+        "import groups changed to source-module globs"
+      ]
+    },
+    "src/system.rs": {
+      "base_sha256": "9fee18a8ce457db065dec5c09f13ef17e939c36c073cb604ff4838612e22208b",
+      "package_sha256": "9fee18a8ce457db065dec5c09f13ef17e939c36c073cb604ff4838612e22208b",
+      "changes": []
+    },
+    "src/transaction.rs": {
+      "base_sha256": "a6e88e8e97cad92524d57cb93482625966b049b3e3a56502629bbd1c9c14ac37",
+      "package_sha256": "cc8b1131bb5e7ad55f6f605e7e690ede80e89829ef9fec88403eeda1f9c5604f",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/transaction_refinement.rs": {
+      "base_sha256": "957d73f8a85bd2f0c74676819450b37ff261d806357694486941f4e490fc6054",
+      "package_sha256": "957d73f8a85bd2f0c74676819450b37ff261d806357694486941f4e490fc6054",
+      "changes": []
+    },
+    "src/tree_model.rs": {
+      "base_sha256": "05731005fd59882f1351f1e2cf28ce1268b83771ae03e57163311660bf183e50",
+      "package_sha256": "05731005fd59882f1351f1e2cf28ce1268b83771ae03e57163311660bf183e50",
+      "changes": []
+    },
+    "src/unicode12_data.rs": {
+      "base_sha256": "9e0f9fe70fa2cc4b8c03b0cb162f35138f4458e5eeef6af233f910e169dc0260",
+      "package_sha256": "9e0f9fe70fa2cc4b8c03b0cb162f35138f4458e5eeef6af233f910e169dc0260",
+      "changes": []
+    },
+    "src/window_admission.rs": {
+      "base_sha256": "bb575d36fb9d07a148caf4ac9bbabc94320478357714495d75b8780c0d0d7b04",
+      "package_sha256": "bb575d36fb9d07a148caf4ac9bbabc94320478357714495d75b8780c0d0d7b04",
+      "changes": []
+    },
+    "src/window_bootstrap.rs": {
+      "base_sha256": "eb1ca2cb3517ed6b8ea164f1f4cdb1d8a7d10b463409008fe417d7ea2ad8f015",
+      "package_sha256": "eb1ca2cb3517ed6b8ea164f1f4cdb1d8a7d10b463409008fe417d7ea2ad8f015",
+      "changes": []
+    },
+    "src/window_prefix.rs": {
+      "base_sha256": "a09365c18d6ad43351658bf4bd9f9bbd7094cae718e10e971589ed079a9c1c18",
+      "package_sha256": "a09365c18d6ad43351658bf4bd9f9bbd7094cae718e10e971589ed079a9c1c18",
+      "changes": []
+    },
+    "src/window_provenance.rs": {
+      "base_sha256": "0b30da297daf44ee7c76b2a96cea11240160585accccc1235ff1206fb606857c",
+      "package_sha256": "0b30da297daf44ee7c76b2a96cea11240160585accccc1235ff1206fb606857c",
+      "changes": []
+    },
+    "src/window_recognition.rs": {
+      "base_sha256": "20a57addad9c9d231cc105fb32e7a3bd40b70f117f4fd756830d07e023e1ddde",
+      "package_sha256": "a808d6e31190d5fe25a5edecee9f6d29f3ab9320b4e060d95fccf58cd3e858ca",
+      "changes": [
+        "import groups changed to source-module globs"
+      ]
+    },
+    "src/window_records.rs": {
+      "base_sha256": "4c629574f5d002aae869a8160e6e337a7602f174836fa087a9ccc43a46a9a799",
+      "package_sha256": "4c629574f5d002aae869a8160e6e337a7602f174836fa087a9ccc43a46a9a799",
+      "changes": []
+    },
+    "src/window_recovery.rs": {
+      "base_sha256": "e927bd2ae4177f7792d6daf9cbefcb755a15a16890d8606e60a308020c4be393",
+      "package_sha256": "579091726a4fa80283958c81e72e230e4dea0517b6f9c2888b00d7fc5f47e3ea",
+      "changes": [
+        "import groups changed to source-module globs"
+      ]
+    },
+    "src/window_recovery_profile.rs": {
+      "base_sha256": "8ab590ad348087a3beb5cea64057d3439cf879313b4fd32a3c25aa90056fe0f1",
+      "package_sha256": "25135a95ae3898d4ea91c6603a8e6d747f055bc8c2d5061c88fdcd8998dc79d2",
+      "changes": [
+        "import groups changed to source-module globs"
+      ]
+    },
+    "src/window_redo.rs": {
+      "base_sha256": "630cc9f6e5e6d49503fbf73f156d9df8e8a069344a6b9ac6738bce37a3f32c80",
+      "package_sha256": "767610f3c0e8f3764320e03128cecd16fe95d39170a3ede7bb9a73b74f8582fd",
+      "changes": [
+        "import groups changed to source-module globs"
+      ]
+    },
+    "src/window_repeated_recovery.rs": {
+      "base_sha256": "3e0becc7c6b1469595493a7a66481b921641bf4060737e20d9970c60d7378f78",
+      "package_sha256": "c459da290c99eeba9e3e5a0281f5600a636de6e33ff2eee8ce3d6e28b883c30b",
+      "changes": [
+        "import groups changed to source-module globs"
+      ]
+    },
+    "src/window_scan.rs": {
+      "base_sha256": "b6395cad9562170adc247d60b5050570ce12b101b1d30354d6008f53f5d419ad",
+      "package_sha256": "c59762f4a8563bdfc87969e7b9fc99c3c401a327d68693055e3a05c846e2cd5b",
+      "changes": [
+        "import groups changed to source-module globs"
+      ]
+    },
+    "src/window_snapshot.rs": {
+      "base_sha256": "32caa4618efda58ab993a54b7a8982066ab6ec1ac306f3c641d42d75789d1491",
+      "package_sha256": "8f941053a3740a6ef82daba42f280e0dc1cf3cfa1c9798bcf4517ec8c7fa12b2",
+      "changes": [
+        "import groups changed to source-module globs"
+      ]
+    },
+    "src/window_stream.rs": {
+      "base_sha256": "2ca5e43e1402f1a4d7e52106ae0e0c4759852bb814e34f2d0627db5477caa1e9",
+      "package_sha256": "2ca5e43e1402f1a4d7e52106ae0e0c4759852bb814e34f2d0627db5477caa1e9",
+      "changes": []
+    },
+    "src/write_admission.rs": {
+      "base_sha256": "0b95e4e74dc03942c4d99033ad89d89b157c9576eab6a8cfd101e2c639eefa39",
+      "package_sha256": "0b95e4e74dc03942c4d99033ad89d89b157c9576eab6a8cfd101e2c639eefa39",
+      "changes": []
+    },
+    "src/write_device.rs": {
+      "base_sha256": "e0ad112b4798242b2c4cf70e3e5badbcaaa41bc8ca8fa54c40122243f2b4ad5f",
+      "package_sha256": "e0ad112b4798242b2c4cf70e3e5badbcaaa41bc8ca8fa54c40122243f2b4ad5f",
+      "changes": []
+    },
+    "src/write_frame.rs": {
+      "base_sha256": "959828475bb78f4cc7fc05cdf644d4ae0dad6df46031528235da072dd6c60b12",
+      "package_sha256": "959828475bb78f4cc7fc05cdf644d4ae0dad6df46031528235da072dd6c60b12",
+      "changes": []
+    },
+    "src/write_history.rs": {
+      "base_sha256": "53516454a479bf0d6b0f118a6898b810eae5eebd33a8a85c18ae00767a79ba5e",
+      "package_sha256": "53516454a479bf0d6b0f118a6898b810eae5eebd33a8a85c18ae00767a79ba5e",
+      "changes": []
+    },
+    "src/write_io.rs": {
+      "base_sha256": "7a7812acc8b21bc8f52f817ecda01d5dd5b1bfb8e036b9b516c4ca073e6cbf1d",
+      "package_sha256": "afb38f62d485be6795fa481c92370f9f79366b9f9b3611234f9c7b40bfe45851",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/write_media.rs": {
+      "base_sha256": "3c813b0354c2c96966e4a31715ae04cf7ebbd7da9ab6f81f6495d00148696a00",
+      "package_sha256": "3c813b0354c2c96966e4a31715ae04cf7ebbd7da9ab6f81f6495d00148696a00",
+      "changes": []
+    },
+    "src/write_protocol.rs": {
+      "base_sha256": "2d9f8aed38396354591ef2b19d91818ec30be082ee8404803d7d96a9d0aaa3c5",
+      "package_sha256": "2d9f8aed38396354591ef2b19d91818ec30be082ee8404803d7d96a9d0aaa3c5",
+      "changes": []
+    },
+    "src/write_recognition.rs": {
+      "base_sha256": "e1e2ec46bd458ff600d297d664a7f85850d5b44c88746db7b4d5709bf9d5be44",
+      "package_sha256": "e1e2ec46bd458ff600d297d664a7f85850d5b44c88746db7b4d5709bf9d5be44",
+      "changes": []
+    },
+    "src/write_recovery.rs": {
+      "base_sha256": "0e47128efaeccc00ce3dbaadfbe169f33b6e44be6af20f617cfcadb635293a79",
+      "package_sha256": "0e47128efaeccc00ce3dbaadfbe169f33b6e44be6af20f617cfcadb635293a79",
+      "changes": []
+    },
+    "src/write_result.rs": {
+      "base_sha256": "c25cbf2ca5aed1d214f337a32fd3f51fd5468c017c3f92a994875025f32133a1",
+      "package_sha256": "c25cbf2ca5aed1d214f337a32fd3f51fd5468c017c3f92a994875025f32133a1",
+      "changes": []
+    },
+    "src/writer_admission.rs": {
+      "base_sha256": "ed5d1dc971c1c1e4179e19aab7e0f2774ff14541775775391e5c04415331e58d",
+      "package_sha256": "acdfcb2f9d986195198b608fd0431cef149f189c727805c94e6f13c10b448474",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/writer_image.rs": {
+      "base_sha256": "37eebefcc43b2ecaeb09eed196e2f2b6031e3c60a544cc0c76f31e71a6571264",
+      "package_sha256": "37eebefcc43b2ecaeb09eed196e2f2b6031e3c60a544cc0c76f31e71a6571264",
+      "changes": []
+    },
+    "src/xattr.rs": {
+      "base_sha256": "6e3a6844aaf6c09708218180bc4b7ba0d2070b5715ef661a6082063ea2b76db9",
+      "package_sha256": "6e3a6844aaf6c09708218180bc4b7ba0d2070b5715ef661a6082063ea2b76db9",
+      "changes": []
+    },
+    "src/xattr_batch.rs": {
+      "base_sha256": "9a081f9e139a410b6789accfbf7ab7832dd092591e387664aa8a8f2c170ec0cc",
+      "package_sha256": "27a3c110feca1c9cdf585ecdfe2a6a216fc185a5d57a450a8d7d51ae8ff406ac",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/xattr_block_update.rs": {
+      "base_sha256": "0616fcf224962f721ae32606365faed2ae26706dc10dc963a31659d8a805f084",
+      "package_sha256": "f4defccb6d83c642d9a6013468f896eb29ac048ad66a59a63abc8621c9009876",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/xattr_canonical.rs": {
+      "base_sha256": "c1692ab4301e857b0a44a29e99b9652050aed5dbfc320f6a2f1c8b729790e7a4",
+      "package_sha256": "5f446bd50df208a255d9635f64787a5f49dcc83f65fcd0d0ce58bae5fb67a54e",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/xattr_commit.rs": {
+      "base_sha256": "d169a52ccf1b1a6d7789d34c1cba08a268235853891af98d120769aea5d730d8",
+      "package_sha256": "d169a52ccf1b1a6d7789d34c1cba08a268235853891af98d120769aea5d730d8",
+      "changes": []
+    },
+    "src/xattr_durable.rs": {
+      "base_sha256": "15fce6c150cf1c85f2d88f2131b0e63336825dbf96083a5d67ba80d96ead1f1a",
+      "package_sha256": "15fce6c150cf1c85f2d88f2131b0e63336825dbf96083a5d67ba80d96ead1f1a",
+      "changes": []
+    },
+    "src/xattr_entry.rs": {
+      "base_sha256": "0ca9e665f0b06ef89d0f270f548eb5e2759832b5d5d879c251b7c8f23e1f04a1",
+      "package_sha256": "0ca9e665f0b06ef89d0f270f548eb5e2759832b5d5d879c251b7c8f23e1f04a1",
+      "changes": []
+    },
+    "src/xattr_footprint.rs": {
+      "base_sha256": "f1598b2fa05ceac6e4e9210920543f682ab9fd3d139a2edd88521e8e9c494046",
+      "package_sha256": "f1598b2fa05ceac6e4e9210920543f682ab9fd3d139a2edd88521e8e9c494046",
+      "changes": []
+    },
+    "src/xattr_hash.rs": {
+      "base_sha256": "ad9985401f5411bb00b853793e4114d82a8e2be6ea3622551db6d881030c7678",
+      "package_sha256": "ad9985401f5411bb00b853793e4114d82a8e2be6ea3622551db6d881030c7678",
+      "changes": []
+    },
+    "src/xattr_inode.rs": {
+      "base_sha256": "5ff38414e78eafc1e496f337c6c81c0971dbf5c280af6a97f2d620b009b8caab",
+      "package_sha256": "5ff38414e78eafc1e496f337c6c81c0971dbf5c280af6a97f2d620b009b8caab",
+      "changes": []
+    },
+    "src/xattr_inode_edit.rs": {
+      "base_sha256": "75983e4dfb57906416427be17a5a7bd73a8eb23debac899a4e07555ed5655ade",
+      "package_sha256": "99cff31268727edc9e97a6cd7b46904e1dd4997038b7836cc5256e623a702a8f",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/xattr_lifecycle.rs": {
+      "base_sha256": "0d2ce4bb9b000acc5b3fbc1a39929c11adfaeeddcaa4b18f1b54c7c79d9c13f9",
+      "package_sha256": "0d2ce4bb9b000acc5b3fbc1a39929c11adfaeeddcaa4b18f1b54c7c79d9c13f9",
+      "changes": []
+    },
+    "src/xattr_pack.rs": {
+      "base_sha256": "c726633a0703a04f9ccd8590b22d70dcae939e188c4f73f18d883fce04c0a051",
+      "package_sha256": "90ec916e34d1475599b2acdaf96c23d9417933e416c870ace13ce6d0ba7d10e7",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/xattr_replace.rs": {
+      "base_sha256": "9c4a3ec825b6b86789894b80d8a829e82787f0274032dcd4c435513482091e17",
+      "package_sha256": "83375410ddce84dc69ec3d6a7bac98825830a129e0154412b9eacf14cbd25d3b",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/xattr_source.rs": {
+      "base_sha256": "4466c639beaaf6a77daee04d0956b12fa3b3ab79ff543863c7edcb3550b00b06",
+      "package_sha256": "000b20c0e025b868f0d0df5d4bbbeb8e00e1cc09c828fd7851f994b256fc56b4",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/xattr_store.rs": {
+      "base_sha256": "e36a526a7821cabdd43821398f3a270a53d179b1a53c72ac19cbde1a209d4893",
+      "package_sha256": "5e046feb7736683a7cc54134024f32f1f067ec09651390c1e93e0dc209ba57f8",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/xattr_table.rs": {
+      "base_sha256": "83ec31440c40e165eb065baac04023043fd1352ce9cfb0fea0698ec5b0476771",
+      "package_sha256": "64b608decc8e9a7e4453b49d6da1510b00ac69dd68be96aaa7e4cf641870118b",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/xattr_table_edit.rs": {
+      "base_sha256": "51bb1f301bc2a79723d33a51a22793da2e3619ed888f9a7107e55213af1a55df",
+      "package_sha256": "51bb1f301bc2a79723d33a51a22793da2e3619ed888f9a7107e55213af1a55df",
+      "changes": []
+    },
+    "src/xattr_transaction.rs": {
+      "base_sha256": "bbecc7c86a3cf61f88e6fd7627cc6a9b6c87b19c764eca22e574eac967f8cf6f",
+      "package_sha256": "215aa887bfedcb968fe5fb8b8be98982d1cff3a5d2ca4fec889fe4e556c0c474",
+      "changes": [
+        "explicit alloc::vec::Vec import"
+      ]
+    },
+    "src/xattr_update.rs": {
+      "base_sha256": "37cfab0efee1f0b11b2d493068c8d9083214e722c594e4ea6d2eaf7558554c83",
+      "package_sha256": "37cfab0efee1f0b11b2d493068c8d9083214e722c594e4ea6d2eaf7558554c83",
+      "changes": []
+    }
+  },
+  "import_resolution": {
+    "journal.rs": [
+      {
+        "old": "use crate::redo::{Disk, compatible, overlay, complete_redo_overrides_partial_checkpoint,\n    overlay_is_idempotent};",
+        "new": "use crate::redo::*;"
+      }
+    ],
+    "history.rs": [
+      {
+        "old": "use crate::redo::{Disk, overlay};",
+        "new": "use crate::redo::*;"
+      }
+    ],
+    "superblock.rs": [
+      {
+        "old": "use crate::bytes::{le16, le32, read_le16, read_le32, block_offset};",
+        "new": "use crate::bytes::*;"
+      }
+    ],
+    "extent.rs": [
+      {
+        "old": "use crate::bytes::{le16, le32, read_le16, read_le32, encode_le16, encode_le32};",
+        "new": "use crate::bytes::*;"
+      }
+    ],
+    "directory.rs": [
+      {
+        "old": "use crate::bytes::{le16, le32, read_le16, read_le32};",
+        "new": "use crate::bytes::*;"
+      }
+    ],
+    "jbd2.rs": [
+      {
+        "old": "use crate::bytes::{be32, read_be32, encode_be32};",
+        "new": "use crate::bytes::*;"
+      }
+    ],
+    "journal_superblock.rs": [
+      {
+        "old": "use crate::bytes::{be32, read_be32};",
+        "new": "use crate::bytes::*;"
+      }
+    ],
+    "group.rs": [
+      {
+        "old": "use crate::bytes::{le16, le32, read_le16, read_le32, encode_le32};",
+        "new": "use crate::bytes::*;"
+      }
+    ],
+    "inode.rs": [
+      {
+        "old": "use crate::bytes::{le16, le32, read_le16, read_le32, encode_le32};",
+        "new": "use crate::bytes::*;"
+      },
+      {
+        "old": "use crate::{crc, extent, group::encoded_le, inode_size};",
+        "new": "use crate::{crc, extent, inode_size};\nuse crate::group::*;"
+      }
+    ],
+    "frozen.rs": [
+      {
+        "old": "use crate::bytes::be32;",
+        "new": "use crate::bytes::*;"
+      }
+    ],
+    "extent_tree_model.rs": [
+      {
+        "old": "extent_tree::{self, Context, Visit, external_node, subtree_valid, route, tail}",
+        "new": "extent_tree::{self, *}"
+      }
+    ],
+    "window_snapshot.rs": [
+      {
+        "old": "window_provenance::{self as provenance, context}",
+        "new": "window_provenance::{self as provenance, *}"
+      }
+    ],
+    "window_scan.rs": [
+      {
+        "old": "window_provenance::{self as provenance, context}",
+        "new": "window_provenance::{self as provenance, *}"
+      }
+    ],
+    "window_recognition.rs": [
+      {
+        "old": "window_provenance::{self as provenance, context}",
+        "new": "window_provenance::{self as provenance, *}"
+      }
+    ],
+    "window_recovery_profile.rs": [
+      {
+        "old": "window_provenance::{self as provenance, context}",
+        "new": "window_provenance::{self as provenance, *}"
+      }
+    ],
+    "window_redo.rs": [
+      {
+        "old": "window_provenance::{self as provenance, context}",
+        "new": "window_provenance::{self as provenance, *}"
+      }
+    ],
+    "window_recovery.rs": [
+      {
+        "old": "window_provenance::{self as provenance, context}",
+        "new": "window_provenance::{self as provenance, *}"
+      }
+    ],
+    "window_repeated_recovery.rs": [
+      {
+        "old": "window_provenance::context,",
+        "new": "window_provenance::*,"
+      }
+    ],
+    "ea_namespace_counts.rs": [
+      {
+        "old": "namespace_counts::{Slot, SlotView, zero, is_dot, is_dotdot, step, fold,\n        prefix_counts_are_bounded, views, matching, dot_ok, dots_valid}",
+        "new": "namespace_counts::*"
+      }
+    ],
+    "ea_write_io.rs": [
+      {
+        "old": "write_io::{self, Images, expected, log_images}",
+        "new": "write_io::{self, *}"
+      }
+    ],
+    "ea_bootstrap.rs": [
+      {
+        "old": "bootstrap_identity::{self, primary_fixed, addresses_fixed, preserved}",
+        "new": "bootstrap_identity::{self, *}"
+      },
+      {
+        "old": "pub use crate::bootstrap::{BootstrapView, journal_inode, journal_bytes, journal_identity, scan_source, projection};",
+        "new": "pub use crate::bootstrap::*;"
+      },
+      {
+        "old": "pub use crate::bootstrap_frame::same_locator_geometry;",
+        "new": "pub use crate::bootstrap_frame::*;"
+      }
+    ]
+  },
+  "qualification": {
+    "file": "proofs/ext4/src/inode.rs",
+    "before_sha256": "28b3f12d81035194e6072d3d6aff635b761bd8096ce47c6924f0f90673b1c6e5",
+    "after_sha256": "d1b80e7efb771cc6ba1669953432e8fc01628fca071ec2447cd31f5ef1a7272d",
+    "qualified_sites": 6,
+    "original_resolved_symbol": "crate::group::encoded_le",
+    "new_resolved_symbol": "crate::group::encoded_le",
+    "sites": [
+      {
+        "line": 29,
+        "text": "crc::fold(crc::fold(crc::fold(uuid_seed, crate::group::encoded_le(inode)),",
+        "count": 1
+      },
+      {
+        "line": 30,
+        "text": "crate::group::encoded_le(le32(s, 100) as u32)), checksum_input(s))",
+        "count": 1
+      },
+      {
+        "line": 57,
+        "text": "ensures r == crc::fold(crc::fold(uuid_seed, crate::group::encoded_le(number)), crate::group::encoded_le(generation)),",
+        "count": 2
+      },
+      {
+        "line": 61,
+        "text": "proof { assert(n@ =~= crate::group::encoded_le(number)); assert(g@ =~= crate::group::encoded_le(generation)); }",
+        "count": 2
+      }
+    ],
+    "removed_import": "use crate::group::*;",
+    "runtime_changes": false,
+    "cfg_or_stub_additions": false,
+    "proof_textual_change": "Only six spec/proof references now spell their original full module path.",
+    "macro_body_equals_a11d5ec_after_reversing_qualification": true,
+    "builds_run_by_agent": false
+  },
+  "diagnostic_evidence": [
+    {
+      "name": "host-cargo",
+      "directory": "/task/ext4-no-std-packaging/host-check-03",
+      "command": {
+        "step": "host-erased-source-check",
+        "argv": [
+          "/root/.rustup/toolchains/nightly-2026-07-21-x86_64-unknown-linux-gnu/bin/cargo",
+          "check",
+          "--manifest-path",
+          "/root/asterinas-ext4-no-std/proofs/ext4/Cargo.toml",
+          "--lib"
+        ],
+        "cwd": "/root/asterinas-ext4-no-std",
+        "env_overrides": {
+          "RUSTC": "/root/.rustup/toolchains/nightly-2026-07-21-x86_64-unknown-linux-gnu/bin/rustc",
+          "RUSTDOC": "/root/.rustup/toolchains/nightly-2026-07-21-x86_64-unknown-linux-gnu/bin/rustdoc",
+          "CARGO_BUILD_JOBS": "1",
+          "CARGO_INCREMENTAL": "0",
+          "CARGO_PROFILE_DEV_DEBUG": "0",
+          "CARGO_TARGET_DIR": "/task/ext4-no-std-packaging/target-nightly",
+          "CARGO_HTTP_CAINFO": "/task/ns-file-rename/proxy-ca.pem"
+        },
+        "wall_limit_seconds": 180,
+        "address_space_limit_bytes": 4294967296,
+        "formal_verification": false,
+        "base_commit": "a11d5ecc9217d2fd5d78109796cba776f2bfd6dd",
+        "cargo_toml_sha256": "9bad63d14ca1739d46b11bd20d4af71a14a80affeddc2bf637d1d79f2ce3ed13"
+      },
+      "result": {
+        "step": "host-erased-source-check",
+        "returncode": 0,
+        "timed_out": false,
+        "seconds": 11.67396946700319,
+        "source_unchanged": true,
+        "formal_verification": false,
+        "status": "passed"
+      },
+      "source_sha256_mismatches": [],
+      "binding_note": "",
+      "command_sha256": "77fc98aa9bdb4404a815230a2fc742d9f00c5291f9f367d1e60940d3c8f78945",
+      "result_sha256": "502b902d3b3ea65989f5e4b7743a6633580d0163a0e5e268c6a8f5eb81215191"
+    },
+    {
+      "name": "target-cargo",
+      "directory": "/task/ext4-no-std-packaging/target-check-02",
+      "command": {
+        "step": "kernel-target-erased-source-check",
+        "argv": [
+          "/root/.rustup/toolchains/nightly-2026-07-21-x86_64-unknown-linux-gnu/bin/cargo",
+          "check",
+          "--manifest-path",
+          "/root/asterinas-ext4-no-std/proofs/ext4/Cargo.toml",
+          "--lib",
+          "--target",
+          "x86_64-unknown-none",
+          "--locked"
+        ],
+        "cwd": "/root/asterinas-ext4-no-std",
+        "env_overrides": {
+          "RUSTC": "/root/.rustup/toolchains/nightly-2026-07-21-x86_64-unknown-linux-gnu/bin/rustc",
+          "RUSTDOC": "/root/.rustup/toolchains/nightly-2026-07-21-x86_64-unknown-linux-gnu/bin/rustdoc",
+          "CARGO_BUILD_JOBS": "1",
+          "CARGO_INCREMENTAL": "0",
+          "CARGO_PROFILE_DEV_DEBUG": "0",
+          "CARGO_TARGET_DIR": "/task/ext4-no-std-packaging/target-nightly",
+          "CARGO_HTTP_CAINFO": "/task/ns-file-rename/proxy-ca.pem"
+        },
+        "wall_limit_seconds": 180,
+        "address_space_limit_bytes": 4294967296,
+        "formal_verification": false,
+        "base_commit": "a11d5ecc9217d2fd5d78109796cba776f2bfd6dd",
+        "cargo_toml_sha256": "9bad63d14ca1739d46b11bd20d4af71a14a80affeddc2bf637d1d79f2ce3ed13"
+      },
+      "result": {
+        "step": "kernel-target-erased-source-check",
+        "returncode": 0,
+        "timed_out": false,
+        "seconds": 9.930174836001243,
+        "source_unchanged": true,
+        "formal_verification": false,
+        "status": "passed"
+      },
+      "source_sha256_mismatches": [],
+      "binding_note": "",
+      "command_sha256": "c4cccd51888068046ea7a00c4a046ffaea618c47cea129f71ab9faf12e15ddd9",
+      "result_sha256": "4364da04e4748284e36ebe806c9c500cac591cad1a33f38e47212cbed3e00715"
+    },
+    {
+      "name": "feature-audit",
+      "directory": "/task/ext4-no-std-packaging/feature-audit-01",
+      "command": {
+        "step": "feature-audit",
+        "argv": [
+          "/root/.rustup/toolchains/nightly-2026-07-21-x86_64-unknown-linux-gnu/bin/cargo",
+          "tree",
+          "--manifest-path",
+          "/root/asterinas-ext4-no-std/proofs/ext4/Cargo.toml",
+          "--target",
+          "x86_64-unknown-none",
+          "-e",
+          "features",
+          "--locked"
+        ],
+        "cwd": "/root/asterinas-ext4-no-std",
+        "env_overrides": {
+          "RUSTC": "/root/.rustup/toolchains/nightly-2026-07-21-x86_64-unknown-linux-gnu/bin/rustc",
+          "RUSTDOC": "/root/.rustup/toolchains/nightly-2026-07-21-x86_64-unknown-linux-gnu/bin/rustdoc",
+          "CARGO_BUILD_JOBS": "1",
+          "CARGO_INCREMENTAL": "0",
+          "CARGO_PROFILE_DEV_DEBUG": "0",
+          "CARGO_TARGET_DIR": "/task/ext4-no-std-packaging/target-nightly",
+          "CARGO_HTTP_CAINFO": "/task/ns-file-rename/proxy-ca.pem"
+        },
+        "wall_limit_seconds": 30,
+        "address_space_limit_bytes": 4294967296,
+        "formal_verification": false,
+        "base_commit": "a11d5ecc9217d2fd5d78109796cba776f2bfd6dd",
+        "cargo_toml_sha256": "9bad63d14ca1739d46b11bd20d4af71a14a80affeddc2bf637d1d79f2ce3ed13"
+      },
+      "result": {
+        "step": "feature-audit",
+        "returncode": 0,
+        "timed_out": false,
+        "seconds": 0.08399534600175684,
+        "source_unchanged": true,
+        "formal_verification": false,
+        "status": "passed",
+        "vstd_alloc_present": true,
+        "vstd_std_absent": true
+      },
+      "source_sha256_mismatches": [
+        "src/inode.rs"
+      ],
+      "binding_note": "Dependency-feature audit; Cargo.toml is unchanged. The only later Rust-source change was six proof/spec path qualifications in inode.rs.",
+      "command_sha256": "9f16abfa2fc7dea90484adb0358c72d510766419c8af322d7bacc87a172a0c03",
+      "result_sha256": "258be2f138a2c252024e8fec896c2a0bd2b718c163fc7dc251d925b9dc84e36e"
+    },
+    {
+      "name": "verus-frontend-no-verification",
+      "directory": "/task/ext4-expansion/typecheck-no-std-02",
+      "command": {
+        "argv": [
+          "/workspace/scratch/verus/run",
+          "--no-verify",
+          "--no-external-by-default",
+          "--output-json",
+          "--compile",
+          "--crate-type=rlib",
+          "--crate-name=verified_ext4",
+          "--out-dir=build",
+          "src/model.rs"
+        ],
+        "cwd": "/task/ext4-expansion/typecheck-no-std-02",
+        "diagnostic_only": true,
+        "verification_skipped": true,
+        "proof_evidence": false,
+        "new_modules": [
+          "adiantum",
+          "aes",
+          "casefold",
+          "cluster_allocation",
+          "crypto_sha2",
+          "ea_repeated_recovery",
+          "ea_restart",
+          "extent_edit",
+          "fast_commit",
+          "fscrypt_cipher",
+          "fscrypt_context",
+          "fscrypt_extra_modes",
+          "fsverity",
+          "group_legacy",
+          "hctr2",
+          "htree_edit",
+          "inline_data",
+          "inode_payload",
+          "jbd2_features",
+          "jbd2_tags",
+          "legacy_map",
+          "meta_bg",
+          "mmp",
+          "orphan_chain",
+          "orphan_file",
+          "orphan_lifecycle",
+          "project_id",
+          "quota_reservation",
+          "quota_v2",
+          "resize_plan",
+          "sm4",
+          "unicode12_data"
+        ],
+        "excluded_pending_modules": []
+      },
+      "result": {
+        "returncode": 0,
+        "elapsed_seconds": 73.26085269500618,
+        "proof_evidence": false,
+        "verification_skipped": true,
+        "snapshot_unchanged": true,
+        "new_modules": [
+          "adiantum",
+          "aes",
+          "casefold",
+          "cluster_allocation",
+          "crypto_sha2",
+          "ea_repeated_recovery",
+          "ea_restart",
+          "extent_edit",
+          "fast_commit",
+          "fscrypt_cipher",
+          "fscrypt_context",
+          "fscrypt_extra_modes",
+          "fsverity",
+          "group_legacy",
+          "hctr2",
+          "htree_edit",
+          "inline_data",
+          "inode_payload",
+          "jbd2_features",
+          "jbd2_tags",
+          "legacy_map",
+          "meta_bg",
+          "mmp",
+          "orphan_chain",
+          "orphan_file",
+          "orphan_lifecycle",
+          "project_id",
+          "quota_reservation",
+          "quota_v2",
+          "resize_plan",
+          "sm4",
+          "unicode12_data"
+        ],
+        "excluded_pending_modules": []
+      },
+      "source_sha256_mismatches": [
+        "src/model.rs"
+      ],
+      "binding_note": "All257 non-root source files match; root differs only by the recorded orchestrator's declaration-order rewrite for all32 included feature modules. No module was excluded.",
+      "command_sha256": "5a44acd17a0c55c675c5211f4674dc6d22dfb9c965994fd5cd18d609ebc2934d",
+      "result_sha256": "576927501321c24303be37f1f38fb76dd7085a975d3dd96eea5197abd4ea6af8"
+    }
+  ],
+  "remaining_boundaries": [
+    "No kernel Cargo dependency or kernel linker integration.",
+    "No strict whole-crate proof result for this package or verification-to-erasure refinement certificate.",
+    "No CortenMM snapshot/source-exclusion refinement, production writable lease, filesystem mount or hardware durability guarantee."
+  ],
+  "import_resolution_note": "The import_resolution entries record stage-one rewrites; apply qualification.removed_import and its six full-path spellings afterward. source_files hashes describe the final sources."
+}

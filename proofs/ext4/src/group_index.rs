@@ -4,6 +4,8 @@
 //! Group and superblock free counters agree exactly. The snapshot is retained
 //! so later inode traversal cannot silently switch to a different input.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{block_claims, bytes, crc, group_metadata::{self, GroupMetadata, GroupView}, snapshot::Snapshot, superblock};
 

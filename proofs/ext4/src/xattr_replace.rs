@@ -4,6 +4,8 @@
 //! bounded ordinary-inode disk-version increment and checksum reseal. These owned bytes
 //! alone confer no inode, VFS, journal, memory-frame or device authority.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{bytes, inode, inode_time, inode_time_fields::{self as fields, Field}, xattr::{self, Body, BodyView},
     xattr_entry as entry, xattr_table::{self as table, TableView, ValueView}, xattr_table_edit as edit};

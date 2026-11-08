@@ -4,11 +4,13 @@
 //! The transport accepts actual EA feature bytes; filesystem admission and
 //! physical completion authority remain in their separate sealed adapters.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{bytes, ea_source, epoch, frozen::FrozenBlock, journal_state, journal_superblock,
     layout::JournalLayout, recovery_io::{Command, CommandView}, recovery_request::Completion,
     snapshot::Snapshot, super_state, transaction::{self, AfterImage, Encoded},
-    write_io::{self, Images, expected, log_images}, write_protocol::{self, Phase, State}};
+    write_io::{self, *}, write_protocol::{self, Phase, State}};
 
 verus! {
 

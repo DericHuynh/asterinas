@@ -4,6 +4,8 @@
 //! full-key lookup. Target allocation/VFS authority and physical source binding
 //! are separate from the supplied immutable logical-block snapshot.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{bytes, dir_hash::{self, State}, directory_block::{self, DirectoryBlock}, htree::{self, Index},
     htree_range::{self as range, Bounds}, htree_topology::{self as topology, Graph, GraphView}, name_set::{self, NameSet}};

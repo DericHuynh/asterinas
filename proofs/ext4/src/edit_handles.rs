@@ -4,6 +4,8 @@
 //! before editing; freeze consumes the running batch after every slot closes.
 //! These are candidate after-images, not VFS, mount or device authority.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{frozen::FrozenBlock, layout::{JournalLayout, LayoutView}, transaction::{self, AfterImage, Encoded, ImageView}};
 

@@ -4,6 +4,8 @@
 //! This is an implementation-first format engine. Its plans describe replay
 //! work; they are not filesystem, allocation, device or durability capabilities.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{bytes, crc};
 

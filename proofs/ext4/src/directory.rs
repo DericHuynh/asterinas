@@ -4,7 +4,7 @@
 //! byte strings; UTF-8 is not assumed. This is not namespace authorization.
 
 use vstd::prelude::*;
-use crate::bytes::{le16, le32, read_le16, read_le32};
+use crate::bytes::*;
 use crate::crc;
 
 verus! {
