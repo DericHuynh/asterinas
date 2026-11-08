@@ -124,6 +124,7 @@ exclude = [
     "kernel/libs/comp-sys/component-macro",
     "kernel/libs/comp-sys/controlled",
     "osdk",
+    "proofs/ext4",
     "tools/sctrace",
 ]
 
@@ -152,6 +153,9 @@ edition = "2024"
 
 [workspace.dependencies]
 ostd = { path = "ostd", version = "0.19.0" }
+
+# Hardware-independent verified filesystem core, built from source.
+verified-ext4 = { path = "proofs/ext4", default-features = false }
 
 # Crates under ostd/libs
 align_ext = { path = "ostd/libs/align_ext", version = "0.1.0" }
