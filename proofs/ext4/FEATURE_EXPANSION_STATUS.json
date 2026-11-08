@@ -518,6 +518,28 @@
       "command_sha256": "33981bb201a2f7833db85b88e91564076e01f83c63cc2b084a4cfed9fbe30c57",
       "filtered": true,
       "whole_expansion_verified": false
+    },
+    {
+      "attempt": "proof-extent-edit-17",
+      "modules": [
+        "extent_edit"
+      ],
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 219,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "source_sha256": {
+        "extent_edit": "e9818efaeb25f98dd99e0a812b0f7c40d8f1fefd006d46aa6e81e656f1e09c20"
+      },
+      "command_sha256": "c3420bc0059e683b62ef3ac1625894188bff96e7859dda1bd06f346122f887d6",
+      "filtered": true,
+      "whole_expansion_verified": false,
+      "scope": "Exact successful mapping edits, physical nonalias, canonical depth0-5 extent forests, node wire/checksum bindings, ordered child/subtree ranges and one incoming reference per emitted node; supplied numbers and owned byte images only.",
+      "artifact_sha256": "64209b72ed56c9e38ea703850a6db0d9d15ba7f1a39ae3b5454f23d4340927d1",
+      "snapshot_manifest_sha256": "82430491a736109dac495708dd8a465342317863349fdc09b8da24ea83a353be"
     }
   ],
   "unique_checked_modules": [
@@ -527,6 +549,7 @@
     "crypto_sha2",
     "ea_repeated_recovery",
     "ea_restart",
+    "extent_edit",
     "fast_commit",
     "fscrypt_cipher",
     "fscrypt_context",
@@ -552,7 +575,7 @@
     "sm4",
     "unicode12_data"
   ],
-  "focused_verified_obligations": 1947,
+  "focused_verified_obligations": 2166,
   "current_source_matches_checked_modules": true,
   "independent_test_harness_fix": {
     "branch": "fix/osdk-test-qemu-exit",
@@ -764,7 +787,7 @@
     "artifact_sha256": "35f3179c41d6c28291ece562419a3c59e527d649fb4030fa495a8849a0f854b4",
     "command_sha256": "b54283c3b066846a63ae7e12c0be39834e509ab1f553a749b76cded3c921987d",
     "source_manifest_sha256": "16c4fb128aec114379412fde9de361081e246ee942dfe562dbf8ed80ff0ef8de",
-    "scope": "Coherent all32-module snapshot from published6161986 plus all30 exact focused-checked component sources; complete older unproved Adiantum/extent engines retained and live drafts excluded. Compilation does not close dependency or filesystem proof composition.",
+    "scope": "Historical TC21 composition retaining the older extent901d33e engine. Coherent all32-module snapshot from published6161986 plus all30 exact focused-checked component sources; complete older unproved Adiantum/extent engines retained and live drafts excluded. Compilation does not close dependency or filesystem proof composition.",
     "source_base_commit": "616198621bd3acef8ee0b1c34a56589c4fe278cd",
     "checked_module_manifest": "checkpoint-input-07/manifest.json",
     "checked_module_manifest_sha256": "70855a24a23425a352b493a7b16aa8f409583b1d26bec22097f49d649b1d8989",
@@ -776,9 +799,13 @@
       "extent_edit"
     ],
     "dependency_closure_verified": false,
-    "current_source_matches": true,
+    "current_source_matches": false,
     "extra_mode_scope": "Extra04 remains conditional on its unverified dependency contracts. Exact earlier/new dependency variants are preserved in the composition map.",
-    "fast_commit_dependency": "Full published extent901d33e Mapping dependency matches FC12; the extent engine itself remains unverified."
+    "fast_commit_dependency": "Full published extent901d33e Mapping dependency matches FC12; the extent engine itself remains unverified.",
+    "historical_after_extent_proof": true,
+    "source_changes_since_result": [
+      "extent_edit"
+    ]
   },
   "integrated_crypto_native": {
     "attempt": "extra-crypto-native-07",
@@ -817,7 +844,11 @@
     "library_sha256": "35f3179c41d6c28291ece562419a3c59e527d649fb4030fa495a8849a0f854b4",
     "compat_source_sha256": "dec7b32f07ab53e36036a2cf83418d9c48c6baeec688353d55fbdb598bf82d98",
     "result_sha256": "9b81009b73e942cec562df9e81c4977669148e1649fbedc310ec1af29ebb9022",
-    "current_source_matches": true
+    "current_source_matches": false,
+    "historical_after_extent_proof": true,
+    "source_changes_since_result": [
+      "extent_edit"
+    ]
   },
   "superseded_integrated_compiles": [
     {
@@ -1463,7 +1494,7 @@
     }
   },
   "component_composition": {
-    "status": "four exact component snapshots combined; current typecheck-21, six-family same-artifact native and API05 checks passed",
+    "status": "Historical four-component TC21 checkpoint; its exact component sources remain, with the checked Extent17 follow-up recorded separately.",
     "base_commit": "616198621bd3acef8ee0b1c34a56589c4fe278cd",
     "components": {
       "crypto_sha2": {
@@ -1530,7 +1561,15 @@
     "new_combined_artifact_runtime_evidence": "composed-native-21-01",
     "combined_compile": "typecheck-21",
     "combined_api_boundaries": "expansion-boundaries-native-05",
-    "new_combined_artifact_runtime_result_sha256": "876d792db4f999b02a842f675ae03d5c462789505f8851adc0440161a344974b"
+    "new_combined_artifact_runtime_result_sha256": "876d792db4f999b02a842f675ae03d5c462789505f8851adc0440161a344974b",
+    "historical_checkpoint": true,
+    "current_checkpoint_source_matches": false,
+    "extent_followup": {
+      "attempt": "proof-extent-edit-17",
+      "sha256": "e9818efaeb25f98dd99e0a812b0f7c40d8f1fefd006d46aa6e81e656f1e09c20",
+      "obligations": 219,
+      "strict_composition_verified": false
+    }
   },
   "completed_composed_compile_preparation": {
     "intended_attempt": "typecheck-21",
@@ -1539,7 +1578,12 @@
     "launcher_sha256": "2070bf3a360703be1d4cad6a2962a49313b9b70f7e438a5c780056c89f778aff",
     "input": "checkpoint-input-07",
     "verification_skipped": true,
-    "proof_evidence": false
+    "proof_evidence": false,
+    "current_source_matches": false,
+    "historical_after_extent_proof": true,
+    "source_changes_since_result": [
+      "extent_edit"
+    ]
   },
   "composed_native_conformance": {
     "status": "passed",
@@ -1722,7 +1766,7 @@
         "scope": "Historical independent component evidence, not rerun as an independent oracle on TC21."
       }
     },
-    "scope": "Six existing native families coexist and produce expected results on the same actual TC21 artifact. This checks type/runtime composition and selected output identity.",
+    "scope": "Historical TC21 runtime composition with the older extent901d33e source; it does not execute the new Extent17 implementation. Six existing native families coexist and produce expected results on the same actual TC21 artifact. This checks type/runtime composition and selected output identity.",
     "limitations": [
       "TC21 used --no-verify; native composition does not establish strict whole-crate or dependency proof closure.",
       "Older unverified Adiantum and extent revisions are retained in this artifact and bound precisely in provider.json.",
@@ -1732,6 +1776,54 @@
     "attempt": "composed-native-21-01",
     "result_sha256": "876d792db4f999b02a842f675ae03d5c462789505f8851adc0440161a344974b",
     "sha_manifest_sha256": "4cff945b353352b9a6914dac5b73bc80db8215d7d39c6733ebf3c0a03ba46ee2",
-    "current_source_matches": true
+    "current_source_matches": false,
+    "historical_after_extent_proof": true,
+    "source_changes_since_result": [
+      "extent_edit"
+    ]
+  },
+  "extent_focused_scope": {
+    "attempt": "proof-extent-edit-17",
+    "obligations": 219,
+    "source_sha256": "e9818efaeb25f98dd99e0a812b0f7c40d8f1fefd006d46aa6e81e656f1e09c20",
+    "public_executable_functions": 21,
+    "public_named_proofs": 6,
+    "public_function_headers_preserved": true,
+    "full_logical_map_and_nonalias_contracts": true,
+    "canonical_forest_and_child_interval_contracts": true,
+    "one_incoming_reference_per_node": true,
+    "source_owned_allocator": false,
+    "filesystem_admission": false,
+    "mount_authority": false,
+    "device_durability": false,
+    "whole_crate_certificate": false
+  },
+  "checked_extent_conformance": {
+    "attempt": "extent-checked-native-17",
+    "status": "passed",
+    "formal_verification": false,
+    "library_attempt": "proof-extent-edit-17",
+    "library_sha256": "64209b72ed56c9e38ea703850a6db0d9d15ba7f1a39ae3b5454f23d4340927d1",
+    "source_sha256": "e9818efaeb25f98dd99e0a812b0f7c40d8f1fefd006d46aa6e81e656f1e09c20",
+    "assertions": 219125,
+    "additional_explicit_rejections": 33,
+    "runtime_apis_exercised": 21,
+    "whole_tree_positive_audits": 88,
+    "whole_tree_mapping_probes": 950,
+    "original_depth_checksum_matrix_cases": 84,
+    "capacity_and_pool_reuse_cases": 28,
+    "capacity_decoded_leaf_extents": 108298,
+    "linux_fixture_roots_byte_equal": 3,
+    "independent_debugfs_bmap_samples": 15,
+    "readonly_e2fsck_positive_images": 2,
+    "current_extent_source_matches": true,
+    "whole_provider_source_match_claimed": false,
+    "local_production_algorithm_replacements": false,
+    "mechanical_erasure": false,
+    "selected_original_goldens_unchanged": true,
+    "result_sha256": "ce99e0f9e6e56fec6bb8c0390a2dd09d7d30a0b04b87f34cfc15d24c9d3e662a",
+    "bindings_sha256": "12ca2102d92488c81fecb981e3144546433930bb27d43f1a02b483b1f62ec402",
+    "sha_manifest_sha256": "e3d45e01bc382f39506ffe853477219dd87dee6fecfdabecb134cd45501eb926",
+    "scope": "Actual focused-checked extent artifact plus baseline readers, with independent e2fsprogs fixtures; no source-owned allocation, CortenMM/device transport, mount or durability authority."
   }
 }

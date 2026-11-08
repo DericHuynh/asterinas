@@ -2,7 +2,7 @@
 
 # Combining checked ext4 components
 
-This checkpoint combines four exact checked source snapshots into the feature branch based on `6161986`. It preserves their separate branch history and test evidence. No pull request is merged by this step.
+The historical TC21 checkpoint combines four exact checked source snapshots into the feature branch based on `6161986`. It preserves their separate branch history and test evidence. No pull request is merged by this step.
 
 | Component | Focused snapshot | Obligations | Resulting behavior or contract |
 | --- | --- | ---: | --- |
@@ -11,7 +11,7 @@ This checkpoint combines four exact checked source snapshots into the feature br
 | HTree plans | proof-directory-order-06 | 101 | Byte-name/key comparators, sort-index permutation, filtering and exact successful rebuild/insert/delete/rename catalogues, deltas and NoChange identity |
 | Fsverity | proof-verity-builder-06 | 159 | Every successful build returns exact canonical salted-SHA tree bytes, root-dependent descriptor and measured-header digest |
 
-The current focused ledger is **1,947 obligations across 30 modules**, in 26 current snapshots. The source/API/proof inventory is **258 / 1,249 / 985**. SHA keeps 117 obligations; the increase from 1,862 is four legacy, five HTree and 76 fsverity obligations. Counts include Extra04's 78 obligations conditional on an unverified Adiantum dependency.
+That checkpoint's focused ledger was **1,947 obligations across 30 modules**, in 26 snapshots. The checked [Extent17 follow-up](EXTENT_REBUILD_PROOFS.md) brings this branch's ledger to **2,166 across 31 modules**; it has separate exact-artifact native evidence. The source/API/proof inventory is **258 / 1,249 / 985**. SHA keeps 117 obligations; the increase from 1,862 is four legacy, five HTree and 76 fsverity obligations. Counts include Extra04's 78 obligations conditional on an unverified Adiantum dependency.
 
 The fsverity snapshot uses the exact new SHA source (`3b0e8c89…`), independently checked in the 117-obligation SHA snapshot. It covers canonical height, digest packing, zero padding, parent levels, top-first serialization and exact getters. Successful build completion iff admission, source-owned allocation, signature authorization, immutable inode publication and disk durability remain open.
 
@@ -19,11 +19,11 @@ HTree's catalogue contracts preserve complete names, inode numbers, generations 
 
 ## Source and dependency identities
 
-The full component hashes are recorded in [FEATURE_EXPANSION_STATUS.json](FEATURE_EXPANSION_STATUS.json). The immutable compile input is `/task/ext4-expansion/checkpoint-input-07`, created from the published base archive with all 30 exact checked-source overlays and the updated lock. Its complete older Adiantum and extent engines come from the published base, while active proof drafts remain in the live worktree.
+The full component hashes are recorded in [FEATURE_EXPANSION_STATUS.json](FEATURE_EXPANSION_STATUS.json). The immutable compile input is `/task/ext4-expansion/checkpoint-input-07`, created from the published base archive with all 30 exact checked-source overlays and the updated lock. Its complete older Adiantum and extent engines came from the published base. This branch replaces only that extent source with the exact checked Extent17 snapshot; TC21's whole-checkpoint current-source match is false.
 
 The adjacent `dependency-composition.json` records all 32 composed source identities and the exact new-module identities declared by each focused proof command. Fsverity's SHA binding and fast commit's complete preserved extent Mapping source match their focused contexts exactly. Earlier quota-ledger, context/cipher and extra-mode checks retain recorded dependency variants. Extra04's unverified Adiantum contract remains conditional. Source matching and a later coherent compile do not replace a strict composition proof.
 
-The current all-module `typecheck-21` compiled the immutable input successfully with `--no-verify`; its 32 component sources match the prepared identities. API05 passes all 36 expansion privacy/ownership negatives and nine allowed controls against that same artifact. Typecheck20/API04 and older integrated crypto runs remain historical. All six existing native families now pass on that same actual TC21 artifact. Their explicit assertion counters total 33,740 (fast commit 3,172 + directory 30,568); separate metrics are SHA 616 vectors, legacy 13 tests, unified crypto 201 vectors and fsverity 12 Merkle cases/24 files/420 reads/12 oversized-read rejections. All 71 freshly emitted FC/directory/fsverity files match the previously checked outputs byte-for-byte. Independent image/CRC/hash oracles were not repeated. The final unfiltered strict proof, full official compatibility rerun and feature/mount admission remain pending.
+The historical all-module `typecheck-21` compiled the immutable input successfully with `--no-verify`; its 32 component sources match the prepared identities. API05 passes all 36 expansion privacy/ownership negatives and nine allowed controls against that same artifact. Typecheck20/API04 and older integrated crypto runs remain historical. All six existing native families now pass on that same actual TC21 artifact. Their explicit assertion counters total 33,740 (fast commit 3,172 + directory 30,568); separate metrics are SHA 616 vectors, legacy 13 tests, unified crypto 201 vectors and fsverity 12 Merkle cases/24 files/420 reads/12 oversized-read rejections. All 71 freshly emitted FC/directory/fsverity files match the previously checked outputs byte-for-byte. Independent image/CRC/hash oracles were not repeated. The final unfiltered strict proof, full official compatibility rerun and feature/mount admission remain pending.
 
 ## Existing exact-artifact runtime evidence
 
@@ -41,3 +41,11 @@ The directory depth-two 50,000-entry stress case was excluded; a 400-entry depth
 [PR67](https://github.com/DericHuynh/asterinas/pull/67), [PR68](https://github.com/DericHuynh/asterinas/pull/68) and [PR69](https://github.com/DericHuynh/asterinas/pull/69) retain the SHA, legacy and directory component history. [PR70](https://github.com/DericHuynh/asterinas/pull/70) retains the separate fsverity-builder publication history. The separate combined-artifact run reuses those unchanged drivers/goldens and confirms coexistence and selected output identity. Historical independent component oracles retain their original artifact scope. Neither native run establishes cryptographic security, strict dependency proof closure or hardware persistence.
 
 Baseline proof reports, verifier trust settings, feature policy and mount gates remain unchanged. The framekernel boundary still uses safe CortenMM/USegment and VmReader/VmWriter mechanisms; no Linux page/folio ownership is imported. This preparation grants no allocation, credential, device-write or writable VFS authority.
+
+## Separate extent-proof follow-up
+
+The new extent source has 219 focused obligations and exact native-artifact evidence described in
+[EXTENT_REBUILD_PROOFS.md](EXTENT_REBUILD_PROOFS.md).
+The TC21 artifact and its six native families continue to refer to the older extent901d33e source.
+Their historical counters and hashes are retained; they are not relabeled as runs of Extent17.
+No new strict combined proof or full compatibility result is asserted.
