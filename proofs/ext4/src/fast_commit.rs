@@ -87,10 +87,10 @@ pub struct ScanView {
 #[verifier::opaque]
 pub open spec fn checked_prefix(v: ScanView, count: nat) -> bool {
     &&& count <= v.records.len()
-    &&& forall|i: int| 0 <= i < count ==> {
+    &&& forall|i: int| #![trigger v.records[i]] 0 <= i < count ==> {
         let record = v.records[i];
         &&& record.tag == HEAD ==> bytes::le32(record.value, 0) == 0 && bytes::le32(record.value, 4) == v.tid
-        &&& record.tag == TAIL ==> #[trigger] valid_tail(v.source, v.positions, i as nat, v.tid)
+        &&& record.tag == TAIL ==> valid_tail(v.source, v.positions, i as nat, v.tid)
     }
 }
 #[verifier::opaque]
@@ -111,6 +111,14 @@ pub open spec fn valid_scan(v: ScanView) -> bool {
             + v.records[v.committed as int - 1].value.len()
     }
 }
+proof fn checked_prefix_index(v: ScanView, count: nat, index: int)
+    requires checked_prefix(v, count), 0 <= index < count,
+    ensures index < v.records.len(),
+        v.records[index].tag == HEAD ==> bytes::le32(v.records[index].value, 0) == 0
+            && bytes::le32(v.records[index].value, 4) == v.tid,
+        v.records[index].tag == TAIL ==> valid_tail(v.source, v.positions, index as nat, v.tid),
+{ reveal(checked_prefix); }
+
 proof fn crc_prefix_extension(source: Seq<u8>, before: Seq<usize>, after: Seq<usize>, count: nat)
     requires count <= before.len(), before.len() <= after.len(), before == after.take(before.len() as int),
     ensures prefix_crc(source, before, count) == prefix_crc(source, after, count),
@@ -119,6 +127,64 @@ proof fn crc_prefix_extension(source: Seq<u8>, before: Seq<usize>, after: Seq<us
     reveal(prefix_crc);
     if count > 0 { crc_prefix_extension(source, before, after, (count - 1) as nat); }
 }
+proof fn tail_positions_prefix_frame(source: Seq<u8>, before: Seq<usize>, after: Seq<usize>,
+    index: nat, tid: u32)
+    requires valid_tail(source, before, index, tid), index < before.len(), before.len() <= after.len(),
+        before == after.take(before.len() as int),
+    ensures valid_tail(source, after, index, tid),
+{
+    crc_prefix_extension(source, before, after, index);
+    assert(before[index as int] == after[index as int]);
+}
+proof fn scan_push_preserves_committed(before: ScanView, after: ScanView, offset: usize, record: RecordView)
+    requires valid_scan(before), before.records.len() < MAX_RECORDS,
+        record_from_source(before.source, offset, record, before.block_bytes, before.inode_bytes),
+        before.records.len() > 0 ==> before.positions.last() as nat + 4 + before.records.last().value.len() <= offset,
+        after.source == before.source && after.block_bytes == before.block_bytes && after.inode_bytes == before.inode_bytes
+            && after.tid == before.tid && after.committed == before.committed && after.committed_end == before.committed_end,
+        after.records == before.records.push(record) && after.positions == before.positions.push(offset),
+    ensures valid_scan(after),
+{
+    reveal(valid_scan); reveal(checked_prefix);
+    assert(after.positions.take(before.positions.len() as int) =~= before.positions);
+    assert forall|i: int| 0 <= i < after.records.len() implies #[trigger] record_from_source(
+        after.source, after.positions[i], after.records[i], after.block_bytes, after.inode_bytes) by {
+        if i < before.records.len() {
+            assert(record_from_source(before.source, before.positions[i], before.records[i], before.block_bytes, before.inode_bytes));
+        }
+    }
+    assert forall|i: int| 0 <= i < after.committed implies {
+        let r = after.records[i];
+        &&& r.tag == HEAD ==> bytes::le32(r.value, 0) == 0 && bytes::le32(r.value, 4) == after.tid
+        &&& r.tag == TAIL ==> #[trigger] valid_tail(after.source, after.positions, i as nat, after.tid)
+    } by {
+        assert(i < before.records.len() && after.records[i] == before.records[i]);
+        checked_prefix_index(before, before.committed, i);
+        if after.records[i].tag == HEAD {
+            assert(bytes::le32(before.records[i].value, 0) == 0);
+            assert(bytes::le32(before.records[i].value, 4) == before.tid);
+        }
+        if after.records[i].tag == TAIL {
+            tail_positions_prefix_frame(before.source, before.positions, after.positions, i as nat, before.tid);
+        }
+    }
+    assert forall|i: int| 0 < i < after.positions.len() implies
+        after.positions[i - 1] as nat + 4 + after.records[i - 1].value.len() <= #[trigger] after.positions[i] by {
+        if i < before.positions.len() {
+            assert(before.positions[i - 1] as nat + 4 + before.records[i - 1].value.len() <= before.positions[i]);
+        } else {
+            assert(i == before.positions.len());
+            assert(after.positions[i] == offset);
+        }
+    }
+    assert(checked_prefix(after, after.committed));
+    if before.committed > 0 {
+        let last = before.committed as int - 1;
+        assert(after.records[last] == before.records[last] && after.positions[last] == before.positions[last]);
+        tail_positions_prefix_frame(before.source, before.positions, after.positions, (before.committed - 1) as nat, before.tid);
+    }
+}
+
 pub proof fn replay_access_is_confined_to_a_checksum_valid_tail(v: ScanView, index: int)
     requires valid_scan(v), 0 <= index < v.committed,
     ensures record_from_source(v.source, v.positions[index], v.records[index], v.block_bytes, v.inode_bytes),
@@ -129,6 +195,88 @@ pub proof fn replay_access_is_confined_to_a_checksum_valid_tail(v: ScanView, ind
     reveal(valid_scan);
 }
 
+
+proof fn aligned_block_suffix(length: nat, offset: nat, block: nat)
+    requires block > 0, offset < length, length % block == 0,
+    ensures 0 < block - offset % block <= length - offset,
+{
+    let b = block as int; let at = offset as int; let end = length as int;
+    vstd::arithmetic::div_mod::lemma_mod_pos_bound(at, b);
+    vstd::arithmetic::div_mod::lemma_fundamental_div_mod(at, b);
+    vstd::arithmetic::div_mod::lemma_fundamental_div_mod(end, b);
+    vstd::arithmetic::div_mod::lemma_div_is_ordered(at, end, b);
+    if at / b == end / b {
+        assert(at >= end) by (nonlinear_arith)
+            requires at == b * (at / b) + at % b,
+                end == b * (end / b) + end % b, at % b >= 0, end % b == 0,
+                at / b == end / b;
+    }
+    assert(at / b < end / b);
+    assert(at + b - at % b <= end) by (nonlinear_arith)
+        requires at == b * (at / b) + at % b,
+            end == b * (end / b) + end % b, end % b == 0, b > 0, at / b < end / b;
+}
+proof fn equal_prefix_byte(before: Seq<u8>, after: Seq<u8>, prefix: int, index: int)
+    requires 0 <= index < prefix <= before.len(), prefix <= after.len(),
+        before.take(prefix) == after.take(prefix),
+    ensures before[index] == after[index],
+{
+    assert(before.take(prefix)[index] == before[index]);
+    assert(after.take(prefix)[index] == after[index]);
+}
+proof fn equal_prefix_span(before: Seq<u8>, after: Seq<u8>, prefix: int, first: int, end: int)
+    requires 0 <= first <= end <= prefix <= before.len(), prefix <= after.len(),
+        before.take(prefix) == after.take(prefix),
+    ensures before.subrange(first, end) == after.subrange(first, end),
+{
+    assert forall|i: int| 0 <= i < end - first implies
+        #[trigger] before.subrange(first, end)[i] == after.subrange(first, end)[i] by {
+        equal_prefix_byte(before, after, prefix, first + i);
+    }
+    assert(before.subrange(first, end) =~= after.subrange(first, end));
+}
+proof fn equal_prefix_le16(before: Seq<u8>, after: Seq<u8>, prefix: int, word: int)
+    requires 0 <= word, word + 2 <= prefix <= before.len(), prefix <= after.len(),
+        before.take(prefix) == after.take(prefix),
+    ensures bytes::le16(before, word) == bytes::le16(after, word),
+{
+    equal_prefix_byte(before, after, prefix, word);
+    equal_prefix_byte(before, after, prefix, word + 1);
+}
+proof fn equal_prefix_le32(before: Seq<u8>, after: Seq<u8>, prefix: int, word: int)
+    requires 0 <= word, word + 4 <= prefix <= before.len(), prefix <= after.len(),
+        before.take(prefix) == after.take(prefix),
+    ensures bytes::le32(before, word) == bytes::le32(after, word),
+{
+    equal_prefix_byte(before, after, prefix, word);
+    equal_prefix_byte(before, after, prefix, word + 1);
+    equal_prefix_byte(before, after, prefix, word + 2);
+    equal_prefix_byte(before, after, prefix, word + 3);
+}
+proof fn equal_prefix_crc(seed: u32, before: Seq<u8>, after: Seq<u8>, prefix: int, first: int, end: int)
+    requires 0 <= first <= end <= prefix <= before.len(), prefix <= after.len(),
+        before.take(prefix) == after.take(prefix),
+    ensures crc::fold(seed, before.subrange(first, end)) == crc::fold(seed, after.subrange(first, end)),
+{
+    hide(crc::fold);
+    equal_prefix_span(before, after, prefix, first, end);
+}
+proof fn scan_bounds(v: ScanView)
+    requires valid_scan(v),
+    ensures v.committed <= v.records.len() <= MAX_RECORDS, 128 <= v.inode_bytes <= 65536,
+        v.committed_end <= v.source.len(), v.positions.len() == v.records.len(),
+{
+    reveal(valid_scan);
+}
+proof fn checked_scan_record(v: ScanView, index: int)
+    requires valid_scan(v), 0 <= index < v.records.len(),
+    ensures record_from_source(v.source, v.positions[index], v.records[index], v.block_bytes, v.inode_bytes),
+        value_length_ok(v.records[index].tag, v.records[index].value.len(), v.inode_bytes),
+        v.committed <= v.records.len() <= MAX_RECORDS,
+{
+    reveal(valid_scan);
+    assert(record_from_source(v.source, v.positions[index], v.records[index], v.block_bytes, v.inode_bytes));
+}
 
 fn copy(raw: &[u8]) -> (r: Vec<u8>)
     ensures r@ == raw@,
@@ -175,12 +323,22 @@ fn put16(raw: &mut [u8], offset: usize, value: u16) -> (r: bool)
         forall|word: int| 0 <= word && word + 4 <= old(raw).len()
             && (word + 4 <= offset || word >= offset as int + 2) ==>
                 #[trigger] bytes::le32(final(raw)@, word) == bytes::le32(old(raw)@, word),
+        forall|prefix: int| 0 <= prefix <= offset && prefix <= old(raw).len() ==>
+            #[trigger] final(raw)@.take(prefix) == old(raw)@.take(prefix),
 {
     let encoded = [(value % 256) as u8, (value / 256) as u8];
     proof { vstd::arithmetic::div_mod::lemma_fundamental_div_mod(value as int, 256); }
     let ghost before = raw@;
     let success = bytes::write_bytes(raw, offset, &encoded);
     proof { if success { local_writer_frames_reads(before, offset as int, encoded@); } }
+    proof {
+        if success {
+            assert forall|prefix: int| 0 <= prefix <= offset && prefix <= before.len()
+                implies #[trigger] raw@.take(prefix) == before.take(prefix) by {
+                assert(raw@.take(prefix) =~= before.take(prefix));
+            }
+        }
+    }
     success
 }
 fn put32(raw: &mut [u8], offset: usize, value: u32) -> (r: bool)
@@ -196,12 +354,50 @@ fn put32(raw: &mut [u8], offset: usize, value: u32) -> (r: bool)
         forall|word: int| 0 <= word && word + 4 <= old(raw).len()
             && (word + 4 <= offset || word >= offset as int + 4) ==>
                 #[trigger] bytes::le32(final(raw)@, word) == bytes::le32(old(raw)@, word),
+        forall|prefix: int| 0 <= prefix <= offset && prefix <= old(raw).len() ==>
+            #[trigger] final(raw)@.take(prefix) == old(raw)@.take(prefix),
 {
     let ghost before = raw@;
     let success = bytes::write_le32(raw, offset, value);
     proof { if success { local_writer_frames_reads(before, offset as int, bytes::encoded_le(value)); } }
+    proof {
+        if success {
+            assert forall|prefix: int| 0 <= prefix <= offset && prefix <= before.len()
+                implies #[trigger] raw@.take(prefix) == before.take(prefix) by {
+                assert(raw@.take(prefix) =~= before.take(prefix));
+            }
+        }
+    }
     success
 }
+
+fn copy_span(raw: &mut [u8], offset: usize, data: &[u8]) -> (r: bool)
+    ensures final(raw).len() == old(raw).len(),
+        r == (offset as int + data.len() <= old(raw).len()),
+        final(raw)@ == if r { bytes::splice(old(raw)@, offset as int, data@) } else { old(raw)@ },
+        r ==> final(raw)@.subrange(offset as int, offset as int + data.len()) == data@,
+        forall|prefix: int| 0 <= prefix <= offset && prefix <= old(raw).len() ==>
+            #[trigger] final(raw)@.take(prefix) == old(raw)@.take(prefix),
+        forall|i: int| 0 <= i < old(raw).len() && !(offset <= i < offset as int + data.len()) ==>
+            #[trigger] final(raw)@[i] == old(raw)@[i],
+{
+    let ghost before = raw@;
+    let success = bytes::write_bytes(raw, offset, data);
+    proof {
+        if success {
+            local_writer_frames_reads(before, offset as int, data@);
+            assert(raw@.subrange(offset as int, offset as int + data.len()) =~= data@);
+            assert forall|prefix: int| 0 <= prefix <= offset && prefix <= before.len()
+                implies #[trigger] raw@.take(prefix) == before.take(prefix) by {
+                assert(raw@.take(prefix) =~= before.take(prefix));
+            }
+        }
+    }
+    success
+}
+proof fn crc_empty(seed: u32)
+    ensures crc::fold(seed, Seq::<u8>::empty()) == seed,
+{ reveal(crc::fold); }
 
 pub fn value_length_valid(tag: u16, length: usize, inode_bytes: usize) -> (r: bool)
     ensures r == value_length_ok(tag, length as nat, inode_bytes as nat),
@@ -285,6 +481,125 @@ fn finish_scan(draft: ScanDraft) -> (r: Scan)
     Scan { records, committed, committed_end, tid, inode_bytes, stop, source, positions, block_bytes }
 }
 
+proof fn empty_scan_checked(v: ScanView)
+    requires crate::block_size::accepted(v.block_bytes), 128 <= v.inode_bytes <= 65536,
+        v.source.len() <= MAX_LOG_BYTES, v.source.len() % v.block_bytes == 0,
+        v.records.len() == 0, v.positions.len() == 0, v.committed == 0, v.committed_end == 0,
+    ensures valid_scan(v), checked_prefix(v, 0), prefix_crc(v.source, v.positions, 0) == 0,
+{
+    reveal(valid_scan); reveal(checked_prefix); reveal(prefix_crc);
+}
+proof fn pending_checked_prefix_frame(before: ScanView, after: ScanView)
+    requires checked_prefix(before, before.records.len()),
+        after.source == before.source, after.tid == before.tid,
+        after.records.len() == before.records.len() + 1,
+        after.records.take(before.records.len() as int) == before.records,
+        after.positions.len() == before.positions.len() + 1,
+        after.positions.take(before.positions.len() as int) == before.positions,
+        before.positions.len() == before.records.len(),
+    ensures checked_prefix(after, before.records.len()),
+{
+    reveal(checked_prefix);
+    assert forall|i: int| #![trigger after.records[i]] 0 <= i < before.records.len() implies {
+        let r = after.records[i];
+        &&& r.tag == HEAD ==> bytes::le32(r.value, 0) == 0 && bytes::le32(r.value, 4) == after.tid
+        &&& r.tag == TAIL ==> valid_tail(after.source, after.positions, i as nat, after.tid)
+    } by {
+        assert(after.records[i] == before.records[i]);
+        checked_prefix_index(before, before.records.len(), i);
+        if after.records[i].tag == TAIL {
+            tail_positions_prefix_frame(before.source, before.positions, after.positions, i as nat, before.tid);
+        }
+    }
+    assert(checked_prefix(after, before.records.len()));
+}
+
+// This helper owns one complete record transition. A checksum rejection may
+// retain the uncommitted record internally; the sealed committed prefix stays
+// exactly at its previous valid tail.
+fn scan_record_step(result: &mut ScanDraft, raw: &[u8], offset: usize,
+    tag: u16, value: &[u8], checksum: u32) -> (r: Result<u32, ()>)
+    requires old(result).wf(), old(result).source@ == raw@,
+        old(result).records.len() < MAX_RECORDS,
+        old(result).positions@.len() == old(result).records.len(),
+        checked_prefix(old(result).view(), old(result).records.len() as nat),
+        checksum == prefix_crc(raw@, old(result).positions@, old(result).records.len() as nat),
+        record_from_source(raw@, offset, RecordView { tag, value: value@ },
+            old(result).block_bytes@ as nat, old(result).inode_bytes as nat),
+        old(result).records.len() > 0 ==> old(result).positions@.last() as nat + 4
+            + record_views(old(result).records@).last().value.len() <= offset,
+        tag == HEAD ==> bytes::le32(value@, 0) == 0 && bytes::le32(value@, 4) == old(result).tid,
+    ensures final(result).wf(),
+        final(result).source@ == old(result).source@,
+        final(result).block_bytes@ == old(result).block_bytes@,
+        final(result).tid == old(result).tid, final(result).inode_bytes == old(result).inode_bytes,
+        record_views(final(result).records@) == record_views(old(result).records@).push(RecordView { tag, value: value@ }),
+        final(result).positions@ == old(result).positions@.push(offset),
+        final(result).records.len() == old(result).records.len() + 1,
+        final(result).positions@.len() == final(result).records.len(),
+        final(result).records.len() > 0,
+        final(result).positions@[final(result).records.len() as int - 1] == offset,
+        final(result).records@[final(result).records.len() as int - 1].value@ == value@,
+        final(result).committed <= final(result).records.len(), final(result).committed_end <= raw.len(),
+        match r {
+            Ok(next_crc) => checked_prefix(final(result).view(), final(result).records.len() as nat)
+                && next_crc == prefix_crc(raw@, final(result).positions@, final(result).records.len() as nat),
+            Err(()) => final(result).committed == old(result).committed
+                && final(result).committed_end == old(result).committed_end,
+        },
+{
+    hide(crc::fold);
+    let ghost previous_positions = result.positions@;
+    let ghost previous_records = record_views(result.records@);
+    let ghost previous_view = result.view();
+    proof {
+        scan_bounds(previous_view);
+        assert(record_from_source(raw@, offset, RecordView { tag, value: value@ },
+            previous_view.block_bytes, previous_view.inode_bytes));
+        assert(offset as int + 4 + value.len() <= raw.len());
+    }
+    result.records.push(Record { tag, value: copy(value) });
+    result.positions = Ghost(previous_positions.push(offset));
+    proof {
+        assert(result.positions@.take(previous_positions.len() as int) =~= previous_positions);
+        assert(result.positions@[result.records.len() as int - 1] == offset);
+        assert(result.records@[result.records.len() as int - 1].value@ == value@);
+        crc_prefix_extension(raw@, previous_positions, result.positions@, previous_positions.len());
+        assert(record_from_source(raw@, offset, record_views(result.records@).last(),
+            result.block_bytes@ as nat, result.inode_bytes as nat));
+        assert(record_views(result.records@) =~= previous_records.push(record_views(result.records@).last()));
+        scan_push_preserves_committed(previous_view, result.view(), offset, record_views(result.records@).last());
+        assert(result.view().records.take(previous_records.len() as int) =~= previous_records);
+        pending_checked_prefix_frame(previous_view, result.view());
+    }
+    let end = offset + 4 + value.len();
+    let next_crc;
+    if tag == TAIL {
+        // Only the TLV header and TID participate in a TAIL checksum.
+        let tail_crc = crc::crc32c(checksum, &raw[offset..offset + 8]);
+        if bytes::read_le32(value, 0).unwrap() != result.tid
+            || bytes::read_le32(value, 4).unwrap() != tail_crc {
+            proof { scan_bounds(result.view()); }
+            return Err(());
+        }
+        proof {
+            assert(valid_tail(raw@, result.positions@, previous_records.len(), result.tid));
+            reveal(checked_prefix);
+            assert(checked_prefix(result.view(), result.records.len() as nat));
+        }
+        result.committed = result.records.len(); result.committed_end = end;
+        next_crc = 0;
+    } else {
+        next_crc = crc::crc32c(checksum, &raw[offset..end]);
+    }
+    proof {
+        reveal(prefix_crc); reveal(checked_prefix); reveal(valid_scan);
+        assert(checked_prefix(result.view(), result.records.len() as nat));
+        assert(next_crc == prefix_crc(raw@, result.positions@, result.records.len() as nat));
+    }
+    Ok(next_crc)
+}
+
 /// Scan a complete captured fast-commit area. CRC starts at zero and resets
 /// after each tail. Only records through a matching checksum-valid TAIL are
 /// exposed. Exhausted resources reject the area rather than silently losing a
@@ -298,7 +613,6 @@ pub fn scan(raw: &[u8], block_bytes: usize, inode_bytes: usize,
         Err(_) => true,
     },
 {
-    proof { reveal(valid_scan); reveal(checked_prefix); }
     if !crate::block_size::valid(block_bytes) || inode_bytes < 128 || inode_bytes > 65536
         || raw.len() > MAX_LOG_BYTES || raw.len() % block_bytes != 0 {
         return Err(Error::Geometry);
@@ -307,12 +621,12 @@ pub fn scan(raw: &[u8], block_bytes: usize, inode_bytes: usize,
     let mut result = ScanDraft { records: Vec::new(), committed: 0, committed_end: 0,
         tid: expected_tid, inode_bytes, stop: Stop::EndOfArea,
         source: Ghost(raw@), positions: Ghost(Seq::empty()), block_bytes: Ghost(block_bytes) };
+    proof { empty_scan_checked(result.view()); }
     if raw.len() == 0 { result.stop = Stop::EmptyArea; return Ok(finish_scan(result)); }
     if bytes::read_le16(raw, 0).unwrap() != HEAD {
         result.stop = Stop::EmptyArea; return Ok(finish_scan(result));
     }
     let mut offset = 0usize; let mut checksum = 0u32;
-    proof { reveal(prefix_crc); }
     while offset < raw.len()
         invariant offset <= raw.len() <= MAX_LOG_BYTES, raw.len() % block_bytes == 0,
             1024 <= block_bytes <= 65536, result.records.len() <= record_budget <= MAX_RECORDS,
@@ -327,8 +641,20 @@ pub fn scan(raw: &[u8], block_bytes: usize, inode_bytes: usize,
             checksum == prefix_crc(raw@, result.positions@, result.records.len() as nat),
         decreases raw.len() - offset,
     {
+        proof { aligned_block_suffix(raw.len() as nat, offset as nat, block_bytes as nat); }
         let remaining = block_bytes - offset % block_bytes;
+        assert(remaining > 0 && remaining <= raw.len() - offset);
         if remaining < 4 {
+            proof {
+                if result.records.len() == 0 {
+                    assert(offset == 0);
+                    vstd::arithmetic::div_mod::lemma_small_mod(0nat, block_bytes as nat);
+                    assert(offset % block_bytes == 0);
+                    assert(remaining == block_bytes);
+                    assert(remaining >= 1024);
+                }
+                assert(result.records.len() > 0);
+            }
             offset += remaining;
             continue;
         }
@@ -347,41 +673,22 @@ pub fn scan(raw: &[u8], block_bytes: usize, inode_bytes: usize,
                 result.stop = Stop::DifferentTransaction; return Ok(finish_scan(result));
             }
         }
-        let ghost previous_positions = result.positions@;
-        let ghost previous_records = record_views(result.records@);
-        let ghost previous_view = result.view();
-        result.records.push(Record { tag, value: copy(value) });
-        result.positions = Ghost(previous_positions.push(offset));
-        proof {
-            crc_prefix_extension(raw@, previous_positions, result.positions@, previous_positions.len());
-            assert(record_from_source(raw@, offset,
-                record_views(result.records@).last(), block_bytes as nat, inode_bytes as nat));
-        }
-        if tag == TAIL {
-            // TLV header + TID only: neither CRC word nor tail padding.
-            checksum = crc::crc32c(checksum, &raw[offset..offset + 8]);
-            if bytes::read_le32(value, 0).unwrap() != expected_tid
-                || bytes::read_le32(value, 4).unwrap() != checksum {
+        match scan_record_step(&mut result, raw, offset, tag, value, checksum) {
+            Ok(next_crc) => { checksum = next_crc; }
+            Err(()) => {
                 if result.committed == 0 { return Err(Error::BadChecksum); }
                 result.stop = Stop::TornSuffix; return Ok(finish_scan(result));
             }
-            result.committed = result.records.len(); result.committed_end = end;
-            checksum = 0;
-        } else {
-            checksum = crc::crc32c(checksum, &raw[offset..end]);
         }
-        proof {
-            reveal(prefix_crc);
-            reveal(valid_scan);
-            reveal(checked_prefix);
-            assert(checksum == prefix_crc(raw@, result.positions@, result.records.len() as nat));
-        }
+        assert(result.positions@[result.records.len() as int - 1] as nat + 4
+            + result.records@[result.records.len() as int - 1].value@.len() == end);
         offset = end;
     }
     Ok(finish_scan(result))
 }
 
 pub struct SegmentView { pub begin: nat, pub tail: nat, pub end: nat }
+#[verifier::opaque]
 pub open spec fn segment_valid(raw: Seq<u8>, segment: SegmentView, tid: u32) -> bool {
     &&& segment.begin <= segment.tail
     &&& segment.tail + 12 <= segment.end <= raw.len()
@@ -391,6 +698,29 @@ pub open spec fn segment_valid(raw: Seq<u8>, segment: SegmentView, tid: u32) -> 
     &&& bytes::le32(raw, segment.tail as int + 8)
         == crc::fold(0, raw.subrange(segment.begin as int, segment.tail as int + 8))
 }
+proof fn segment_checked(raw: Seq<u8>, segment: SegmentView, tid: u32)
+    requires segment.begin <= segment.tail, segment.tail + 12 <= segment.end <= raw.len(),
+        bytes::le16(raw, segment.tail as int) == TAIL,
+        bytes::le16(raw, segment.tail as int + 2) == segment.end - segment.tail - 4,
+        bytes::le32(raw, segment.tail as int + 4) == tid,
+        bytes::le32(raw, segment.tail as int + 8)
+            == crc::fold(0, raw.subrange(segment.begin as int, segment.tail as int + 8)),
+    ensures segment_valid(raw, segment, tid),
+{ reveal(segment_valid); }
+proof fn segment_prefix_frame(before: Seq<u8>, after: Seq<u8>, segment: SegmentView, tid: u32, prefix: nat)
+    requires segment_valid(before, segment, tid), segment.end <= prefix <= before.len(), prefix <= after.len(),
+        before.take(prefix as int) == after.take(prefix as int),
+    ensures segment_valid(after, segment, tid),
+{
+    hide(crc::fold);
+    reveal(segment_valid);
+    equal_prefix_span(before, after, prefix as int, segment.begin as int, segment.tail as int + 8);
+    equal_prefix_le16(before, after, prefix as int, segment.tail as int);
+    equal_prefix_le16(before, after, prefix as int, segment.tail as int + 2);
+    equal_prefix_le32(before, after, prefix as int, segment.tail as int + 4);
+    equal_prefix_le32(before, after, prefix as int, segment.tail as int + 8);
+}
+
 pub struct BuilderView {
     pub raw: Seq<u8>, pub cursor: nat, pub checksum: u32, pub records: nat,
     pub committed_end: nat, pub pending: nat, pub tid: u32,
@@ -416,8 +746,8 @@ pub open spec fn valid_builder(v: BuilderView) -> bool {
     &&& if v.committed_end == 0 { v.segments.len() == 0 } else {
         v.segments.len() > 0 && v.segments.last().end == v.committed_end
     }
-    &&& (forall|i: int| 0 <= i < v.segments.len() ==> {
-        &&& #[trigger] segment_valid(v.raw, v.segments[i], v.tid)
+    &&& (forall|i: int| #![trigger v.segments[i]] 0 <= i < v.segments.len() ==> {
+        &&& segment_valid(v.raw, v.segments[i], v.tid)
         &&& v.segments[i].end <= v.committed_end && v.segments[i].end % v.block_bytes == 0
         &&& v.segments[i].begin == if i == 0 { 0nat } else { v.segments[i - 1].end }
     })
@@ -431,6 +761,130 @@ proof fn crc_adjacent_subranges(seed: u32, raw: Seq<u8>, first: int, middle: int
     crc::streaming(seed, raw.subrange(first, middle), raw.subrange(middle, end));
 }
 
+// Writes one exact TLV in place and advances the running CRC over those bytes.
+// This helper cannot grow buffers or grant any storage or allocation authority.
+fn write_record_bytes(raw: &mut [u8], start: usize, at: usize, checksum: u32,
+    tag: u16, value: &[u8]) -> (r: (usize, u32))
+    requires start <= at, at as int + 4 + value.len() <= old(raw).len(),
+        value.len() <= 65535,
+        checksum == crc::fold(0, old(raw)@.subrange(start as int, at as int)),
+    ensures final(raw).len() == old(raw).len(), r.0 == at as int + 4 + value.len(),
+        bytes::le16(final(raw)@, at as int) == tag,
+        bytes::le16(final(raw)@, at as int + 2) == value.len(),
+        final(raw)@.subrange(at as int + 4, r.0 as int) == value@,
+        r.1 == crc::fold(0, final(raw)@.subrange(start as int, r.0 as int)),
+        forall|prefix: int| 0 <= prefix <= at ==>
+            #[trigger] final(raw)@.take(prefix) == old(raw)@.take(prefix),
+        forall|i: int| 0 <= i < old(raw).len() && (i < at || i >= r.0) ==>
+            #[trigger] final(raw)@[i] == old(raw)@[i],
+{
+    hide(crc::fold);
+    let ghost before = raw@;
+    put16(raw, at, tag);
+    put16(raw, at + 2, value.len() as u16);
+    let ghost before_copy = raw@;
+    proof {
+        equal_prefix_crc(0, before, raw@, at as int, start as int, at as int);
+    }
+    let copied = copy_span(raw, at + 4, value);
+    assert(copied);
+    proof {
+        equal_prefix_crc(0, before_copy, raw@, at as int + 4, start as int, at as int);
+        equal_prefix_le16(before_copy, raw@, at as int + 4, at as int);
+        equal_prefix_le16(before_copy, raw@, at as int + 4, at as int + 2);
+    }
+    let end = at + 4 + value.len();
+    proof { crc_adjacent_subranges(0, raw@, start as int, at as int, end as int); }
+    let next_crc = crc::crc32c(checksum, &raw[at..end]);
+    proof {
+        assert forall|prefix: int| 0 <= prefix <= at implies
+            #[trigger] raw@.take(prefix) == before.take(prefix) by {
+            assert(before_copy.take(prefix) == before.take(prefix));
+        }
+        assert forall|i: int| 0 <= i < before.len() && (i < at || i >= end) implies
+            #[trigger] raw@[i] == before[i] by {
+            assert(before_copy[i] == before[i]);
+        }
+    }
+    (end, next_crc)
+}
+
+// PAD consumes the captured suffix; its payload bytes are retained verbatim.
+// The running CRC includes its whole TLV, including that unchanged payload.
+fn write_pad_bytes(raw: &mut [u8], begin: usize, at: usize, checksum: u32) -> (r: u32)
+    requires begin <= at, at as int + 4 <= old(raw).len(),
+        old(raw).len() - at <= 65536,
+        checksum == crc::fold(0, old(raw)@.subrange(begin as int, at as int)),
+    ensures final(raw).len() == old(raw).len(),
+        bytes::le16(final(raw)@, at as int) == PAD,
+        bytes::le16(final(raw)@, at as int + 2) == final(raw).len() - at - 4,
+        r == crc::fold(0, final(raw)@.subrange(begin as int, final(raw).len() as int)),
+        forall|prefix: int| 0 <= prefix <= at ==>
+            #[trigger] final(raw)@.take(prefix) == old(raw)@.take(prefix),
+        forall|i: int| 0 <= i < old(raw).len() && (i < at || i >= at as int + 4) ==>
+            #[trigger] final(raw)@[i] == old(raw)@[i],
+{
+    hide(crc::fold);
+    let ghost before = raw@;
+    let length = raw.len() - at - 4;
+    put16(raw, at, PAD);
+    put16(raw, at + 2, length as u16);
+    proof {
+        assert(raw@.take(at as int) == before.take(at as int));
+        equal_prefix_crc(0, before, raw@, at as int, begin as int, at as int);
+        crc_adjacent_subranges(0, raw@, begin as int, at as int, raw.len() as int);
+        assert forall|prefix: int| 0 <= prefix <= at implies
+            #[trigger] raw@.take(prefix) == before.take(prefix) by {}
+        assert forall|i: int| 0 <= i < before.len() && (i < at || i >= at as int + 4) implies
+            #[trigger] raw@[i] == before[i] by {}
+    }
+    crc::crc32c(checksum, &raw[at..])
+}
+
+// A TAIL seals the segment ending at the captured buffer end. Its CRC covers
+// the prior segment and exactly the TAIL header plus TID, excluding the stored
+// CRC word and all TAIL padding.
+fn write_tail_bytes(raw: &mut [u8], begin: usize, at: usize, checksum: u32, tid: u32)
+    requires begin <= at, at as int + 12 <= old(raw).len(),
+        old(raw).len() - at <= 65536,
+        checksum == crc::fold(0, old(raw)@.subrange(begin as int, at as int)),
+    ensures final(raw).len() == old(raw).len(),
+        segment_valid(final(raw)@, SegmentView { begin: begin as nat, tail: at as nat,
+            end: final(raw).len() as nat }, tid),
+        forall|prefix: int| 0 <= prefix <= at ==>
+            #[trigger] final(raw)@.take(prefix) == old(raw)@.take(prefix),
+        forall|i: int| 0 <= i < old(raw).len() && (i < at || i >= at as int + 12) ==>
+            #[trigger] final(raw)@[i] == old(raw)@[i],
+{
+    hide(crc::fold);
+    let ghost before = raw@;
+    let length = raw.len() - at - 4;
+    put16(raw, at, TAIL);
+    put16(raw, at + 2, length as u16);
+    put32(raw, at + 4, tid);
+    proof {
+        assert(raw@.take(at as int) == before.take(at as int));
+        equal_prefix_crc(0, before, raw@, at as int, begin as int, at as int);
+        crc_adjacent_subranges(0, raw@, begin as int, at as int, at as int + 8);
+    }
+    let tail_crc = crc::crc32c(checksum, &raw[at..at + 8]);
+    let ghost before_crc_word = raw@;
+    put32(raw, at + 8, tail_crc);
+    proof {
+        equal_prefix_crc(0, before_crc_word, raw@, at as int + 8, begin as int, at as int + 8);
+        segment_checked(raw@, SegmentView { begin: begin as nat, tail: at as nat,
+            end: raw.len() as nat }, tid);
+        assert forall|prefix: int| 0 <= prefix <= at implies
+            #[trigger] raw@.take(prefix) == before.take(prefix) by {
+            assert(before_crc_word.take(prefix) == before.take(prefix));
+        }
+        assert forall|i: int| 0 <= i < before.len() && (i < at || i >= at as int + 12) implies
+            #[trigger] raw@[i] == before[i] by {
+            assert(before_crc_word[i] == before[i]);
+        }
+    }
+}
+
 proof fn splice_prefix(before: Seq<u8>, offset: nat, data: Seq<u8>, length: nat)
     requires length <= offset, offset + data.len() <= before.len(),
     ensures bytes::splice(before, offset as int, data).take(length as int) == before.take(length as int),
@@ -441,19 +895,13 @@ proof fn sealed_segments_frame(before: Seq<u8>, after: Seq<u8>,
     segments: Seq<SegmentView>, tid: u32, prefix: nat)
     requires prefix <= before.len(), prefix <= after.len(),
         before.take(prefix as int) == after.take(prefix as int),
-        forall|i: int| 0 <= i < segments.len() ==> #[trigger] segment_valid(before, segments[i], tid)
+        forall|i: int| #![trigger segments[i]] 0 <= i < segments.len() ==> segment_valid(before, segments[i], tid)
             && segments[i].end <= prefix,
-    ensures forall|i: int| 0 <= i < segments.len() ==> #[trigger] segment_valid(after, segments[i], tid),
+    ensures forall|i: int| #![trigger segments[i]] 0 <= i < segments.len() ==> segment_valid(after, segments[i], tid),
 {
     assert forall|i: int| 0 <= i < segments.len() implies #[trigger] segment_valid(after, segments[i], tid) by {
-        let segment = segments[i];
-        assert(segment_valid(before, segment, tid));
-        assert(before.subrange(segment.begin as int, segment.tail as int + 8)
-            =~= after.subrange(segment.begin as int, segment.tail as int + 8));
-        assert(bytes::le16(before, segment.tail as int) == bytes::le16(after, segment.tail as int));
-        assert(bytes::le16(before, segment.tail as int + 2) == bytes::le16(after, segment.tail as int + 2));
-        assert(bytes::le32(before, segment.tail as int + 4) == bytes::le32(after, segment.tail as int + 4));
-        assert(bytes::le32(before, segment.tail as int + 8) == bytes::le32(after, segment.tail as int + 8));
+        assert(segment_valid(before, segments[i], tid) && segments[i].end <= prefix);
+        segment_prefix_frame(before, after, segments[i], tid, prefix);
     }
 }
 pub proof fn every_exposed_builder_segment_has_its_exact_tail_crc(v: BuilderView, index: int)
@@ -461,7 +909,104 @@ pub proof fn every_exposed_builder_segment_has_its_exact_tail_crc(v: BuilderView
     ensures segment_valid(v.raw.take(v.committed_end as int), v.segments[index], v.tid),
 {
     reveal(valid_builder);
+    assert(v.raw.take(v.committed_end as int).take(v.committed_end as int) =~= v.raw.take(v.committed_end as int));
     sealed_segments_frame(v.raw, v.raw.take(v.committed_end as int), v.segments, v.tid, v.committed_end);
+}
+
+spec fn builder_config_same(before: BuilderView, after: BuilderView) -> bool {
+    after.tid == before.tid && after.block_bytes == before.block_bytes
+        && after.inode_bytes == before.inode_bytes && after.byte_budget == before.byte_budget
+}
+proof fn builder_scalar_facts(v: BuilderView)
+    requires valid_builder(v),
+    ensures crate::block_size::accepted(v.block_bytes), 128 <= v.inode_bytes <= 65536,
+        v.block_bytes <= v.byte_budget <= MAX_LOG_BYTES,
+        v.block_bytes <= v.raw.len() <= v.byte_budget, v.raw.len() % v.block_bytes == 0,
+        v.committed_end <= v.cursor <= v.raw.len(), v.cursor >= 12,
+        v.cursor == v.raw.len() ==> v.pending == 0 && v.committed_end == v.raw.len(),
+        v.raw.len() - v.cursor < v.block_bytes,
+        v.cursor == v.raw.len() || v.raw.len() - v.cursor >= 4,
+        v.committed_end % v.block_bytes == 0, 1 <= v.records <= MAX_RECORDS, v.pending <= v.records,
+        v.pending == 0 && v.committed_end != 0 ==> v.cursor == v.committed_end,
+        v.checksum == crc::fold(0, v.raw.subrange(v.committed_end as int, v.cursor as int)),
+        forall|i: int| v.cursor <= i < v.raw.len() ==> #[trigger] v.raw[i] == 0,
+{ reveal(valid_builder); }
+proof fn completed_builder_exhausts_bytes(v: BuilderView)
+    requires valid_builder(v), v.committed_end > 0, v.pending == 0, v.cursor == v.committed_end,
+    ensures v.committed_end == v.raw.len(),
+{
+    builder_scalar_facts(v);
+    if v.committed_end < v.raw.len() {
+        aligned_block_suffix(v.raw.len(), v.committed_end, v.block_bytes);
+        assert(v.block_bytes - v.committed_end % v.block_bytes == v.block_bytes);
+        assert(v.block_bytes <= v.raw.len() - v.cursor);
+        assert(false);
+    }
+    reveal(valid_builder);
+    assert(v.segments.len() > 0);
+    every_exposed_builder_segment_has_its_exact_tail_crc(v, v.segments.len() as int - 1);
+}
+
+proof fn builder_append_closed(before: BuilderView, after: BuilderView)
+    requires valid_builder(before), builder_config_same(before, after),
+        before.raw.len() <= after.raw.len() <= after.byte_budget,
+        after.raw.len() % after.block_bytes == 0,
+        after.committed_end == before.committed_end && after.segments == before.segments,
+        before.cursor < after.cursor && after.cursor + 4 <= after.raw.len(),
+        after.raw.len() - after.cursor < after.block_bytes,
+        before.records < after.records <= MAX_RECORDS, after.pending == before.pending + 1,
+        after.raw.take(before.cursor as int) == before.raw.take(before.cursor as int),
+        after.checksum == crc::fold(0, after.raw.subrange(after.committed_end as int, after.cursor as int)),
+        forall|i: int| after.cursor <= i < after.raw.len() ==> #[trigger] after.raw[i] == 0,
+    ensures valid_builder(after),
+{
+    hide(crc::fold);
+    reveal(valid_builder); reveal(builder_config_same);
+    equal_prefix_span(before.raw, after.raw, before.cursor as int, 0, before.committed_end as int);
+    assert(before.raw.take(before.committed_end as int) =~= after.raw.take(before.committed_end as int));
+    sealed_segments_frame(before.raw, after.raw, before.segments, before.tid, before.committed_end);
+    equal_prefix_le16(before.raw, after.raw, before.cursor as int, 0);
+    equal_prefix_le16(before.raw, after.raw, before.cursor as int, 2);
+    equal_prefix_le32(before.raw, after.raw, before.cursor as int, 4);
+    equal_prefix_le32(before.raw, after.raw, before.cursor as int, 8);
+}
+proof fn builder_commit_closed(before: BuilderView, after: BuilderView, tail: SegmentView)
+    requires valid_builder(before), builder_config_same(before, after),
+        before.raw.len() <= after.raw.len() <= after.byte_budget,
+        after.raw.len() % after.block_bytes == 0,
+        after.cursor == after.raw.len() && after.committed_end == after.raw.len(),
+        after.pending == 0 && after.checksum == 0,
+        before.records < after.records <= MAX_RECORDS,
+        after.raw.take(before.cursor as int) == before.raw.take(before.cursor as int),
+        after.segments == before.segments.push(tail), tail.begin == before.committed_end,
+        tail.end == after.raw.len(), segment_valid(after.raw, tail, after.tid),
+    ensures valid_builder(after),
+{
+    hide(crc::fold);
+    reveal(valid_builder); reveal(builder_config_same);
+    equal_prefix_span(before.raw, after.raw, before.cursor as int, 0, before.committed_end as int);
+    assert(before.raw.take(before.committed_end as int) =~= after.raw.take(before.committed_end as int));
+    sealed_segments_frame(before.raw, after.raw, before.segments, before.tid, before.committed_end);
+    equal_prefix_le16(before.raw, after.raw, before.cursor as int, 0);
+    equal_prefix_le16(before.raw, after.raw, before.cursor as int, 2);
+    equal_prefix_le32(before.raw, after.raw, before.cursor as int, 4);
+    equal_prefix_le32(before.raw, after.raw, before.cursor as int, 8);
+    crc_empty(0);
+    assert(after.raw.subrange(after.cursor as int, after.cursor as int) =~= Seq::<u8>::empty());
+    assert forall|i: int| 0 <= i < after.segments.len() implies {
+        &&& #[trigger] segment_valid(after.raw, after.segments[i], after.tid)
+        &&& after.segments[i].end <= after.committed_end && after.segments[i].end % after.block_bytes == 0
+        &&& after.segments[i].begin == if i == 0 { 0nat } else { after.segments[i - 1].end }
+    } by {
+        if i < before.segments.len() {
+            assert(after.segments[i] == before.segments[i]);
+            assert(segment_valid(after.raw, before.segments[i], before.tid));
+        } else {
+            assert(i == before.segments.len() && after.segments[i] == tail);
+            if i == 0 { assert(before.committed_end == 0); }
+            else { assert(before.segments.last().end == before.committed_end); }
+        }
+    }
 }
 
 pub struct Builder {
@@ -504,7 +1049,8 @@ impl BuilderDraft {
                 Err(_) => final(self).view() == old(self).view(),
             },
     {
-        proof { reveal(valid_builder); }
+        hide(crc::fold);
+        proof { builder_scalar_facts(self.view()); }
         let ghost before = self.view();
         if tag < ADD_RANGE || tag > INODE || !value_length_valid(tag, value.len(), self.inode_bytes) {
             return Err(Error::Malformed);
@@ -523,9 +1069,13 @@ impl BuilderDraft {
             return Err(Error::ResourceLimit);
         }
         if needs_pad {
+            let ghost before_pad = self.raw@;
             put16(&mut self.raw, self.cursor, PAD);
             put16(&mut self.raw, self.cursor + 2, (remaining - 4) as u16);
             proof {
+                assert(self.raw@.take(self.cursor as int) == before_pad.take(self.cursor as int));
+                equal_prefix_crc(0, before_pad, self.raw@, self.cursor as int,
+                    before.committed_end as int, self.cursor as int);
                 assert(self.checksum == crc::fold(0, self.raw@.subrange(before.committed_end as int, self.cursor as int)));
                 crc_adjacent_subranges(0, self.raw@, before.committed_end as int, self.cursor as int, self.raw.len() as int);
             }
@@ -533,35 +1083,27 @@ impl BuilderDraft {
             self.cursor = self.raw.len(); self.records += 1;
         }
         if at_end || needs_pad {
-            if !grow(&mut self.raw, self.block_bytes, self.byte_budget) { return Err(Error::ResourceLimit); }
+            let ghost before_growth = self.raw@;
+            if !grow_block(&mut self.raw, self.block_bytes, self.byte_budget) { return Err(Error::ResourceLimit); }
+            proof {
+                equal_prefix_crc(0, before_growth, self.raw@, before_growth.len() as int,
+                    before.committed_end as int, self.cursor as int);
+            }
         }
-        put16(&mut self.raw, self.cursor, tag);
-        put16(&mut self.raw, self.cursor + 2, value.len() as u16);
-        let ghost before_copy = self.raw@;
-        let ghost copy_at = self.cursor;
-        let ghost copy_checksum = self.checksum;
-        let mut i = 0usize;
-        while i < value.len()
-            invariant i <= value.len(), self.cursor + 4 + value.len() <= self.raw.len(),
-                self.cursor == copy_at, self.raw.len() == before_copy.len(),
-                before.committed_end <= self.cursor, self.committed_end == before.committed_end,
-                self.checksum == copy_checksum,
-                copy_checksum == crc::fold(0, self.raw@.subrange(before.committed_end as int, copy_at as int)),
-                self.raw@.take(copy_at as int + 4) == before_copy.take(copy_at as int + 4),
-                self.raw@.subrange(copy_at as int + 4, copy_at as int + 4 + i as int) == value@.take(i as int),
-                forall|j: int| copy_at as int + 4 + i as int <= j < self.raw.len() ==> #[trigger] self.raw@[j] == 0,
-                self.raw@.take(before.cursor as int) == before.raw.take(before.cursor as int),
-            decreases value.len() - i,
-        { self.raw[self.cursor + 4 + i] = value[i]; i += 1; }
-        let end = self.cursor + size;
-        proof {
-            crc_adjacent_subranges(0, self.raw@, before.committed_end as int, self.cursor as int, end as int);
-        }
-        self.checksum = crc::crc32c(self.checksum, &self.raw[self.cursor..end]);
+        assert(self.raw.len() - self.cursor >= size + 4);
+        assert(self.raw.len() - self.cursor <= self.block_bytes);
+        assert forall|j: int| self.cursor <= j < self.raw.len() implies #[trigger] self.raw@[j] == 0 by {}
+        let ghost before_record = self.raw@;
+        let (end, next_crc) = write_record_bytes(&mut self.raw, self.committed_end, self.cursor,
+            self.checksum, tag, value);
+        self.checksum = next_crc;
+        assert(self.raw@.take(before.cursor as int) == before.raw.take(before.cursor as int));
         self.cursor = end; self.records += 1; self.pending_records += 1;
         proof {
-            sealed_segments_frame(before.raw, self.raw@, before.segments, before.tid, before.committed_end);
-            assert(self.wf());
+            assert forall|j: int| self.cursor <= j < self.raw.len() implies #[trigger] self.raw@[j] == 0 by {
+                assert(before_record[j] == 0);
+            }
+            builder_append_closed(before, self.view());
         }
         Ok(())
     }
@@ -582,7 +1124,8 @@ impl BuilderDraft {
                 Err(_) => final(self).view() == old(self).view(),
             },
     {
-        proof { reveal(valid_builder); }
+        hide(crc::fold);
+        proof { builder_scalar_facts(self.view()); }
         let ghost before = self.view();
         if self.pending_records == 0 && self.committed_end != 0 { return Err(Error::NoChanges); }
         let remaining = self.raw.len() - self.cursor;
@@ -592,37 +1135,27 @@ impl BuilderDraft {
         if needs_pad && (self.raw.len() > self.byte_budget
             || self.block_bytes > self.byte_budget - self.raw.len()) { return Err(Error::ResourceLimit); }
         if needs_pad {
-            put16(&mut self.raw, self.cursor, PAD);
-            put16(&mut self.raw, self.cursor + 2, (remaining - 4) as u16);
-            proof {
-                assert(self.checksum == crc::fold(0, self.raw@.subrange(before.committed_end as int, self.cursor as int)));
-                crc_adjacent_subranges(0, self.raw@, before.committed_end as int, self.cursor as int, self.raw.len() as int);
-            }
-            self.checksum = crc::crc32c(self.checksum, &self.raw[self.cursor..]);
+            self.checksum = write_pad_bytes(&mut self.raw, self.committed_end, self.cursor, self.checksum);
             self.cursor = self.raw.len(); self.records += 1;
-            if !grow(&mut self.raw, self.block_bytes, self.byte_budget) { return Err(Error::ResourceLimit); }
+            let ghost before_growth = self.raw@;
+            if !grow_block(&mut self.raw, self.block_bytes, self.byte_budget) { return Err(Error::ResourceLimit); }
+            proof {
+                equal_prefix_crc(0, before_growth, self.raw@, before_growth.len() as int,
+                    before.committed_end as int, self.cursor as int);
+            }
         }
-        let length = self.raw.len() - self.cursor - 4;
         let ghost tail_position = self.cursor;
-        put16(&mut self.raw, self.cursor, TAIL);
-        put16(&mut self.raw, self.cursor + 2, length as u16);
-        put32(&mut self.raw, self.cursor + 4, self.tid);
-        proof {
-            assert(self.checksum == crc::fold(0, self.raw@.subrange(before.committed_end as int, self.cursor as int)));
-            crc_adjacent_subranges(0, self.raw@, before.committed_end as int, self.cursor as int, self.cursor as int + 8);
-        }
-        let checksum = crc::crc32c(self.checksum, &self.raw[self.cursor..self.cursor + 8]);
-        put32(&mut self.raw, self.cursor + 8, checksum);
+        write_tail_bytes(&mut self.raw, self.committed_end, self.cursor, self.checksum, self.tid);
         self.records += 1; self.checksum = 0; self.cursor = self.raw.len();
         self.committed_end = self.raw.len(); self.pending_records = 0;
-        proof {
-            sealed_segments_frame(before.raw, self.raw@, before.segments, before.tid, before.committed_end);
-            assert(segment_valid(self.raw@, SegmentView {
-                begin: before.committed_end, tail: tail_position as nat, end: self.committed_end as nat }, self.tid));
-        }
+        assert(self.raw@.take(before.committed_end as int) == before.raw.take(before.committed_end as int));
         self.segments = Ghost(before.segments.push(SegmentView {
             begin: before.committed_end, tail: tail_position as nat, end: self.committed_end as nat }));
-        proof { assert(self.wf()); }
+        proof {
+            assert(self.raw@.take(before.cursor as int) == before.raw.take(before.cursor as int));
+            builder_commit_closed(before, self.view(), SegmentView {
+                begin: before.committed_end, tail: tail_position as nat, end: self.committed_end as nat });
+        }
         Ok(())
     }
 
@@ -651,6 +1184,9 @@ fn grow(raw: &mut Vec<u8>, block_bytes: usize, byte_budget: usize) -> (r: bool)
     ensures r == (old(raw).len() <= byte_budget && block_bytes <= byte_budget - old(raw).len()),
         final(raw)@ == if r { old(raw)@ + Seq::new(block_bytes as nat, |i: int| 0u8) } else { old(raw)@ },
         final(raw).len() as nat <= if r { byte_budget as nat } else { old(raw).len() as nat },
+        forall|prefix: int| 0 <= prefix <= old(raw).len() ==>
+        #[trigger] final(raw)@.take(prefix) == old(raw)@.take(prefix),
+
 {
     let ghost before = raw@;
     if raw.len() > byte_budget || block_bytes > byte_budget - raw.len() { return false; }
@@ -662,6 +1198,29 @@ fn grow(raw: &mut Vec<u8>, block_bytes: usize, byte_budget: usize) -> (r: bool)
         decreases block_bytes - i,
     { raw.push(0); i += 1; }
     true
+}
+
+fn grow_block(raw: &mut Vec<u8>, block_bytes: usize, byte_budget: usize) -> (r: bool)
+    requires crate::block_size::accepted(block_bytes as nat),
+    ensures r == (old(raw).len() <= byte_budget && block_bytes <= byte_budget - old(raw).len()),
+        final(raw)@ == if r { old(raw)@ + Seq::new(block_bytes as nat, |i: int| 0u8) } else { old(raw)@ },
+        final(raw).len() as nat <= if r { byte_budget as nat } else { old(raw).len() as nat },
+        r ==> final(raw).len() % block_bytes == old(raw).len() % block_bytes,
+        r && old(raw).len() == 0 ==> final(raw).len() % block_bytes == 0,
+        forall|prefix: int| 0 <= prefix <= old(raw).len() ==>
+            #[trigger] final(raw)@.take(prefix) == old(raw)@.take(prefix),
+{
+    let ghost before = raw@;
+    let success = grow(raw, block_bytes, byte_budget);
+    proof {
+        if success {
+            vstd::arithmetic::div_mod::lemma_mod_add_multiples_vanish(before.len() as int, block_bytes as int);
+            if before.len() == 0 {
+                vstd::arithmetic::div_mod::lemma_small_mod(0nat, block_bytes as nat);
+            }
+        }
+    }
+    success
 }
 
 impl Builder {
@@ -689,7 +1248,7 @@ impl Builder {
         if !crate::block_size::valid(block_bytes) || inode_bytes < 128 || inode_bytes > 65536
             || byte_budget < block_bytes || byte_budget > MAX_LOG_BYTES { return Err(Error::Geometry); }
         let mut raw = Vec::<u8>::new();
-        if !grow(&mut raw, block_bytes, byte_budget) { return Err(Error::ResourceLimit); }
+        if !grow_block(&mut raw, block_bytes, byte_budget) { return Err(Error::ResourceLimit); }
         put16(&mut raw, 0, HEAD); put16(&mut raw, 2, 8);
         put32(&mut raw, 4, 0); put32(&mut raw, 8, tid);
         assert(bytes::le16(raw@, 0) == HEAD && bytes::le16(raw@, 2) == 8);
@@ -761,8 +1320,9 @@ impl Builder {
             Err(builder) => builder.wf() && builder.view() == self.view(),
         },
     {
-        proof { use_type_invariant(&self); reveal(valid_builder); }
+        proof { use_type_invariant(&self); }
         if self.committed_end != 0 && self.pending_records == 0 && self.cursor == self.committed_end {
+            proof { completed_builder_exhausts_bytes(self.view()); }
             Ok(self.raw)
         } else { Err(self) }
     }
@@ -858,6 +1418,7 @@ pub open spec fn region_admitted(region: Region, inodes: u32, blocks: u64) -> bo
     &&& 0 < region.physical < 281474976710656
     &&& region.physical as nat + region.length as nat <= blocks
 }
+#[verifier::opaque]
 pub open spec fn decoded_intent(record: RecordView, inodes: u32, blocks: u64) -> Option<IntentView> {
     let value = record.value;
     let inode = bytes::le32(value, 0) as u32;
@@ -889,6 +1450,27 @@ pub open spec fn decoded_intent(record: RecordView, inodes: u32, blocks: u64) ->
         } else { None }
     } else { None }
 }
+pub open spec fn intent_admitted(intent: IntentView, inodes: u32, blocks: u64) -> bool {
+    match intent {
+        IntentView::SetExtent(region) => region_admitted(region, inodes, blocks),
+        IntentView::ClearExtent { inode, logical, length } => inode_number_valid(inode, inodes)
+            && length > 0 && logical as nat + length as nat <= 0xffff_ffff,
+        IntentView::EnsureDentry { parent, inode, name, .. }
+        | IntentView::RemoveDentryIfMatches { parent, inode, name } =>
+            inode_number_valid(parent, inodes) && inode_number_valid(inode, inodes) && name_admitted(name),
+        IntentView::MergeInode { inode, raw } => inode_number_valid(inode, inodes) && raw.len() >= 128,
+    }
+}
+proof fn physical_extent_halves(high: u16, low: u32)
+    ensures ((high as u64) << 32) | low as u64
+            == ((high as u64) * 4294967296u64 + low as u64) as u64,
+        (((high as u64) << 32) | low as u64) < 281474976710656u64,
+{
+    assert(((high as u64) << 32) | low as u64
+        == ((high as u64) * 4294967296u64 + low as u64) as u64) by (bit_vector);
+    assert((((high as u64) << 32) | low as u64) < 281474976710656u64) by (bit_vector);
+}
+
 pub open spec fn insert_modified(ids: Seq<u32>, inode: u32) -> Seq<u32> {
     if ids.contains(inode) { ids } else { ids.push(inode) }
 }
@@ -931,8 +1513,8 @@ pub open spec fn replay_prefix(source: ScanView, origins: Seq<usize>, intents: S
     exclusions: Seq<Region>, modified: Seq<u32>, inodes: u32, blocks: u64, processed: nat) -> bool {
     &&& valid_scan(source) && 0 < source.committed && processed <= source.committed
     &&& origins.len() == intents.len() <= processed
-    &&& (forall|j: int| 0 <= j < origins.len() ==> origins[j] < processed
-        && #[trigger] decoded_intent(source.records[origins[j] as int], inodes, blocks) == Some(intents[j]))
+    &&& (forall|j: int| #![trigger origins[j]] 0 <= j < origins.len() ==> origins[j] < processed
+        && decoded_intent(source.records[origins[j] as int], inodes, blocks) == Some(intents[j]))
     &&& (forall|j: int| 0 < j < origins.len() ==> origins[j - 1] < #[trigger] origins[j])
     &&& (forall|i: int| #![trigger source.records[i]] 0 <= i < processed && ADD_RANGE <= source.records[i].tag <= INODE ==>
         origins.contains(i as usize))
@@ -946,6 +1528,135 @@ pub open spec fn valid_replay(v: ReplayView) -> bool {
     replay_prefix(v.source, v.origins, v.intents, v.exclusions, v.modified, v.inodes, v.blocks, v.source.committed)
         && v.tid == v.source.tid && v.committed_end == v.source.committed_end
 }
+proof fn insert_modified_preserves_admission(ids: Seq<u32>, inode: u32, inodes: u32)
+    requires ids.no_duplicates(), inode_number_valid(inode, inodes),
+        forall|i: int| 0 <= i < ids.len() ==> #[trigger] inode_number_valid(ids[i], inodes),
+    ensures insert_modified(ids, inode).no_duplicates(),
+        forall|i: int| 0 <= i < insert_modified(ids, inode).len()
+            ==> #[trigger] inode_number_valid(insert_modified(ids, inode)[i], inodes),
+{
+    if !ids.contains(inode) {
+        assert forall|i: int, j: int| 0 <= i < j < ids.push(inode).len()
+            implies #[trigger] ids.push(inode)[i] != #[trigger] ids.push(inode)[j] by {
+            if j < ids.len() { assert(ids[i] != ids[j]); }
+            else { assert(ids[i] != inode); }
+        }
+    }
+}
+proof fn intent_modified_preserves_admission(ids: Seq<u32>, intent: IntentView, inodes: u32, blocks: u64)
+    requires ids.no_duplicates(), intent_admitted(intent, inodes, blocks),
+        forall|i: int| 0 <= i < ids.len() ==> #[trigger] inode_number_valid(ids[i], inodes),
+    ensures intent_modified(ids, intent).no_duplicates(),
+        forall|i: int| 0 <= i < intent_modified(ids, intent).len()
+            ==> #[trigger] inode_number_valid(intent_modified(ids, intent)[i], inodes),
+{
+    match intent {
+        IntentView::SetExtent(region) => insert_modified_preserves_admission(ids, region.inode, inodes),
+        IntentView::ClearExtent { inode, .. } | IntentView::MergeInode { inode, .. } =>
+            insert_modified_preserves_admission(ids, inode, inodes),
+        IntentView::EnsureDentry { parent, inode, .. } | IntentView::RemoveDentryIfMatches { parent, inode, .. } => {
+            insert_modified_preserves_admission(ids, parent, inodes);
+            insert_modified_preserves_admission(insert_modified(ids, parent), inode, inodes);
+        },
+    }
+}
+proof fn replay_prefix_empty(source: ScanView, inodes: u32, blocks: u64)
+    requires valid_scan(source), source.committed > 0,
+    ensures replay_prefix(source, Seq::<usize>::empty(), Seq::<IntentView>::empty(),
+        Seq::<Region>::empty(), Seq::<u32>::empty(), inodes, blocks, 0),
+{
+    reveal(replay_prefix); reveal(modified_projection); reveal(exclusion_projection);
+}
+proof fn replay_projection_push(intents: Seq<IntentView>, intent: IntentView)
+    ensures modified_projection(intents.push(intent)) == intent_modified(modified_projection(intents), intent),
+        exclusion_projection(intents.push(intent)) == match intent {
+            IntentView::SetExtent(region) => exclusion_projection(intents).push(region),
+            _ => exclusion_projection(intents),
+        },
+{
+    reveal(modified_projection); reveal(exclusion_projection);
+    assert(intents.push(intent).drop_last() =~= intents);
+    assert(intents.push(intent).last() == intent);
+}
+
+proof fn replay_prefix_append(source: ScanView, origins: Seq<usize>, intents: Seq<IntentView>,
+    exclusions: Seq<Region>, modified: Seq<u32>, inodes: u32, blocks: u64, processed: nat,
+    decoded: Option<IntentView>, next_origins: Seq<usize>, next_intents: Seq<IntentView>,
+    next_exclusions: Seq<Region>, next_modified: Seq<u32>)
+    requires replay_prefix(source, origins, intents, exclusions, modified, inodes, blocks, processed),
+        processed < source.committed,
+        match decoded {
+            Some(intent) => intent_admitted(intent, inodes, blocks)
+                && ADD_RANGE <= source.records[processed as int].tag <= INODE
+                && decoded_intent(source.records[processed as int], inodes, blocks) == Some(intent)
+                && next_origins == origins.push(processed as usize) && next_intents == intents.push(intent)
+                && next_modified == intent_modified(modified, intent)
+                && next_exclusions == match intent { IntentView::SetExtent(region) => exclusions.push(region), _ => exclusions },
+            None => !(ADD_RANGE <= source.records[processed as int].tag <= INODE)
+                && next_origins == origins && next_intents == intents
+                && next_modified == modified && next_exclusions == exclusions,
+        },
+    ensures replay_prefix(source, next_origins, next_intents, next_exclusions, next_modified,
+        inodes, blocks, processed + 1),
+{
+    reveal(replay_prefix);
+    scan_bounds(source);
+    assert(processed < MAX_RECORDS);
+    match decoded {
+        Some(intent) => {
+            intent_modified_preserves_admission(modified, intent, inodes, blocks);
+            replay_projection_push(intents, intent);
+            assert(next_exclusions == exclusion_projection(next_intents));
+            assert(next_modified == modified_projection(next_intents));
+            assert forall|j: int| 0 <= j < next_origins.len() implies next_origins[j] < processed + 1
+                && #[trigger] decoded_intent(source.records[next_origins[j] as int], inodes, blocks) == Some(next_intents[j]) by {
+                if j < origins.len() {
+                    assert(decoded_intent(source.records[origins[j] as int], inodes, blocks) == Some(intents[j]));
+                } else { assert(next_origins[j] == processed as usize && next_intents[j] == intent); }
+            }
+            assert forall|j: int| 0 < j < next_origins.len() implies
+                next_origins[j - 1] < #[trigger] next_origins[j] by {
+                if j < origins.len() { assert(origins[j - 1] < origins[j]); }
+                else if j > 0 {
+                    assert(0 <= j - 1 < origins.len());
+                    assert(origins[j - 1] < processed);
+                }
+            }
+            assert forall|i: int| #![trigger source.records[i]]
+                0 <= i < processed + 1 && ADD_RANGE <= source.records[i].tag <= INODE
+                implies next_origins.contains(i as usize) by {
+                if i < processed {
+                    assert(origins.contains(i as usize));
+                    let at = choose|at: int| 0 <= at < origins.len() && origins[at] == i as usize;
+                    assert(next_origins[at] == i as usize);
+                } else { assert(next_origins[origins.len() as int] == i as usize); }
+            }
+            assert forall|j: int| 0 <= j < next_exclusions.len() implies
+                #[trigger] region_admitted(next_exclusions[j], inodes, blocks) by {
+                if j < exclusions.len() { assert(region_admitted(exclusions[j], inodes, blocks)); }
+                else { assert(intent is SetExtent); }
+            }
+        },
+        None => {
+            assert forall|i: int| #![trigger source.records[i]]
+                0 <= i < processed + 1 && ADD_RANGE <= source.records[i].tag <= INODE
+                implies next_origins.contains(i as usize) by {
+                assert(i < processed);
+            }
+        },
+    }
+    assert(valid_scan(source) && source.committed > 0 && processed + 1 <= source.committed);
+    assert(next_origins.len() == next_intents.len() <= processed + 1);
+    assert(next_exclusions == exclusion_projection(next_intents));
+    assert(next_modified == modified_projection(next_intents));
+    assert(next_modified.no_duplicates());
+    assert forall|j: int| 0 <= j < next_modified.len() implies
+        #[trigger] inode_number_valid(next_modified[j], inodes) by {}
+    assert(replay_prefix(source, next_origins, next_intents, next_exclusions, next_modified,
+        inodes, blocks, processed + 1));
+
+}
+
 pub proof fn replay_intent_has_a_committed_source(v: ReplayView, index: int)
     requires valid_replay(v), 0 <= index < v.intents.len(),
     ensures 0 <= v.origins[index] < v.source.committed,
@@ -971,7 +1682,24 @@ proof fn exclusion_projection_contains(intents: Seq<IntentView>, index: int)
     decreases intents.len(),
 {
     reveal(exclusion_projection);
-    if index < intents.len() - 1 { exclusion_projection_contains(intents.drop_last(), index); }
+    if let IntentView::SetExtent(region) = intents[index] {
+        let prefix = exclusion_projection(intents.drop_last());
+        if index < intents.len() - 1 {
+            exclusion_projection_contains(intents.drop_last(), index);
+            assert(prefix.contains(region));
+            if let IntentView::SetExtent(last) = intents.last() {
+                let at = choose|at: int| 0 <= at < prefix.len() && prefix[at] == region;
+                assert(prefix.push(last)[at] == region);
+                assert(prefix.push(last).contains(region));
+            }
+        } else {
+            assert(index == intents.len() - 1);
+            assert(intents.last() == intents[index]);
+            assert(exclusion_projection(intents) == prefix.push(region));
+            assert(prefix.push(region)[prefix.len() as int] == region);
+            assert(prefix.push(region).contains(region));
+        }
+    }
 }
 
 /// A per-key effect model: namespace replacement needs an absent or matching
@@ -1058,9 +1786,15 @@ proof fn an_extent_sequence_is_identity_or_an_absolute_value(intents: Seq<Intent
         an_extent_intent_is_identity_or_an_absolute_value(intents.last(), inode, logical,
             extent_sequence_at(prefix, inode, logical, first), extent_sequence_at(prefix, inode, logical, second));
         if sequence_writes_extent_key(intents, inode, logical) && !writes_extent_key(intents.last(), inode, logical) {
-            let i = choose|i: int| 0 <= i < intents.len() && writes_extent_key(intents[i], inode, logical);
+            let i = choose|i: int| 0 <= i < intents.len() && #[trigger] writes_extent_key(intents[i], inode, logical);
             assert(i < prefix.len());
-            assert(sequence_writes_extent_key(prefix, inode, logical));
+            assert(prefix[i] == intents[i]);
+            assert(writes_extent_key(prefix[i], inode, logical));
+            assert(sequence_writes_extent_key(prefix, inode, logical)) by {
+                assert(exists|j: int| 0 <= j < prefix.len() && #[trigger] writes_extent_key(prefix[j], inode, logical)) by {
+                    assert(writes_extent_key(prefix[i], inode, logical));
+                }
+            }
         }
     }
 }
@@ -1103,8 +1837,12 @@ fn name_valid(name: &[u8]) -> (r: bool)
     ensures r == name_admitted(name@),
 {
     if name.len() == 0 || name.len() > 255 { return false; }
-    if name.len() == 1 && name[0] == 46 { return false; }
-    if name.len() == 2 && name[0] == 46 && name[1] == 46 { return false; }
+    if name.len() == 1 && name[0] == 46 {
+        assert(name@ =~= seq![46u8]); return false;
+    }
+    if name.len() == 2 && name[0] == 46 && name[1] == 46 {
+        assert(name@ =~= seq![46u8, 46u8]); return false;
+    }
     let mut i = 0usize;
     while i < name.len()
         invariant i <= name.len(), 1 <= name.len() <= 255,
@@ -1118,6 +1856,73 @@ fn name_valid(name: &[u8]) -> (r: bool)
     true
 }
 
+fn decode_replay_record(record: &Record, inode_bytes: usize, inodes: u32, filesystem_blocks: u64)
+    -> (r: Result<Option<Intent>, Error>)
+    requires 128 <= inode_bytes <= 65536,
+        value_length_ok(record.tag, record.value.len() as nat, inode_bytes as nat),
+    ensures match r {
+        Ok(Some(intent)) => ADD_RANGE <= record.tag <= INODE
+            && decoded_intent(RecordView { tag: record.tag, value: record.value@ }, inodes, filesystem_blocks) == Some(intent_view(intent))
+            && intent_admitted(intent_view(intent), inodes, filesystem_blocks),
+        Ok(None) => !(ADD_RANGE <= record.tag <= INODE),
+        Err(_) => true,
+    },
+{
+    hide(crc::fold);
+    reveal(decoded_intent);
+    let value = &record.value;
+    if record.tag == ADD_RANGE {
+        let inode = bytes::read_le32(value, 0).unwrap();
+        if !valid_inode(inode, inodes) { return Err(Error::InvalidInode); }
+        let logical = bytes::read_le32(value, 4).unwrap();
+        let encoded = bytes::read_le16(value, 8).unwrap();
+        if encoded == 0 { return Err(Error::InvalidRange); }
+        let initialized = encoded <= 32768;
+        let length = if initialized { encoded as u32 } else { encoded as u32 - 32768 };
+        let high = bytes::read_le16(value, 10).unwrap();
+        let low = bytes::read_le32(value, 12).unwrap();
+        let physical = ((high as u64) << 32) | low as u64;
+        proof { physical_extent_halves(high, low); }
+        if logical as u64 + length as u64 > 0xffff_ffffu64 || physical == 0
+            || physical >= filesystem_blocks || length as u64 > filesystem_blocks - physical {
+            return Err(Error::InvalidRange);
+        }
+        Ok(Some(Intent::SetExtent(Region { inode, logical, physical, length, initialized })))
+    } else if record.tag == DEL_RANGE {
+        let inode = bytes::read_le32(value, 0).unwrap();
+        if !valid_inode(inode, inodes) { return Err(Error::InvalidInode); }
+        let logical = bytes::read_le32(value, 4).unwrap(); let length = bytes::read_le32(value, 8).unwrap();
+        if length == 0 || logical as u64 + length as u64 > 0xffff_ffffu64 { return Err(Error::InvalidRange); }
+        Ok(Some(Intent::ClearExtent { inode, logical, length }))
+    } else if record.tag == CREAT || record.tag == LINK || record.tag == UNLINK {
+        let parent = bytes::read_le32(value, 0).unwrap(); let inode = bytes::read_le32(value, 4).unwrap();
+        if !valid_inode(parent, inodes) || !valid_inode(inode, inodes) { return Err(Error::InvalidInode); }
+        let name = &value[8..]; if !name_valid(name) { return Err(Error::InvalidName); }
+        if record.tag == UNLINK {
+            Ok(Some(Intent::RemoveDentryIfMatches { parent, inode, name: copy(name) }))
+        } else {
+            Ok(Some(Intent::EnsureDentry { parent, inode, name: copy(name), create: record.tag == CREAT }))
+        }
+    } else if record.tag == INODE {
+        let inode = bytes::read_le32(value, 0).unwrap();
+        if !valid_inode(inode, inodes) { return Err(Error::InvalidInode); }
+        Ok(Some(Intent::MergeInode { inode, raw: copy(&value[4..]) }))
+    } else { Ok(None) }
+}
+fn include_replay_metadata(intent: &Intent, exclusions: &mut Vec<Region>, modified: &mut Vec<u32>)
+    ensures final(exclusions)@ == match intent_view(*intent) {
+            IntentView::SetExtent(region) => old(exclusions)@.push(region), _ => old(exclusions)@ },
+        final(modified)@ == intent_modified(old(modified)@, intent_view(*intent)),
+{
+    match intent {
+        Intent::SetExtent(region) => { exclusions.push(*region); add_modified(modified, region.inode); },
+        Intent::ClearExtent { inode, .. } | Intent::MergeInode { inode, .. } => add_modified(modified, *inode),
+        Intent::EnsureDentry { parent, inode, .. } | Intent::RemoveDentryIfMatches { parent, inode, .. } => {
+            add_modified(modified, *parent); add_modified(modified, *inode);
+        },
+    }
+}
+
 /// Turn only the recognized committed prefix into absolute replay intentions.
 /// The allocator must exclude every recorded physical region before applying
 /// any intent. Actual bitmap ownership and source-image admission are separate.
@@ -1129,73 +1934,52 @@ pub fn plan_replay(scanned: &Scan, inodes: u32, filesystem_blocks: u64)
         Err(_) => true,
     },
 {
-    proof { use_type_invariant(scanned); reveal(valid_scan); }
+    proof { use_type_invariant(scanned); scan_bounds(scanned.view()); }
     if scanned.committed == 0 { return Err(Error::NoChanges); }
-    let mut intents = Vec::<Intent>::new();
-    let mut exclusions = Vec::<Region>::new();
-    let mut modified = Vec::<u32>::new();
-    let ghost mut origins = Seq::<usize>::empty();
+    let mut intents = Vec::<Intent>::new(); let mut exclusions = Vec::<Region>::new();
+    let mut modified = Vec::<u32>::new(); let ghost mut origins = Seq::<usize>::empty();
     let mut i = 0usize;
-    proof { reveal(replay_prefix); reveal(modified_projection); reveal(exclusion_projection); }
+    proof {
+        assert(intent_views(intents@) =~= Seq::<IntentView>::empty());
+        assert(origins =~= Seq::<usize>::empty());
+        assert(exclusions@ =~= Seq::<Region>::empty());
+        assert(modified@ =~= Seq::<u32>::empty());
+        replay_prefix_empty(scanned.view(), inodes, filesystem_blocks);
+    }
     while i < scanned.committed
         invariant scanned.wf(), i <= scanned.committed <= scanned.records.len(), scanned.records.len() <= MAX_RECORDS,
+            128 <= scanned.inode_bytes <= 65536,
             replay_prefix(scanned.view(), origins, intent_views(intents@), exclusions@, modified@,
                 inodes, filesystem_blocks, i as nat),
         decreases scanned.committed - i,
     {
-        let record = &scanned.records[i]; let value = &record.value;
-        proof {
-            reveal(replay_prefix); reveal(valid_scan);
-            assert(value_length_ok(record.tag, record.value.len() as nat, scanned.inode_bytes as nat));
-        }
-        if record.tag == ADD_RANGE {
-            let inode = bytes::read_le32(value, 0).unwrap();
-            if !valid_inode(inode, inodes) { return Err(Error::InvalidInode); }
-            let logical = bytes::read_le32(value, 4).unwrap();
-            let encoded = bytes::read_le16(value, 8).unwrap();
-            if encoded == 0 { return Err(Error::InvalidRange); }
-            let initialized = encoded <= 32768;
-            let length = if initialized { encoded as u32 } else { encoded as u32 - 32768 };
-            let physical = ((bytes::read_le16(value, 10).unwrap() as u64) << 32)
-                | bytes::read_le32(value, 12).unwrap() as u64;
-            if logical as u64 + length as u64 > 0xffff_ffffu64 || physical == 0
-                || physical >= filesystem_blocks || length as u64 > filesystem_blocks - physical {
-                return Err(Error::InvalidRange);
-            }
-            let region = Region { inode, logical, physical, length, initialized };
-            exclusions.push(region); intents.push(Intent::SetExtent(region));
-            add_modified(&mut modified, inode);
-        } else if record.tag == DEL_RANGE {
-            let inode = bytes::read_le32(value, 0).unwrap();
-            if !valid_inode(inode, inodes) { return Err(Error::InvalidInode); }
-            let logical = bytes::read_le32(value, 4).unwrap();
-            let length = bytes::read_le32(value, 8).unwrap();
-            if length == 0 || logical as u64 + length as u64 > 0xffff_ffffu64 {
-                return Err(Error::InvalidRange);
-            }
-            intents.push(Intent::ClearExtent { inode, logical, length });
-            add_modified(&mut modified, inode);
-        } else if record.tag == CREAT || record.tag == LINK || record.tag == UNLINK {
-            let parent = bytes::read_le32(value, 0).unwrap();
-            let inode = bytes::read_le32(value, 4).unwrap();
-            if !valid_inode(parent, inodes) || !valid_inode(inode, inodes) { return Err(Error::InvalidInode); }
-            let name = &value[8..];
-            if !name_valid(name) { return Err(Error::InvalidName); }
-            if record.tag == UNLINK {
-                intents.push(Intent::RemoveDentryIfMatches { parent, inode, name: copy(name) });
-            } else {
-                intents.push(Intent::EnsureDentry { parent, inode, name: copy(name), create: record.tag == CREAT });
-            }
-            add_modified(&mut modified, parent); add_modified(&mut modified, inode);
-        } else if record.tag == INODE {
-            let inode = bytes::read_le32(value, 0).unwrap();
-            if !valid_inode(inode, inodes) { return Err(Error::InvalidInode); }
-            intents.push(Intent::MergeInode { inode, raw: copy(&value[4..]) });
-            add_modified(&mut modified, inode);
-        }
-        proof {
-            if ADD_RANGE <= record.tag <= INODE { origins = origins.push(i); }
-            reveal(replay_prefix); reveal(modified_projection); reveal(exclusion_projection);
+        proof { checked_scan_record(scanned.view(), i as int); }
+        let record = &scanned.records[i];
+        let decoded = match decode_replay_record(record, scanned.inode_bytes, inodes, filesystem_blocks) {
+            Ok(decoded) => decoded, Err(error) => { return Err(error); }
+        };
+        let ghost old_origins = origins; let ghost old_intents = intent_views(intents@);
+        let ghost old_exclusions = exclusions@; let ghost old_modified = modified@;
+        match decoded {
+            Some(intent) => {
+                let ghost decoded_view = intent_view(intent);
+                include_replay_metadata(&intent, &mut exclusions, &mut modified);
+                intents.push(intent);
+                proof {
+                    origins = old_origins.push(i);
+                    assert(intent_views(intents@) =~= old_intents.push(decoded_view));
+                    replay_prefix_append(scanned.view(), old_origins, old_intents, old_exclusions, old_modified,
+                        inodes, filesystem_blocks, i as nat, Some(decoded_view), origins,
+                        intent_views(intents@), exclusions@, modified@);
+                }
+            },
+            None => {
+                proof {
+                    replay_prefix_append(scanned.view(), old_origins, old_intents, old_exclusions, old_modified,
+                        inodes, filesystem_blocks, i as nat, None, origins,
+                        intent_views(intents@), exclusions@, modified@);
+                }
+            },
         }
         i += 1;
     }
@@ -1239,13 +2023,21 @@ impl ReplayPlan {
         proof { use_type_invariant(self); }
         let mut i = 0usize;
         while i < self.exclusions.len()
-            invariant i <= self.exclusions.len(),
+            invariant self.wf(), i <= self.exclusions.len(),
                 forall|j: int| #![trigger self.exclusions@[j]] 0 <= j < i ==> !(self.exclusions@[j].physical <= block
                     < self.exclusions@[j].physical as nat + self.exclusions@[j].length as nat),
             decreases self.exclusions.len() - i,
         {
             let region = self.exclusions[i];
-            if block >= region.physical && block - region.physical < region.length as u64 { return true; }
+            if block >= region.physical && block - region.physical < region.length as u64 {
+                proof {
+                    assert(region.physical <= block < region.physical as nat + region.length as nat);
+                    assert(exclusion_contains(self.view().exclusions, block)) by {
+                        assert(self.view().exclusions[i as int] == region);
+                    }
+                }
+                return true;
+            }
             i += 1;
         }
         false

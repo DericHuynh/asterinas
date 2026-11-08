@@ -219,13 +219,19 @@ impl Sm4Key {
         let mut out=[0u8;16];put32(&mut out,0,d);put32(&mut out,4,c);put32(&mut out,8,b);put32(&mut out,12,a);Ok(out)
     }
     pub fn encrypt_sm4_block(&self,input:[u8;16]) -> (r:Result<[u8;16],Error>)
-        ensures match r {Ok(v)=>!self.sm4_retired() && v@==self.sm4_transform_reference(input@,false),
+        ensures self.sm4_valid(),match r {Ok(v)=>!self.sm4_retired() && v@==self.sm4_transform_reference(input@,false),
             Err(_)=>self.sm4_retired()},
-    {self.apply(input,false)}
+    {
+        proof {use_type_invariant(self);}
+        self.apply(input,false)
+    }
     pub fn decrypt_sm4_block(&self,input:[u8;16]) -> (r:Result<[u8;16],Error>)
-        ensures match r {Ok(v)=>!self.sm4_retired() && v@==self.sm4_transform_reference(input@,true),
+        ensures self.sm4_valid(),match r {Ok(v)=>!self.sm4_retired() && v@==self.sm4_transform_reference(input@,true),
             Err(_)=>self.sm4_retired()},
-    {self.apply(input,true)}
+    {
+        proof {use_type_invariant(self);}
+        self.apply(input,true)
+    }
     pub fn retire_sm4(&mut self)
         ensures final(self).sm4_valid(),final(self).sm4_retired(),
             forall|i:int| 0<=i<32 ==> final(self).sm4_schedule()[i]==0,
