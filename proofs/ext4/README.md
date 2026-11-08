@@ -9,7 +9,7 @@ and a [concurrent block/extent/transaction protocol](CONCURRENCY.md).
 It is not a complete filesystem and is not registered with the kernel VFS.
 No mount or filesystem write path is enabled.
 
-The pinned entire-crate Verus run checks **3142 obligations with zero errors**,
+The last pinned entire-crate baseline, commit `9083e1d36cb433927df6c0b636c8377a4c350c22`, checked **3142 obligations with zero errors**,
 including 915 named proof functions and 775 named executable functions.
 372 host interoperability/regression tests pass.
 The run includes the [EA-enabled namespace](EA_NAMESPACE.md), the bounded
@@ -20,6 +20,12 @@ and nonlast unlinks](CROSS_DIRECTORY_NAMESPACE.md), bounded
 There are 340 negative API checks and six verifier gates.
 [Proof status](proof-status.json) and [recorded evidence](verification-evidence.json)
 state the exact scope; tests do not discharge formal obligations.
+
+The [implementation-first feature expansion](FEATURE_EXPANSION.md) adds separate
+feature engines and proof obligations after that baseline. Its focused results
+are recorded in [FEATURE_EXPANSION_STATUS.json](FEATURE_EXPANSION_STATUS.json).
+The baseline totals above do not certify those additions; a new strict
+whole-crate result remains pending.
 
 ## Implementation and proof scope
 

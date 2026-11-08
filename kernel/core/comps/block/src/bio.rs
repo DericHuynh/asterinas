@@ -441,14 +441,21 @@ impl BioSegment {
 
     /// Constructs a new `BioSegment` with a given `USegment` and the bio direction.
     pub fn new_from_segment(segment: USegment, direction: BioDirection) -> Self {
+        Self::try_new_from_segment(segment, direction).unwrap()
+    }
+
+    /// Constructs a segment while propagating DMA mapping failures.
+    ///
+    /// As with other DMA constructors, the caller must have IRQs enabled.
+    pub fn try_new_from_segment(segment: USegment, direction: BioDirection) -> Result<Self, Error> {
         let len = segment.size();
-        let dma_stream = DmaStream::map(segment, false).unwrap();
-        Self {
+        let dma_stream = DmaStream::map(segment, false)?;
+        Ok(Self {
             inner: Arc::new(BioSegmentInner {
                 storage: Slice::new(DmaBuffer::Direct(dma_stream), 0..len),
                 direction,
             }),
-        }
+        })
     }
 
     /// Returns the number of bytes.

@@ -1,0 +1,176 @@
+{
+  "schema": 1,
+  "status": "proof construction in progress; mount/feature gates unchanged",
+  "last_whole_crate_verified_commit": "9083e1d36cb433927df6c0b636c8377a4c350c22",
+  "new_whole_crate_verification": null,
+  "focused_diagnostics": [
+    {
+      "attempt": "proof-core-slices-01",
+      "modules": [
+        "group_legacy",
+        "inode_payload",
+        "orphan_lifecycle",
+        "ea_restart",
+        "ea_repeated_recovery"
+      ],
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 84,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "source_sha256": {
+        "group_legacy": "59e4eb4578096f09a5bea1745b13481228e7c8691555a44cc700a6d4ed445b27",
+        "inode_payload": "75e812efa5f8273fff4d2d9e26245a54ec747535bc61b81f25b6c68ecbebac66",
+        "orphan_lifecycle": "794d1944bd9cc4e7904a2c984d4b7f6b4d56bb2d3030d6360f74e8b03cb97960",
+        "ea_restart": "41ba8fbee8f192d09d4baadb7318c199fa5c25deae31c2a4fd14ed07fbf1ad3c",
+        "ea_repeated_recovery": "73673d0a976efa48a5e9c63df00cda4187a344a487d981bf537b2df48392d903"
+      },
+      "command_sha256": "dc4a49f1d9173b8c47db95c3655fb28c47c9755b99257f17bbf6f2e66719f413",
+      "filtered": true,
+      "whole_expansion_verified": false
+    },
+    {
+      "attempt": "proof-meta-04",
+      "modules": [
+        "meta_bg"
+      ],
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 49,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "source_sha256": {
+        "meta_bg": "13cf1fef9c654cc6e1491b6da37ad88acb5575a42402bcc882b68164200099a3"
+      },
+      "command_sha256": "4ba1019cded0059a86ae177ff77ee1c8c88fb17ac45dfc8567f1a9f07a5aa181",
+      "filtered": true,
+      "whole_expansion_verified": false
+    },
+    {
+      "attempt": "proof-unicode-04",
+      "modules": [
+        "unicode12_data"
+      ],
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 150,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "source_sha256": {
+        "unicode12_data": "9e0f9fe70fa2cc4b8c03b0cb162f35138f4458e5eeef6af233f910e169dc0260"
+      },
+      "command_sha256": "6fef2c070075e84201386f14e5d872e12342c9322ae5fe51c8fad9efd277780a",
+      "filtered": true,
+      "whole_expansion_verified": false
+    },
+    {
+      "attempt": "proof-resize-06",
+      "modules": [
+        "resize_plan"
+      ],
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 41,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "source_sha256": {
+        "resize_plan": "db1f6bfe393c6d6cd95b615150d0b743191bf050a7730edca2ba7534b172bc33"
+      },
+      "command_sha256": "c57d5e69d10726298125efcf5f2a93b761eff4def942b2236d03c4c2d39346a0",
+      "filtered": true,
+      "whole_expansion_verified": false
+    },
+    {
+      "attempt": "proof-inline-09",
+      "modules": [
+        "inline_data"
+      ],
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 27,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "source_sha256": {
+        "inline_data": "3f8ade9b5ed137b2f887930428c16dc5e27992614f0119781c99a97e744f4a35"
+      },
+      "command_sha256": "940785cba9f14d0fadc4775a3328fc09715eb963a860f1f0b68fa891e533174e",
+      "filtered": true,
+      "whole_expansion_verified": false,
+      "scope": "exact storage/read/write and non-target attribute header/value preservation; cached non-overlap guard"
+    }
+  ],
+  "unique_checked_modules": [
+    "ea_repeated_recovery",
+    "ea_restart",
+    "group_legacy",
+    "inline_data",
+    "inode_payload",
+    "meta_bg",
+    "orphan_lifecycle",
+    "resize_plan",
+    "unicode12_data"
+  ],
+  "focused_verified_obligations": 351,
+  "current_source_matches_checked_modules": true,
+  "independent_test_harness_fix": {
+    "branch": "fix/osdk-test-qemu-exit",
+    "commit": "21600cccf785193e5086a4851c5812ad40b0442d",
+    "draft_pr": "https://github.com/DericHuynh/asterinas/pull/63",
+    "host_regressions_passed": 4,
+    "issue_creation": "unavailable: fork has issues disabled"
+  },
+  "pending_strengthenings": {},
+  "superseded_focused_diagnostics": [
+    {
+      "attempt": "proof-inline-06",
+      "modules": [
+        "inline_data"
+      ],
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 22,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "source_sha256": {
+        "inline_data": "e5dfb3fd952cf98f6f86672322f532bc33eece70657bcf7830f1e2698987bbf3"
+      },
+      "command_sha256": "0f6218dd993b3214f97534ddbda7a890fd6b1e689ad1aa0e2024a3026c2b2dce",
+      "filtered": true,
+      "whole_expansion_verified": false
+    }
+  ],
+  "integrated_compile": {
+    "attempt": "typecheck-12",
+    "new_modules": 32,
+    "returncode": 0,
+    "verification_skipped": true,
+    "proof_evidence": false
+  },
+  "integrated_crypto_native": {
+    "attempt": "extra-crypto-native-07",
+    "passed_commands": 474,
+    "proof_evidence": false
+  },
+  "registry": {
+    "sources": 258,
+    "named_proofs": 969,
+    "public_executable_functions": 1249,
+    "baseline_inventory_prefixes_preserved": true,
+    "expanded_entrypoint_declared": true
+  },
+  "canceled_experiments": {
+    "branchless_binary_search": "Canceled at user request; no production search changes or integrations."
+  }
+}
