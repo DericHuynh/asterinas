@@ -414,24 +414,24 @@
       "whole_expansion_verified": false
     },
     {
-      "attempt": "proof-verity-builder-06",
+      "attempt": "proof-verity-completeness-03",
       "modules": [
         "fsverity"
       ],
       "verification_results": {
         "encountered-error": false,
         "encountered-vir-error": false,
-        "verified": 159,
+        "verified": 174,
         "errors": 0,
         "is-verifying-entire-crate": false
       },
       "source_sha256": {
-        "fsverity": "75fb4cb6ccf0989d321f526b563c2ce3c7d593c814d6c3329b2b044838fa2efc"
+        "fsverity": "be04687d270c0a3e9d5a9fdc2c531cb6a4df17dc751a38f01d781469fe7fa7c2"
       },
-      "command_sha256": "33981bb201a2f7833db85b88e91564076e01f83c63cc2b084a4cfed9fbe30c57",
+      "command_sha256": "db88f5fd4c269292e7c4bb7d593c904a0c9a0abb0f278f6b9113cbe9e94a7195",
       "filtered": true,
       "whole_expansion_verified": false,
-      "scope": "Exact canonical successful-build Merkle tree, root-dependent descriptor and measurement; canonical layout height and existing descriptor/read/Merkle-path contracts. Successful-completion iff admission is not yet proved",
+      "scope": "Standalone build success iff independent mathematical format/finite-height/canonical-size/numeric-budget admission, retaining all exact canonical tree/root/descriptor/measurement and descriptor/layout/read/Merkle-path content contracts",
       "dependency_source_sha256": {
         "crypto_sha2": "3b0e8c8970d743218cfe2a1eef5ffd539123bcf918a3abefe8bf52a60d2b8395"
       }
@@ -465,7 +465,7 @@
     "sm4",
     "unicode12_data"
   ],
-  "focused_verified_obligations": 1595,
+  "focused_verified_obligations": 1610,
   "current_source_matches_checked_modules": true,
   "independent_test_harness_fix": {
     "branch": "fix/osdk-test-qemu-exit",
@@ -570,6 +570,29 @@
       "command_sha256": "ce51bf41e778ca8532ab4a792d28ab3e0f4e69a63ca7dbcb1740367c070ac865",
       "filtered": true,
       "whole_expansion_verified": false
+    },
+    {
+      "attempt": "proof-verity-builder-06",
+      "modules": [
+        "fsverity"
+      ],
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 159,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "source_sha256": {
+        "fsverity": "75fb4cb6ccf0989d321f526b563c2ce3c7d593c814d6c3329b2b044838fa2efc"
+      },
+      "command_sha256": "33981bb201a2f7833db85b88e91564076e01f83c63cc2b084a4cfed9fbe30c57",
+      "filtered": true,
+      "whole_expansion_verified": false,
+      "scope": "Exact canonical successful-build Merkle tree, root-dependent descriptor and measurement; canonical layout height and existing descriptor/read/Merkle-path contracts. Successful-completion iff admission is not yet proved",
+      "dependency_source_sha256": {
+        "crypto_sha2": "3b0e8c8970d743218cfe2a1eef5ffd539123bcf918a3abefe8bf52a60d2b8395"
+      }
     }
   ],
   "integrated_compile": {
@@ -579,7 +602,7 @@
     "verification_skipped": true,
     "proof_evidence": false,
     "artifact_sha256": "e44f9fec5018492b8b9c6dfe5138322093b43d29f29d35087daed0bc6ddd8943",
-    "scope": "Coherent immutable all32-module checkpoint based on db4c9f8 plus the exact newly checked orphan-file/fsverity sources. Ongoing unproved drafts remain separate. This historical compile predates the SHA completion and fsverity builder contracts on this branch; no new integrated compile was performed.",
+    "scope": "Coherent immutable all32-module checkpoint based on db4c9f8 plus the exact newly checked orphan-file/fsverity sources. Ongoing unproved drafts remain separate. This historical compile predates the SHA completion and fsverity builder content/completion contracts on this branch; no new integrated compile was performed.",
     "source_base_commit": "db4c9f8ac784c314218f083cb2ec1b4681408406",
     "new_verified_module_snapshots": [
       "proof-orphan-file-14",
@@ -847,22 +870,22 @@
   "checked_verity_conformance": {
     "status": "passed",
     "formal_verification": false,
-    "library_attempt": "proof-verity-builder-06",
-    "library_sha256": "a005b43cfaf2615dcbe1932d3a6eaa3593ad45d8a405c7c27fc9b413768a6840",
-    "source_sha256": "75fb4cb6ccf0989d321f526b563c2ce3c7d593c814d6c3329b2b044838fa2efc",
+    "library_attempt": "proof-verity-completeness-03",
+    "library_sha256": "a9b4894b2513c8396762aa1d5cafee782920f409f0d90060c44e1d406a6b09d3",
+    "source_sha256": "be04687d270c0a3e9d5a9fdc2c531cb6a4df17dc751a38f01d781469fe7fa7c2",
     "merkle_cases": 12,
     "generated_files_compared": 24,
     "bounded_read_probes": 420,
     "oversized_read_rejections": 12,
     "oracle": "Pinned independently Python-generated tree/descriptor bytes and measurements, plus source-slice reads and data/tree/descriptor corruption controls",
     "implementation": "Actual focused-checked fsverity/SHA artifact; no local hash or filesystem implementation",
-    "scope": "Finite exact-artifact read/layout/Merkle interoperability; successful-build canonical content has a separate focused proof. Successful-completion iff admission, source ownership, signature policy, immutable publication and disk durability remain open",
-    "attempt": "verity-builder-checked-native-01",
+    "scope": "Finite exact-artifact read/layout/Merkle interoperability; successful-build canonical content has a separate focused proof. Arithmetic successful-completion iff admission has a separate focused proof. Source ownership, signature policy, immutable publication and disk durability remain open",
+    "attempt": "verity-completeness-checked-native-01",
     "sha_source_sha256": "3b0e8c8970d743218cfe2a1eef5ffd539123bcf918a3abefe8bf52a60d2b8395",
     "source_matches_focused_snapshot": true,
     "driver_sha256": "fd2de018d266c5ebe2b54edbd0217cbb2000b4366cbe7d97d19eebee2dead010",
-    "generated_files_manifest_sha256": "c08e56d80ddbea0a59bd1a37db648ab887c1c81ba9bb64302def5ea0809abc55",
-    "provider_manifest_sha256": "f0dfb8c2ae9bbf181b36747890bc2ea746bda66047bca502d54eec8d219ce3e6",
+    "generated_files_manifest_sha256": "9e24d8b2645650ebcd4ed5d4615ef4b46ffbf39cbe8fe393b3fcafe3ce1d4515",
+    "provider_manifest_sha256": "645b29b0d1af911f4712d9885c75651cc8c51275cba64ded60b3618f4e29c720",
     "input_files_unchanged": true,
     "independent_golden_files_unchanged": true
   },
@@ -900,24 +923,125 @@
       "implementation": "Actual focused-checked fsverity/SHA artifact; no local hash or filesystem implementation",
       "scope": "Read/layout/Merkle interoperability; full builder-content recurrence, signature policy and mounted immutable publication remain open",
       "attempt": "verity-checked-native-01"
+    },
+    {
+      "status": "passed",
+      "formal_verification": false,
+      "library_attempt": "proof-verity-builder-06",
+      "library_sha256": "a005b43cfaf2615dcbe1932d3a6eaa3593ad45d8a405c7c27fc9b413768a6840",
+      "source_sha256": "75fb4cb6ccf0989d321f526b563c2ce3c7d593c814d6c3329b2b044838fa2efc",
+      "merkle_cases": 12,
+      "generated_files_compared": 24,
+      "bounded_read_probes": 420,
+      "oversized_read_rejections": 12,
+      "oracle": "Pinned independently Python-generated tree/descriptor bytes and measurements, plus source-slice reads and data/tree/descriptor corruption controls",
+      "implementation": "Actual focused-checked fsverity/SHA artifact; no local hash or filesystem implementation",
+      "scope": "Finite exact-artifact read/layout/Merkle interoperability; successful-build canonical content has a separate focused proof. Successful-completion iff admission, source ownership, signature policy, immutable publication and disk durability remain open",
+      "attempt": "verity-builder-checked-native-01",
+      "sha_source_sha256": "3b0e8c8970d743218cfe2a1eef5ffd539123bcf918a3abefe8bf52a60d2b8395",
+      "source_matches_focused_snapshot": true,
+      "driver_sha256": "fd2de018d266c5ebe2b54edbd0217cbb2000b4366cbe7d97d19eebee2dead010",
+      "generated_files_manifest_sha256": "c08e56d80ddbea0a59bd1a37db648ab887c1c81ba9bb64302def5ea0809abc55",
+      "provider_manifest_sha256": "f0dfb8c2ae9bbf181b36747890bc2ea746bda66047bca502d54eec8d219ce3e6",
+      "input_files_unchanged": true,
+      "independent_golden_files_unchanged": true
     }
   ],
   "fsverity_builder_content_refinement": {
-    "attempt": "proof-verity-builder-06",
-    "verified_obligations": 159,
-    "source_sha256": "75fb4cb6ccf0989d321f526b563c2ce3c7d593c814d6c3329b2b044838fa2efc",
+    "attempt": "proof-verity-completeness-03",
+    "verified_obligations": 174,
+    "source_sha256": "be04687d270c0a3e9d5a9fdc2c531cb6a4df17dc751a38f01d781469fe7fa7c2",
     "sha_dependency_sha256": "3b0e8c8970d743218cfe2a1eef5ffd539123bcf918a3abefe8bf52a60d2b8395",
-    "public_api": "build returns Ok only with build_content; BuiltTree getters expose the exact BuiltView bytes",
+    "public_api": "build returns Ok iff build_admission and each successful result satisfies build_content; BuiltTree getters expose the exact BuiltView bytes",
     "reference": "Opaque salted-SHA canonical level recurrence, top-first wire tree, root, 256-byte descriptor and measured header digest",
     "construction_invariant": "Completed lower levels are canonical; the current byte prefix is canonical; future level bytes remain zero",
     "runtime_algorithm_changed": false,
     "public_executable_names_changed": false,
-    "successful_completion_iff_admission_proved": false,
+    "successful_completion_iff_admission_proved": true,
     "source_owned_allocation_proved": false,
     "signature_authorization_proved": false,
     "immutable_inode_publication_proved": false,
     "disk_durability_proved": false,
     "whole_expansion_verified": false,
-    "mount_authority_enabled": false
-  }
+    "mount_authority_enabled": false,
+    "admission_predicate": "Algorithm 1/2, block bits 10..16, salt <=32 bytes; N=ceil(data_bytes/B), A=B/digest_bytes, level_count(N,A,8)<=1; canonical count sum at reference_height(N,A,8) times B fits u64/usize/tree-byte budget; N fits data-block budget",
+    "hash_counter_scope": "Each salted block input is at most 65664 bytes and descriptor hash input 256 bytes; no whole-file SHA or MAX_READ_BYTES restriction is imposed",
+    "linux_reference": {
+      "repository": "torvalds/linux",
+      "commit": "028ef9c96e96197026887c0f092424679298aae8",
+      "sources": [
+        {
+          "path": "fs/verity/open.c",
+          "blob_sha": "dfa0d1afe0feb3039845b6f4b4de0eb75a472d1d",
+          "content_sha256": "1c7189a11c21c5d66a3fcd79ddb1861f0703469874e6f901b90b9e4ed0974ad0",
+          "source_manifest": "security-references.json",
+          "repository": "torvalds/linux",
+          "commit": "028ef9c96e96197026887c0f092424679298aae8",
+          "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/verity/open.c",
+          "checked_policy": "log_blocksize >=10, <= filesystem and memory block bits; reject a ninth Merkle level"
+        },
+        {
+          "path": "fs/verity/fsverity_private.h",
+          "blob_sha": "6e6854c19078de0eec08f88565b918c2f61a3ce7",
+          "content_sha256": "fe6e3e874929070c532eb39fd8433e30390aeef3bba795ba8d1de6298d2bc367",
+          "source_manifest": "security-references.json",
+          "repository": "torvalds/linux",
+          "commit": "028ef9c96e96197026887c0f092424679298aae8",
+          "url": "https://github.com/torvalds/linux/blob/028ef9c96e96197026887c0f092424679298aae8/fs/verity/fsverity_private.h",
+          "checked_policy": "FS_VERITY_MAX_LEVELS equals8"
+        }
+      ],
+      "scope": "Format/geometry references only. Memory-block profile is expressed without Linux page allocation APIs."
+    },
+    "allocation_scope": "Numeric budgets only; no source-owned or physically available memory authority"
+  },
+  "checked_verity_admission_conformance": {
+    "status": "passed",
+    "formal_verification": false,
+    "attempt": "verity-admission-checked-native-01",
+    "library_attempt": "proof-verity-completeness-03",
+    "library_sha256": "a9b4894b2513c8396762aa1d5cafee782920f409f0d90060c44e1d406a6b09d3",
+    "source_sha256": "be04687d270c0a3e9d5a9fdc2c531cb6a4df17dc751a38f01d781469fe7fa7c2",
+    "sha_source_sha256": "3b0e8c8970d743218cfe2a1eef5ffd539123bcf918a3abefe8bf52a60d2b8395",
+    "driver_sha256": "96af5774a20f97b2ca51630f3caeda1a14d7a597726e0db523fe4eca88d8505f",
+    "commands_sha256": "447b482b39a01007d4482cdd0222cea0070e0ea562eeecb84446eaa4145072a7",
+    "results_sha256": "90ee96b272dfc7382ddc45518f6451d8c1cd786c22340605340ad5669c056ffe",
+    "layout_cases": 385,
+    "layout_admitted": 361,
+    "build_cases": 121,
+    "build_admitted": 70,
+    "block_size_profiles": 7,
+    "hash_algorithms": 2,
+    "salt_boundary_bytes": [
+      32,
+      33
+    ],
+    "max_build_input_bytes": 131072,
+    "largest_layout_only_input_bytes": 18446744073709551615,
+    "seconds": 0.9882648630009498,
+    "oracle": "Independent unbounded-integer closed form: N=ceil(size/2^bits), height=ceil(bit_length(N-1)/log2(arity)), counts[k]=ceil(N/arity^(k+1)); exact numeric budgets and salt/format profile",
+    "implementation": "Actual focused-checked artifact; driver imports fsverity and contains no local filesystem/hash implementation",
+    "scope": "Finite standalone numeric admission/layout regressions; no huge allocation, owned memory, signatures, VFS publication or durability claim",
+    "provider_manifest_sha256": "768df34381dc766aba90bca0bb92bf6256b7dd8e2642443c7a5c14ab9530f486"
+  },
+  "superseded_fsverity_builder_content_refinement": [
+    {
+      "attempt": "proof-verity-builder-06",
+      "verified_obligations": 159,
+      "source_sha256": "75fb4cb6ccf0989d321f526b563c2ce3c7d593c814d6c3329b2b044838fa2efc",
+      "sha_dependency_sha256": "3b0e8c8970d743218cfe2a1eef5ffd539123bcf918a3abefe8bf52a60d2b8395",
+      "public_api": "build returns Ok only with build_content; BuiltTree getters expose the exact BuiltView bytes",
+      "reference": "Opaque salted-SHA canonical level recurrence, top-first wire tree, root, 256-byte descriptor and measured header digest",
+      "construction_invariant": "Completed lower levels are canonical; the current byte prefix is canonical; future level bytes remain zero",
+      "runtime_algorithm_changed": false,
+      "public_executable_names_changed": false,
+      "successful_completion_iff_admission_proved": false,
+      "source_owned_allocation_proved": false,
+      "signature_authorization_proved": false,
+      "immutable_inode_publication_proved": false,
+      "disk_durability_proved": false,
+      "whole_expansion_verified": false,
+      "mount_authority_enabled": false
+    }
+  ]
 }

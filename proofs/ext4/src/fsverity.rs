@@ -134,6 +134,29 @@ proof fn rounded_count_bounds(blocks:nat,arity:nat)
         assert(blocks%arity>=1);
     }
 }
+proof fn level_count_monotone(blocks:nat,arity:nat,first:nat,last:nat)
+    requires arity>0,first<=last,
+    ensures level_count(blocks,arity,last)<=level_count(blocks,arity,first),
+    decreases last,
+{
+    if first<last {
+        level_count_monotone(blocks,arity,first,(last-1) as nat);
+        rounded_count_bounds(level_count(blocks,arity,(last-1) as nat),arity);
+    }
+}
+proof fn count_sum_upper_bound(counts:Seq<u64>,depth:nat,bound:nat)
+    requires depth<=counts.len(),
+        forall|k:int| #![trigger counts[k]] 0<=k<depth ==> counts[k]<=bound,
+    ensures count_sum(counts,depth)<=depth*bound,
+    decreases depth,
+{
+    if depth>0 {
+        count_sum_upper_bound(counts,(depth-1) as nat,bound);
+        assert(counts[depth as int-1]<=bound);
+        assert(depth*bound==(depth-1)*bound+bound) by(nonlinear_arith);
+    }
+}
+
 proof fn data_count_bound(size:u64,block:u32)
     requires block>=1024,
     ensures ceil_arity(size as nat,block as nat)<=18014398509481984,
@@ -278,7 +301,8 @@ impl Layout {
     }
 }
 pub fn layout(data_size:u64,algorithm:u8,log_blocksize:u8) -> (r:Result<Layout,Error>)
-    ensures match r {Ok(l)=>l.layout_valid() && 10<=log_blocksize<=16
+    ensures r.is_ok() <==> layout_admission(data_size as nat,algorithm,log_blocksize),
+        match r {Ok(l)=>l.layout_valid() && 10<=log_blocksize<=16
         && l.layout_fields().0==1u32<<log_blocksize && l.layout_fields().1==digest_bytes(algorithm)
         && l.layout_fields().2==ceil_arity(data_size as nat,l.layout_fields().0 as nat)
         && layout_reference(l,data_size,algorithm,log_blocksize),Err(_)=>true},
@@ -304,6 +328,8 @@ pub fn layout(data_size:u64,algorithm:u8,log_blocksize:u8) -> (r:Result<Layout,E
             data_blocks<=18014398509481984,blocks<=data_blocks,
             (data_blocks>0 ==> blocks>0),
             blocks==level_count(data_blocks as nat,arity as nat,levels as nat),
+            layout_admission(data_size as nat,algorithm,log_blocksize) ==>
+                level_count(data_blocks as nat,arity as nat,8)<=1,
             forall|i:int| #![trigger counts@[i]] 0<=i<levels ==> counts@[i] as nat
                 ==level_count(data_blocks as nat,arity as nat,(i+1) as nat)
                 && 0<counts@[i]<=data_blocks,
@@ -342,10 +368,21 @@ pub fn layout(data_size:u64,algorithm:u8,log_blocksize:u8) -> (r:Result<Layout,E
         assert(levels as nat==reference_height(data_blocks as nat,arity as nat,8));
         assert((data_blocks<=1)==(levels==0));
         assert(levels>0 ==> counts@[levels as int-1]==1);
+        count_sum_reference(counts@,data_blocks as nat,arity as nat,levels as nat);
+        count_sum_upper_bound(counts@,levels as nat,18014398509481984);
+        assert(count_sum(counts@,levels as nat)<=144115188075855872) by(nonlinear_arith)
+            requires count_sum(counts@,levels as nat)<=levels as nat*18014398509481984,
+                levels<=8;
+        assert(layout_admission(data_size as nat,algorithm,log_blocksize) ==>
+            count_sum(counts@,levels as nat)*block as nat<=u64::MAX);
     }
     let mut starts=[0u64;8];let mut total=0u64;let mut level=levels;
     while level>0
         invariant level<=levels<=8,total as nat==count_sum(counts@,levels as nat)-count_sum(counts@,level as nat),
+            count_sum(counts@,levels as nat)<=144115188075855872,
+            count_sum(counts@,levels as nat)==reference_tree_blocks(data_blocks as nat,arity as nat,levels as nat),
+            layout_admission(data_size as nat,algorithm,log_blocksize) ==>
+                count_sum(counts@,levels as nat)*block as nat<=u64::MAX,
             levels as nat==reference_height(data_blocks as nat,arity as nat,8),
             block_size::accepted(block as nat),digest==32 || digest==64,
             16<=arity<=2048,arity==(block/digest) as u64,block%digest==0,
@@ -361,7 +398,24 @@ pub fn layout(data_size:u64,algorithm:u8,log_blocksize:u8) -> (r:Result<Layout,E
         decreases level,
     {
         level-=1;starts[level]=total;
+        proof {
+            count_sum_monotone(counts@,(level+1) as nat,levels as nat);
+            assert(count_sum(counts@,(level+1) as nat)
+                ==count_sum(counts@,level as nat)+counts@[level as int] as nat);
+            assert(total as nat+counts@[level as int] as nat<=count_sum(counts@,levels as nat));
+            assert(total as nat+counts@[level as int] as nat<=u64::MAX);
+        }
         total=match total.checked_add(counts[level]){Some(v)=>v,None=>return Err(Error::Overflow)};
+    }
+    proof {
+        if layout_admission(data_size as nat,algorithm,log_blocksize) {
+            assert(total as nat*block as nat<=u64::MAX);
+            vstd::arithmetic::div_mod::lemma_fundamental_div_mod_converse_div(
+                total as int*block as int,block as int,total as int,0);
+            vstd::arithmetic::div_mod::lemma_div_is_ordered(
+                total as int*block as int,u64::MAX as int,block as int);
+            assert(total<=u64::MAX/block as u64);
+        }
     }
     if total>u64::MAX/block as u64 {return Err(Error::Overflow);}
     proof {
@@ -375,7 +429,10 @@ pub fn layout(data_size:u64,algorithm:u8,log_blocksize:u8) -> (r:Result<Layout,E
         }
     }
     let ghost result=Layout {block_bytes:block,digest_bytes:digest,data_blocks,levels:levels as u8,level_start:starts,level_blocks:counts,tree_blocks:total};
-    proof {link_layout(result,data_size,algorithm,log_blocksize);}
+    proof {
+        link_layout(result,data_size,algorithm,log_blocksize);
+        layout_reference_admission(result,data_size,algorithm,log_blocksize);
+    }
     Ok(Layout {block_bytes:block,digest_bytes:digest,data_blocks,levels:levels as u8,level_start:starts,level_blocks:counts,tree_blocks:total})
 }
 
@@ -383,7 +440,8 @@ pub struct Descriptor<'a> {
     raw:&'a[u8],algorithm:u8,log_blocksize:u8,salt_size:u8,data_size:u64,signature_size:usize,
 }
 pub fn parse<'a>(raw:&'a[u8],inode_size:u64,filesystem_block_bits:u8,memory_block_bits:u8) -> (r:Result<Descriptor<'a>,Error>)
-    ensures match r {Ok(d)=>d.descriptor_valid() && d.descriptor_raw()==raw@ && d.descriptor_fields().2==inode_size
+    ensures r.is_ok() <==> descriptor_admission(raw@,inode_size,filesystem_block_bits,memory_block_bits),
+        match r {Ok(d)=>d.descriptor_valid() && d.descriptor_raw()==raw@ && d.descriptor_fields().2==inode_size
         && d.descriptor_fields().1<=filesystem_block_bits && d.descriptor_fields().1<=memory_block_bits,Err(_)=>true},
 {
     if raw.len()<256 || raw.len()>MAX_DESCRIPTOR_BYTES {return Err(Error::Descriptor);}
@@ -433,7 +491,8 @@ impl<'a> Descriptor<'a> {
         ensures r@==self.descriptor_signature(),
     {proof {use_type_invariant(self);}&self.raw[256..256+self.signature_size]}
     pub fn measure(&self) -> (r:Result<Vec<u8>,Error>)
-        ensures match r {Ok(v)=>v.len()==digest_bytes(self.descriptor_fields().0)
+        ensures r.is_ok(),
+            match r {Ok(v)=>v.len()==digest_bytes(self.descriptor_fields().0)
             && v@==hash_reference(self.descriptor_fields().0,measured_header(self.descriptor_raw())),Err(_)=>true},
     {
         proof {use_type_invariant(self);}
@@ -451,7 +510,9 @@ impl<'a> Descriptor<'a> {
     }
 }
 fn hash_buffer(algorithm:u8,raw:&[u8]) -> (r:Result<Vec<u8>,Error>)
-    ensures match r {Ok(v)=>v.len()==digest_bytes(algorithm)
+    ensures r.is_ok() <==> ((algorithm==1 && raw.len()<=2305843009213693951nat)
+            || (algorithm==2 && raw.len()<=u64::MAX)),
+        match r {Ok(v)=>v.len()==digest_bytes(algorithm)
         && v@==hash_reference(algorithm,raw@),Err(_)=>true},
 {
     let result=if algorithm==1 {crypto_sha2::sha256(raw)}
@@ -460,7 +521,9 @@ fn hash_buffer(algorithm:u8,raw:&[u8]) -> (r:Result<Vec<u8>,Error>)
 }
 /// Salt is zero-padded to the hash compression-block size before each hash.
 pub fn hash_block(algorithm:u8,salt:&[u8],block:&[u8]) -> (r:Result<Vec<u8>,Error>)
-    ensures match r {Ok(v)=>v.len()==digest_bytes(algorithm)
+    ensures r.is_ok() <==> ((algorithm==1 || algorithm==2)
+            && salt.len()<=32 && block_size::accepted(block.len() as nat)),
+        match r {Ok(v)=>v.len()==digest_bytes(algorithm)
         && v@==salted_hash_reference(algorithm,salt@,block@),Err(_)=>true},
 {
     if salt.len()>32 {return Err(Error::Salt);}
@@ -477,6 +540,7 @@ pub fn hash_block(algorithm:u8,salt:&[u8],block:&[u8]) -> (r:Result<Vec<u8>,Erro
             proof {assert(prefix@ =~= salt_prefix(algorithm,salt@));}
             if h.update256(&prefix).is_err(){return Err(Error::HashFailure);}
         }
+        proof {assert(h.input256().len()<=64 && block.len()<=65536);}
         if h.update256(block).is_err(){return Err(Error::HashFailure);}Ok(h.finalize256())
     } else if algorithm==2 {
         let mut h=crypto_sha2::Sha512::new512();
@@ -490,6 +554,7 @@ pub fn hash_block(algorithm:u8,salt:&[u8],block:&[u8]) -> (r:Result<Vec<u8>,Erro
             proof {assert(prefix@ =~= salt_prefix(algorithm,salt@));}
             if h.update512(&prefix).is_err(){return Err(Error::HashFailure);}
         }
+        proof {assert(h.input512().len()<=128 && block.len()<=65536);}
         if h.update512(block).is_err(){return Err(Error::HashFailure);}Ok(h.finalize512())
     } else {Err(Error::Algorithm)}
 }
@@ -522,7 +587,11 @@ pub fn parse_formatted_digest(raw:&[u8]) -> (r:Result<(u8,Vec<u8>),Error>)
     Ok((algorithm as u8,copy(&raw[12..])))
 }
 pub fn encode_descriptor(algorithm:u8,log_blocksize:u8,data_size:u64,root_hash:&[u8],salt:&[u8],signature:&[u8]) -> (r:Result<Vec<u8>,Error>)
-    ensures match r {Ok(v)=>v@==descriptor_wire(algorithm,log_blocksize,data_size,root_hash@,salt@,signature@)
+    ensures r.is_ok() <==> ((algorithm==1 || algorithm==2)
+            && root_hash.len()==digest_bytes(algorithm) && salt.len()<=32
+            && signature.len()<=MAX_DESCRIPTOR_BYTES-256
+            && layout_admission(data_size as nat,algorithm,log_blocksize)),
+        match r {Ok(v)=>v@==descriptor_wire(algorithm,log_blocksize,data_size,root_hash@,salt@,signature@)
         && 256<=v.len()<=MAX_DESCRIPTOR_BYTES && v.len()==256+signature.len()
         && root_hash.len()==digest_bytes(algorithm) && salt.len()<=32
         && 10<=log_blocksize<=16,Err(_)=>true},
@@ -570,7 +639,10 @@ pub fn encode_descriptor(algorithm:u8,log_blocksize:u8,data_size:u64,root_hash:&
     {out.push(signature[i]);i+=1;}Ok(out)
 }
 fn block<'a>(tree:&'a[u8],number:u64,size:u32) -> (r:Result<&'a[u8],Error>)
-    ensures match r {Ok(v)=>v.len()==size
+    ensures r.is_ok() <==> (number as nat*size as nat<=u64::MAX
+            && number as nat*size as nat<=usize::MAX
+            && number as nat*size as nat+size as nat<=tree.len()),
+        match r {Ok(v)=>v.len()==size
         && number as nat*size as nat+size as nat<=tree.len()
         && v@==tree_block_reference(tree@,number as nat,size as nat),Err(_)=>true},
 {
@@ -581,7 +653,10 @@ fn block<'a>(tree:&'a[u8],number:u64,size:u32) -> (r:Result<&'a[u8],Error>)
     Ok(&tree[at..at+size as usize])
 }
 fn padded_data(data:&[u8],number:u64,size:u32) -> (r:Result<Vec<u8>,Error>)
-    ensures match r {Ok(v)=>v.len()==size
+    ensures r.is_ok() <==> (number as nat*size as nat<=u64::MAX
+            && number as nat*size as nat<=usize::MAX
+            && number as nat*(size as nat)<data.len()),
+        match r {Ok(v)=>v.len()==size
         && v@==data_block_reference(data@,number as nat,size as nat),Err(_)=>true},
 {
     let start=match number.checked_mul(size as u64){Some(n)=>n,None=>return Err(Error::Overflow)};
@@ -850,6 +925,37 @@ pub closed spec fn reference_tree_blocks(blocks:nat,arity:nat,levels:nat) -> nat
     if levels==0 {0}else{reference_tree_blocks(blocks,arity,(levels-1) as nat)
         +level_count(blocks,arity,levels)}
 }
+// Admission depends only on file length, geometry and numeric budgets, not on
+// an execution result or the content recurrence being proved.
+pub closed spec fn reference_tree_bytes(size:nat,algorithm:u8,bits:u8) -> nat {
+    let block=reference_block_bytes(bits) as nat;
+    let arity=reference_arity(algorithm,bits);
+    let blocks=ceil_arity(size,block);
+    reference_tree_blocks(blocks,arity,reference_height(blocks,arity,8))*block
+}
+pub closed spec fn layout_admission(size:nat,algorithm:u8,bits:u8) -> bool {
+    &&& size<=u64::MAX && (algorithm==1 || algorithm==2) && 10<=bits<=16
+    &&& level_count(ceil_arity(size,reference_block_bytes(bits) as nat),
+        reference_arity(algorithm,bits),8)<=1
+    &&& reference_tree_bytes(size,algorithm,bits)<=u64::MAX
+}
+#[verifier::opaque]
+pub closed spec fn build_admission(data:Seq<u8>,algorithm:u8,bits:u8,salt:Seq<u8>,budget:BuildBudget) -> bool {
+    &&& build_profile(algorithm,bits,salt) && layout_admission(data.len(),algorithm,bits)
+    &&& reference_tree_bytes(data.len(),algorithm,bits)<=usize::MAX
+    &&& reference_tree_bytes(data.len(),algorithm,bits)<=budget.tree_bytes
+    &&& ceil_arity(data.len(),reference_block_bytes(bits) as nat)<=budget.data_blocks
+}
+pub closed spec fn descriptor_admission(raw:Seq<u8>,size:u64,filesystem_bits:u8,memory_bits:u8) -> bool {
+    &&& 256<=raw.len()<=MAX_DESCRIPTOR_BYTES
+    &&& raw[0]==1 && (raw[1]==1 || raw[1]==2)
+    &&& 10<=raw[2]<=16 && raw[2]<=filesystem_bits && raw[2]<=memory_bits
+    &&& raw[3]<=32 && le64_prefix(raw,8,8)==size
+    &&& bytes::le32(raw,4)<=raw.len()-256
+    &&& (forall|j:int| #![trigger raw[j]] 112<=j<256 ==> raw[j]==0)
+    &&& layout_admission(size as nat,raw[1],raw[2])
+}
+
 pub closed spec fn reference_data_blocks(data:Seq<u8>,bits:u8) -> nat {
     ceil_arity(data.len(),reference_block_bytes(bits) as nat)
 }
@@ -1006,9 +1112,73 @@ proof fn link_layout(l:Layout,size:u64,algorithm:u8,bits:u8)
         count_sum_monotone(l.level_blocks@,(k+1) as nat,l.levels as nat);
     }
 }
+proof fn layout_reference_admission(l:Layout,size:u64,algorithm:u8,bits:u8)
+    requires layout_reference(l,size,algorithm,bits),
+    ensures layout_admission(size as nat,algorithm,bits),
+        reference_tree_bytes(size as nat,algorithm,bits)
+            ==l.tree_blocks as nat*l.block_bytes as nat,
+{
+    reveal(layout_reference);
+    count_sum_reference(l.level_blocks@,l.data_blocks as nat,
+        (l.block_bytes/l.digest_bytes) as nat,l.levels as nat);
+    if l.levels==0 {assert(l.data_blocks<=1);}
+    else {assert(level_count(l.data_blocks as nat,(l.block_bytes/l.digest_bytes) as nat,l.levels as nat)==1);}
+    level_count_monotone(l.data_blocks as nat,(l.block_bytes/l.digest_bytes) as nat,l.levels as nat,8);
+}
+proof fn builder_admission_inputs(data:Seq<u8>,algorithm:u8,bits:u8,salt:Seq<u8>,budget:BuildBudget)
+    ensures build_admission(data,algorithm,bits,salt,budget) ==>
+        salt.len()<=32 && layout_admission(data.len(),algorithm,bits),
+{
+    reveal(build_admission);
+}
+proof fn builder_from_layout(l:Layout,data:Seq<u8>,algorithm:u8,bits:u8,salt:Seq<u8>,budget:BuildBudget)
+    requires layout_reference(l,data.len() as u64,algorithm,bits),data.len()<=u64::MAX,
+        salt.len()<=32,l.tree_blocks as nat*l.block_bytes as nat<=usize::MAX,
+        l.tree_blocks as nat*l.block_bytes as nat<=budget.tree_bytes,
+        l.data_blocks<=budget.data_blocks,
+    ensures build_admission(data,algorithm,bits,salt,budget),
+{
+    reveal(build_admission);
+    layout_reference_admission(l,data.len() as u64,algorithm,bits);
+    reveal(layout_reference);
+}
+proof fn builder_budget_is_exact(l:Layout,data:Seq<u8>,algorithm:u8,bits:u8,salt:Seq<u8>,budget:BuildBudget)
+    requires layout_reference(l,data.len() as u64,algorithm,bits),data.len()<=u64::MAX,
+        build_admission(data,algorithm,bits,salt,budget),
+    ensures l.tree_blocks as nat*l.block_bytes as nat<=budget.tree_bytes,
+        l.tree_blocks as nat*l.block_bytes as nat<=usize::MAX,l.data_blocks<=budget.data_blocks,
+{
+    reveal(build_admission);
+    layout_reference_admission(l,data.len() as u64,algorithm,bits);
+    reveal(layout_reference);
+}
+proof fn child_data_offset(data:Seq<u8>,number:u64,size:u32)
+    requires size>0,number<ceil_arity(data.len(),size as nat),data.len()<=u64::MAX,
+        data.len()<=usize::MAX,
+    ensures number as nat*(size as nat)<data.len(),number as nat*size as nat<=u64::MAX,
+        number as nat*size as nat<=usize::MAX,
+{
+    parent_slot_bound(data.len(),size as nat,number as nat,0);
+}
+proof fn child_tree_offset(l:Layout,tree:Seq<u8>,level:nat,child:u64)
+    requires l.layout_valid(),tree.len()==l.tree_blocks as nat*l.block_bytes as nat,
+        tree.len()<=usize::MAX,level<l.levels,child<l.level_blocks@[level as int],
+    ensures (l.level_start@[level as int] as nat+child as nat)*l.block_bytes as nat+l.block_bytes as nat
+        <=tree.len(),
+        (l.level_start@[level as int] as nat+child as nat)*l.block_bytes as nat<=u64::MAX,
+{
+    assert(l.level_start@[level as int] as nat+l.level_blocks@[level as int] as nat<=l.tree_blocks);
+    assert(l.level_start@[level as int] as nat+child as nat+1<=l.tree_blocks);
+    vstd::arithmetic::mul::lemma_mul_inequality(
+        l.level_start@[level as int] as int+child as int+1,l.tree_blocks as int,l.block_bytes as int);
+    vstd::arithmetic::mul::lemma_mul_is_distributive_add_other_way(
+        l.block_bytes as int,l.level_start@[level as int] as int+child as int,1);
+}
+
 proof fn layout_source_data_count(l:Layout,data:Seq<u8>,algorithm:u8,bits:u8)
     requires layout_reference(l,data.len() as u64,algorithm,bits),data.len()<=u64::MAX,
     ensures reference_data_blocks(data,bits)==l.data_blocks,
+        l.data_blocks==ceil_arity(data.len(),l.block_bytes as nat),
 {
     reveal(layout_reference);
 }
@@ -1628,6 +1798,83 @@ proof fn zero_bytes_push(before:Seq<u8>,count:nat)
     broadcast use vstd::seq::group_seq_lemmas;
     assert(before.push(0u8)=~=Seq::new(count+1,|i:int| 0u8));
 }
+proof fn encoded64_decodes(value:u64)
+    ensures le64_prefix(encoded64(value),0,8)==value,
+{
+    reveal_with_fuel(le64_prefix,9);
+    let word=encoded64(value);
+    let b0=word[0];
+    let b1=word[1];
+    let b2=word[2];
+    let b3=word[3];
+    let b4=word[4];
+    let b5=word[5];
+    let b6=word[6];
+    let b7=word[7];
+    assert(b0==(value>>0) as u8);
+    assert(b1==(value>>8) as u8);
+    assert(b2==(value>>16) as u8);
+    assert(b3==(value>>24) as u8);
+    assert(b4==(value>>32) as u8);
+    assert(b5==(value>>40) as u8);
+    assert(b6==(value>>48) as u8);
+    assert(b7==(value>>56) as u8);
+    let joined=(0u64 | ((b0 as u64)<<0))
+        |((b1 as u64)<<8)
+        |((b2 as u64)<<16)
+        |((b3 as u64)<<24)
+        |((b4 as u64)<<32)
+        |((b5 as u64)<<40)
+        |((b6 as u64)<<48)
+        |((b7 as u64)<<56);
+    assert(le64_prefix(word,0,8)==joined);
+    assert(joined==value) by(bit_vector)
+        requires b0==(value>>0) as u8,b1==(value>>8) as u8,b2==(value>>16) as u8,b3==(value>>24) as u8,b4==(value>>32) as u8,b5==(value>>40) as u8,b6==(value>>48) as u8,b7==(value>>56) as u8,
+            joined==(0u64 | ((b0 as u64)<<0))
+        |((b1 as u64)<<8)
+        |((b2 as u64)<<16)
+        |((b3 as u64)<<24)
+        |((b4 as u64)<<32)
+        |((b5 as u64)<<40)
+        |((b6 as u64)<<48)
+        |((b7 as u64)<<56);
+}
+proof fn le64_projection_byte(raw:Seq<u8>,offset:int,word:Seq<u8>,index:int)
+    requires 0<=offset,offset+8<=raw.len(),word.len()==8,0<=index<8,
+        forall|j:int| #![trigger raw[offset+j]] 0<=j<8 ==> raw[offset+j]==word[j],
+    ensures raw[offset+index]==word[index],
+{
+}
+proof fn le64_prefix_projection(raw:Seq<u8>,offset:int,word:Seq<u8>,count:nat)
+    requires 0<=offset,offset+8<=raw.len(),word.len()==8,count<=8,
+        forall|j:int| #![trigger raw[offset+j]] 0<=j<8 ==> raw[offset+j]==word[j],
+    ensures le64_prefix(raw,offset,count)==le64_prefix(word,0,count),
+    decreases count,
+{
+    if count>0 {
+        le64_prefix_projection(raw,offset,word,(count-1) as nat);
+        le64_projection_byte(raw,offset,word,count as int-1);
+        assert(raw[offset+count as int-1]==word[count as int-1]);
+    }
+}
+proof fn descriptor_wire_admitted(algorithm:u8,bits:u8,size:u64,root:Seq<u8>,salt:Seq<u8>,signature:Seq<u8>)
+    requires layout_admission(size as nat,algorithm,bits),
+        root.len()==digest_bytes(algorithm),salt.len()<=32,
+        signature.len()<=MAX_DESCRIPTOR_BYTES-256,
+    ensures descriptor_admission(descriptor_wire(algorithm,bits,size,root,salt,signature),size,bits,bits),
+{
+    broadcast use vstd::seq::group_seq_lemmas;
+    let raw=descriptor_wire(algorithm,bits,size,root,salt,signature);
+    assert(raw.len()==256+signature.len());
+    assert forall|j:int| 0<=j<8 implies #[trigger] raw[8+j]==encoded64(size)[j] by {}
+    encoded64_decodes(size);
+    le64_prefix_projection(raw,8,encoded64(size),8);
+    bytes::little_endian_encoding_recovers_every_word(signature.len() as u32);
+    assert(bytes::le32(raw,4)==bytes::le32(bytes::encoded_le(signature.len() as u32),0));
+    assert(signature.len() as u32==signature.len());
+    assert forall|j:int| 112<=j<256 implies #[trigger] raw[j]==0 by {}
+}
+
 proof fn descriptor_wire_algorithm(algorithm:u8,bits:u8,size:u64,root:Seq<u8>,salt:Seq<u8>,signature:Seq<u8>)
     ensures descriptor_wire(algorithm,bits,size,root,salt,signature)[1]==algorithm,
         descriptor_wire(algorithm,bits,size,root,salt,signature).len()==256+signature.len(),
@@ -1645,17 +1892,34 @@ impl BuiltTree {
     pub fn built_digest(&self) -> (r:&[u8]) ensures r@==self.built_view().digest {self.digest.as_slice()}
 }
 pub fn build(data:&[u8],algorithm:u8,log_blocksize:u8,salt:&[u8],budget:BuildBudget) -> (r:Result<BuiltTree,Error>)
-    ensures match r {Ok(v)=>build_content(data@,algorithm,log_blocksize,salt@,budget,v.built_view()),Err(_)=>true},
+    ensures r.is_ok() <==> build_admission(data@,algorithm,log_blocksize,salt@,budget),
+        match r {Ok(v)=>build_content(data@,algorithm,log_blocksize,salt@,budget,v.built_view()),Err(_)=>true},
 {
+    proof {
+        assert(data.len()<=u64::MAX);
+        builder_admission_inputs(data@,algorithm,log_blocksize,salt@,budget);
+    }
     if salt.len()>32 {return Err(Error::Salt);}
     let l=layout(data.len() as u64,algorithm,log_blocksize)?;let tree_size=l.tree_bytes()?;
+    proof {
+        layout_reference_admission(l,data.len() as u64,algorithm,log_blocksize);
+        if build_admission(data@,algorithm,log_blocksize,salt@,budget) {
+            builder_budget_is_exact(l,data@,algorithm,log_blocksize,salt@,budget);
+        }
+    }
     if tree_size>budget.tree_bytes as u64 || tree_size>usize::MAX as u64 || l.data_blocks>budget.data_blocks {return Err(Error::ResourceLimit);}
-    proof {assert(data.len()<=u64::MAX);assert(build_profile(algorithm,log_blocksize,salt@));}
+    proof {
+        assert(data.len()<=u64::MAX);assert(build_profile(algorithm,log_blocksize,salt@));
+        builder_from_layout(l,data@,algorithm,log_blocksize,salt@,budget);
+        layout_source_data_count(l,data@,algorithm,log_blocksize);
+    }
     let mut tree=Vec::new();let mut i=0usize;
     while i<tree_size as usize
         invariant i<=tree_size as usize,tree.len()==i,tree_size<=usize::MAX,
             layout_reference(l,data.len() as u64,algorithm,log_blocksize),
+            build_admission(data@,algorithm,log_blocksize,salt@,budget),
             build_profile(algorithm,log_blocksize,salt@),data.len()<=u64::MAX,
+            l.data_blocks==ceil_arity(data.len() as nat,l.block_bytes as nat),
             tree_size as nat==l.tree_blocks as nat*l.block_bytes as nat,
             tree_size<=budget.tree_bytes,l.data_blocks<=budget.data_blocks,
             forall|j:int| #![trigger tree@[j]] 0<=j<i ==> tree@[j]==0,
@@ -1668,7 +1932,9 @@ pub fn build(data:&[u8],algorithm:u8,log_blocksize:u8,salt:&[u8],budget:BuildBud
     while level<l.levels as usize
         invariant level<=l.levels as usize<=8,l.layout_valid(),
             layout_reference(l,data.len() as u64,algorithm,log_blocksize),
+            build_admission(data@,algorithm,log_blocksize,salt@,budget),
             build_profile(algorithm,log_blocksize,salt@),data.len()<=u64::MAX,
+            l.data_blocks==ceil_arity(data.len() as nat,l.block_bytes as nat),
             construction_frontier(tree@,data@,algorithm,log_blocksize,salt@,l,level as nat,0),
             tree_size<=budget.tree_bytes,l.data_blocks<=budget.data_blocks,
             tree.len()==tree_size as usize,tree_size<=usize::MAX as u64,
@@ -1683,7 +1949,9 @@ pub fn build(data:&[u8],algorithm:u8,log_blocksize:u8,salt:&[u8],budget:BuildBud
         while parent<l.level_blocks[level]
             invariant parent<=l.level_blocks@[level as int],level<l.levels as usize<=8,l.layout_valid(),
                 layout_reference(l,data.len() as u64,algorithm,log_blocksize),
+                build_admission(data@,algorithm,log_blocksize,salt@,budget),
                 build_profile(algorithm,log_blocksize,salt@),data.len()<=u64::MAX,
+                l.data_blocks==ceil_arity(data.len() as nat,l.block_bytes as nat),
                 construction_frontier(tree@,data@,algorithm,log_blocksize,salt@,l,level as nat,
                     parent as nat*l.block_bytes as nat),
                 tree_size<=budget.tree_bytes,l.data_blocks<=budget.data_blocks,
@@ -1701,7 +1969,9 @@ pub fn build(data:&[u8],algorithm:u8,log_blocksize:u8,salt:&[u8],budget:BuildBud
                     slot==arity ==> construction_frontier(tree@,data@,algorithm,log_blocksize,salt@,l,level as nat,
                         (parent as nat+1)*l.block_bytes as nat),
                     layout_reference(l,data.len() as u64,algorithm,log_blocksize),
+                    build_admission(data@,algorithm,log_blocksize,salt@,budget),
                     build_profile(algorithm,log_blocksize,salt@),data.len()<=u64::MAX,
+                    l.data_blocks==ceil_arity(data.len() as nat,l.block_bytes as nat),
                     construction_frontier(tree@,data@,algorithm,log_blocksize,salt@,l,level as nat,
                         parent as nat*l.block_bytes as nat+slot as nat*l.digest_bytes as nat),
                     tree_size<=budget.tree_bytes,l.data_blocks<=budget.data_blocks,
@@ -1743,8 +2013,10 @@ pub fn build(data:&[u8],algorithm:u8,log_blocksize:u8,salt:&[u8],budget:BuildBud
                     break;
                 }
                 let digest=if level==0 {
+                    proof {child_data_offset(data@,child,l.block_bytes);}
                     let raw=padded_data(data,child,l.block_bytes)?;hash_block(algorithm,salt,raw.as_slice())?
                 } else {
+                    proof {child_tree_offset(l,tree@,(level-1) as nat,child);}
                     let number=l.level_start[level-1]+child;
                     let raw=block(tree.as_slice(),number,l.block_bytes)?;
                     proof {
@@ -1775,6 +2047,10 @@ pub fn build(data:&[u8],algorithm:u8,log_blocksize:u8,salt:&[u8],budget:BuildBud
                         parent as nat,slot,arity,l.digest_bytes,l.block_bytes,l.tree_blocks as nat);
                 }
                 let destination=(l.level_start[level]+parent)*l.block_bytes as u64+slot*l.digest_bytes as u64;
+                proof {
+                    assert(destination as nat+digest.len()<=tree_size as nat);
+                    assert(destination<=usize::MAX);
+                }
                 if destination>usize::MAX as u64 {return Err(Error::Overflow);}
                 proof {
                     assert(destination as nat+digest.len()<=tree_size as nat);
@@ -1797,7 +2073,9 @@ pub fn build(data:&[u8],algorithm:u8,log_blocksize:u8,salt:&[u8],budget:BuildBud
                         children==if level==0 {l.data_blocks}else{l.level_blocks@[level as int-1]},
                         l.level_blocks@[level as int]==ceil_arity(children as nat,arity as nat),
                         layout_reference(l,data.len() as u64,algorithm,log_blocksize),
+                        build_admission(data@,algorithm,log_blocksize,salt@,budget),
                         build_profile(algorithm,log_blocksize,salt@),data.len()<=u64::MAX,
+                        l.data_blocks==ceil_arity(data.len() as nat,l.block_bytes as nat),
                         level<l.levels,parent<l.level_blocks@[level as int],
                         tree_size as nat==l.tree_blocks as nat*l.block_bytes as nat,
                         tree_size<=budget.tree_bytes,l.data_blocks<=budget.data_blocks,
@@ -1855,7 +2133,9 @@ pub fn build(data:&[u8],algorithm:u8,log_blocksize:u8,salt:&[u8],budget:BuildBud
             invariant i<=l.digest_bytes as usize,root.len()==i,root@==Seq::new(i as nat,|j:int| 0u8),
                 l.digest_bytes==32 || l.digest_bytes==64,
                 layout_reference(l,data.len() as u64,algorithm,log_blocksize),
-                build_profile(algorithm,log_blocksize,salt@),data.len()<=u64::MAX,l.data_blocks==0,
+                build_admission(data@,algorithm,log_blocksize,salt@,budget),
+                build_profile(algorithm,log_blocksize,salt@),data.len()<=u64::MAX,
+                l.data_blocks==ceil_arity(data.len() as nat,l.block_bytes as nat),l.data_blocks==0,
                 construction_frontier(tree@,data@,algorithm,log_blocksize,salt@,l,l.levels as nat,0),
                 tree@==canonical_tree(data@,algorithm,log_blocksize,salt@),
                 tree.len()<=budget.tree_bytes,l.data_blocks<=budget.data_blocks,
@@ -1867,10 +2147,14 @@ pub fn build(data:&[u8],algorithm:u8,log_blocksize:u8,salt:&[u8],budget:BuildBud
             proof {zero_bytes_push(previous_root,previous_i as nat);}
         }
     }
-    else if l.levels==0 {let raw=padded_data(data,0,l.block_bytes)?;root=hash_block(algorithm,salt,raw.as_slice())?;}
+    else if l.levels==0 {
+        proof {layout_source_data_count(l,data@,algorithm,log_blocksize);child_data_offset(data@,0,l.block_bytes);}
+        let raw=padded_data(data,0,l.block_bytes)?;root=hash_block(algorithm,salt,raw.as_slice())?;
+    }
     else {
         proof {
             assert(l.level_start@[l.levels as int-1]==0);
+            child_tree_offset(l,tree@,(l.levels-1) as nat,0);
             frontier_completed_block(tree@,data@,algorithm,log_blocksize,salt@,l,l.levels as nat,0,(l.levels-1) as nat,0);
         }
         root=hash_block(algorithm,salt,block(tree.as_slice(),0,l.block_bytes)?)?;
@@ -1880,7 +2164,10 @@ pub fn build(data:&[u8],algorithm:u8,log_blocksize:u8,salt:&[u8],budget:BuildBud
         assert(root@==canonical_root(data@,algorithm,log_blocksize,salt@));
     }
     let descriptor=encode_descriptor(algorithm,log_blocksize,data.len() as u64,root.as_slice(),salt,&[])?;
-    proof {descriptor_wire_algorithm(algorithm,log_blocksize,data.len() as u64,root@,salt@,seq![]);}
+    proof {
+        descriptor_wire_algorithm(algorithm,log_blocksize,data.len() as u64,root@,salt@,seq![]);
+        descriptor_wire_admitted(algorithm,log_blocksize,data.len() as u64,root@,salt@,seq![]);
+    }
     let parsed=parse(descriptor.as_slice(),data.len() as u64,log_blocksize,log_blocksize)?;
     proof {use_type_invariant(&parsed);assert(parsed.descriptor_fields().0==algorithm);}
     let digest=parsed.measure()?;
@@ -1893,7 +2180,6 @@ pub fn build(data:&[u8],algorithm:u8,log_blocksize:u8,salt:&[u8],budget:BuildBud
     }
     Ok(BuiltTree {tree,descriptor,digest})
 }
-
 
 fn aligned(value:u64,unit:u64) -> (r:Result<u64,Error>)
     ensures match r {Ok(v)=>unit>0 && value<=v && v%unit==0 && (v as nat) < (value as nat+unit as nat),Err(_)=>true},
