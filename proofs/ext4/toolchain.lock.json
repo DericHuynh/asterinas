@@ -1255,7 +1255,9 @@
     "mmp::a_faulted_controller_cannot_regain_readiness_from_a_late_report",
     "mmp::a_pending_command_cannot_be_replaced_by_another_dispatch",
     "mmp::aborting_a_pending_command_retains_its_exact_descriptor",
-    "mmp::an_offered_write_is_bound_to_the_source_image"
+    "mmp::an_offered_write_is_bound_to_the_source_image",
+    "crypto_sha2::digest256_reference_length",
+    "crypto_sha2::digest512_reference_length"
   ],
   "required_flags": [
     "--no-cheating",

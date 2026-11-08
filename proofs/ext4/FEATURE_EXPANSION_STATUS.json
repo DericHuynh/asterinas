@@ -280,23 +280,24 @@
       "whole_expansion_verified": false
     },
     {
-      "attempt": "proof-sha2-08",
+      "attempt": "proof-sha-completion-01",
       "modules": [
         "crypto_sha2"
       ],
       "verification_results": {
         "encountered-error": false,
         "encountered-vir-error": false,
-        "verified": 115,
+        "verified": 117,
         "errors": 0,
         "is-verifying-entire-crate": false
       },
       "source_sha256": {
-        "crypto_sha2": "0255e293c56f635b3d27787a53c33b9b031e2c1e3f3210b237baecbee40003e0"
+        "crypto_sha2": "3b0e8c8970d743218cfe2a1eef5ffd539123bcf918a3abefe8bf52a60d2b8395"
       },
-      "command_sha256": "d560242c32eaab70886e237e07c3a01acc3cc6870e18cbbd8b6c22b0982690aa",
+      "command_sha256": "f2921fd5eadfc24da9da602ef68f5cedeba337521727db0a1b9e6aaf13116aaa",
       "filtered": true,
-      "whole_expansion_verified": false
+      "whole_expansion_verified": false,
+      "scope": "SHA-256/512 streaming and one-shot success iff their implementation counters fit, exact digest bytes, two fixed-width digest lemmas; existing HMAC/HKDF contracts retained"
     },
     {
       "attempt": "proof-fscrypt-context-05",
@@ -460,7 +461,7 @@
     "sm4",
     "unicode12_data"
   ],
-  "focused_verified_obligations": 1517,
+  "focused_verified_obligations": 1519,
   "current_source_matches_checked_modules": true,
   "independent_test_harness_fix": {
     "branch": "fix/osdk-test-qemu-exit",
@@ -527,6 +528,25 @@
       "command_sha256": "2254befa27de20b5d2f2a7861b72e1fe9ff06eacb38f7ceb4adc7272ad949121",
       "filtered": true,
       "whole_expansion_verified": false
+    },
+    {
+      "attempt": "proof-sha2-08",
+      "modules": [
+        "crypto_sha2"
+      ],
+      "verification_results": {
+        "encountered-error": false,
+        "encountered-vir-error": false,
+        "verified": 115,
+        "errors": 0,
+        "is-verifying-entire-crate": false
+      },
+      "source_sha256": {
+        "crypto_sha2": "0255e293c56f635b3d27787a53c33b9b031e2c1e3f3210b237baecbee40003e0"
+      },
+      "command_sha256": "d560242c32eaab70886e237e07c3a01acc3cc6870e18cbbd8b6c22b0982690aa",
+      "filtered": true,
+      "whole_expansion_verified": false
     }
   ],
   "integrated_compile": {
@@ -536,12 +556,13 @@
     "verification_skipped": true,
     "proof_evidence": false,
     "artifact_sha256": "e44f9fec5018492b8b9c6dfe5138322093b43d29f29d35087daed0bc6ddd8943",
-    "scope": "Coherent immutable all32-module checkpoint based on db4c9f8 plus the exact newly checked orphan-file/fsverity sources. Ongoing unproved drafts remain separate.",
+    "scope": "Coherent immutable all32-module checkpoint based on db4c9f8 plus the exact newly checked orphan-file/fsverity sources. Ongoing unproved drafts remain separate. This historical compile predates the SHA completion contracts on this branch; no new integrated compile was performed.",
     "source_base_commit": "db4c9f8ac784c314218f083cb2ec1b4681408406",
     "new_verified_module_snapshots": [
       "proof-orphan-file-14",
       "proof-fsverity-07"
-    ]
+    ],
+    "source_matches_current": false
   },
   "integrated_crypto_native": {
     "attempt": "extra-crypto-native-07",
@@ -550,7 +571,7 @@
   },
   "registry": {
     "sources": 258,
-    "named_proofs": 979,
+    "named_proofs": 981,
     "public_executable_functions": 1249,
     "baseline_inventory_prefixes_preserved": true,
     "expanded_entrypoint_declared": true
@@ -681,17 +702,19 @@
     "cases": 616,
     "mismatches": 0,
     "formal_verification": false,
-    "library_attempt": "proof-sha2-08",
-    "source_sha256": "0255e293c56f635b3d27787a53c33b9b031e2c1e3f3210b237baecbee40003e0",
-    "library_sha256": "681048475313c609939e1a598bbb2fb1f09f189a0f9325f88070df86615bdead",
-    "driver_sha256": "6c44e4c641a7fa0f88b23e8a0d5a7d61f250bb063c765dbc28a26ba2eafd99d4",
     "commands_sha256": "ceaa9a4249f6555421cb5f7c5eb5beba3577da44ff8234fdcc826eccecc4a934",
     "expected_sha256": "fe125aa53c32679c3f2c431043538b41414c9c9b08fbf7f156a7da5c941f7ba0",
     "oracle": "Python hashlib/hmac SHA-256/512; independent RFC5869 HKDF recurrence using hmac",
     "cases_scope": "Direct/streaming padding and block boundaries, long HMAC keys, HKDF partial and maximum output, bad PRK/output rejection",
-    "seconds": 0.09852527000475675,
-    "implementation": "Actual focused-checked library; no mechanical erasure or local hash implementation",
-    "attempt": "checked-sha2-native-01"
+    "implementation": "Actual new focused-checked library; original 616-case driver and corpus replayed without local hash implementation",
+    "library_attempt": "proof-sha-completion-01",
+    "source_sha256": "3b0e8c8970d743218cfe2a1eef5ffd539123bcf918a3abefe8bf52a60d2b8395",
+    "library_sha256": "ba1d1fff4e88f3c797df5487349e16bb3883e6226fa1c415e8b349d817abe9cf",
+    "driver_sha256": "f886d030cfe262dc9944bcc6c200af8db4faef963f948d84155db06f7d7aa531",
+    "seconds": 0.1790086010005325,
+    "corpus_origin": "checked-sha2-native-01",
+    "attempt": "sha-completion-native-01",
+    "source_matches_focused_snapshot": true
   },
   "checked_quota_wire_conformance": {
     "status": "passed",
@@ -812,5 +835,24 @@
     "implementation": "Actual focused-checked fsverity/SHA artifact; no local hash or filesystem implementation",
     "scope": "Read/layout/Merkle interoperability; full builder-content recurrence, signature policy and mounted immutable publication remain open",
     "attempt": "verity-checked-native-01"
-  }
+  },
+  "superseded_checked_sha2_conformance": [
+    {
+      "status": "passed",
+      "cases": 616,
+      "mismatches": 0,
+      "formal_verification": false,
+      "library_attempt": "proof-sha2-08",
+      "source_sha256": "0255e293c56f635b3d27787a53c33b9b031e2c1e3f3210b237baecbee40003e0",
+      "library_sha256": "681048475313c609939e1a598bbb2fb1f09f189a0f9325f88070df86615bdead",
+      "driver_sha256": "6c44e4c641a7fa0f88b23e8a0d5a7d61f250bb063c765dbc28a26ba2eafd99d4",
+      "commands_sha256": "ceaa9a4249f6555421cb5f7c5eb5beba3577da44ff8234fdcc826eccecc4a934",
+      "expected_sha256": "fe125aa53c32679c3f2c431043538b41414c9c9b08fbf7f156a7da5c941f7ba0",
+      "oracle": "Python hashlib/hmac SHA-256/512; independent RFC5869 HKDF recurrence using hmac",
+      "cases_scope": "Direct/streaming padding and block boundaries, long HMAC keys, HKDF partial and maximum output, bad PRK/output rejection",
+      "seconds": 0.09852527000475675,
+      "implementation": "Actual focused-checked library; no mechanical erasure or local hash implementation",
+      "attempt": "checked-sha2-native-01"
+    }
+  ]
 }
