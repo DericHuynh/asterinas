@@ -6,6 +6,8 @@
 //! JBD2 credit closure, checksummed super/group encoding, source capture and
 //! CortenMM/OSTD publication/driver refinement remain separate.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{bytes, meta_bg::{self, Geometry, DescriptorAddress}};
 

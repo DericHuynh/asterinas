@@ -4,7 +4,7 @@
 //! these functions authorizes replay or proves a record's freshness.
 
 use vstd::prelude::*;
-use crate::bytes::{be32, read_be32, encode_be32};
+use crate::bytes::*;
 use crate::crc;
 use crate::frozen::FrozenBlock;
 

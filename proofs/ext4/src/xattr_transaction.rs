@@ -4,6 +4,8 @@
 //! is crate-private; operation-specific factories must establish authority.
 //! Owned source bytes confer no CortenMM, device or runtime-lock authority.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{allocated_inode::{self, AllocatedInode, NodeView}, allocation::{self, AllocationView}, bytes, group_index,
     inode_table, patch_set::{self, PatchSet}, transaction::ImageView, xattr, xattr_block_update as block_update,

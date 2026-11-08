@@ -3,6 +3,8 @@
 //! Linux version-2 ACL xattr input to compact ext4 version-1 disk bytes.
 //! Numeric IDs are already in the filesystem mapping supplied by the VFS.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{acl::{self, Acl, AclView}, bytes};
 

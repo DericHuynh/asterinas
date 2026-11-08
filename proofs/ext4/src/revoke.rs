@@ -4,6 +4,8 @@
 //! when a revoke for that block is in the same or a later committed transaction.
 //! Reference: pinned fs/jbd2/revoke.c and fs/jbd2/recovery.c in sources.json.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{bytes, crc, frozen::FrozenBlock, jbd2};
 

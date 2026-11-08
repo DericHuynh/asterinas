@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: MPL-2.0
+
+[package]
+name = "verified-ext4"
+version = "0.1.0"
+edition = "2024"
+license = "MPL-2.0"
+publish = false
+description = "Experimental no_std source package for the ext4 verified core"
+
+[lib]
+path = "src/model.rs"
+
+[dependencies]
+vstd = { git = "https://github.com/verus-lang/verus", rev = "8bf68ee741df833ea5d0fe6a2255126fdea87e47", default-features = false, features = ["alloc"] }
+
+[features]
+default = []
+
+[package.metadata.verus]
+verify = true
+
+# This prototype is independent of the kernel workspace until its source build,
+# erasure binding and target checks have been reviewed.
+[workspace]
+members = ["."]
+resolver = "2"
+
+[workspace.lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = [
+    "cfg(verus_keep_ghost)",
+    "cfg(verus_verify_core)",
+    "cfg(verus_keep_ghost_body)",
+    "cfg(verus_only)",
+] }
+
+[lints]
+workspace = true

@@ -4,6 +4,8 @@
 //! These standalone structural readers do not confer allocation, credential,
 //! mounted-inode, or device-write authority. Source admission is separate.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{block_size, bytes, inode_blocks, snapshot::Snapshot, source_block, xattr};
 

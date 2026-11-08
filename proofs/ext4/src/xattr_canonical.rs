@@ -2,6 +2,8 @@
 
 //! Check generated xattr padding and Linux hash fields against complete bytes.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{bytes, xattr_entry as entry, xattr_hash, xattr_table::{self as table, Table, TableView, ValueRef, ValueView}};
 

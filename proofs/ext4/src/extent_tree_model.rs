@@ -5,7 +5,7 @@
 
 use vstd::prelude::*;
 use crate::{bytes, extent_node::{self, NodeView}, extent_span::SpanView,
-    extent_tree::{self, Context, Visit, external_node, subtree_valid, route, tail}};
+    extent_tree::{self, *}};
 
 verus! {
 

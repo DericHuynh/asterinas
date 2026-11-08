@@ -4,6 +4,8 @@
 //! to its exact byte range, independently of checksums. A kernel adapter must
 //! refine the frozen CortenMM/OSTD source and partition identity before use.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{patch_set::{self, PatchSet}, shadow_model};
 

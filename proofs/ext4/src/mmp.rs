@@ -5,6 +5,8 @@
 //! bounded write visibility and a monotonic clock. Disk wall time is only
 //! diagnostic. Protocol state does not grant a mount or device lease.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{block_size, bytes, crc};
 

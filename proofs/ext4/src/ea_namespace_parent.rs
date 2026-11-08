@@ -4,6 +4,8 @@
 //! A locally consistent parent table can still contain a disconnected cycle;
 //! rootedness/depth validation is deliberately a separate layer.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{block_claims, ea_directory_index::{self as directory_index, DirectoryIndex, IndexView},
     ea_namespace_counts as counts, ea_namespace_nodes as nodes, namespace_counts as pure};

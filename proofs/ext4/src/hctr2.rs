@@ -6,6 +6,8 @@
 //! without an authentication or constant-time/physical-erasure claim.
 //! Reference: Linux v7.0 hctr2.c, xctr.c and lib/crypto/polyval.c.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::aes::AesKey;
 

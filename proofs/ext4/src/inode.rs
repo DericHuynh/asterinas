@@ -6,8 +6,8 @@
 //! Link topology, allocation accounting and global ownership remain separate.
 
 use vstd::prelude::*;
-use crate::bytes::{le16, le32, read_le16, read_le32, encode_le32};
-use crate::{crc, extent, group::encoded_le, inode_size};
+use crate::bytes::*;
+use crate::{crc, extent, inode_size};
 
 verus! {
 
@@ -26,8 +26,8 @@ pub open spec fn checksum_input(s: Seq<u8>) -> Seq<u8> {
 }
 
 pub open spec fn checksum(s: Seq<u8>, inode: u32, uuid_seed: u32) -> u32 {
-    crc::fold(crc::fold(crc::fold(uuid_seed, encoded_le(inode)),
-        encoded_le(le32(s, 100) as u32)), checksum_input(s))
+    crc::fold(crc::fold(crc::fold(uuid_seed, crate::group::encoded_le(inode)),
+        crate::group::encoded_le(le32(s, 100) as u32)), checksum_input(s))
 }
 
 pub open spec fn metadata_accepted_with_features(s: Seq<u8>, inode: u32, inodes: u32, uuid_seed: u32, huge_file: bool) -> bool {
@@ -54,11 +54,11 @@ pub open spec fn accepted(s: Seq<u8>, inode: u32, inodes: u32, blocks: u32, uuid
 }
 
 pub fn inode_seed(uuid_seed: u32, number: u32, generation: u32) -> (r: u32)
-    ensures r == crc::fold(crc::fold(uuid_seed, encoded_le(number)), encoded_le(generation)),
+    ensures r == crc::fold(crc::fold(uuid_seed, crate::group::encoded_le(number)), crate::group::encoded_le(generation)),
 {
     let n = encode_le32(number);
     let g = encode_le32(generation);
-    proof { assert(n@ =~= encoded_le(number)); assert(g@ =~= encoded_le(generation)); }
+    proof { assert(n@ =~= crate::group::encoded_le(number)); assert(g@ =~= crate::group::encoded_le(generation)); }
     let seed = crc::crc32c(uuid_seed, &n);
     crc::crc32c(seed, &g)
 }

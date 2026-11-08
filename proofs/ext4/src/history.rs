@@ -5,7 +5,7 @@
 
 use vstd::prelude::*;
 use crate::journal::{self, State};
-use crate::redo::{Disk, overlay};
+use crate::redo::*;
 
 verus! {
 

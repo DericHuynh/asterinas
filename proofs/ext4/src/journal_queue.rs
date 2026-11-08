@@ -4,6 +4,8 @@
 //! version keeps its credits: checkpoint retirement and physical I/O authority
 //! require the later journal/device adapter. No disk slots are recycled here.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{edit_handles::{self, EditView, FrozenBatch, Part, Running}, edit_schedule,
     layout::{JournalLayout, LayoutView}, transaction::ImageView};

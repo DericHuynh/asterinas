@@ -8,6 +8,8 @@
 //! In particular, a zero transition requires a separately admitted orphan
 //! protocol before it may be used by a filesystem transaction.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{bytes, inode, inode_time_fields::{self, Field}};
 

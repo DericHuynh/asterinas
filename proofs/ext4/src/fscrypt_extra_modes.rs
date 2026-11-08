@@ -5,6 +5,8 @@
 //! filesystem admission remain unchanged. Encryption does not authenticate
 //! names or data; constant-time compilation and physical erasure remain open.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{aes::AesKey,sm4::Sm4Key,bytes,crypto_sha2,adiantum,hctr2,
     fscrypt_context::{Context,Geometry,MasterKeyV2},

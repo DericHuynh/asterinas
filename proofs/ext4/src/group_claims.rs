@@ -4,6 +4,8 @@
 //! 32 groups and 32/64-byte descriptors, each sparse-super group has one superblock
 //! and one descriptor block. META_BG and reserved-GDT growth are not admitted.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{block_claims::{self, Census, CensusView, Claim}, bytes, claim_admission, crc, group};
 

@@ -4,6 +4,8 @@
 //! IDs and group membership must already be mapped/authenticated by the VFS.
 //! This codec does not establish an idmapped-mount or LSM credential boundary.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::bytes;
 

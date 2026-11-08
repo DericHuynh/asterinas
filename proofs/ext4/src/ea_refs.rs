@@ -5,6 +5,8 @@
 //! A distinct inode-body entry or external-block entry contributes one physical
 //! reference. An external block's h_refcount is deliberately not an input.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 
 verus! {

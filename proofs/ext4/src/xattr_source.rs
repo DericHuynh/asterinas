@@ -4,6 +4,8 @@
 //! block is claimed once, its stored reference count equals all source inode
 //! references, and no data, journal or extent-tree block can alias that claim.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{allocated_inode, block_claims::{self, Census, Claim, Slot}, bytes, group_index::{self, GroupIndex, IndexView},
     inode_table, xattr, xattr_table};

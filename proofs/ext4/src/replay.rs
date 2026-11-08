@@ -4,6 +4,8 @@
 //! journal-excluding patch, not authority to publish a mounted filesystem.
 //! The recovered shadow image must pass global filesystem validation first.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{bytes, crc, frozen::FrozenBlock, jbd2, layout::{JournalLayout, LayoutView}};
 

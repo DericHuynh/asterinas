@@ -4,6 +4,8 @@
 //! This encodes a candidate patch; global filesystem authority and the durable
 //! write protocol are separate obligations. No writable aliases are exported.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{bytes, crc, descriptor, frozen::{self, FrozenBlock}, jbd2, layout::{JournalLayout, LayoutView}, replay, super_state};
 

@@ -4,6 +4,8 @@
 //! Dense initialized mappings and integrity do not establish a complete
 //! filesystem allocation/reference census, caller permissions or I/O authority.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{bytes, crc, ea_hash, ea_inode::{self, Status}, ea_reference::{self, ReferenceView},
     ea_source::{self, Header, NodeView}, extent_node::BlockChecksum, extent_span::{self, SpanView},

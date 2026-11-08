@@ -4,6 +4,8 @@
 //! Allocating, initializing and publishing a child inode remain separate VFS
 //! and journal obligations; a Plan is not an I/O capability or a create handle.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{acl, acl_transform::{self, TransformView}, allocated_inode::{self, AllocatedInode, NodeView},
     xattr_inode::{self, AttributesView}, xattr_table::{ValueRef, ValueView}};

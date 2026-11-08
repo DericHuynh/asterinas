@@ -4,6 +4,8 @@
 //! certificates and one immutable source. No physical device, VFS credentials
 //! or CortenMM ownership is established by these host-core certificates.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{bootstrap::{self, BootstrapView}, bootstrap_identity, edit_handles::FrozenBatch,
     image_validation, namespace::{self, NamespaceView}, patch_set::{self, PatchSet},

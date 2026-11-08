@@ -4,6 +4,8 @@
 //! Addresses are filesystem blocks, not frames or I/O capabilities. These
 //! helpers do not admit a filesystem or activate META_BG/RESIZE_INODE.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::bytes;
 

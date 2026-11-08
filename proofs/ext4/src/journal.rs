@@ -6,8 +6,7 @@
 
 use vstd::prelude::*;
 use vstd::assert_maps_equal;
-use crate::redo::{Disk, compatible, overlay, complete_redo_overrides_partial_checkpoint,
-    overlay_is_idempotent};
+use crate::redo::*;
 
 verus! {
 

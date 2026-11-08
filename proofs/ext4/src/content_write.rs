@@ -4,6 +4,8 @@
 //! block at a time, with an optional inode-time/checksum transaction closure.
 //! POSIX write/open, credential authentication and CortenMM locks remain open.
 
+use alloc::vec::Vec;
+
 use vstd::prelude::*;
 use crate::{access::{self, Credentials}, allocated_inode::{self, AllocatedInode, NodeView}, bytes,
     edit_handles, file_read::{self, Resolution}, inode_size, inode_table, inode_touch, transaction::{AfterImage, ImageView},
